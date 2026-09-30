@@ -14,3 +14,10 @@ Local validation (2026-09-30):
 - Actual production database was not connected, backed up, migrated or restored here.
 - Windows PowerShell updater and Docker Compose end-to-end update require validation on the user's installation.
 - GitHub CI includes PostgreSQL 16 tests and frontend npm ci/build/audit. See workflow result for actual remote validation status.
+
+Completed GitHub CI validation (2026-09-30):
+- Workflow: https://github.com/Pradipkamu/ProductionReviewWebApp/actions/runs/36745053085
+- Tested source commit: c522746ed8d3f5058eee4cfb09bf42b814978cca
+- Backend on PostgreSQL 16: 34 passed, 1 skipped, including legacy preservation and idempotent PostgreSQL Alembic migrations. Migrated schema matches ORM metadata.
+- Frontend on Node 22: npm ci, TypeScript/Vite production build and npm audit passed.
+- Both workflow jobs completed successfully.

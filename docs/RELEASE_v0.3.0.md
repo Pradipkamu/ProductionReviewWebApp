@@ -21,4 +21,4 @@ AFMS/MQTT integration and Power BI reporting/star-schema layer remain documented
 
 ## Validation and limits
 
-See `BUILD_VALIDATION_v0.3.0.txt` for actual completed checks. No live production database was available here; no production backup or update has been executed. The safe update must be run on the actual installation. PostgreSQL service validation is provided by CI in disposable databases; confirm its result before deploying. Existing optional workbook fixture test may remain skipped when its external workbook is absent.
+See `BUILD_VALIDATION_v0.3.0.txt` for actual completed checks. No live production database was available here; no production backup or update has been executed. The safe update must be run on the actual installation. GitHub CI passed against PostgreSQL 16: 34 tests passed and the original optional workbook test was skipped. Frontend clean install/build/audit also passed. See BUILD_VALIDATION_v0.3.0.txt for the tested source commit and workflow URL. Existing optional workbook fixture test may remain skipped when its external workbook is absent.
