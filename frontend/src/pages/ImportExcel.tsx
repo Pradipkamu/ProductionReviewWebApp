@@ -1,0 +1,19 @@
+import { useState } from 'react'
+import { api } from '../api'
+import { PageHeader } from '../components/UI'
+
+function Result({result,err}:{result:any,err:string}){return <>{err&&<div className="error">{err}</div>}{result?.status==='already_imported'&&<div className="notice"><b>Duplicate file skipped.</b> {result.message}</div>}{result?.status==='imported'&&<div className="notice"><b>Import completed.</b> {result.message}</div>}{result?.warnings?.length>0&&<div className="warning-box"><b>Import warnings</b><ul>{result.warnings.map((w:string,i:number)=><li key={i}>{w}</li>)}</ul></div>}{result&&<pre>{JSON.stringify(result,null,2)}</pre>}</>}
+
+export default function ImportExcel(){
+ const [file,setFile]=useState<File|null>(null),[histFile,setHistFile]=useState<File|null>(null),[priceFile,setPriceFile]=useState<File|null>(null)
+ const [result,setResult]=useState<any>(null),[histResult,setHistResult]=useState<any>(null),[priceResult,setPriceResult]=useState<any>(null)
+ const [busy,setBusy]=useState(false),[histBusy,setHistBusy]=useState(false),[priceBusy,setPriceBusy]=useState(false)
+ const [err,setErr]=useState(''),[histErr,setHistErr]=useState(''),[priceErr,setPriceErr]=useState('')
+ async function upload(){if(!file)return;setBusy(true);setErr('');const fd=new FormData();fd.append('file',file);try{setResult(await api('/import/excel',{method:'POST',body:fd}))}catch(e:any){setErr(e.message)}finally{setBusy(false)}}
+ async function uploadHistorical(){if(!histFile)return;setHistBusy(true);setHistErr('');const fd=new FormData();fd.append('file',histFile);try{setHistResult(await api('/import/historical-daily-mis',{method:'POST',body:fd}))}catch(e:any){setHistErr(e.message)}finally{setHistBusy(false)}}
+ async function uploadPrices(){if(!priceFile)return;setPriceBusy(true);setPriceErr('');const fd=new FormData();fd.append('file',priceFile);try{setPriceResult(await api('/import/historical-sales-prices',{method:'POST',body:fd}))}catch(e:any){setPriceErr(e.message)}finally{setPriceBusy(false)}}
+ return <><PageHeader title="Excel Import" subtitle="Fresh-start import order: Product Master → Historical Sales Price → Historical Daily MIS → historical rejection / daily operation. Exact repeat files are skipped automatically."/>
+ <section className="panel upload"><div className="panel-title"><h2>Current production workbook</h2><span>PBI_Products + PBI_Fact_Daily format</span></div><input type="file" accept=".xlsx,.xlsm" onChange={e=>setFile(e.target.files?.[0]||null)}/><button disabled={!file||busy} onClick={upload}>{busy?'Importing…':'Import workbook'}</button><Result result={result} err={err}/></section>
+ <section className="panel upload"><div className="panel-title"><h2>One-time Historical Sales Price</h2><span>Historical_Sales_Price_Import · Product + Effective From + Sales Price</span></div><p className="muted">Import this before historical Daily MIS. Multiple price revisions in one month are supported. Effective To is derived automatically from the next revision.</p><input type="file" accept=".xlsx,.xlsm" onChange={e=>setPriceFile(e.target.files?.[0]||null)}/><button disabled={!priceFile||priceBusy} onClick={uploadPrices}>{priceBusy?'Importing…':'Import historical prices'}</button><Result result={priceResult} err={priceErr}/></section>
+ <section className="panel upload"><div className="panel-title"><h2>One-time Historical Daily MIS</h2><span>Historical_Daily_MIS_Import sheet · Date + current Product master name + Plan + Actual</span></div><p className="muted">Historical rows are frozen after import. Sales use the effective-dated price history already loaded in the system.</p><input type="file" accept=".xlsx,.xlsm" onChange={e=>setHistFile(e.target.files?.[0]||null)}/><button disabled={!histFile||histBusy} onClick={uploadHistorical}>{histBusy?'Importing…':'Import historical MIS'}</button><Result result={histResult} err={histErr}/></section>
+ </>}

@@ -1,0 +1,21 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api'
+import { Kpi, PageHeader, num, pct } from '../components/UI'
+function today(){return new Date().toISOString().slice(0,10)}
+export default function OEE(){
+ const [machines,setMachines]=useState<any[]>([]); const [products,setProducts]=useState<any[]>([]); const [losses,setLosses]=useState<any[]>([]); const [routes,setRoutes]=useState<any[]>([])
+ const [m,setM]=useState(''); const [p,setP]=useState(''); const [op,setOp]=useState(''); const [d,setD]=useState(today()); const [shift,setShift]=useState('A'); const [sum,setSum]=useState<any>(null); const [msg,setMsg]=useState('')
+ const [entry,setEntry]=useState<any>({shift_duration_min:480,planned_break_min:45,downtime_min:0,total_count:0,good_count:0,reject_count:0,ideal_cycle_time_sec:0})
+ useEffect(()=>{api('/masters/machines').then((x:any)=>{setMachines(x); if(x[0])setM(String(x[0].id))}); api('/masters/products').then((x:any)=>{setProducts(x); if(x[0])setP(String(x[0].id))}); api('/masters/loss-categories').then(setLosses)},[])
+ useEffect(()=>{if(p)api(`/masters/routes/${p}`).then((x:any)=>{const ops=x[0]?.operations||[]; setRoutes(ops); if(ops[0])setOp(String(ops[0].route_operation_id))})},[p])
+ async function refresh(){if(m)setSum(await api(`/oee/machine-summary?machine_id=${m}&summary_date=${d}&shift=${shift}`))}
+ useEffect(()=>{refresh()},[m,d,shift])
+ async function save(){await api('/oee/machine-entry',{method:'POST',body:JSON.stringify({...entry,production_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m)})}); setMsg('Machine entry saved.'); refresh()}
+ async function addLoss(){const id=prompt('Loss category ID:\n'+losses.map(x=>`${x.id}: ${x.name}`).join('\n')); if(!id)return; const minutes=prompt('Loss minutes'); if(!minutes)return; const remark=prompt('Remark')||''; await api('/oee/loss-events',{method:'POST',body:JSON.stringify({loss_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),loss_category_id:Number(id),duration_min:Number(minutes),qty_loss:0,remark})}); refresh()}
+ const s=sum?.summary
+ return <><PageHeader title="Machine / OEE" subtitle="Manual OEE and loss capture now; same model is ready for later AFMS/MQTT machine data." actions={<div className="form-row compact"><input type="date" value={d} onChange={e=>setD(e.target.value)}/><select value={shift} onChange={e=>setShift(e.target.value)}><option>A</option><option>B</option><option>C</option></select></div>}/>
+ <div className="filters"><select value={m} onChange={e=>setM(e.target.value)}><option value="">Select machine</option>{machines.map(x=><option key={x.id} value={x.id}>{x.code} — {x.name}</option>)}</select><select value={p} onChange={e=>setP(e.target.value)}>{products.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select><select value={op} onChange={e=>setOp(e.target.value)}>{routes.map(x=><option key={x.route_operation_id} value={x.route_operation_id}>{x.operation}</option>)}</select></div>
+ {s&&<div className="kpi-grid"><Kpi label="OEE" value={pct(s.oee_reported)} tone={s.oee_reported<.6?'bad':s.oee_reported<.75?'warn':'good'}/><Kpi label="Availability" value={pct(s.availability)}/><Kpi label="Performance" value={pct(s.performance_raw)} tone={s.performance_master_warning?'warn':'neutral'}/><Kpi label="Quality" value={pct(s.quality)}/><Kpi label="Captured loss" value={`${num(s.captured_loss_min)} min`}/><Kpi label="Unclassified" value={`${num(s.unclassified_loss_min)} min`} tone={s.unclassified_loss_min>0?'bad':'good'}/></div>}
+ <div className="two-col"><section className="panel"><h2>Machine shift entry</h2>{Object.keys(entry).map(k=><label key={k}>{k.replaceAll('_',' ')}<input type="number" value={entry[k]} onChange={e=>setEntry({...entry,[k]:Number(e.target.value)})}/></label>)}<div className="button-row"><button onClick={save}>Save and calculate OEE</button><button className="secondary" onClick={addLoss}>Add loss event</button></div>{msg&&<div className="notice">{msg}</div>}</section>
+ <section className="panel"><h2>Loss reconciliation</h2><table><thead><tr><th>Loss</th><th>Minutes</th><th>Remark</th></tr></thead><tbody>{(sum?.losses||[]).map((x:any)=><tr key={x.id}><td>#{x.loss_category_id}</td><td>{x.duration_min}</td><td>{x.remark}</td></tr>)}</tbody></table></section></div></>
+}

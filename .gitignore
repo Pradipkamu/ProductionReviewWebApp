@@ -1,0 +1,26 @@
+.env
+__pycache__/
+*.pyc
+frontend/node_modules/
+frontend/dist/
+# Persistent production data is never source-controlled.
+database/postgres/*
+database/backups/*
+!database/backups/.gitkeep
+database/imports/*
+!database/imports/.gitkeep
+database/attachments/*
+!database/attachments/.gitkeep
+
+# Local development/runtime artifacts
+backend/pms.db
+*.sqlite
+*.sqlite3
+.pytest_cache/
+**/__pycache__/
+*.xlsx
+*.xls
+*.csv
+*.log
+.DS_Store
+Thumbs.db

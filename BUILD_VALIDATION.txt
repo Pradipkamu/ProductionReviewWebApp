@@ -1,0 +1,6 @@
+ProductionReviewWebApp v0.2.6 Fresh Start — build validation
+
+Backend automated tests: 14 passed, 1 skipped (PYTHONPATH=. pytest -q)
+Included regression coverage: planning, reports, OEE, review/actions, Why-Why closure, price/calendar, quality/rejection, historical MIS, historical sales-price effective-date import.
+Frontend source syntax: validated with TypeScript transpile parser in packaging environment.
+Note: full npm/Vite production build could not be completed in the packaging environment because npm dependency installation timed out. Docker will install frontend dependencies during the normal image build when network access to the npm registry is available.

@@ -1,0 +1,545 @@
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Optional
+
+from sqlalchemy import (
+    Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric,
+    String, Text, UniqueConstraint, Index
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .db import Base
+from .enums import (
+    ActionStatus, MonthState, OEEComponent, OperationType,
+    Priority, SourceType, UserRole,
+)
+
+
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class User(Base, TimestampMixin):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    full_name: Mapped[str] = mapped_column(String(160))
+    role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.VIEW_ONLY)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Customer(Base, TimestampMixin):
+    __tablename__ = "customers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    products: Mapped[list[Product]] = relationship(back_populates="customer")
+
+
+class Product(Base, TimestampMixin):
+    __tablename__ = "products"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(180), index=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customers.id"), nullable=True)
+    actual_measure: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # Product-level reporting attributes. These remain on the master so the
+    # same Plant / Group filters work across MIS, process, actions and reports.
+    plant: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    product_group: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    finish_weight_kg: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+
+    sort_order: Mapped[int] = mapped_column(Integer, default=999)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    customer: Mapped[Optional[Customer]] = relationship(back_populates="products")
+
+
+class Vendor(Base, TimestampMixin):
+    __tablename__ = "vendors"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    contact_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Operation(Base, TimestampMixin):
+    __tablename__ = "operations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    operation_type: Mapped[OperationType] = mapped_column(SAEnum(OperationType), default=OperationType.INTERNAL)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Machine(Base, TimestampMixin):
+    __tablename__ = "machines"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    machine_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    department: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    capacity_per_shift: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class LossCategory(Base, TimestampMixin):
+    __tablename__ = "loss_categories"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    oee_component: Mapped[OEEComponent] = mapped_column(SAEnum(OEEComponent))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class WorkingCalendar(Base, TimestampMixin):
+    __tablename__ = "working_calendar"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    work_date: Mapped[date] = mapped_column(Date, index=True)
+    plant: Mapped[str] = mapped_column(String(120), default="Main Plant")
+    is_working_day: Mapped[bool] = mapped_column(Boolean, default=True)
+    holiday_name: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    __table_args__ = (UniqueConstraint("work_date", "plant", name="uq_work_calendar_date_plant"),)
+
+
+class WorkingCalendarChangeLog(Base):
+    __tablename__ = "working_calendar_change_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    work_date: Mapped[date] = mapped_column(Date, index=True)
+    plant: Mapped[str] = mapped_column(String(120), index=True)
+    old_is_working_day: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    new_is_working_day: Mapped[bool] = mapped_column(Boolean)
+    old_holiday_name: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    new_holiday_name: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    old_reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    new_reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SalesPriceHistory(Base, TimestampMixin):
+    __tablename__ = "sales_price_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    effective_from: Mapped[date] = mapped_column(Date, index=True)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    revision_reference: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    source_document: Mapped[Optional[str]] = mapped_column(String(260), nullable=True)
+    source: Mapped[str] = mapped_column(String(30), default="MANUAL", nullable=False)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    product: Mapped[Product] = relationship()
+    __table_args__ = (Index("ix_price_product_effective", "product_id", "effective_from"),)
+
+
+class RouteVersion(Base, TimestampMixin):
+    __tablename__ = "route_versions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    revision_no: Mapped[int] = mapped_column(Integer, default=0)
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    product: Mapped[Product] = relationship()
+    operations: Mapped[list[RouteOperation]] = relationship(back_populates="route_version", cascade="all, delete-orphan", order_by="RouteOperation.sequence_no")
+    __table_args__ = (UniqueConstraint("product_id", "revision_no", name="uq_route_product_revision"),)
+
+
+class RouteOperation(Base, TimestampMixin):
+    __tablename__ = "route_operations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_version_id: Mapped[int] = mapped_column(ForeignKey("route_versions.id", ondelete="CASCADE"), index=True)
+    operation_id: Mapped[int] = mapped_column(ForeignKey("operations.id"), index=True)
+    sequence_no: Mapped[int] = mapped_column(Integer)
+    source_label: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    vendor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("vendors.id"), nullable=True)
+    standard_yield: Mapped[Decimal] = mapped_column(Numeric(8, 5), default=Decimal("1"))
+    standard_lead_time_days: Mapped[int] = mapped_column(Integer, default=0)
+    buffer_qty: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=Decimal("0"))
+    is_dispatch: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    route_version: Mapped[RouteVersion] = relationship(back_populates="operations")
+    operation: Mapped[Operation] = relationship()
+    vendor: Mapped[Optional[Vendor]] = relationship()
+    __table_args__ = (UniqueConstraint("route_version_id", "sequence_no", name="uq_route_sequence"),)
+
+
+class OperationMachineMap(Base, TimestampMixin):
+    __tablename__ = "operation_machine_map"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    route_operation: Mapped[RouteOperation] = relationship()
+    machine: Mapped[Machine] = relationship()
+
+
+class StandardCycleTime(Base, TimestampMixin):
+    __tablename__ = "standard_cycle_times"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    machine_id: Mapped[Optional[int]] = mapped_column(ForeignKey("machines.id"), nullable=True, index=True)
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    ideal_cycle_time_sec: Mapped[Decimal] = mapped_column(Numeric(12, 3))
+    standard_cycle_time_sec: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3), nullable=True)
+    cavities: Mapped[int] = mapped_column(Integer, default=1)
+    pieces_per_cycle: Mapped[int] = mapped_column(Integer, default=1)
+    remark: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+
+
+class ScheduleRevision(Base, TimestampMixin):
+    __tablename__ = "schedule_revisions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    month: Mapped[date] = mapped_column(Date, index=True)  # first day of month
+    revision_no: Mapped[int] = mapped_column(Integer)
+    effective_from: Mapped[date] = mapped_column(Date, index=True)
+    monthly_target_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    product: Mapped[Product] = relationship()
+    __table_args__ = (UniqueConstraint("product_id", "month", "revision_no", name="uq_schedule_product_month_revision"),)
+
+
+class DailyRequirement(Base, TimestampMixin):
+    __tablename__ = "daily_requirements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    req_date: Mapped[date] = mapped_column(Date, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    route_operation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("route_operations.id"), nullable=True, index=True)
+    schedule_revision_id: Mapped[Optional[int]] = mapped_column(ForeignKey("schedule_revisions.id"), nullable=True)
+    baseline_plan_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    revised_plan_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    is_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
+    product: Mapped[Product] = relationship()
+    __table_args__ = (UniqueConstraint("req_date", "product_id", "route_operation_id", name="uq_daily_requirement_context"),)
+
+
+class DailyMIS(Base, TimestampMixin):
+    __tablename__ = "daily_mis"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mis_date: Mapped[date] = mapped_column(Date, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    plan_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    actual_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    sales_price: Mapped[Decimal] = mapped_column(Numeric(14, 4), default=Decimal("0"))
+    plan_sales: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    actual_sales: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=Decimal("0"))
+    schedule_revision_id: Mapped[Optional[int]] = mapped_column(ForeignKey("schedule_revisions.id"), nullable=True)
+    source: Mapped[SourceType] = mapped_column(SAEnum(SourceType), default=SourceType.MANUAL)
+    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    product: Mapped[Product] = relationship()
+    __table_args__ = (UniqueConstraint("mis_date", "product_id", name="uq_daily_mis_date_product"),)
+
+
+class MISChangeLog(Base):
+    __tablename__ = "mis_change_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mis_id: Mapped[int] = mapped_column(ForeignKey("daily_mis.id"), index=True)
+    field_name: Mapped[str] = mapped_column(String(80))
+    old_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(Text)
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProcessDailySummary(Base, TimestampMixin):
+    __tablename__ = "process_daily_summary"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    summary_date: Mapped[date] = mapped_column(Date, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    plan_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    actual_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    good_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    opening_wip: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    closing_wip: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    source: Mapped[SourceType] = mapped_column(SAEnum(SourceType), default=SourceType.MANUAL)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    route_operation: Mapped[RouteOperation] = relationship()
+    __table_args__ = (UniqueConstraint("summary_date", "product_id", "route_operation_id", name="uq_process_daily_context"),)
+
+
+class VendorMovement(Base, TimestampMixin):
+    __tablename__ = "vendor_movements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    vendor_id: Mapped[int] = mapped_column(ForeignKey("vendors.id"), index=True)
+    outward_date: Mapped[date] = mapped_column(Date, index=True)
+    outward_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    challan_no: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    expected_return_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    receipt_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    receipt_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class MachineShiftProduction(Base, TimestampMixin):
+    __tablename__ = "machine_shift_production"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    production_date: Mapped[date] = mapped_column(Date, index=True)
+    shift: Mapped[str] = mapped_column(String(30), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    shift_duration_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("480"))
+    planned_break_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
+    downtime_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
+    total_count: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    good_count: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    reject_count: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    ideal_cycle_time_sec: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0"))
+    source: Mapped[SourceType] = mapped_column(SAEnum(SourceType), default=SourceType.MANUAL)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class MachineLossEvent(Base, TimestampMixin):
+    __tablename__ = "machine_loss_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    loss_date: Mapped[date] = mapped_column(Date, index=True)
+    shift: Mapped[str] = mapped_column(String(30), index=True)
+    product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
+    route_operation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("route_operations.id"), nullable=True, index=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    loss_category_id: Mapped[int] = mapped_column(ForeignKey("loss_categories.id"), index=True)
+    start_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    duration_min: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    qty_loss: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[SourceType] = mapped_column(SAEnum(SourceType), default=SourceType.MANUAL)
+    loss_category: Mapped[LossCategory] = relationship()
+
+
+
+
+class QualityPhenomenon(Base, TimestampMixin):
+    __tablename__ = "quality_rejection_phenomena"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(220), index=True)
+    normalized_name: Mapped[str] = mapped_column(String(220), unique=True, index=True)
+    phenomenon_group: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    default_responsible_team: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    criticality: Mapped[str] = mapped_column(String(40), default="NORMAL", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class QualityRejectionImportBatch(Base, TimestampMixin):
+    __tablename__ = "quality_rejection_import_batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_name: Mapped[str] = mapped_column(String(260))
+    file_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    import_type: Mapped[str] = mapped_column(String(40), default="DAILY")
+    status: Mapped[str] = mapped_column(String(40), default="COMPLETED")
+    stats_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    imported_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class QualityRejectionDaily(Base, TimestampMixin):
+    __tablename__ = "quality_rejection_daily"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    rejection_date: Mapped[date] = mapped_column(Date, index=True)
+    shift: Mapped[str] = mapped_column(String(40), default="General", index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    plant: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    detection_route_operation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("route_operations.id"), nullable=True, index=True)
+    responsible_route_operation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("route_operations.id"), nullable=True, index=True)
+    responsible_team: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    machine_id: Mapped[Optional[int]] = mapped_column(ForeignKey("machines.id"), nullable=True, index=True)
+    phenomenon_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_phenomena.id"), index=True)
+    reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    rework_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    scrap_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    denominator_source: Mapped[str] = mapped_column(String(80), default="DISP_DONE")
+    denominator_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    ppm: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 3), nullable=True)
+    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), default="EXCEL")
+    action_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    import_batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_import_batches.id"), nullable=True, index=True)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    __table_args__ = (Index("ix_quality_daily_date_product", "rejection_date", "product_id"),)
+
+
+class QualityRejectionMonthlyHistory(Base, TimestampMixin):
+    __tablename__ = "quality_rejection_monthly_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    month: Mapped[date] = mapped_column(Date, index=True)
+    source: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    source_sheet: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    record_scope: Mapped[str] = mapped_column(String(60), default="PRODUCT_TOTAL", index=True)
+    include_in_aggregate: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    plant: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    detection_operation: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    responsible_team: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    responsible_operation: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    machine: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    phenomenon_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_phenomena.id"), index=True)
+    reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    denominator_source: Mapped[str] = mapped_column(String(80), default="DISP_DONE")
+    dispatch_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    ppm: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 3), nullable=True)
+    source_production_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    source_inspection_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    source_total_reject_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    phenomenon_sum_reject_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    source_reported_ppm: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 3), nullable=True)
+    data_quality_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    import_batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_import_batches.id"), nullable=True, index=True)
+
+
+class QualityActionLink(Base):
+    __tablename__ = "quality_action_links"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), index=True)
+    daily_rejection_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_daily.id", ondelete="CASCADE"), nullable=True, index=True)
+    monthly_history_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_monthly_history.id", ondelete="CASCADE"), nullable=True, index=True)
+    __table_args__ = (UniqueConstraint("action_id", "daily_rejection_id", "monthly_history_id", name="uq_quality_action_link"),)
+
+
+class Action(Base, TimestampMixin):
+    __tablename__ = "actions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_no: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    raised_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reference_date: Mapped[date] = mapped_column(Date, index=True)
+    problem_category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    problem_description: Mapped[str] = mapped_column(Text)
+    action_description: Mapped[str] = mapped_column(Text)
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    due_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    priority: Mapped[Priority] = mapped_column(SAEnum(Priority), default=Priority.MEDIUM)
+    status: Mapped[ActionStatus] = mapped_column(SAEnum(ActionStatus), default=ActionStatus.OPEN, index=True)
+    kpi_type: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    kpi_value_when_raised: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
+    gap_when_raised: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    closure_remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    effectiveness_status: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    contexts: Mapped[list[ActionContext]] = relationship(back_populates="action", cascade="all, delete-orphan")
+    history: Mapped[list[ActionHistory]] = relationship(back_populates="action", cascade="all, delete-orphan")
+
+
+class ActionWhyWhy(Base, TimestampMixin):
+    __tablename__ = "action_whywhy"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), unique=True, index=True)
+    containment_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    why1: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    why2: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    why3: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    why4: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    why5: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    root_cause: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    corrective_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    preventive_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verification_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verification_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    effectiveness_check_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    effectiveness_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    lessons_learned: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    action: Mapped[Action] = relationship()
+
+
+class ActionAttachment(Base, TimestampMixin):
+    __tablename__ = "action_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), index=True)
+    file_name: Mapped[str] = mapped_column(String(260))
+    stored_name: Mapped[str] = mapped_column(String(260))
+    relative_path: Mapped[str] = mapped_column(String(500))
+    mime_type: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    action: Mapped[Action] = relationship()
+
+
+class ActionContext(Base):
+    __tablename__ = "action_contexts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), index=True)
+    context_date: Mapped[date] = mapped_column(Date, index=True)
+    product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
+    route_operation_id: Mapped[Optional[int]] = mapped_column(ForeignKey("route_operations.id"), nullable=True, index=True)
+    machine_id: Mapped[Optional[int]] = mapped_column(ForeignKey("machines.id"), nullable=True, index=True)
+    loss_event_id: Mapped[Optional[int]] = mapped_column(ForeignKey("machine_loss_events.id"), nullable=True)
+    vendor_movement_id: Mapped[Optional[int]] = mapped_column(ForeignKey("vendor_movements.id"), nullable=True)
+    action: Mapped[Action] = relationship(back_populates="contexts")
+
+
+class ActionHistory(Base):
+    __tablename__ = "action_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), index=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    old_status: Mapped[Optional[ActionStatus]] = mapped_column(SAEnum(ActionStatus), nullable=True)
+    new_status: Mapped[Optional[ActionStatus]] = mapped_column(SAEnum(ActionStatus), nullable=True)
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    kpi_value_at_followup: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
+    gap_at_followup: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
+    attachment_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    action: Mapped[Action] = relationship(back_populates="history")
+
+
+class ReviewSession(Base, TimestampMixin):
+    __tablename__ = "review_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_date: Mapped[date] = mapped_column(Date, index=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    participants: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    total_sales_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), nullable=True)
+    comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class ReviewActionLink(Base):
+    __tablename__ = "review_action_links"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_session_id: Mapped[int] = mapped_column(ForeignKey("review_sessions.id", ondelete="CASCADE"), index=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), index=True)
+    __table_args__ = (UniqueConstraint("review_session_id", "action_id", name="uq_review_action"),)
+
+
+class MonthStatus(Base, TimestampMixin):
+    __tablename__ = "month_status"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    status: Mapped[MonthState] = mapped_column(SAEnum(MonthState), default=MonthState.OPEN)
+    closed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+class ImportBatch(Base, TimestampMixin):
+    __tablename__ = "import_batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_name: Mapped[str] = mapped_column(String(260))
+    file_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    imported_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), default="COMPLETED")
+    stats_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

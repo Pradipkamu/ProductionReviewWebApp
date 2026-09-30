@@ -1,0 +1,22 @@
+ProductionReviewWebApp v0.2.6 Fresh Start
+
+FIRST-TIME INSTALLATION
+1. Install Docker Desktop.
+2. Enable Docker Desktop > Settings > General > Start Docker Desktop when you sign in.
+3. Extract this package to a permanent folder, e.g. D:\ProductionReviewWebApp.
+4. Start Docker Desktop and wait until the engine is ready.
+5. Double-click start_windows.bat.
+6. Open http://localhost:5173.
+
+FRESH DATA ORDER
+1. Verify/import Product Master.
+2. Import Historical Sales Price revisions.
+3. Import Historical Daily MIS.
+4. Import Historical Rejection data after final input completion.
+5. Start normal daily MIS and daily rejection operation.
+
+IMPORTANT
+- Persistent data lives under database\.
+- Do not run docker compose down -v after go-live.
+- Run backup_database_windows.bat before future application updates.
+- Change .env SECRET_KEY and admin password before shared/production use.
