@@ -30,7 +30,7 @@ def list_schedules(product_id: int, month: date, db: Session = Depends(get_db), 
 def preview(payload: SchedulePreviewRequest, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     if not db.get(Product, payload.product_id):
         raise HTTPException(404, "Product not found")
-    return preview_revision(db, payload.product_id, payload.effective_from, payload.monthly_target_qty)
+    return preview_revision(db, payload.product_id, payload.effective_from, payload.monthly_target_qty, payload.correct_imported_plans)
 
 
 @router.post("")
@@ -38,6 +38,15 @@ def create_revision(payload: ScheduleRevisionCreate, db: Session = Depends(get_d
     month = payload.month.replace(day=1)
     if payload.effective_from.replace(day=1) != month:
         raise HTTPException(400, "Effective date must be inside the selected month")
+    if not db.get(Product, payload.product_id):
+        raise HTTPException(404, "Product not found")
+    impact = preview_revision(db, payload.product_id, payload.effective_from, payload.monthly_target_qty, payload.correct_imported_plans)
+    if impact['protected_days']:
+        raise HTTPException(409, "Imported daily plans are protected. Preview with 'Correct imported historical plans' selected to apply this schedule.")
+    if payload.correct_imported_plans and not (payload.reason or '').strip():
+        raise HTTPException(422, "Historical schedule correction requires a reason")
+    if payload.reason and payload.reason.strip():
+        db.info['reason'] = payload.reason.strip()
     rev = ScheduleRevision(
         product_id=payload.product_id,
         month=month,
@@ -48,9 +57,9 @@ def create_revision(payload: ScheduleRevisionCreate, db: Session = Depends(get_d
         entered_by_id=user.id,
     )
     db.add(rev); db.flush()
-    apply_schedule_revision(db, rev)
+    result = apply_schedule_revision(db, rev, correct_imported_plans=payload.correct_imported_plans)
     db.commit(); db.refresh(rev)
-    return {"id": rev.id, "revision_no": rev.revision_no}
+    return {"id": rev.id, "revision_no": rev.revision_no, **result}
 
 @router.post("/recalculate-month")
 def recalculate_month(month: date, from_date: date, db: Session = Depends(get_db), _: User = Depends(get_current_user)):

@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.3.0
+# ProductionReviewWebApp v0.3.1
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -25,6 +25,8 @@ Application: http://localhost:5173 · API: http://localhost:8000/docs
 - Compliance and PPM chart drill-down; machine production/loss drill-down with OEE charts.
 - In-app daily overdue reminders/escalation, effectiveness due checks and probable recurrence detection.
 - Append-only vendor receipt transactions, partial receipts, duplicate reference protection, pending quantity and aging.
+
+Historical schedules imported with zero or incorrect plans can now be explicitly corrected from their effective date with preview, reason and audit evidence. Original imported plans and actual dispatch quantities are preserved. See [May schedule correction](docs/RELEASE_v0.3.1.md).
 
 See [Release notes](docs/RELEASE_v0.3.0.md), [API roles](docs/SECURITY_AND_GOVERNANCE.md) and [roadmap](docs/ROADMAP_v0.2.16.md). AFMS/MQTT and Power BI reporting/star schema remain P2 and are not implemented.
 

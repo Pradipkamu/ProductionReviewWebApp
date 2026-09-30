@@ -96,13 +96,29 @@ def next_revision_no(db: Session, product_id: int, month: date) -> int:
     return int(max_rev) + 1
 
 
-def preview_revision(db: Session, product_id: int, effective_from: date, monthly_target_qty: Decimal) -> dict:
+def preview_revision(db: Session, product_id: int, effective_from: date, monthly_target_qty: Decimal, correct_imported_plans: bool = False) -> dict:
     first, last = month_bounds(effective_from)
     completed = actual_before(db, product_id, effective_from)
     balance = max(ZERO, Decimal(str(monthly_target_qty)) - completed)
     remaining_days = working_days(db, effective_from, last, product_plant(db, product_id))
     dist = split_integer_quantity(balance, remaining_days)
     current = active_schedule_revision(db, product_id, effective_from)
+    existing = {r.req_date: r for r in db.scalars(select(DailyRequirement).where(
+        DailyRequirement.product_id == product_id,
+        DailyRequirement.req_date >= effective_from, DailyRequirement.req_date <= last,
+        DailyRequirement.route_operation_id.is_(None),
+    ))}
+    frozen = sum(bool(r.is_frozen) for r in existing.values())
+    preview_rows = []
+    d = effective_from
+    while d <= last:
+        row = existing.get(d)
+        protected = bool(row and row.is_frozen and not correct_imported_plans)
+        old = Decimal(str(row.revised_plan_qty)) if row else ZERO
+        preview_rows.append({"date": d.isoformat(), "qty": float(dist.get(d, ZERO)),
+            "current_qty": float(old), "result_qty": float(old if protected else dist.get(d, ZERO)),
+            "protected": protected})
+        d += timedelta(days=1)
     return {
         "month": first.isoformat(),
         "effective_from": effective_from.isoformat(),
@@ -112,7 +128,10 @@ def preview_revision(db: Session, product_id: int, effective_from: date, monthly
         "balance_requirement": float(balance),
         "remaining_working_days": len(remaining_days),
         "average_daily_requirement": float(balance / len(remaining_days)) if remaining_days else 0,
-        "preview": [{"date": d.isoformat(), "qty": float(q)} for d, q in dist.items()],
+        "frozen_days": frozen,
+        "protected_days": 0 if correct_imported_plans else frozen,
+        "result_plan_qty": sum(r["result_qty"] for r in preview_rows),
+        "preview": preview_rows,
     }
 
 
@@ -120,7 +139,8 @@ def apply_schedule_revision(
     db: Session,
     revision: ScheduleRevision,
     preserve_before: date | None = None,
-) -> None:
+    correct_imported_plans: bool = False,
+) -> dict:
     """Apply a schedule revision from its effective date forward only.
 
     Baseline plan is never overwritten. Existing revised plans before the revision
@@ -144,6 +164,9 @@ def apply_schedule_revision(
         )
     ).all()
     existing = {r.req_date: r for r in rows}
+    applied_dates = set()
+    corrected = 0
+    protected = 0
 
     d = start
     while d <= last:
@@ -161,13 +184,26 @@ def apply_schedule_revision(
                 schedule_revision_id=revision.id,
             )
             db.add(row)
-        elif not row.is_frozen:
+            applied_dates.add(d)
+        elif not row.is_frozen or correct_imported_plans:
             row.revised_plan_qty = qty
             row.schedule_revision_id = revision.id
+            applied_dates.add(d)
+            corrected += int(bool(row.is_frozen))
+        else:
+            protected += 1
         d += timedelta(days=1)
 
+    # Link the applicable revision without changing imported plan, sales or actuals.
+    for mis in db.scalars(select(DailyMIS).where(
+        DailyMIS.product_id == revision.product_id,
+        DailyMIS.mis_date >= start, DailyMIS.mis_date <= last,
+    )):
+        if mis.mis_date in applied_dates:
+            mis.schedule_revision_id = revision.id
     db.flush()
     rebuild_process_requirements(db, revision.product_id, revision.month, start_date=start)
+    return {"applied_days": len(applied_dates), "corrected_imported_days": corrected, "protected_days": protected}
 
 
 def get_active_route(db: Session, product_id: int, d: date) -> RouteVersion | None:

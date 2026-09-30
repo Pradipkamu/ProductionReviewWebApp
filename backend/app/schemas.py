@@ -54,12 +54,14 @@ class ScheduleRevisionCreate(BaseModel):
     effective_from: date
     monthly_target_qty: Decimal = Field(gt=0)
     reason: Optional[str] = None
+    correct_imported_plans: bool = False
 
 
 class SchedulePreviewRequest(BaseModel):
     product_id: int
     effective_from: date
     monthly_target_qty: Decimal = Field(gt=0)
+    correct_imported_plans: bool = False
 
 
 
