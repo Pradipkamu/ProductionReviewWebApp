@@ -1,0 +1,16 @@
+Local validation (2026-09-30):
+- Backend regression suite: 33 passed, 2 skipped.
+  Skip 1: original optional workbook fixture is not included.
+  Skip 2: isolated PostgreSQL migration test requires CI PostgreSQL service.
+- Migration tests: frozen baseline adoption preserves legacy rows/passwords; upgrades are idempotent; SQLite migrated schema matches current ORM metadata.
+- Fresh application lifespan: Alembic startup, health, initial password gate, password change and authenticated review/governance APIs passed.
+- Security/governance: initial-password restriction, old-token revocation, View Only write denial, Admin-only user access, month close, reasoned correction, one-use grant and audit snapshots passed.
+- Import preview: no persisted MIS during preview, atomic confirmation, duplicate confirmation denial, stale preview denial, closed-month rejection and multi-row historical validation passed.
+- Vendor transactions: additive partial receipts, duplicate-reference idempotency and pending-quantity cap passed.
+- Insights: data-quality, management exception, compliance/PPM/OEE drill-down and idempotent overdue/effectiveness reminders passed.
+- Frontend: TypeScript + Vite production build passed with pinned React Router 7.18.4, Vite 8.3.1 and plugin-react 6.1.1.
+- npm audit: 0 vulnerabilities in installed dependency tree.
+- Shell syntax checks: start_linux.sh and update_in_place_linux.sh passed.
+- Actual production database was not connected, backed up, migrated or restored here.
+- Windows PowerShell updater and Docker Compose end-to-end update require validation on the user's installation.
+- GitHub CI includes PostgreSQL 16 tests and frontend npm ci/build/audit. See workflow result for actual remote validation status.

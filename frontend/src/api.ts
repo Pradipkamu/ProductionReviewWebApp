@@ -9,9 +9,14 @@ export async function api<T=any>(path: string, init: RequestInit = {}): Promise<
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (!(init.body instanceof FormData) && init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  if(init.method && !['GET','HEAD'].includes(init.method)) {
+    const reason=sessionStorage.getItem('changeReason'); if(reason)headers.set('X-Change-Reason',reason)
+    const correction=sessionStorage.getItem('correctionId'); if(correction)headers.set('X-Correction-ID',correction)
+  }
   const res = await fetch(`${API}${path}`, { ...init, headers })
   if (res.status === 401) { clearToken(); location.reload() }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status} ${res.statusText}`)
+  if(res.ok && headers.has('X-Correction-ID'))sessionStorage.removeItem('correctionId')
   return res.json()
 }
 

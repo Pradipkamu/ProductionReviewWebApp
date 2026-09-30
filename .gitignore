@@ -24,3 +24,8 @@ backend/pms.db
 *.log
 .DS_Store
 Thumbs.db
+
+.venv/
+*.db
+
+*.tsbuildinfo

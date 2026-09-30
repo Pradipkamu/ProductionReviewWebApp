@@ -215,15 +215,18 @@ def rebuild_process_requirements(db: Session, product_id: int, month: date, star
         return
 
     # Delete only non-frozen process calculations from the recalculation window.
-    db.execute(
-        delete(DailyRequirement).where(
+    obsolete = db.scalars(
+        select(DailyRequirement).where(
             DailyRequirement.product_id == product_id,
             DailyRequirement.req_date >= start,
             DailyRequirement.req_date <= last,
             DailyRequirement.route_operation_id.is_not(None),
             DailyRequirement.is_frozen.is_(False),
         )
-    )
+    ).all()
+    for requirement in obsolete:
+        db.delete(requirement)
+    db.flush()
 
     bucket: dict[tuple[date, int], Decimal] = defaultdict(lambda: ZERO)
     plant = product_plant(db, product_id)

@@ -168,6 +168,6 @@ def import_historical_daily_mis(db: Session, file_path: str | Path) -> dict:
             "Unknown Product master names: " + ", ".join(stats["unknown_products"]) + ". Use current Product master names; no new product was created."
         )
 
-    db.commit()
+    db.flush()
     stats["warnings"] = stats.pop("price_warnings")
     return stats

@@ -1,11 +1,20 @@
+from contextlib import contextmanager
+
+@contextmanager
+def _connection(bind):
+    if hasattr(bind, "connect"):
+        with bind.begin() as conn:
+            yield conn
+    else:
+        yield bind
+
 from sqlalchemy import inspect, text
-from sqlalchemy.engine import Engine
 
 
-def ensure_compatibility_columns(engine: Engine) -> None:
-    """Small backwards-compatible in-app migrations for local Docker deployments.
+def ensure_compatibility_columns(engine) -> None:
+    """Legacy compatibility additions used only during Alembic baseline adoption.
 
-    The project still avoids requiring Alembic for the pilot. These statements
+    Used only by the frozen Alembic baseline to adopt pre-v0.2.16 databases. These statements
     only add columns/indexes; they never delete or rewrite existing business data.
     """
     inspector = inspect(engine)
@@ -17,7 +26,7 @@ def ensure_compatibility_columns(engine: Engine) -> None:
             stmts.append("ALTER TABLE products ADD COLUMN plant VARCHAR(120)")
         if "product_group" not in cols:
             stmts.append("ALTER TABLE products ADD COLUMN product_group VARCHAR(120)")
-        with engine.begin() as conn:
+        with _connection(engine) as conn:
             for stmt in stmts:
                 conn.execute(text(stmt))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_products_plant ON products (plant)"))
@@ -41,7 +50,7 @@ def ensure_compatibility_columns(engine: Engine) -> None:
             stmts.append("ALTER TABLE sales_price_history ADD COLUMN revision_reference VARCHAR(160)")
         if "source_document" not in cols:
             stmts.append("ALTER TABLE sales_price_history ADD COLUMN source_document VARCHAR(260)")
-        with engine.begin() as conn:
+        with _connection(engine) as conn:
             for stmt in stmts:
                 conn.execute(text(stmt))
             conn.execute(text("UPDATE sales_price_history SET source='EXCEL' WHERE source IS NULL OR source=''"))

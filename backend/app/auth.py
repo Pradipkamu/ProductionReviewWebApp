@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,13 +40,14 @@ def create_access_token(user: User) -> str:
         "sub": str(user.id),
         "username": user.username,
         "role": user.role.value,
+        "ver": user.token_version,
         "iat": now,
         "exp": now + timedelta(minutes=settings.access_token_expire_minutes),
     }
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+def get_current_user(request: Request, token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -58,15 +59,25 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except Exception as exc:
         raise credentials_exception from exc
     user = db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
-    if not user:
+    if not user or payload.get("ver") != user.token_version:
         raise credentials_exception
+    from .security_policy import enforce_api_policy
+    enforce_api_policy(user, request)
+    if request.method not in {'GET','HEAD','OPTIONS'} and db.bind.dialect.name == 'postgresql':
+        from sqlalchemy import text
+        # Serialize app writes with preview confirmation and month close.
+        db.execute(text('SELECT pg_advisory_xact_lock(2163001)'))
+    db.info['actor_id'] = user.id
+    db.info['reason'] = request.headers.get('X-Change-Reason', '').strip()
+    db.info['correction_id'] = request.headers.get('X-Correction-ID')
+    db.info['request_path'] = request.url.path
     return user
 
 
-def optional_user(token: str | None = Depends(OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)), db: Session = Depends(get_db)):
+def optional_user(request: Request, token: str | None = Depends(OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)), db: Session = Depends(get_db)):
     if not token:
         return None
     try:
-        return get_current_user(token, db)
+        return get_current_user(request, token, db)
     except Exception:
         return None

@@ -538,5 +538,5 @@ def import_daily_production_workbook(db: Session, file_path: str | Path) -> dict
             except Exception as exc:
                 stats["warnings"].append(f"Process requirement build failed for {meta['product'].name}: {exc}")
 
-    db.commit()
+    db.flush()
     return stats

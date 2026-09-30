@@ -1,0 +1,39 @@
+name: Validate source and migrations
+on: [push, pull_request]
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pms
+          POSTGRES_PASSWORD: pms
+          POSTGRES_DB: pms_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U pms -d pms_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      PMS_TEST_DATABASE_URL: postgresql+psycopg://pms:pms@localhost:5432/pms_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+      - run: python -m pytest -q
+        working-directory: backend
+        env:
+          PYTHONPATH: .:tests
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci && npm run build && npm audit --audit-level=moderate
+        working-directory: frontend

@@ -2,7 +2,8 @@
 setlocal
 cd /d %~dp0
 
-if not exist .env copy .env.example .env >nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0configure_env.ps1"
+if errorlevel 1 exit /b 1
 if not exist database\postgres mkdir database\postgres
 if not exist database\backups mkdir database\backups
 if not exist database\imports mkdir database\imports
@@ -19,7 +20,7 @@ if errorlevel 1 (
 )
 
 echo Docker is running.
-echo Building and starting Production Review Manager v0.2.9...
+echo Building and starting Production Review Manager v0.3.0...
 docker compose up --build -d
 if errorlevel 1 (
   echo.

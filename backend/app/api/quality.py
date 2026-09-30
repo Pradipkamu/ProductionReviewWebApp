@@ -183,15 +183,12 @@ def _history_dispatch_resolution(db: Session, rows: list[QualityRejectionMonthly
     resolved: dict[int, tuple[float | None, str | None]] = {}
     missing_keys: set[tuple[date, int]] = set()
     for x in rows:
-        if x.dispatch_qty is not None and _num(x.dispatch_qty) > 0:
-            resolved[x.id] = (_num(x.dispatch_qty), "UPLOADED")
-            continue
         scope = str(x.record_scope or "").strip().upper()
         eligible_scope = scope in {"PRODUCT_TOTAL", "AGGREGATE_TOTAL", "TOTAL", ""}
         if x.include_in_aggregate and eligible_scope and _is_dispatch_denominator(x.denominator_source):
             missing_keys.add((_month_start(x.month), x.product_id))
         else:
-            resolved[x.id] = (None, None)
+            resolved[x.id] = ((_num(x.dispatch_qty), "UPLOADED") if x.dispatch_qty is not None and _num(x.dispatch_qty)>0 else (None, None))
 
     if missing_keys:
         months = [m for m, _ in missing_keys]
@@ -211,7 +208,7 @@ def _history_dispatch_resolution(db: Session, rows: list[QualityRejectionMonthly
             if x.id in resolved:
                 continue
             qty = monthly.get((_month_start(x.month), x.product_id), 0.0)
-            resolved[x.id] = ((qty, "MIS_HISTORY") if qty > 0 else (None, None))
+            resolved[x.id] = ((qty, "MIS_HISTORY") if qty > 0 else ((_num(x.dispatch_qty), "UPLOADED") if x.dispatch_qty is not None and _num(x.dispatch_qty)>0 else (None,None)))
     return resolved
 
 
@@ -450,12 +447,12 @@ def _quality_import(file: UploadFile, import_type: str, db: Session, user: User)
 
 @router.post("/import-daily")
 def import_daily(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return _quality_import(file, "DAILY", db, user)
+    raise HTTPException(409, "Use /api/import/preview/quality-daily then confirm")
 
 
 @router.post("/import-history")
 def import_history(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return _quality_import(file, "HISTORICAL", db, user)
+    raise HTTPException(409, "Use /api/import/preview/quality-history then confirm")
 
 
 @router.get("/imports")

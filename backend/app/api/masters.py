@@ -115,7 +115,7 @@ def create_loss(code: str, name: str, component: OEEComponent, db: Session = Dep
 
 @router.get("/users")
 def users(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return [{"id": x.id, "username": x.username, "full_name": x.full_name, "role": x.role.value} for x in db.scalars(select(User).order_by(User.full_name)).all()]
+    return [{"id": x.id, "username": x.username, "full_name": x.full_name, "role": x.role.value, "is_active": x.is_active, "must_change_password": x.must_change_password} for x in db.scalars(select(User).order_by(User.full_name)).all()]
 
 
 @router.post("/users")
@@ -128,6 +128,8 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), current: Use
         role = UserRole(payload.role)
     except Exception:
         raise HTTPException(400, "Invalid role")
+    from ..security_policy import validate_password
+    validate_password(payload.password)
     row = User(username=payload.username, full_name=payload.full_name, password_hash=hash_password(payload.password), role=role, is_active=True)
     db.add(row); db.commit(); db.refresh(row)
     return {"id": row.id, "username": row.username, "full_name": row.full_name, "role": row.role.value}

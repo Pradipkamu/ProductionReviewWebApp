@@ -85,6 +85,7 @@ def edit_mis(mis_id: int, payload: MISEdit, db: Session = Depends(get_db), user:
     row = db.get(DailyMIS, mis_id)
     if not row:
         raise HTTPException(404, "MIS record not found")
+    db.info["reason"] = payload.reason.strip()
     old = row.actual_qty
     new = Decimal(str(payload.actual_qty))
     if new != old:

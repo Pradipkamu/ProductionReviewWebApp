@@ -1,0 +1,19 @@
+import { useEffect, useState } from 'react'
+import { api, setToken } from '../api'
+import { PageHeader } from '../components/UI'
+
+export function PasswordForm({required=false}:{required?:boolean}) {
+ const [current,setCurrent]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState('')
+ async function submit(e:React.FormEvent){e.preventDefault();try{const r:any=await api('/auth/change-password',{method:'POST',body:JSON.stringify({current_password:current,new_password:password})});setToken(r.access_token);location.reload()}catch(e:any){setError(e.message)}}
+ return <section className="panel"><h2>{required?'Change your initial password':'Change password'}</h2><p>Use at least 12 characters with uppercase, lowercase, a number and a symbol.</p><form onSubmit={submit}><label>Current password<input required type="password" autoComplete="current-password" value={current} onChange={e=>setCurrent(e.target.value)}/></label><label>New password<input required type="password" autoComplete="new-password" minLength={12} value={password} onChange={e=>setPassword(e.target.value)}/></label>{error&&<p className="error">{error}</p>}<button>Change password</button></form></section>
+}
+export default function Security(){
+ const [users,setUsers]=useState<any[]>([]),[me,setMe]=useState<any>(null),[error,setError]=useState(''),[form,setForm]=useState({username:'',full_name:'',password:'',role:'VIEW_ONLY'})
+ const roles=['ADMIN','PRODUCTION','QUALITY','PLANNING','MANAGEMENT','VIEW_ONLY','PURCHASE','DISPATCH','VENDOR']
+ async function load(){try{const m=await api('/auth/me');setMe(m);if(m.role==='ADMIN')setUsers(await api('/masters/users'))}catch(e:any){setError(e.message)}}
+ useEffect(()=>{load()},[])
+ async function create(e:React.FormEvent){e.preventDefault();try{await api('/masters/users',{method:'POST',body:JSON.stringify(form)});setForm({...form,username:'',full_name:'',password:''});load()}catch(e:any){setError(e.message)}}
+ async function update(u:any,role:string,active:boolean){const reason=prompt('Reason for account change');if(!reason)return;try{await api(`/auth/users/${u.id}`,{method:'PATCH',body:JSON.stringify({role,is_active:active,reason})});load()}catch(e:any){setError(e.message)}}
+ async function reset(u:any){const password=prompt('Temporary password (12+ characters)');if(!password)return;const reason=prompt('Reason for password reset');if(!reason)return;try{await api(`/auth/users/${u.id}/reset-password`,{method:'POST',body:JSON.stringify({temporary_password:password,reason})});load()}catch(e:any){setError(e.message)}}
+ return <><PageHeader title="Account / User management" subtitle="API permissions enforce each user's role. Password resets require a change at next sign-in."/>{error&&<p className="error">{error}</p>}<PasswordForm/>{me?.role==='ADMIN'&&<><section className="panel"><h2>Users</h2><table><thead><tr><th>Name</th><th>Role</th><th>Active</th><th>Password</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name} ({u.username})</td><td><select value={u.role} onChange={e=>update(u,e.target.value,u.is_active)}>{roles.map(r=><option key={r}>{r}</option>)}</select></td><td><input type="checkbox" checked={u.is_active} onChange={e=>update(u,u.role,e.target.checked)}/></td><td><button onClick={()=>reset(u)}>Reset</button></td></tr>)}</tbody></table></section><section className="panel"><h2>Create user</h2><form onSubmit={create}>{['username','full_name','password'].map(k=><label key={k}>{k.replace('_',' ')}<input required type={k==='password'?'password':'text'} value={(form as any)[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<label>Role<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>{roles.map(r=><option key={r}>{r}</option>)}</select></label><button>Create user</button></form></section></>}</>
+}

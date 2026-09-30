@@ -30,6 +30,8 @@ class User(Base, TimestampMixin):
     full_name: Mapped[str] = mapped_column(String(160))
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.VIEW_ONLY)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class Customer(Base, TimestampMixin):
@@ -543,3 +545,54 @@ class ImportBatch(Base, TimestampMixin):
     imported_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(40), default="COMPLETED")
     stats_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class GovernanceAudit(Base):
+    __tablename__ = "governance_audit"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    event: Mapped[str] = mapped_column(String(80), index=True)
+    entity: Mapped[str] = mapped_column(String(100))
+    entity_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    month: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    before_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    after_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class HistoricalCorrectionGrant(Base):
+    __tablename__ = "historical_correction_grants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month: Mapped[date] = mapped_column(Date, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    approved_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    reason: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class VendorReceipt(Base, TimestampMixin):
+    __tablename__ = 'vendor_receipts'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    movement_id: Mapped[int] = mapped_column(ForeignKey('vendor_movements.id'), index=True)
+    receipt_date: Mapped[date] = mapped_column(Date)
+    receipt_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal('0'))
+    reference: Mapped[str] = mapped_column(String(160))
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    __table_args__ = (UniqueConstraint('movement_id', 'reference', name='uq_vendor_receipt_reference'),)
+
+
+class ActionReminder(Base):
+    __tablename__ = 'action_reminders'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey('actions.id'), index=True)
+    reminder_date: Mapped[date] = mapped_column(Date)
+    kind: Mapped[str] = mapped_column(String(60))
+    level: Mapped[str] = mapped_column(String(60))
+    message: Mapped[str] = mapped_column(Text)
+    acknowledged_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint('action_id', 'reminder_date', 'kind', name='uq_action_reminder_day'),)
