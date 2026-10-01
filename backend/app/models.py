@@ -645,3 +645,19 @@ class StageScheduleAllocation(Base, TimestampMixin):
     reference: Mapped[str] = mapped_column(String(160))
     reason: Mapped[str] = mapped_column(Text)
     __table_args__ = (UniqueConstraint('stage_id','month','revision_no',name='uq_stage_schedule_revision'),)
+
+
+class ShopCapture(Base, TimestampMixin):
+    __tablename__ = 'shop_captures'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
+    file_sha256: Mapped[str] = mapped_column(String(64))
+    source_name: Mapped[str] = mapped_column(String(260))
+    image_path: Mapped[str] = mapped_column(String(260))
+    original_text: Mapped[str] = mapped_column(Text)
+    draft_json: Mapped[str] = mapped_column(Text)
+    history_json: Mapped[str] = mapped_column(Text, default='[]')
+    receipt_json: Mapped[str] = mapped_column(Text, default='[]')
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(30), default='draft')
+    __table_args__ = (UniqueConstraint('owner_id', 'file_sha256', name='uq_capture_owner_hash'),)

@@ -7,7 +7,7 @@ docker compose build backend frontend
 docker compose exec -T db pg_isready -U pms -d pms
 # Quiesce app writes before taking the pre-migration database snapshot.
 docker compose stop frontend backend
-backup="database/backups/pms_before_v041_$(date -u +%Y%m%dT%H%M%SZ).dump"
+backup="database/backups/pms_before_v042_$(date -u +%Y%m%dT%H%M%SZ).dump"
 if ! docker compose exec -T db pg_dump -U pms -d pms -Fc > "$backup"; then
   rm -f "$backup"
   echo 'Backup failed; database migration has NOT run.' >&2

@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.1
+# ProductionReviewWebApp v0.4.2
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -41,3 +41,7 @@ Frontend: `cd frontend && npm ci && npm run build`. Use Node 22.12+.
 Migrations: `cd backend && python -m app.migrate` or `alembic upgrade head` with configured `DATABASE_URL`.
 
 Tests default to a disposable SQLite file. CI also uses isolated PostgreSQL test databases. Never direct tests at business data.
+
+## Shop Production Capture (v0.4.2)
+
+Upload English report images, review OCR and import complete machine/OEE rows. Pending observations remain saved. See [usage and scope](docs/RELEASE_v0.4.2.md). Existing Excel daily-upload workflow continues.

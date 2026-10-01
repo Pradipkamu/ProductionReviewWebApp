@@ -34,3 +34,6 @@ Thumbs.db
 !backend/templates/Production_Process_Upload_v0.4.0.xlsx
 
 outputs/
+
+# Local uploaded evidence is not application source.
+backend/uploads/
