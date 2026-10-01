@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.0
+# ProductionReviewWebApp v0.4.1
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -16,7 +16,7 @@ Application: http://localhost:5173 · API: http://localhost:8000/docs
 
 ## Approved process flows
 
-The corrected process design is implemented with 23 product definitions and 151 active stages. Use [Process flow setup](docs/RELEASE_v0.4.0.md) after the safe application update. The approved Excel template is included at `backend/templates/Production_Process_Upload_v0.4.0.xlsx` and available from Excel Import Preview. Definitions, stage allocations and daily actuals each use preview and confirmation. Existing database facts remain intact.
+The corrected process design is implemented with 23 product definitions and 151 active stages. Use [Process flow setup](docs/RELEASE_v0.4.0.md) after the safe application update. The approved Excel template is included at `backend/templates/Production_Process_Upload_v0.4.0.xlsx` and available from Excel Import Preview. Definitions and stage allocations use their setup previews. Normal daily uploads use one **Daily Production Upload** preview and confirmation for customer plans/dispatch and stage actuals together. See [v0.4.1 daily workflow](docs/RELEASE_v0.4.1.md). Existing database facts remain intact.
 
 ## Release features
 

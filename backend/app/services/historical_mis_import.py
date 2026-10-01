@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import closing
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -39,14 +40,22 @@ def _decimal(value) -> Decimal:
     return Decimal(str(value))
 
 
-def import_historical_daily_mis(db: Session, file_path: str | Path) -> dict:
+def import_historical_daily_mis(db: Session, file_path: str | Path, *, row_reasons: dict | None = None) -> dict:
+    original_reason = db.info.get('reason')
+    try:
+        with closing(load_workbook(file_path, data_only=True, read_only=True)) as wb:
+            return _import_historical_daily_mis(db, wb, row_reasons=row_reasons, request_reason=original_reason)
+    finally:
+        db.info['reason'] = original_reason
+
+
+def _import_historical_daily_mis(db: Session, wb, *, row_reasons=None, request_reason=None) -> dict:
     """Import the one-time normalized May-Aug historical Daily MIS sheet.
 
     The sheet deliberately uses current Product master names. Unknown products are
     rejected rather than auto-created so historical imports cannot create duplicate
     masters through spelling differences.
     """
-    wb = load_workbook(file_path, data_only=True, read_only=True)
     if SHEET_NAME not in wb.sheetnames:
         raise ValueError(f"Workbook must contain sheet '{SHEET_NAME}'.")
     ws = wb[SHEET_NAME]
@@ -97,6 +106,11 @@ def import_historical_daily_mis(db: Session, file_path: str | Path) -> dict:
         if plan < 0 or actual < 0:
             raise ValueError(f"Negative quantity is not allowed for {product_name} on {d}.")
 
+        if row_reasons is not None:
+            # Set before queries: SQLAlchemy may autoflush while finding the
+            # matching parent requirement, before the explicit flush below.
+            db.info['reason'] = row_reasons.get((product.id, d)) or request_reason
+
         price = price_for_date(db, product.id, d, Decimal("0"))
         if price == 0 and product.id not in price_warned:
             stats["price_warnings"].append(
@@ -128,6 +142,8 @@ def import_historical_daily_mis(db: Session, file_path: str | Path) -> dict:
             if current == desired:
                 stats["mis_unchanged"] += 1
             else:
+                if row_reasons is not None and not db.info.get('reason'):
+                    raise ValueError(f'{product.name} on {d}: changing an existing customer MIS plan, dispatch or price requires a correction reason')
                 mis.plan_qty, mis.actual_qty, mis.sales_price, mis.plan_sales, mis.actual_sales = desired
                 mis.source = SourceType.EXCEL
                 mis.remark = "Historical Daily MIS one-time import"
@@ -155,6 +171,8 @@ def import_historical_daily_mis(db: Session, file_path: str | Path) -> dict:
             if current_req == desired_req:
                 stats["requirements_unchanged"] += 1
             else:
+                if row_reasons is not None and not db.info.get('reason'):
+                    raise ValueError(f'{product.name} on {d}: changing an existing customer daily requirement requires a correction reason')
                 req.baseline_plan_qty = plan
                 req.revised_plan_qty = plan
                 req.is_frozen = True
@@ -162,6 +180,9 @@ def import_historical_daily_mis(db: Session, file_path: str | Path) -> dict:
 
         stats["min_date"] = d if stats["min_date"] is None or d < stats["min_date"] else stats["min_date"]
         stats["max_date"] = d if stats["max_date"] is None or d > stats["max_date"] else stats["max_date"]
+
+        if row_reasons is not None:
+            db.flush()
 
     if stats["unknown_products"]:
         raise ValueError(

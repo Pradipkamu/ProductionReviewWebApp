@@ -1,13 +1,14 @@
 import { money, num, pct } from './UI'
 
-type Point = { label:string, plan:number, actual:number, compliance:number|null, gap:number, start?:string, end?:string }
+type Point = { label:string, plan:number, actual:number, compliance:number|null, gap:number, start?:string, end?:string, id?:number }
 
 type Metric='qty'|'sales'|'tonnage'
 function formatValue(v:number, metric:Metric){ return metric==='sales' ? money(v) : metric==='tonnage' ? `${num(v)} MT` : num(v) }
 
-export function PlanActualChart({rows, metric, height=260,onSelect}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void}){
+export function PlanActualChart({rows, metric, height=260,onSelect,verticalLabels=false}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void,verticalLabels?:boolean}){
   if(!rows.length) return <div className="empty">No data for this period.</div>
-  const W=Math.max(760, rows.length*64), H=height, pad={l:58,r:18,t:18,b:58}
+  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):58
+  const W=Math.max(760, rows.length*(verticalLabels?96:64)), H=height+labelDepth-58, pad={l:58,r:18,t:18,b:labelDepth}
   const innerW=W-pad.l-pad.r, innerH=H-pad.t-pad.b
   const max=Math.max(1,...rows.flatMap(r=>[r.plan,r.actual]))
   const group=innerW/rows.length, bw=Math.min(20,group*.3)
@@ -19,7 +20,7 @@ export function PlanActualChart({rows, metric, height=260,onSelect}:{rows:Point[
       <rect x={cx+2} y={y(r.actual)} width={bw} height={Math.max(0,ah)} rx="3" className="chart-actual"><title>{`${r.label} Actual: ${formatValue(r.actual,metric)} • Compliance: ${pct(r.compliance)}`}</title></rect>
       <text x={cx-bw/2-2} y={Math.max(11,y(r.plan)-5)} textAnchor="middle" className="data-label">{metric==='sales'?new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(r.plan):num(r.plan)}</text>
       <text x={cx+bw/2+2} y={Math.max(11,y(r.actual)-5)} textAnchor="middle" className="data-label">{metric==='sales'?new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(r.actual):num(r.actual)}</text>
-      <text x={cx} y={H-34} textAnchor="middle" className="axis-text x-label">{r.label}</text>
+      {verticalLabels?<text x={cx} y={pad.t+innerH+14} transform={`rotate(-90 ${cx} ${pad.t+innerH+14})`} textAnchor="end" className="axis-text"><title>{r.label}</title>{r.label}</text>:<text x={cx} y={H-34} textAnchor="middle" className="axis-text x-label">{r.label}</text>}
     </g>})}
     <line x1={pad.l} y1={pad.t+innerH} x2={W-pad.r} y2={pad.t+innerH} className="axis-line"/>
   </svg></div>

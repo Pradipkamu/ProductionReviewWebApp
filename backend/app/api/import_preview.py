@@ -19,7 +19,8 @@ from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
 from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook
 router=APIRouter(prefix='/import',tags=['import preview'])
-KINDS={'process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history'}
+KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history'}
+KIND_SCOPED_HASHES={'daily-production','process-design','stage-schedules','stage-daily'}
 
 
 def authorize(kind,user):
@@ -41,6 +42,9 @@ def fingerprint(db):
 
 
 def run_import(db,path,kind,user,batch_id=None):
+    if kind=='daily-production':
+        from ..services.daily_production_import import import_daily_production
+        return import_daily_production(db,path)
     if kind in {'process-design','stage-schedules','stage-daily'}:
         from ..services.process_flows import import_process_workbook
         return import_process_workbook(db,path,kind)
@@ -56,8 +60,8 @@ def run_import(db,path,kind,user,batch_id=None):
 
 
 def counts(stats,kind):
-    if kind in {'quality-daily','quality-history','process-design','stage-schedules','stage-daily'}:
-        return {'new':stats.get('created',0),'updated':stats.get('updated',0),'unchanged':stats.get('unchanged',0),'rejected':len(stats.get('errors',[]))}
+    if kind in {'daily-production','quality-daily','quality-history','process-design','stage-schedules','stage-daily'}:
+        return {'new':stats.get('created',stats.get('new',0)),'updated':stats.get('updated',0),'unchanged':stats.get('unchanged',0),'rejected':len(stats.get('errors',[]))}
     prefix='price_rows' if kind=='historical-sales-prices' else 'mis'
     return {'new':stats.get(prefix+'_created',0),'updated':stats.get(prefix+'_updated',0),'unchanged':stats.get(prefix+'_unchanged',0),'rejected':len(stats.get('errors',[]))}
 
@@ -81,7 +85,7 @@ def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:U
             if size>32*1024*1024:path.unlink(missing_ok=True);raise HTTPException(413,'Workbook limit is 32 MB')
             output.write(chunk)
     sha=digest(path)
-    batch_sha=hashlib.sha256((kind+':'+sha).encode()).hexdigest() if kind in {'process-design','stage-schedules','stage-daily'} else sha
+    batch_sha=hashlib.sha256((kind+':'+sha).encode()).hexdigest() if kind in KIND_SCOPED_HASHES else sha
     batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
     previous=db.scalar(select(batch_model).where(batch_model.file_sha256==batch_sha))
     if previous:
@@ -104,7 +108,7 @@ def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:U
         db.info.pop('grant_in_use',None)
     c=counts(stats,kind);errors=stats.get('errors',[])
     result={'status':'preview','counts':c,'errors':errors,'warnings':stats.get('warnings',[]),'stats':stats,'can_confirm':not errors,
-            'count_scope':'Primary MIS, price or rejection business rows; supporting master/process counts are shown in stats.'}
+            'count_scope':('Customer MIS rows plus stage actual rows; parent dispatch is reconciled, not added twice to MIS.' if kind=='daily-production' else 'Primary MIS, price or rejection business rows; supporting master/process counts are shown in stats.')}
     if errors:path.unlink(missing_ok=True);return result
     claims={'sub':str(user.id),'purpose':'import-preview','kind':kind,'upload_id':upload_id,'filename':Path(file.filename).name,
             'sha':sha,'batch_sha':batch_sha,'fingerprint':original_fp,'exp':datetime.now(timezone.utc)+timedelta(minutes=30)}

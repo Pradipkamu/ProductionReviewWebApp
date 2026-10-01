@@ -7,9 +7,10 @@ function DockerChecked([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw ('Docker failed: ' + ($Arguments -join ' ')) }
 }
 DockerChecked @('compose','build','backend','frontend')
+DockerChecked @('compose','exec','-T','db','pg_isready','-U','pms','-d','pms')
 DockerChecked @('compose','stop','frontend','backend')
 $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
-$backup = "database/backups/pms_before_v040_$stamp.dump"
+$backup = "database/backups/pms_before_v041_$stamp.dump"
 # Write binary dump inside container; avoid Windows PowerShell text redirection.
 DockerChecked @('compose','exec','-T','db','sh','-c','pg_dump -U pms -d pms -Fc -f /tmp/pms_pre_update.dump')
 DockerChecked @('compose','exec','-T','db','pg_restore','--list','/tmp/pms_pre_update.dump')
