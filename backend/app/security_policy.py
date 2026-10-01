@@ -2,7 +2,6 @@ from fastapi import HTTPException, Request
 from .enums import UserRole
 
 WRITE_ROLES = {
-    'shop-capture': {'PRODUCTION'},
     'mis': {'PRODUCTION', 'PLANNING'}, 'process': {'PRODUCTION'}, 'oee': {'PRODUCTION'},
     'schedules': {'PLANNING'}, 'schedule': {'PLANNING'}, 'quality': {'QUALITY'},
     'vendor': {'PURCHASE', 'VENDOR', 'PRODUCTION'}, 'import': {'PLANNING', 'QUALITY', 'PRODUCTION'},

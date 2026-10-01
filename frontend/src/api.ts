@@ -16,7 +16,7 @@ export async function api<T=any>(path: string, init: RequestInit = {}): Promise<
   const res = await fetch(`${API}${path}`, { ...init, headers })
   if (res.status === 401) { clearToken(); location.reload() }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status} ${res.statusText}`)
-  if(res.ok && (!path.startsWith('/shop-capture') || path.endsWith('/confirm')) && headers.has('X-Correction-ID') && !path.split('?')[0].includes('/preview'))sessionStorage.removeItem('correctionId')
+  if(res.ok && headers.has('X-Correction-ID') && !path.split('?')[0].includes('/preview'))sessionStorage.removeItem('correctionId')
   return res.json()
 }
 

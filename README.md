@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.2
+# ProductionReviewWebApp v0.4.3
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -42,6 +42,6 @@ Migrations: `cd backend && python -m app.migrate` or `alembic upgrade head` with
 
 Tests default to a disposable SQLite file. CI also uses isolated PostgreSQL test databases. Never direct tests at business data.
 
-## Shop Production Capture (v0.4.2)
+## v0.4.3 — OCR feature reverted
 
-Upload English report images, review OCR and import complete machine/OEE rows. Pending observations remain saved. See [usage and scope](docs/RELEASE_v0.4.2.md). Existing Excel daily-upload workflow continues.
+Shop Production Capture has been removed from the application. Existing daily Excel/MIS workflows remain. Capture schema and evidence are retained for safe updates from v0.4.2. Further OEE work is deferred. See [safe revert instructions](docs/RELEASE_v0.4.3.md).
