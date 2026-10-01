@@ -30,6 +30,16 @@ def data_quality(db, as_of, products):
             if not value or (kind=='weight_missing' and value<=0):add(kind,p,'Complete product master')
         routes=db.scalars(select(RouteVersion).where(RouteVersion.product_id==p.id,RouteVersion.is_active.is_(True),RouteVersion.effective_from<=as_of,
             (RouteVersion.effective_to.is_(None))|(RouteVersion.effective_to>=as_of))).all()
+        from ..services.process_flows import active_flow
+        from ..models import ProcessFlowStage, StageScheduleAllocation
+        flow=active_flow(db,p.id,as_of)
+        if flow:
+            routes=[r for r in routes if r.id==flow.route_version_id]
+            if not flow.company:add('company_missing',p,'Complete company in the next process definition revision')
+            for stage in db.scalars(select(ProcessFlowStage).where(ProcessFlowStage.flow_id==flow.id,ProcessFlowStage.is_active.is_(True))):
+                if stage.role.startswith('VENDOR') and not stage.vendor_name:add('vendor_missing',p,stage.name,stage.id)
+                allocated=db.scalar(select(StageScheduleAllocation.id).where(StageScheduleAllocation.stage_id==stage.id,StageScheduleAllocation.month==as_of.replace(day=1),StageScheduleAllocation.effective_from<=as_of).limit(1))
+                if allocated is None:add('stage_schedule_missing',p,stage.name,stage.id)
         if not routes:add('route_missing',p,'No active route on selected date')
         if len(routes)>1:add('conflict',p,'Overlapping active routes')
         for route in routes:
@@ -37,10 +47,12 @@ def data_quality(db, as_of, products):
             if not ops:add('route_missing',p,'Route has no enabled operations',route.id)
             for operation in ops:
                 maps=db.scalars(select(OperationMachineMap).where(OperationMachineMap.route_operation_id==operation.id)).all()
-                if not maps and operation.operation.operation_type.value=='INTERNAL':add('machine_mapping_missing',p,f'Operation {operation.operation.name}',operation.id)
+                stage=db.scalar(select(ProcessFlowStage).where(ProcessFlowStage.route_operation_id==operation.id)) if flow else None
+                requires_machine=stage.role=='PRODUCTION' if stage else operation.operation.operation_type.value=='INTERNAL'
+                if not maps and requires_machine:add('machine_mapping_missing',p,f'Operation {operation.operation.name}',operation.id)
                 cycles=db.scalars(select(StandardCycleTime).where(StandardCycleTime.route_operation_id==operation.id,StandardCycleTime.effective_from<=as_of,
                     (StandardCycleTime.effective_to.is_(None))|(StandardCycleTime.effective_to>=as_of),StandardCycleTime.ideal_cycle_time_sec>0)).all()
-                if not cycles and operation.operation.operation_type.value=='INTERNAL':add('cycle_time_missing',p,f'Operation {operation.operation.name}',operation.id)
+                if not cycles and requires_machine:add('cycle_time_missing',p,f'Operation {operation.operation.name}',operation.id)
         prices=db.scalars(select(SalesPriceHistory).where(SalesPriceHistory.product_id==p.id,SalesPriceHistory.effective_from<=as_of,
             (SalesPriceHistory.effective_to.is_(None))|(SalesPriceHistory.effective_to>=as_of))).all()
         if not prices or not any(x.price>0 for x in prices):add('price_missing',p,'No positive effective price')

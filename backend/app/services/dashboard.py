@@ -207,6 +207,8 @@ def process_monitor(db: Session, product_id: int, d: date) -> dict:
         .where(RouteOperation.route_version_id == route.id, RouteOperation.is_enabled.is_(True))
         .order_by(RouteOperation.sequence_no)
     ).all()
+    from ..models import ProcessFlowVersion
+    explicit_flow = db.scalar(select(ProcessFlowVersion.id).where(ProcessFlowVersion.route_version_id == route.id))
     out = []
     prior_actual = None
     for ro, op in ops:
@@ -243,7 +245,7 @@ def process_monitor(db: Session, product_id: int, d: date) -> dict:
             "actual_qty": float(actual),
             "gap_qty": float(actual - plan),
             "achievement": float(actual / plan) if plan > 0 else None,
-            "calculated_wip_from_previous": float(wip),
+            "calculated_wip_from_previous": None if explicit_flow else float(wip),
             "open_actions": int(action_count),
             "is_dispatch": ro.is_dispatch,
         })

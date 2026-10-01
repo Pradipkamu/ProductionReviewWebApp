@@ -187,6 +187,8 @@ def price_on_date(product_id: int, on_date: date, db: Session = Depends(get_db),
 def create_price_revision(payload: SalesPriceRevisionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if not db.get(Product, payload.product_id):
         raise HTTPException(404, "Product not found")
+    if payload.reason:
+        db.info['reason'] = payload.reason
     row = create_or_replace_manual_price(
         db, payload.product_id, payload.effective_from, Decimal(str(payload.price)), payload.reason, user.id
     )
@@ -292,6 +294,9 @@ def calendar_history(month: date, plant: str = "Main Plant", db: Session = Depen
 
 @router.post("/routes/{product_id}")
 def create_route_version(product_id: int, payload: RouteVersionCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    from ..models import ProcessFlowVersion
+    if db.scalar(select(ProcessFlowVersion.id).where(ProcessFlowVersion.product_id==product_id).limit(1)):
+        raise HTTPException(409,'This product uses explicit process flows. Import a new Flow Definition revision.')
     if not db.get(Product, product_id):
         raise HTTPException(404, "Product not found")
     max_rev = db.scalar(select(RouteVersion.revision_no).where(RouteVersion.product_id == product_id).order_by(RouteVersion.revision_no.desc()).limit(1))

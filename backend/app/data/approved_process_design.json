@@ -1,0 +1,3786 @@
+{
+  "schema_version": 1,
+  "source_file": "Production_Process_Flow_Design_Review(2).xlsx",
+  "source_sha256": "2461b2f62d5e9e9c900eec15b4577fed44ec5872203112530c3a2126d30e49c0",
+  "allocation_policy": "MONTHLY_PIECES_OVER_WORKING_DAYS",
+  "notes": [
+    "Original Schedule Review quantities are provenance only; shifted columns require new explicit allocations.",
+    "Deferred and obsolete definitions are excluded from operational imports.",
+    "Vendor daily quantities are summaries, not challan transactions."
+  ],
+  "products": [
+    {
+      "review_id": "P01",
+      "name": "K70 Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P01_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "C",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P01_POURING",
+          "source_column": "D",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P01_CASTING",
+          "source_column": "E",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P01_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P01_PAINTING",
+          "source_column": "F",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P01_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P01_CPGOUT",
+          "source_column": "G",
+          "name": "Cpgout",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "CPG Industries",
+          "active": true,
+          "predecessors": [
+            "P01_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P01_CNC",
+          "source_column": "H",
+          "name": "CNC",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "CPG Industries",
+          "active": true,
+          "predecessors": [
+            "P01_CPGOUT"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P01_VMC",
+          "source_column": "I",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P01_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P01_HONE",
+          "source_column": "J",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P01_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P01_DISP_DONE",
+          "source_column": "K",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P01_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 90
+        },
+        {
+          "code": "P01_UNLABELLED_ROW_4_VALUE",
+          "source_column": "L",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P02",
+      "name": "B104D Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P02_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "O",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P02_POURING",
+          "source_column": "P",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P02_CASTING",
+          "source_column": "Q",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P02_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P02_PAINTING",
+          "source_column": "R",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P02_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P02_CPGOUT",
+          "source_column": "S",
+          "name": "Cpgout",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "CPG Industries",
+          "active": true,
+          "predecessors": [
+            "P02_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P02_CNC",
+          "source_column": "T",
+          "name": "CNC",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "CPG Industries",
+          "active": true,
+          "predecessors": [
+            "P02_CPGOUT"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P02_VMC",
+          "source_column": "U",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P02_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P02_HONE",
+          "source_column": "V",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P02_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P02_DISP_DONE",
+          "source_column": "W",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P02_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 90
+        },
+        {
+          "code": "P02_SAP_STOCK",
+          "source_column": "X",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        },
+        {
+          "code": "P02_CPG_STOCK",
+          "source_column": "Y",
+          "name": "CPG_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 110
+        },
+        {
+          "code": "P02_UNLABELLED_ROW_4_VALUE",
+          "source_column": "Z",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 120
+        }
+      ]
+    },
+    {
+      "review_id": "P03",
+      "name": "Platina Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P03_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "AA",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P03_POURING",
+          "source_column": "AB",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P03_CASTING",
+          "source_column": "AC",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P03_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P03_PAINTING",
+          "source_column": "AD",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P03_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P03_CPGOUT",
+          "source_column": "AE",
+          "name": "Cpgout",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "CPG Industries",
+          "active": true,
+          "predecessors": [
+            "P03_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P03_CNC",
+          "source_column": "AF",
+          "name": "CNC",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "CPG Industries",
+          "active": true,
+          "predecessors": [
+            "P03_CPGOUT"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P03_VMC",
+          "source_column": "AG",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P03_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P03_HONE",
+          "source_column": "AH",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P03_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P03_DISP_DONE",
+          "source_column": "AI",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P03_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 90
+        }
+      ]
+    },
+    {
+      "review_id": "P04",
+      "name": "Kubota Head",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "SGI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P04_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "AM",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P04_POURING",
+          "source_column": "AN",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P04_CASTING",
+          "source_column": "AO",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P04_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P04_TO_ROUGH_MILL",
+          "source_column": "AP",
+          "name": "To Rough Mill",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Shradha Industries",
+          "active": true,
+          "predecessors": [
+            "P04_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P04_FROM_ROUGH_MILL",
+          "source_column": "AQ",
+          "name": "From Rough Mill",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Shradha Industries",
+          "active": true,
+          "predecessors": [
+            "P04_TO_ROUGH_MILL"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P04_VMC",
+          "source_column": "AR",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P04_FROM_ROUGH_MILL"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P04_DISP_DONE",
+          "source_column": "AS",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P04_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P04_UNLABELLED_ROW_4_VALUE",
+          "source_column": "AT",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Review",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        }
+      ]
+    },
+    {
+      "review_id": "P05",
+      "name": "115 CC Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P05_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "AU",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P05_POURING",
+          "source_column": "AV",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P05_CASTING",
+          "source_column": "AW",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P05_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P05_PAINTING",
+          "source_column": "AX",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P05_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P05_CNC",
+          "source_column": "AY",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P05_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P05_VMC",
+          "source_column": "AZ",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P05_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P05_HONE",
+          "source_column": "BA",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P05_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P05_DISP_DONE",
+          "source_column": "BB",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P05_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 80
+        },
+        {
+          "code": "P05_SAP_STOCK",
+          "source_column": "BC",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P05_UNLABELLED_ROW_4_VALUE",
+          "source_column": "BD",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P06",
+      "name": "100 CC Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P06_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "BE",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P06_POURING",
+          "source_column": "BF",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P06_CASTING",
+          "source_column": "BG",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P06_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P06_PAINTING",
+          "source_column": "BH",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P06_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P06_CNC",
+          "source_column": "BI",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P06_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P06_VMC",
+          "source_column": "BJ",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P06_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P06_HONE",
+          "source_column": "BK",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P06_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P06_DISP_DONE",
+          "source_column": "BL",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P06_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 80
+        },
+        {
+          "code": "P06_SAP_STOCK",
+          "source_column": "BM",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P06_UNLABELLED_ROW_4_VALUE",
+          "source_column": "BN",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P07",
+      "name": "K405 Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P07_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "BO",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P07_CASTING_DONE",
+          "source_column": "BP",
+          "name": "Casting Done",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P07_TO_POWDER_COATING",
+          "source_column": "BQ",
+          "name": "To Powder Coating",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P07_CASTING_DONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P07_POWDER_COATING_DONE",
+          "source_column": "BR",
+          "name": "Powder coating Done",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P07_TO_POWDER_COATING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P07_CNC",
+          "source_column": "BS",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P07_POWDER_COATING_DONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P07_VMC",
+          "source_column": "BT",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P07_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P07_HONE",
+          "source_column": "BU",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P07_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P07_DISP_DONE",
+          "source_column": "BV",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P07_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 80
+        },
+        {
+          "code": "P07_FOR_INSPECTION",
+          "source_column": "BW",
+          "name": "For inspection",
+          "role": "INSPECTION",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P07_UNLABELLED_ROW_4_VALUE",
+          "source_column": "BX",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P08",
+      "name": "135 CC Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P08_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "BY",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P08_POURING",
+          "source_column": "BZ",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P08_CASTING",
+          "source_column": "CA",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P08_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P08_PAINTING",
+          "source_column": "CB",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P08_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P08_CNC",
+          "source_column": "CC",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P08_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P08_VMC",
+          "source_column": "CD",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P08_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P08_HONE",
+          "source_column": "CE",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P08_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P08_DISP_DONE",
+          "source_column": "CF",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P08_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 80
+        },
+        {
+          "code": "P08_SAP_STOCK",
+          "source_column": "CG",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P08_UNLABELLED_ROW_4_VALUE",
+          "source_column": "CH",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P09",
+      "name": "558 CC Cylinder block",
+      "customer": "TVS3wh",
+      "plant": "2050",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P09_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "CI",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P09_POURING",
+          "source_column": "CJ",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P09_CASTING",
+          "source_column": "CK",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P09_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P09_TO_DATTAKRUPA",
+          "source_column": "CL",
+          "name": "To Dattakrupa",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Dattakrupa",
+          "active": true,
+          "predecessors": [
+            "P09_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P09_FROM_DATTAKRUPA",
+          "source_column": "CM",
+          "name": "From Dattakrupa",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Dattakrupa",
+          "active": true,
+          "predecessors": [
+            "P09_TO_DATTAKRUPA"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P09_VMC",
+          "source_column": "CN",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P09_FROM_DATTAKRUPA"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P09_DISP_DONE",
+          "source_column": "CO",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P09_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P09_TVS_IN",
+          "source_column": "CP",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P09_SAP_STOCK",
+          "source_column": "CQ",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P09_UNLABELLED_ROW_4_VALUE",
+          "source_column": "CR",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P10",
+      "name": "167 CC Cylinder block",
+      "customer": "TVS3wh",
+      "plant": "2050",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P10_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "CS",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P10_POURING",
+          "source_column": "CT",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P10_CASTING",
+          "source_column": "CU",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P10_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P10_TO_DATTAKRUPA",
+          "source_column": "CV",
+          "name": "To Dattakrupa",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Dattakrupa",
+          "active": true,
+          "predecessors": [
+            "P10_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P10_FROM_DATTAKRUPA",
+          "source_column": "CW",
+          "name": "From Dattakrupa",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Dattakrupa",
+          "active": true,
+          "predecessors": [
+            "P10_TO_DATTAKRUPA"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P10_VMC",
+          "source_column": "CX",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P10_FROM_DATTAKRUPA"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P10_DISP_DONE",
+          "source_column": "CY",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P10_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P10_TVS_IN",
+          "source_column": "CZ",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P10_SAP_STOCK",
+          "source_column": "DA",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        }
+      ]
+    },
+    {
+      "review_id": "P11",
+      "name": "370 Cylinder block",
+      "customer": "TVS3wh",
+      "plant": "2050",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P11_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "DC",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P11_POURING",
+          "source_column": "DD",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P11_CASTING",
+          "source_column": "DE",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P11_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P11_TO_DATTAKRUPA",
+          "source_column": "DF",
+          "name": "To Dattakrupa",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Dattakrupa",
+          "active": true,
+          "predecessors": [
+            "P11_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P11_FROM_DATTAKRUPA",
+          "source_column": "DG",
+          "name": "From Dattakrupa",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "Dattakrupa",
+          "active": true,
+          "predecessors": [
+            "P11_TO_DATTAKRUPA"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P11_VMC",
+          "source_column": "DH",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P11_FROM_DATTAKRUPA"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P11_DISP_DONE",
+          "source_column": "DI",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P11_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P11_TVS_IN",
+          "source_column": "DJ",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P11_SAP_STOCK",
+          "source_column": "DK",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P11_UNLABELLED_ROW_4_VALUE",
+          "source_column": "DL",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P12",
+      "name": "BS6 Cylinder block",
+      "customer": "TVS2wh",
+      "plant": "2050",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P12_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "DM",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P12_POURING",
+          "source_column": "DN",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P12_CASTING",
+          "source_column": "DO",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P12_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P12_PAINTING",
+          "source_column": "DP",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P12_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P12_CNC",
+          "source_column": "DQ",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P12_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P12_VMC",
+          "source_column": "DR",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P12_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P12_DISP_DONE",
+          "source_column": "DS",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P12_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P12_TVS_IN",
+          "source_column": "DT",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P12_SAP_STOCK",
+          "source_column": "DU",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P12_UNLABELLED_ROW_4_VALUE",
+          "source_column": "DV",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P13",
+      "name": "SPORTS (N8010159)",
+      "customer": "TVS2wh",
+      "plant": "2050",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P13_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "DW",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P13_POURING",
+          "source_column": "DX",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P13_CASTING",
+          "source_column": "DY",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P13_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P13_PAINTING",
+          "source_column": "DZ",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P13_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P13_CNC",
+          "source_column": "EA",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P13_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P13_VMC",
+          "source_column": "EB",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P13_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P13_DISP_DONE",
+          "source_column": "EC",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P13_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P13_TVS_IN",
+          "source_column": "ED",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P13_SAP_STOCK",
+          "source_column": "EE",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P13_UNLABELLED_ROW_4_VALUE",
+          "source_column": "EF",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P14",
+      "name": "KS (N8010199)",
+      "customer": "TVS2wh",
+      "plant": "2050",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P14_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "EG",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P14_POURING",
+          "source_column": "EH",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P14_CASTING",
+          "source_column": "EI",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P14_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P14_PAINTING",
+          "source_column": "EJ",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P14_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P14_CNC",
+          "source_column": "EK",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P14_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P14_VMC",
+          "source_column": "EL",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P14_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P14_DISP_DONE",
+          "source_column": "EM",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P14_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P14_TVS_IN",
+          "source_column": "EN",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P14_SAP_STOCK",
+          "source_column": "EO",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P14_UNLABELLED_ROW_4_VALUE",
+          "source_column": "EP",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P15",
+      "name": "74 CC Cylinder block",
+      "customer": "TVS2wh",
+      "plant": "2050",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P15_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "EQ",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P15_POURING",
+          "source_column": "ER",
+          "name": "Pouring",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P15_CASTING",
+          "source_column": "ES",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P15_POURING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P15_PAINTING",
+          "source_column": "ET",
+          "name": "Painting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P15_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P15_CNC",
+          "source_column": "EU",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P15_PAINTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P15_VMC",
+          "source_column": "EV",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P15_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P15_DISP_DONE",
+          "source_column": "EW",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P15_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P15_TVS_IN",
+          "source_column": "EX",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P15_SAP_STOCK",
+          "source_column": "EY",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P15_UNLABELLED_ROW_4_VALUE",
+          "source_column": "EZ",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P16",
+      "name": "Grab Handle",
+      "customer": "BAJAJ",
+      "plant": "2060",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P16_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "FA",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P16_CASTING_REG",
+          "source_column": "FB",
+          "name": "Casting_Reg",
+          "role": "RECEIPT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P16_CASTING_DISPATCH",
+          "source_column": "FC",
+          "name": "Casting Dispatch",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P16_CASTING_REG"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 30
+        },
+        {
+          "code": "P16_UNLABELLED_ROW_4_VALUE",
+          "source_column": "FD",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        }
+      ]
+    },
+    {
+      "review_id": "P17",
+      "name": "Aluminium Head",
+      "customer": "BAJAJ",
+      "plant": "2060",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P17_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "FP",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P17_CASTING_REC",
+          "source_column": "FQ",
+          "name": "Casting Rec",
+          "role": "RECEIPT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P17_BT1_VMC_10_20",
+          "source_column": "FR",
+          "name": "BT1 VMC-10~20",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P17_CASTING_REC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P17_BT2_VMC_30_50",
+          "source_column": "FS",
+          "name": "BT2 VMC-30~50",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P17_BT1_VMC_10_20"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P17_DISP_DONE",
+          "source_column": "FT",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P17_BT2_VMC_30_50"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 50
+        },
+        {
+          "code": "P17_LT_DONE",
+          "source_column": "FU",
+          "name": "LT Done",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P17_LT_OK",
+          "source_column": "FV",
+          "name": "LT OK",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P17_LT_NOK",
+          "source_column": "FW",
+          "name": "LT NOK",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P17_CD",
+          "source_column": "FX",
+          "name": "CD",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P17_MD",
+          "source_column": "FY",
+          "name": "MD",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        },
+        {
+          "code": "P17_REASON_FOR_DISPATCH_FAIL",
+          "source_column": "FZ",
+          "name": "Reason For Dispatch Fail",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 110
+        },
+        {
+          "code": "P17_UNLABELLED_ROW_4_VALUE",
+          "source_column": "GA",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 120
+        }
+      ]
+    },
+    {
+      "review_id": "P18",
+      "name": "AF Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2060",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P18_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "GB",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P18_CASTING",
+          "source_column": "GC",
+          "name": "Casting",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P18_CNC",
+          "source_column": "GD",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P18_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P18_VMC",
+          "source_column": "GE",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P18_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P18_CHAMFER",
+          "source_column": "GF",
+          "name": "Chamfer",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P18_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P18_HONE",
+          "source_column": "GG",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P18_CHAMFER"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P18_DISP_DONE",
+          "source_column": "GH",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P18_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 70
+        },
+        {
+          "code": "P18_TVS_IN",
+          "source_column": "GI",
+          "name": "TVS_IN",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P18_SAP_STOCK",
+          "source_column": "GJ",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P18_UNLABELLED_ROW_4_VALUE",
+          "source_column": "GK",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        }
+      ]
+    },
+    {
+      "review_id": "P19",
+      "name": "ROF",
+      "customer": "HMCL",
+      "plant": "2070",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P19_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "GL",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P19_CASTING_TO_PK",
+          "source_column": "GM",
+          "name": "Casting to PK",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "PK industries",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P19_SAM_DRILLING",
+          "source_column": "GN",
+          "name": "SAM Drilling",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "PK industries",
+          "active": true,
+          "predecessors": [
+            "P19_CASTING_TO_PK"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P19_CNC_TURN",
+          "source_column": "GO",
+          "name": "CNC Turn",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P19_SAM_DRILLING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P19_FOR_INSP",
+          "source_column": "GP",
+          "name": "For Insp",
+          "role": "INSPECTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P19_CNC_TURN"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P19_INSP_DONE",
+          "source_column": "GQ",
+          "name": "Insp Done",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P19_CD",
+          "source_column": "GR",
+          "name": "CD",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P19_HRD",
+          "source_column": "GS",
+          "name": "HRD",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P19_MD",
+          "source_column": "GT",
+          "name": "MD",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P19_DISP_DONE",
+          "source_column": "GU",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P19_FOR_INSP"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 100
+        },
+        {
+          "code": "P19_UNLABELLED_ROW_4_VALUE",
+          "source_column": "GV",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 110
+        }
+      ]
+    },
+    {
+      "review_id": "P20",
+      "name": "HMCL Cylinder block",
+      "customer": "HMCL",
+      "plant": "2070",
+      "type": "CI",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P20_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "GW",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P20_JAY_CASTING",
+          "source_column": "GX",
+          "name": "Jay Casting",
+          "role": "SUPPLY",
+          "branch": "Jay / ACK",
+          "variant": "ACK Black",
+          "vendor": "Jay",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P20_JAY_MACHINING",
+          "source_column": "GY",
+          "name": "Jay Machining",
+          "role": "VENDOR_PROCESS",
+          "branch": "Jay / ACK",
+          "variant": "ACK Black",
+          "vendor": "Jay",
+          "active": true,
+          "predecessors": [
+            "P20_JAY_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P20_ARYAN_CASTING",
+          "source_column": "GZ",
+          "name": "Aryan Casting",
+          "role": "SUPPLY",
+          "branch": "Aryan / ACK",
+          "variant": "ACK Black",
+          "vendor": "Aryan",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P20_ARYAN_MACHINING",
+          "source_column": "HA",
+          "name": "Aryan Machining",
+          "role": "VENDOR_PROCESS",
+          "branch": "Aryan / ACK",
+          "variant": "ACK Black",
+          "vendor": "Aryan",
+          "active": true,
+          "predecessors": [
+            "P20_ARYAN_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P20_SAPTRISHI_CASTING",
+          "source_column": "HB",
+          "name": "Saptrishi Casting",
+          "role": "SUPPLY",
+          "branch": "Saptrishi / ACK",
+          "variant": "ACK Black",
+          "vendor": "Saptrishi",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P20_SAPTRISHI_MACHINING",
+          "source_column": "HC",
+          "name": "Saptrishi Machining",
+          "role": "VENDOR_PROCESS",
+          "branch": "Saptrishi / ACK",
+          "variant": "ACK Black",
+          "vendor": "Saptrishi",
+          "active": true,
+          "predecessors": [
+            "P20_SAPTRISHI_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P20_KR_CASTING",
+          "source_column": "HD",
+          "name": "KR Casting",
+          "role": "SUPPLY",
+          "branch": "KR / ACK",
+          "variant": "ACK Black",
+          "vendor": "KR",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P20_KR_MACHINING",
+          "source_column": "HE",
+          "name": "KR Machining",
+          "role": "VENDOR_PROCESS",
+          "branch": "KR / ACK",
+          "variant": "ACK Black",
+          "vendor": "KR",
+          "active": true,
+          "predecessors": [
+            "P20_KR_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P20_SATARA_AUTO_CASTING",
+          "source_column": "HF",
+          "name": "Satara Auto Casting",
+          "role": "SUPPLY",
+          "branch": "Satara Auto / ACK",
+          "variant": "ACK Black",
+          "vendor": "Satara Auto",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        },
+        {
+          "code": "P20_SATARA_AUTO_MACHINING",
+          "source_column": "HG",
+          "name": "Satara Auto Machining",
+          "role": "VENDOR_PROCESS",
+          "branch": "Satara Auto / ACK",
+          "variant": "ACK Black",
+          "vendor": "Satara Auto",
+          "active": true,
+          "predecessors": [
+            "P20_SATARA_AUTO_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 110
+        },
+        {
+          "code": "P20_JOYTIRLING_CASTING",
+          "source_column": "HH",
+          "name": "Joytirling Casting",
+          "role": "SUPPLY",
+          "branch": "Joytirling / ACK",
+          "variant": "ACK Black",
+          "vendor": "Joytirling",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 120
+        },
+        {
+          "code": "P20_JOYTIRLING_MACHINING",
+          "source_column": "HI",
+          "name": "Joytirling Machining",
+          "role": "VENDOR_PROCESS",
+          "branch": "Joytirling / ACK",
+          "variant": "ACK Black",
+          "vendor": "Joytirling",
+          "active": true,
+          "predecessors": [
+            "P20_JOYTIRLING_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 130
+        },
+        {
+          "code": "P20_SIDDHARTH_CASTING",
+          "source_column": "HJ",
+          "name": "Siddharth Casting",
+          "role": "SUPPLY",
+          "branch": "Siddharth / AAEE Silver",
+          "variant": "AAEE Silver",
+          "vendor": "Siddharth",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 140
+        },
+        {
+          "code": "P20_SIDDHARTH_MACHINING",
+          "source_column": "HK",
+          "name": "Siddharth Machining",
+          "role": "VENDOR_PROCESS",
+          "branch": "Siddharth / AAEE Silver",
+          "variant": "AAEE Silver",
+          "vendor": "Siddharth",
+          "active": true,
+          "predecessors": [
+            "P20_SIDDHARTH_CASTING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 150
+        },
+        {
+          "code": "P20_SATARA_AUTO_BS4_CAST",
+          "source_column": "HL",
+          "name": "Satara Auto BS4 Cast",
+          "role": "SUPPLY",
+          "branch": "Satara Auto BS4 / BS4 KCC",
+          "variant": "BS4 KCC",
+          "vendor": "Satara Auto BS4",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 160
+        },
+        {
+          "code": "P20_SATARA_AUTO_BS4_MACH",
+          "source_column": "HM",
+          "name": "Satara Auto BS4 Mach",
+          "role": "VENDOR_PROCESS",
+          "branch": "Satara Auto BS4 / BS4 KCC",
+          "variant": "BS4 KCC",
+          "vendor": "Satara Auto BS4",
+          "active": true,
+          "predecessors": [
+            "P20_SATARA_AUTO_BS4_CAST"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 170
+        },
+        {
+          "code": "P20_CASTING",
+          "source_column": "HN",
+          "name": "Casting",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "BS6 ACK + AAEE",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 180
+        },
+        {
+          "code": "P20_BLACK_PRODUCTION",
+          "source_column": "HO",
+          "name": "Black Production",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "ACK Black",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 190
+        },
+        {
+          "code": "P20_SILVER_PRODUCTION",
+          "source_column": "HP",
+          "name": "Silver Production",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "AAEE Silver",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "P20_SIDDHARTH_MACHINING",
+          "parent_dispatch": false,
+          "sequence": 200
+        },
+        {
+          "code": "P20_SILVER_DISPATCH",
+          "source_column": "HQ",
+          "name": "Silver Dispatch",
+          "role": "DISPATCH_DETAIL",
+          "branch": "Dispatch / AAEE Silver",
+          "variant": "AAEE Silver",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P20_SIDDHARTH_MACHINING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 210
+        },
+        {
+          "code": "P20_ACK_DISPATCH",
+          "source_column": "HR",
+          "name": "Ack Dispatch",
+          "role": "DISPATCH_DETAIL",
+          "branch": "Dispatch / ACK Black",
+          "variant": "ACK Black",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P20_JAY_MACHINING",
+            "P20_ARYAN_MACHINING",
+            "P20_SAPTRISHI_MACHINING",
+            "P20_KR_MACHINING",
+            "P20_SATARA_AUTO_MACHINING",
+            "P20_JOYTIRLING_MACHINING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 220
+        },
+        {
+          "code": "P20_DISPATCH_KCC_P_C",
+          "source_column": "HS",
+          "name": "Dispatch KCC P.C",
+          "role": "DISPATCH_DETAIL",
+          "branch": "Dispatch / BS4 KCC",
+          "variant": "BS4 KCC PC",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P20_SATARA_AUTO_BS4_MACH"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 230
+        },
+        {
+          "code": "P20_DISPATCH_KCC_SL",
+          "source_column": "HT",
+          "name": "Dispatch KCC SL",
+          "role": "DISPATCH_DETAIL",
+          "branch": "Dispatch / BS4 KCC",
+          "variant": "BS4 KCC SL",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P20_SATARA_AUTO_BS4_MACH"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 240
+        },
+        {
+          "code": "P20_DISPATCH_KCC_RT",
+          "source_column": "HU",
+          "name": "Dispatch KCC RT",
+          "role": "DISPATCH_DETAIL",
+          "branch": "Dispatch / BS4 KCC",
+          "variant": "BS4 KCC RT",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P20_SATARA_AUTO_BS4_MACH"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 250
+        },
+        {
+          "code": "P20_DISPATCH_TOTAL",
+          "source_column": "HV",
+          "name": "Dispatch Total",
+          "role": "DISPATCH_TOTAL",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P20_SILVER_DISPATCH",
+            "P20_ACK_DISPATCH",
+            "P20_DISPATCH_KCC_P_C",
+            "P20_DISPATCH_KCC_SL",
+            "P20_DISPATCH_KCC_RT"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 260
+        },
+        {
+          "code": "P20_SAP_STOCK",
+          "source_column": "HW",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 270
+        }
+      ]
+    },
+    {
+      "review_id": "P21",
+      "name": "K19 Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P21_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "HY",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P21_CASTING_DONE",
+          "source_column": "HZ",
+          "name": "Casting Done",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P21_TO_POWDER_COATING",
+          "source_column": "IA",
+          "name": "To Powder Coating",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P21_CASTING_DONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P21_POWDER_COATING_DONE",
+          "source_column": "IB",
+          "name": "Powder coating Done",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P21_TO_POWDER_COATING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P21_CNC",
+          "source_column": "IC",
+          "name": "CNC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P21_POWDER_COATING_DONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P21_VMC",
+          "source_column": "ID",
+          "name": "VMC",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P21_CNC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 60
+        },
+        {
+          "code": "P21_HONE",
+          "source_column": "IE",
+          "name": "Hone",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P21_VMC"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P21_DISP_DONE",
+          "source_column": "IF",
+          "name": "Disp_done",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P21_HONE"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 80
+        },
+        {
+          "code": "P21_FOR_INSPECTION",
+          "source_column": "IG",
+          "name": "For inspection",
+          "role": "INSPECTION",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        }
+      ]
+    },
+    {
+      "review_id": "P22",
+      "name": "Grab Handle Machined",
+      "customer": "BAJAJ",
+      "plant": "2060",
+      "type": "AL",
+      "historical_only": false,
+      "stages": [
+        {
+          "code": "P22_DAILY_DISPATCH_PLAN_SALES_SUMMARY",
+          "source_column": "FE",
+          "name": "Daily dispatch plan / sales summary",
+          "role": "REFERENCE",
+          "branch": "Reporting",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P22_GRB_FOR_COATING",
+          "source_column": "FF",
+          "name": "Grb_For_Coating",
+          "role": "VENDOR_OUT",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P22_GRB_FROM_COATING",
+          "source_column": "FG",
+          "name": "Grb_From_Coating",
+          "role": "VENDOR_IN",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P22_GRB_FOR_COATING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        },
+        {
+          "code": "P22_VMC_MACHINING",
+          "source_column": "FH",
+          "name": "VMC Machining",
+          "role": "PRODUCTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P22_GRB_FROM_COATING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 40
+        },
+        {
+          "code": "P22_INSPECTION_OK",
+          "source_column": "FI",
+          "name": "Inspection OK",
+          "role": "INSPECTION",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P22_VMC_MACHINING"
+          ],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 50
+        },
+        {
+          "code": "P22_MACHINE_DISPATCH",
+          "source_column": "FJ",
+          "name": "Machine Dispatch",
+          "role": "DISPATCH",
+          "branch": "Main",
+          "variant": "",
+          "vendor": "",
+          "active": true,
+          "predecessors": [
+            "P22_INSPECTION_OK"
+          ],
+          "alias_of": "",
+          "parent_dispatch": true,
+          "sequence": 60
+        },
+        {
+          "code": "P22_PC_REWORK",
+          "source_column": "FK",
+          "name": "PC Rework",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 70
+        },
+        {
+          "code": "P22_FR",
+          "source_column": "FL",
+          "name": "FR",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 80
+        },
+        {
+          "code": "P22_PC_REWORK1",
+          "source_column": "FM",
+          "name": "PC Rework1",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 90
+        },
+        {
+          "code": "P22_FR1",
+          "source_column": "FN",
+          "name": "FR1",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 100
+        },
+        {
+          "code": "P22_UNLABELLED_ROW_4_VALUE",
+          "source_column": "FO",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 110
+        }
+      ]
+    },
+    {
+      "review_id": "P23",
+      "name": "Platina 99 Cylinder block",
+      "customer": "BAJAJ",
+      "plant": "2020",
+      "type": "CI",
+      "historical_only": true,
+      "stages": [
+        {
+          "code": "P23_SAP_STOCK",
+          "source_column": "AJ",
+          "name": "SAP_Stock",
+          "role": "REFERENCE",
+          "branch": "Absolute Part",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 10
+        },
+        {
+          "code": "P23_CPG_STOCK",
+          "source_column": "AK",
+          "name": "CPG_Stock",
+          "role": "REFERENCE",
+          "branch": "Absolute Part",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 20
+        },
+        {
+          "code": "P23_UNLABELLED_ROW_4_VALUE",
+          "source_column": "AL",
+          "name": "Unlabelled row 4 value",
+          "role": "REFERENCE",
+          "branch": "Kept for future Expansion",
+          "variant": "",
+          "vendor": "",
+          "active": false,
+          "predecessors": [],
+          "alias_of": "",
+          "parent_dispatch": false,
+          "sequence": 30
+        }
+      ]
+    }
+  ]
+}

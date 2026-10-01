@@ -250,6 +250,14 @@ def rebuild_process_requirements(db: Session, product_id: int, month: date, star
     if not dispatch_rows:
         return
 
+    from ..models import ProcessFlowVersion
+    explicit = db.scalar(select(ProcessFlowVersion).where(ProcessFlowVersion.product_id == product_id, ProcessFlowVersion.effective_from <= last).order_by(ProcessFlowVersion.effective_from).limit(1))
+    if explicit:
+        last = min(last, explicit.effective_from - timedelta(days=1))
+        dispatch_rows = [r for r in dispatch_rows if r.req_date <= last]
+        if start > last or not dispatch_rows:
+            return
+
     # Delete only non-frozen process calculations from the recalculation window.
     obsolete = db.scalars(
         select(DailyRequirement).where(

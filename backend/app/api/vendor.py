@@ -66,6 +66,13 @@ def create_movement(payload: VendorMovementCreate, db: Session = Depends(get_db)
     version = db.get(RouteVersion, route.route_version_id) if route else None
     if not route or not version or version.product_id != payload.product_id or not db.get(Vendor,payload.vendor_id):
         raise HTTPException(422, 'Product, route operation and vendor must match valid masters')
+    from ..models import ProcessFlowStage
+    from ..services.process_flows import active_flow
+    stage=db.scalar(select(ProcessFlowStage).where(ProcessFlowStage.route_operation_id==route.id))
+    if stage:
+        flow=active_flow(db,payload.product_id,payload.outward_date)
+        if not flow or stage.flow_id!=flow.id or stage.role!='VENDOR_OUT' or not stage.is_active or route.vendor_id!=payload.vendor_id:
+            raise HTTPException(422,'Use an active vendor outward stage and its assigned vendor')
     if payload.outward_qty <= 0 or payload.receipt_qty or payload.reject_qty or payload.receipt_date:
         raise HTTPException(422, 'Outward quantity must be positive; record receipts separately')
     if payload.expected_return_date and payload.expected_return_date < payload.outward_date:

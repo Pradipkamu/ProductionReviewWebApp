@@ -29,3 +29,8 @@ Thumbs.db
 *.db
 
 *.tsbuildinfo
+
+# Approved operational upload template is versioned with its import contract.
+!backend/templates/Production_Process_Upload_v0.4.0.xlsx
+
+outputs/

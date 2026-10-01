@@ -4,7 +4,7 @@ from .enums import UserRole
 WRITE_ROLES = {
     'mis': {'PRODUCTION', 'PLANNING'}, 'process': {'PRODUCTION'}, 'oee': {'PRODUCTION'},
     'schedules': {'PLANNING'}, 'schedule': {'PLANNING'}, 'quality': {'QUALITY'},
-    'vendor': {'PURCHASE', 'VENDOR', 'PRODUCTION'}, 'import': {'PLANNING', 'QUALITY'},
+    'vendor': {'PURCHASE', 'VENDOR', 'PRODUCTION'}, 'import': {'PLANNING', 'QUALITY', 'PRODUCTION'},
     'actions': {'PRODUCTION', 'QUALITY', 'PLANNING', 'PURCHASE', 'DISPATCH', 'VENDOR', 'MANAGEMENT'},
     'reviews': {'MANAGEMENT', 'PRODUCTION', 'QUALITY', 'PLANNING'},
     'masters': {'PLANNING'}, 'governance': {'MANAGEMENT'}, 'insights': {'MANAGEMENT'},

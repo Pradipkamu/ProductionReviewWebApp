@@ -8,6 +8,7 @@ from .models import GovernanceAudit, HistoricalCorrectionGrant, MonthStatus, Use
 from .enums import MonthState
 
 PERIOD_FIELDS = {
+ 'process_flow_versions': ['effective_from'], 'stage_schedule_allocations': ['month','effective_from'],
  'daily_mis': ['mis_date'], 'daily_requirements': ['req_date'], 'process_daily_summary': ['summary_date'],
  'vendor_movements': ['outward_date', 'receipt_date'], 'machine_shift_production': ['production_date'],
  'machine_loss_events': ['loss_date'], 'quality_rejection_daily': ['rejection_date'],
@@ -15,7 +16,7 @@ PERIOD_FIELDS = {
  'working_calendar': ['work_date'], 'vendor_receipts': ['receipt_date'],
  'sales_price_history': ['effective_from'], 'route_versions': ['effective_from'], 'standard_cycle_times': ['effective_from'],
 }
-RANGE_TABLES = {'sales_price_history', 'route_versions', 'standard_cycle_times'}
+RANGE_TABLES = {'process_flow_versions', 'sales_price_history', 'route_versions', 'standard_cycle_times'}
 
 def lock_month(db, month):
     if db.bind.dialect.name == 'postgresql':
@@ -40,6 +41,8 @@ def protect_months(db, flush_context, instances):
     candidates = list(db.new) + list(db.dirty) + list(db.deleted)
     for obj in candidates:
         table = getattr(obj, '__tablename__', '')
+        if table in {'process_flow_versions','process_flow_stages','stage_schedule_allocations'} and (obj in db.deleted or (obj in db.dirty and db.is_modified(obj,include_collections=False))):
+            raise HTTPException(409,'Process definitions and allocation history are immutable; append a new revision')
         if table not in PERIOD_FIELDS or (obj in db.dirty and not db.is_modified(obj, include_collections=False)):
             continue
         periods = set()

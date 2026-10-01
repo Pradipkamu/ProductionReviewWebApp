@@ -19,12 +19,13 @@ from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
 from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook
 router=APIRouter(prefix='/import',tags=['import preview'])
-KINDS={'excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history'}
+KINDS={'process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history'}
 
 
 def authorize(kind,user):
     if kind not in KINDS:raise HTTPException(404,'Unknown import kind')
-    if user.role.value!='ADMIN' and user.role.value!=('QUALITY' if kind.startswith('quality-') else 'PLANNING'):
+    allowed={'QUALITY'} if kind.startswith('quality-') else {'PRODUCTION','PLANNING'} if kind=='stage-daily' else {'PLANNING'}
+    if user.role.value!='ADMIN' and user.role.value not in allowed:
         raise HTTPException(403,'Import kind is outside your role')
 
 
@@ -40,7 +41,14 @@ def fingerprint(db):
 
 
 def run_import(db,path,kind,user,batch_id=None):
-    if kind=='excel':return import_daily_production_workbook(db,path)
+    if kind in {'process-design','stage-schedules','stage-daily'}:
+        from ..services.process_flows import import_process_workbook
+        return import_process_workbook(db,path,kind)
+    if kind=='excel':
+        from ..models import ProcessFlowVersion
+        if db.scalar(select(ProcessFlowVersion.id).limit(1)):
+            return {'errors':['Explicit process flows are configured. Use Stage Daily import with stable stage codes. Historical MIS remains available separately.']}
+        return import_daily_production_workbook(db,path)
     if kind=='historical-daily-mis':return import_historical_daily_mis(db,path)
     if kind=='historical-sales-prices':return import_historical_sales_prices(db,path,user.id)
     if kind=='quality-daily':return import_daily_rejection_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
@@ -48,7 +56,7 @@ def run_import(db,path,kind,user,batch_id=None):
 
 
 def counts(stats,kind):
-    if kind in {'quality-daily','quality-history'}:
+    if kind in {'quality-daily','quality-history','process-design','stage-schedules','stage-daily'}:
         return {'new':stats.get('created',0),'updated':stats.get('updated',0),'unchanged':stats.get('unchanged',0),'rejected':len(stats.get('errors',[]))}
     prefix='price_rows' if kind=='historical-sales-prices' else 'mis'
     return {'new':stats.get(prefix+'_created',0),'updated':stats.get(prefix+'_updated',0),'unchanged':stats.get(prefix+'_unchanged',0),'rejected':len(stats.get('errors',[]))}
@@ -73,8 +81,9 @@ def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:U
             if size>32*1024*1024:path.unlink(missing_ok=True);raise HTTPException(413,'Workbook limit is 32 MB')
             output.write(chunk)
     sha=digest(path)
+    batch_sha=hashlib.sha256((kind+':'+sha).encode()).hexdigest() if kind in {'process-design','stage-schedules','stage-daily'} else sha
     batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
-    previous=db.scalar(select(batch_model).where(batch_model.file_sha256==sha))
+    previous=db.scalar(select(batch_model).where(batch_model.file_sha256==batch_sha))
     if previous:
         path.unlink(missing_ok=True)
         return {'status':'already_imported','import_batch_id':previous.id,'counts':{'new':0,'updated':0,'unchanged':0,'rejected':0},'message':'Exact workbook already imported'}
@@ -98,7 +107,7 @@ def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:U
             'count_scope':'Primary MIS, price or rejection business rows; supporting master/process counts are shown in stats.'}
     if errors:path.unlink(missing_ok=True);return result
     claims={'sub':str(user.id),'purpose':'import-preview','kind':kind,'upload_id':upload_id,'filename':Path(file.filename).name,
-            'sha':sha,'fingerprint':original_fp,'exp':datetime.now(timezone.utc)+timedelta(minutes=30)}
+            'sha':sha,'batch_sha':batch_sha,'fingerprint':original_fp,'exp':datetime.now(timezone.utc)+timedelta(minutes=30)}
     result['preview_token']=jwt.encode(claims,get_settings().secret_key,algorithm='HS256')
     return result
 
@@ -117,15 +126,16 @@ def confirm(payload:Confirm,db:Session=Depends(get_db),user:User=Depends(get_cur
     path=Path(get_settings().upload_dir)/'previews'/(claims['upload_id']+'.xlsx')
     if not path.is_file() or digest(path)!=claims['sha']:raise HTTPException(409,'Preview file is missing or changed')
     batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
-    previous=db.scalar(select(batch_model).where(batch_model.file_sha256==claims['sha']))
+    previous=db.scalar(select(batch_model).where(batch_model.file_sha256==claims.get('batch_sha',claims['sha'])))
     if previous:raise HTTPException(409,'Workbook was already confirmed')
     if fingerprint(db)!=claims['fingerprint']:raise HTTPException(409,'Data changed after preview; preview again before confirming')
     try:
-        batch=batch_model(file_name=claims['filename'],file_sha256=claims['sha'],imported_by_id=user.id,status='RUNNING')
+        batch=batch_model(file_name=claims['filename'],file_sha256=claims.get('batch_sha',claims['sha']),imported_by_id=user.id,status='RUNNING')
         if kind.startswith('quality-'):batch.import_type='DAILY' if kind=='quality-daily' else 'HISTORICAL'
         db.add(batch);db.flush()
         stats=run_import(db,path,kind,user,batch.id if kind.startswith('quality-') else None)
         if stats.get('errors'):raise HTTPException(422,stats['errors'])
+        stats['import_kind']=kind;stats['file_sha256']=claims['sha']
         batch.status='COMPLETED';batch.stats_json=json.dumps(stats,default=str)
         db.commit();db.refresh(batch)
     except HTTPException:db.rollback();raise

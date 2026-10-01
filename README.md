@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.3.1
+# ProductionReviewWebApp v0.4.0
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -13,6 +13,10 @@ Read [Safe update](docs/UPDATE_v0.3.0.md). Copy application files over the exist
 Use `start_windows.bat` or `./start_linux.sh`. The launcher generates a persistent random `SECRET_KEY` when the environment contains a placeholder. Configure the initial `ADMIN_PASSWORD` privately in `.env`; the default temporary login is `admin` / `ChangeMe123!`. The first login must change its password before application access. Existing users must also change passwords after the first migration.
 
 Application: http://localhost:5173 · API: http://localhost:8000/docs
+
+## Approved process flows
+
+The corrected process design is implemented with 23 product definitions and 151 active stages. Use [Process flow setup](docs/RELEASE_v0.4.0.md) after the safe application update. The approved Excel template is included at `backend/templates/Production_Process_Upload_v0.4.0.xlsx` and available from Excel Import Preview. Definitions, stage allocations and daily actuals each use preview and confirmation. Existing database facts remain intact.
 
 ## Release features
 

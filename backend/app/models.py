@@ -596,3 +596,52 @@ class ActionReminder(Base):
     acknowledged_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey('users.id'), nullable=True)
     acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     __table_args__ = (UniqueConstraint('action_id', 'reminder_date', 'kind', name='uq_action_reminder_day'),)
+
+
+class ProcessFlowVersion(Base, TimestampMixin):
+    __tablename__ = 'process_flow_versions'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey('products.id'))
+    route_version_id: Mapped[int] = mapped_column(ForeignKey('route_versions.id'), unique=True)
+    effective_from: Mapped[date] = mapped_column(Date)
+    revision_no: Mapped[int] = mapped_column(Integer)
+    company: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    definition_sha256: Mapped[str] = mapped_column(String(64))
+    source_document: Mapped[str] = mapped_column(String(260))
+    reason: Mapped[str] = mapped_column(Text)
+    __table_args__ = (UniqueConstraint('product_id','revision_no',name='uq_flow_product_revision'),)
+
+
+class ProcessFlowStage(Base, TimestampMixin):
+    __tablename__ = 'process_flow_stages'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flow_id: Mapped[int] = mapped_column(ForeignKey('process_flow_versions.id'))
+    code: Mapped[str] = mapped_column(String(180))
+    name: Mapped[str] = mapped_column(String(180))
+    route_operation_id: Mapped[Optional[int]] = mapped_column(ForeignKey('route_operations.id'), nullable=True, unique=True)
+    source_column: Mapped[str] = mapped_column(String(10))
+    role: Mapped[str] = mapped_column(String(40))
+    branch: Mapped[str] = mapped_column(String(180))
+    variant: Mapped[str] = mapped_column(String(120))
+    vendor_name: Mapped[str] = mapped_column(String(180))
+    predecessors_json: Mapped[str] = mapped_column(Text)
+    alias_of: Mapped[str] = mapped_column(String(180))
+    is_active: Mapped[bool] = mapped_column(Boolean)
+    parent_dispatch: Mapped[bool] = mapped_column(Boolean)
+    sequence_no: Mapped[int] = mapped_column(Integer)
+    __table_args__ = (UniqueConstraint('flow_id','code',name='uq_flow_stage_code'),)
+
+
+class StageScheduleAllocation(Base, TimestampMixin):
+    __tablename__ = 'stage_schedule_allocations'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stage_id: Mapped[int] = mapped_column(ForeignKey('process_flow_stages.id'))
+    month: Mapped[date] = mapped_column(Date)
+    effective_from: Mapped[date] = mapped_column(Date)
+    revision_no: Mapped[int] = mapped_column(Integer)
+    allocated_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    working_dates_json: Mapped[str] = mapped_column(Text)
+    distribution_json: Mapped[str] = mapped_column(Text)
+    reference: Mapped[str] = mapped_column(String(160))
+    reason: Mapped[str] = mapped_column(Text)
+    __table_args__ = (UniqueConstraint('stage_id','month','revision_no',name='uq_stage_schedule_revision'),)
