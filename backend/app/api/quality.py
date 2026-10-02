@@ -31,6 +31,7 @@ from ..models import (
 )
 from ..services.filtering import csv_ints, csv_strings
 from ..services.quality_import import (
+    _daily_record_key, _route_for_date, denominator_for_rejection,
     import_daily_rejection_workbook, import_historical_rejection_workbook, sha256_file, upsert_phenomenon,
 )
 
@@ -50,6 +51,21 @@ class QualityActionCreate(BaseModel):
     due_at: datetime | None = None
     priority: Priority = Priority.HIGH
     action_description: str = "Investigate using standard Why-Why and implement corrective action"
+
+
+class QualityRejectionManualCreate(BaseModel):
+    rejection_date: date
+    shift: str
+    product_id: int
+    detection_route_operation_id: int
+    responsible_route_operation_id: int | None = None
+    machine_id: int | None = None
+    phenomenon_id: int
+    reject_qty: Decimal
+    rework_qty: Decimal = Decimal("0")
+    scrap_qty: Decimal = Decimal("0")
+    remark: str | None = None
+    action_required: bool = False
 
 
 def _num(value) -> float:
@@ -556,6 +572,95 @@ def quality_imports(db: Session = Depends(get_db), _: User = Depends(get_current
     rows = db.scalars(select(QualityRejectionImportBatch).order_by(QualityRejectionImportBatch.created_at.desc()).limit(100)).all()
     return [{"id": x.id, "file_name": x.file_name, "sha256": x.file_sha256, "type": x.import_type,
              "status": x.status, "imported_at": x.created_at, "stats": json.loads(x.stats_json) if x.stats_json else {}} for x in rows]
+
+
+@router.post("/daily")
+def create_daily_manual(payload: QualityRejectionManualCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    shift_map = {"a": "A", "b": "B", "c": "C", "general": "General"}
+    shift = shift_map.get(str(payload.shift or "").strip().lower())
+    if not shift:
+        raise HTTPException(400, "Shift must be A, B, C or General")
+    if payload.reject_qty <= 0:
+        raise HTTPException(400, "Reject Qty must be greater than zero")
+    if payload.rework_qty < 0 or payload.scrap_qty < 0:
+        raise HTTPException(400, "Rework Qty and Scrap Qty cannot be negative")
+
+    product = db.get(Product, payload.product_id)
+    if not product or not product.is_active:
+        raise HTTPException(400, "Product is not available in the active Product Master")
+    phenomenon = db.get(QualityPhenomenon, payload.phenomenon_id)
+    if not phenomenon or not phenomenon.is_active:
+        raise HTTPException(400, "Phenomenon is not available in the active Quality Phenomenon Master")
+
+    route = _route_for_date(db, product.id, payload.rejection_date)
+    if not route:
+        raise HTTPException(400, f"No route is available for {product.name} on {payload.rejection_date}")
+
+    detection_ro = db.get(RouteOperation, payload.detection_route_operation_id)
+    if not detection_ro or detection_ro.route_version_id != route.id:
+        raise HTTPException(400, "Detection Process is not in the active route for the selected Product and Date")
+
+    responsible_ro = None
+    if payload.responsible_route_operation_id is not None:
+        responsible_ro = db.get(RouteOperation, payload.responsible_route_operation_id)
+        if not responsible_ro or responsible_ro.route_version_id != route.id:
+            raise HTTPException(400, "Responsible Process is not in the active route for the selected Product and Date")
+
+    machine = None
+    if payload.machine_id is not None:
+        machine = db.get(Machine, payload.machine_id)
+        if not machine or not machine.is_active:
+            raise HTTPException(400, "Machine is not available in the active Machine Master")
+
+    record_key = _daily_record_key(
+        payload.rejection_date, shift, product.id, detection_ro.id,
+        responsible_ro.id if responsible_ro else None, machine.id if machine else None, phenomenon.id,
+    )
+    existing = db.scalar(select(QualityRejectionDaily).where(QualityRejectionDaily.record_key == record_key))
+    if existing:
+        raise HTTPException(
+            409,
+            "A rejection already exists for the same Date, Shift, Product, Detection Process, Responsible Process, Machine and Phenomenon. Use the existing record/import workflow for corrections.",
+        )
+
+    denominator_source, denominator_qty = denominator_for_rejection(
+        db, on_date=payload.rejection_date, shift=shift, product=product,
+        detection_ro=detection_ro, machine=machine,
+    )
+    ppm = None
+    if denominator_qty is not None and denominator_qty > 0:
+        ppm = (payload.reject_qty / denominator_qty * Decimal("1000000")).quantize(Decimal("0.001"))
+
+    row = QualityRejectionDaily(
+        record_key=record_key,
+        rejection_date=payload.rejection_date,
+        shift=shift,
+        product_id=product.id,
+        plant=product.plant,
+        detection_route_operation_id=detection_ro.id,
+        responsible_route_operation_id=responsible_ro.id if responsible_ro else None,
+        responsible_team=phenomenon.default_responsible_team or "Operation",
+        machine_id=machine.id if machine else None,
+        phenomenon_id=phenomenon.id,
+        reject_qty=payload.reject_qty,
+        rework_qty=payload.rework_qty,
+        scrap_qty=payload.scrap_qty,
+        denominator_source=denominator_source,
+        denominator_qty=denominator_qty,
+        ppm=ppm,
+        remark=payload.remark.strip() if payload.remark and payload.remark.strip() else None,
+        source="MANUAL",
+        action_required=payload.action_required,
+        entered_by_id=user.id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    context = _daily_context(db, [row])
+    result = _serialize_daily(row, context)
+    result["created"] = True
+    result["ppm_pending"] = ppm is None
+    return result
 
 
 @router.get("/daily")
