@@ -155,10 +155,10 @@ def _aggregate_daily(rows: list[QualityRejectionDaily]) -> dict:
         key = (x.rejection_date, x.shift, x.product_id, x.detection_route_operation_id, x.machine_id, x.denominator_source)
         if x.denominator_qty is not None and _num(x.denominator_qty) > 0:
             denoms[key] = max(denoms.get(key, 0.0), _num(x.denominator_qty))
-        else:
+        elif _num(x.reject_qty) > 0:
             pending += 1
     denominator = sum(denoms.values())
-    ppm = reject / denominator * 1_000_000 if denominator > 0 else None
+    ppm = reject / denominator * 1_000_000 if denominator > 0 and pending == 0 else None
     return {"reject_qty": reject, "rework_qty": rework, "scrap_qty": scrap, "denominator_qty": denominator,
             "ppm": ppm, "ppm_pending_rows": pending}
 
@@ -259,7 +259,7 @@ def _aggregate_history(rows: list[QualityRejectionMonthlyHistory], dispatch_reso
         qty = dispatch_resolution.get(x.id, (None, None))[0] if dispatch_resolution is not None else (_num(x.dispatch_qty) if x.dispatch_qty is not None else None)
         if qty is not None and qty > 0:
             denoms[key] = max(denoms.get(key, 0.0), qty)
-        else:
+        elif _num(x.reject_qty) > 0:
             pending_keys.add(key)
     denominator = sum(denoms.values())
     pending = len(pending_keys)
@@ -662,7 +662,7 @@ def monthly_trend(from_month: date, to_month: date, plant: str | None = None, pr
                 key=(x.product_id,x.source,x.source_sheet,x.record_scope,x.plant)
                 qty = dispatch_resolution.get(x.id, (None, None))[0]
                 if qty is not None and qty>0: denoms[key]=max(denoms.get(key,0),qty)
-                else: pending+=1
+                elif _num(x.reject_qty)>0: pending+=1
             denominator=sum(denoms.values()); ppm=reject/denominator*1_000_000 if denominator>0 and pending==0 else None
             a={"reject_qty":reject,"rework_qty":0,"scrap_qty":0,"denominator_qty":denominator,"ppm":ppm,"ppm_pending_rows":pending}; source="HISTORICAL"
         out.append({"month":m,"label":m.strftime("%b-%Y"),"source":source,**a})

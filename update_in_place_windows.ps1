@@ -7,10 +7,17 @@ function DockerChecked([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw ('Docker failed: ' + ($Arguments -join ' ')) }
 }
 DockerChecked @('compose','build','backend','frontend')
-DockerChecked @('compose','exec','-T','db','pg_isready','-U','pms','-d','pms')
+DockerChecked @('compose','up','-d','db')
+$dbReady = $false
+for ($i=0; $i -lt 30; $i++) {
+    & docker compose exec -T db pg_isready -U pms -d pms | Out-Null
+    if ($LASTEXITCODE -eq 0) { $dbReady = $true; break }
+    Start-Sleep -Seconds 2
+}
+if (-not $dbReady) { throw 'PostgreSQL did not become ready; no backup or migration was attempted.' }
 DockerChecked @('compose','stop','frontend','backend')
 $stamp = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ')
-$backup = "database/backups/pms_before_v043_$stamp.dump"
+$backup = "database/backups/pms_before_v045_$stamp.dump"
 # Write binary dump inside container; avoid Windows PowerShell text redirection.
 DockerChecked @('compose','exec','-T','db','sh','-c','pg_dump -U pms -d pms -Fc -f /tmp/pms_pre_update.dump')
 DockerChecked @('compose','exec','-T','db','pg_restore','--list','/tmp/pms_pre_update.dump')

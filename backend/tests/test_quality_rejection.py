@@ -14,6 +14,12 @@ from app.models import (
 from app.services.quality_import import import_daily_rejection_workbook, upsert_phenomenon
 
 
+def _headers_for_quality(client):
+    login = client.post('/api/auth/login', json={'username':'admin','password':'ChangeMe123!'})
+    assert login.status_code == 200
+    return {'Authorization': f"Bearer {login.json()['access_token']}"}
+
+
 def _seed_quality_context(db):
     c=Customer(code='Q-C',name='Quality Customer');db.add(c);db.flush()
     p=Product(code='Q-P',name='K70 Cylinder block',customer_id=c.id,plant='2020',product_group='CI');db.add(p);db.flush()
@@ -145,6 +151,39 @@ def test_historical_rejection_visible_without_dispatch_qty():
     assert hist.status_code == 200, hist.text
     assert len(hist.json()) == 1
     assert hist.json()[0]['dispatch_qty'] is None
+
+
+def test_zero_rejection_without_denominator_does_not_block_month_ppm():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models import QualityRejectionMonthlyHistory
+
+    with SessionLocal() as db:
+        p, _, ph = _seed_quality_context(db)
+        db.add_all([
+            QualityRejectionMonthlyHistory(
+                record_key='HMCL|Total|2026-06|HAS REJECTION', month=date(2026,6,1), source='HMCL',
+                source_sheet='Total', record_scope='AGGREGATE_TOTAL', include_in_aggregate=True,
+                product_id=p.id, phenomenon_id=ph.id, reject_qty=Decimal('25'),
+                denominator_source='DISP_DONE', dispatch_qty=Decimal('2500'), ppm=Decimal('10000'),
+            ),
+            QualityRejectionMonthlyHistory(
+                record_key='HMCL|Total|2026-06|ZERO', month=date(2026,6,1), source='HMCL',
+                source_sheet='Total', record_scope='AGGREGATE_TOTAL', include_in_aggregate=True,
+                product_id=p.id, phenomenon_id=ph.id, reject_qty=Decimal('0'),
+                denominator_source='DISP_DONE', dispatch_qty=None, ppm=None,
+            ),
+        ])
+        db.commit()
+
+    client = TestClient(app)
+    h = _headers_for_quality(client)
+    dashboard = client.get('/api/quality/dashboard?from_date=2026-06-01&to_date=2026-06-30', headers=h).json()
+    trend = client.get('/api/quality/monthly-trend?from_month=2026-06-01&to_month=2026-06-01', headers=h).json()[0]
+    assert dashboard['ppm_pending_rows'] == 0
+    assert dashboard['ppm'] == 10000.0
+    assert trend['ppm_pending_rows'] == 0
+    assert trend['ppm'] == 10000.0
 
 
 def test_historical_rejection_auto_uses_historical_mis_dispatch_qty():

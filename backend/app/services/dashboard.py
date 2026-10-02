@@ -10,13 +10,228 @@ from sqlalchemy.orm import Session
 from ..enums import ActionStatus
 from ..models import (
     Action, ActionContext, DailyMIS, DailyRequirement, Product,
-    ProcessDailySummary, RouteOperation, Operation,
+    ProcessDailySummary, RouteOperation, Operation, ProcessFlowVersion,
+    QualityRejectionDaily, VendorMovement,
 )
 from .planning import recovery_required_per_day
 
 
 def _d(v) -> Decimal:
     return Decimal(str(v or 0))
+
+
+def daily_control_summary(
+    db: Session,
+    as_of: date,
+    plants: list[str] | None = None,
+    product_groups: list[str] | None = None,
+    customer_ids: list[int] | None = None,
+    product_ids: list[int] | None = None,
+    compliance_target: Decimal = Decimal("0.90"),
+    critical_target: Decimal = Decimal("0.80"),
+) -> dict:
+    """One daily readiness/upload/exception view.
+
+    A missing row means the daily upload is incomplete. A stored zero is a
+    reported operational result and is therefore shown as a production alert.
+    Keeping those states separate avoids hiding missing uploads as zero output.
+    """
+    q = select(Product).where(Product.is_active.is_(True))
+    if plants:
+        q = q.where(Product.plant.in_(plants))
+    if product_groups:
+        q = q.where(Product.product_group.in_(product_groups))
+    if customer_ids:
+        q = q.where(Product.customer_id.in_(customer_ids))
+    if product_ids:
+        q = q.where(Product.id.in_(product_ids))
+    products = list(db.scalars(q.order_by(Product.sort_order, Product.name)).all())
+    ids = [p.id for p in products]
+    names = {p.id: p.name for p in products}
+    if not ids:
+        return {
+            "as_of": as_of.isoformat(), "workflow": {}, "counts": {},
+            "alerts": [], "upcoming": {"through": (as_of + timedelta(days=7)).isoformat(), "planned_days": 0, "planned_products": 0},
+        }
+
+    requirements = list(db.scalars(select(DailyRequirement).where(
+        DailyRequirement.req_date == as_of,
+        DailyRequirement.product_id.in_(ids),
+        DailyRequirement.revised_plan_qty > 0,
+    )).all())
+    customer_plan: dict[int, Decimal] = {}
+    stage_plan: dict[tuple[int, int], Decimal] = {}
+    for row in requirements:
+        if row.route_operation_id is None:
+            customer_plan[row.product_id] = max(customer_plan.get(row.product_id, Decimal("0")), _d(row.revised_plan_qty))
+        else:
+            key = (row.product_id, row.route_operation_id)
+            stage_plan[key] = max(stage_plan.get(key, Decimal("0")), _d(row.revised_plan_qty))
+
+    mis_rows = list(db.scalars(select(DailyMIS).where(DailyMIS.mis_date == as_of, DailyMIS.product_id.in_(ids))).all())
+    mis = {r.product_id: r for r in mis_rows}
+    stage_rows = list(db.scalars(select(ProcessDailySummary).where(
+        ProcessDailySummary.summary_date == as_of,
+        ProcessDailySummary.product_id.in_(ids),
+    )).all())
+    stage_actual = {(r.product_id, r.route_operation_id): r for r in stage_rows}
+    operations = {
+        ro.id: op.name for ro, op in db.execute(
+            select(RouteOperation, Operation)
+            .join(Operation, Operation.id == RouteOperation.operation_id)
+            .where(RouteOperation.id.in_([key[1] for key in stage_plan] or [-1]))
+        ).all()
+    }
+
+    alerts: list[dict] = []
+    rank = {"BLOCKER": 0, "CRITICAL": 1, "WARNING": 2, "WATCH": 3}
+
+    def add(severity, kind, detail, product_id=None, value=None, plan=None, actual=None, action="review"):
+        alerts.append({
+            "severity": severity, "kind": kind, "detail": detail,
+            "product_id": product_id, "product": names.get(product_id, ""),
+            "value": float(value) if value is not None else None,
+            "plan_qty": float(plan) if plan is not None else None,
+            "actual_qty": float(actual) if actual is not None else None,
+            "action": action,
+        })
+
+    for pid, plan in customer_plan.items():
+        row = mis.get(pid)
+        if row is None:
+            add("BLOCKER", "missing_dispatch_actual", "Daily MIS / dispatch actual has not been uploaded", pid, plan=plan, action="upload")
+            continue
+        actual = _d(row.actual_qty)
+        if actual == 0:
+            add("CRITICAL", "zero_dispatch_actual", "Zero dispatch was reported against a positive plan", pid, 0, plan, actual, "action")
+        else:
+            ratio = actual / plan
+            if ratio < critical_target:
+                add("CRITICAL", "low_daily_compliance", "Daily dispatch is below 80% of plan", pid, ratio, plan, actual, "action")
+            elif ratio < compliance_target:
+                add("WARNING", "low_daily_compliance", "Daily dispatch is below 90% of plan", pid, ratio, plan, actual, "action")
+        if _d(row.sales_price) <= 0:
+            add("WARNING", "price_missing", "Effective sales price is missing; sales risk cannot be valued", pid, action="data-quality")
+
+    for (pid, operation_id), plan in stage_plan.items():
+        row = stage_actual.get((pid, operation_id))
+        stage_name = operations.get(operation_id, f"Stage #{operation_id}")
+        if row is None:
+            add("BLOCKER", "missing_stage_actual", f"{stage_name}: actual has not been uploaded", pid, plan=plan, action="upload")
+            continue
+        actual = _d(row.actual_qty)
+        if actual == 0:
+            add("CRITICAL", "zero_stage_actual", f"{stage_name}: zero production reported", pid, 0, plan, actual, "action")
+        else:
+            ratio = actual / plan
+            if ratio < critical_target:
+                add("CRITICAL", "stage_bottleneck", f"{stage_name}: output is below 80% of stage plan", pid, ratio, plan, actual, "process")
+            elif ratio < compliance_target:
+                add("WARNING", "stage_bottleneck", f"{stage_name}: output is below 90% of stage plan", pid, ratio, plan, actual, "process")
+
+    quality_rows = list(db.scalars(select(QualityRejectionDaily).where(
+        QualityRejectionDaily.rejection_date == as_of,
+        QualityRejectionDaily.product_id.in_(ids),
+    )).all())
+    quality_by_product: dict[int, list[QualityRejectionDaily]] = {}
+    for row in quality_rows:
+        quality_by_product.setdefault(row.product_id, []).append(row)
+    for pid, rows in quality_by_product.items():
+        reject = sum((_d(x.reject_qty) for x in rows), Decimal("0"))
+        if reject <= 0:
+            continue
+        denoms: dict[tuple, Decimal] = {}
+        pending = False
+        for row in rows:
+            key = (row.shift, row.detection_route_operation_id, row.machine_id, row.denominator_source)
+            qty = _d(row.denominator_qty)
+            if qty > 0:
+                denoms[key] = max(denoms.get(key, Decimal("0")), qty)
+            elif _d(row.reject_qty) > 0:
+                pending = True
+        denominator = sum(denoms.values(), Decimal("0"))
+        if pending or denominator <= 0:
+            add("BLOCKER", "ppm_denominator_pending", f"{reject:g} rejection(s) reported but the PPM denominator is missing", pid, reject, action="data-quality")
+        else:
+            ppm = reject / denominator * Decimal("1000000")
+            if ppm >= Decimal("5000"):
+                add("CRITICAL", "high_daily_ppm", f"Daily rejection is {ppm:,.0f} PPM", pid, ppm, action="action")
+            elif ppm >= Decimal("1000"):
+                add("WARNING", "high_daily_ppm", f"Daily rejection is {ppm:,.0f} PPM", pid, ppm, action="action")
+
+    active_flow_products = set(db.scalars(select(ProcessFlowVersion.product_id).where(
+        ProcessFlowVersion.product_id.in_(list(customer_plan) or [-1]),
+        ProcessFlowVersion.effective_from <= as_of,
+    )).all())
+    planned_stage_products = {key[0] for key in stage_plan}
+    for pid in sorted(active_flow_products - planned_stage_products):
+        add("BLOCKER", "missing_stage_plan", "Customer plan exists but no stage plan is available for this date", pid, plan=customer_plan.get(pid), action="schedule")
+    for pid in sorted(set(customer_plan) - active_flow_products):
+        add("BLOCKER", "process_flow_missing", "Customer plan exists but the effective process flow is not configured", pid, plan=customer_plan.get(pid), action="data-quality")
+
+    overdue_actions = list(db.scalars(select(Action).where(
+        Action.status != ActionStatus.CLOSED,
+        Action.due_at.is_not(None),
+        Action.due_at < datetime.combine(as_of, time.min),
+    )).all())
+    for action_row in overdue_actions:
+        context_ids = set(db.scalars(select(ActionContext.product_id).where(
+            ActionContext.action_id == action_row.id,
+            ActionContext.product_id.in_(ids),
+        )).all())
+        if context_ids:
+            days = (as_of - action_row.due_at.date()).days
+            add("WARNING", "overdue_action", f"{action_row.action_no} is overdue by {days} day(s)", next(iter(context_ids)), days, action="actions")
+
+    vendor_rows = list(db.scalars(select(VendorMovement).where(
+        VendorMovement.product_id.in_(ids),
+        VendorMovement.expected_return_date.is_not(None),
+        VendorMovement.expected_return_date < as_of,
+        VendorMovement.outward_qty > VendorMovement.receipt_qty,
+    )).all())
+    for movement in vendor_rows:
+        pending = _d(movement.outward_qty) - _d(movement.receipt_qty)
+        add("WARNING", "overdue_vendor_wip", f"Vendor receipt was expected {movement.expected_return_date}", movement.product_id, pending, action="vendor")
+
+    future = list(db.scalars(select(DailyRequirement).where(
+        DailyRequirement.req_date > as_of,
+        DailyRequirement.req_date <= as_of + timedelta(days=7),
+        DailyRequirement.product_id.in_(ids),
+        DailyRequirement.route_operation_id.is_(None),
+        DailyRequirement.revised_plan_qty > 0,
+    )).all())
+    future_keys = {(r.req_date, r.product_id) for r in future}
+    missing_customer = len(set(customer_plan) - set(mis))
+    missing_stage = len(set(stage_plan) - set(stage_actual))
+    blockers = sum(1 for x in alerts if x["severity"] == "BLOCKER")
+    critical = sum(1 for x in alerts if x["severity"] == "CRITICAL")
+    warnings = sum(1 for x in alerts if x["severity"] == "WARNING")
+    alerts.sort(key=lambda x: (rank.get(x["severity"], 9), x["product"], x["detail"]))
+    has_plan = bool(customer_plan or stage_plan)
+    schedule_status = "NO PLAN" if not has_plan else "ATTENTION" if any(x["kind"] in {"missing_stage_plan", "process_flow_missing"} for x in alerts) else "READY"
+    expected = len(customer_plan) + len(stage_plan)
+    reported = len(set(customer_plan) & set(mis)) + len(set(stage_plan) & set(stage_actual))
+    upload_status = "NO PLAN" if expected == 0 else "COMPLETE" if reported == expected else "NOT STARTED" if reported == 0 else "PARTIAL"
+    review_status = "BLOCKED" if blockers else "CRITICAL" if critical else "ATTENTION" if warnings else "CLEAR"
+    return {
+        "as_of": as_of.isoformat(),
+        "workflow": {
+            "schedule": {"status": schedule_status, "planned_products": len(customer_plan), "planned_stages": len(stage_plan)},
+            "upload": {"status": upload_status, "expected_rows": expected, "reported_rows": reported, "missing_customer_rows": missing_customer, "missing_stage_rows": missing_stage},
+            "review": {"status": review_status, "blockers": blockers, "critical": critical, "warnings": warnings},
+        },
+        "counts": {
+            "planned_products": len(customer_plan), "reported_products": len(set(customer_plan) & set(mis)),
+            "planned_stages": len(stage_plan), "reported_stages": len(set(stage_plan) & set(stage_actual)),
+            "blockers": blockers, "critical": critical, "warnings": warnings,
+        },
+        "alerts": alerts[:100],
+        "upcoming": {
+            "through": (as_of + timedelta(days=7)).isoformat(),
+            "planned_days": len({x[0] for x in future_keys}),
+            "planned_products": len({x[1] for x in future_keys}),
+        },
+    }
 
 
 def daily_review_summary(

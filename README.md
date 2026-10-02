@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.3
+# ProductionReviewWebApp v0.4.5
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -45,3 +45,7 @@ Tests default to a disposable SQLite file. CI also uses isolated PostgreSQL test
 ## v0.4.3 — OCR feature reverted
 
 Shop Production Capture has been removed from the application. Existing daily Excel/MIS workflows remain. Capture schema and evidence are retained for safe updates from v0.4.2. Further OEE work is deferred. See [safe revert instructions](docs/RELEASE_v0.4.3.md).
+
+## v0.4.5 — Daily Production Control
+
+Built on the v0.4.4 parent `Disp_Done` schedule unification, the home page now guides the daily review through three steps: schedule readiness, one combined production upload, and early-warning action. Missing uploads remain distinct from reported zero production. Warnings cover missing process/stage plans, low dispatch or stage output, high PPM or missing denominator, overdue actions, and overdue vendor receipts. Each warning opens the relevant work page. The updater now starts and waits for PostgreSQL automatically before it creates its verified backup. See [release notes](docs/RELEASE_v0.4.5.md).
