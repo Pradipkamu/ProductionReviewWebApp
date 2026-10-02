@@ -350,3 +350,80 @@ def test_historical_rejection_import_persists_mis_dispatch_fallback(tmp_path):
         row = db.scalar(select(QualityRejectionMonthlyHistory).where(QualityRejectionMonthlyHistory.record_key=='HMCL|Total|2026-06|AUTO'))
         assert row.dispatch_qty == Decimal('2000')
         assert row.ppm == Decimal('10000.000')
+
+
+def test_historical_ppm_plant_filter_uses_plant_scoped_dispatch_qty():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models import QualityRejectionMonthlyHistory
+
+    with SessionLocal() as db:
+        p, _, ph = _seed_quality_context(db)
+        db.add_all([
+            DailyMIS(mis_date=date(2026,6,10), product_id=p.id, plan_qty=Decimal('5000'), actual_qty=Decimal('5000'),
+                     sales_price=Decimal('1'), plan_sales=Decimal('5000'), actual_sales=Decimal('5000'), source=SourceType.EXCEL),
+            QualityRejectionMonthlyHistory(
+                record_key='PLANT2020|2026-06|BORE O/S', month=date(2026,6,1), source='TEST',
+                source_sheet='Plant 2020', record_scope='PRODUCT_TOTAL', include_in_aggregate=True,
+                product_id=p.id, plant='2020', phenomenon_id=ph.id, reject_qty=Decimal('20'),
+                denominator_source='DISP_DONE', dispatch_qty=Decimal('2000'), ppm=Decimal('10000'),
+            ),
+            QualityRejectionMonthlyHistory(
+                record_key='PLANT2050|2026-06|BORE O/S', month=date(2026,6,1), source='TEST',
+                source_sheet='Plant 2050', record_scope='PRODUCT_TOTAL', include_in_aggregate=True,
+                product_id=p.id, plant='2050', phenomenon_id=ph.id, reject_qty=Decimal('30'),
+                denominator_source='DISP_DONE', dispatch_qty=Decimal('3000'), ppm=Decimal('10000'),
+            ),
+        ])
+        db.commit()
+
+    client = TestClient(app)
+    h = _headers_for_quality(client)
+    p2020 = client.get('/api/quality/report-pack?from_date=2026-06-01&to_date=2026-06-30&plant=2020', headers=h)
+    p2050 = client.get('/api/quality/report-pack?from_date=2026-06-01&to_date=2026-06-30&plant=2050', headers=h)
+    assert p2020.status_code == 200, p2020.text
+    assert p2050.status_code == 200, p2050.text
+    assert p2020.json()['summary']['reject_qty'] == 20.0
+    assert p2020.json()['summary']['denominator_qty'] == 2000.0
+    assert p2020.json()['summary']['ppm'] == 10000.0
+    assert p2050.json()['summary']['reject_qty'] == 30.0
+    assert p2050.json()['summary']['denominator_qty'] == 3000.0
+    assert p2050.json()['summary']['ppm'] == 10000.0
+
+
+def test_historical_ppm_plant_filter_does_not_reuse_product_total_mis_for_split_product():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models import QualityRejectionMonthlyHistory
+
+    with SessionLocal() as db:
+        p, _, ph = _seed_quality_context(db)
+        db.add(DailyMIS(mis_date=date(2026,6,10), product_id=p.id, plan_qty=Decimal('5000'), actual_qty=Decimal('5000'),
+                        sales_price=Decimal('1'), plan_sales=Decimal('5000'), actual_sales=Decimal('5000'), source=SourceType.EXCEL))
+        # Simulates rows imported by an older version that persisted the same
+        # product-total MIS fallback into both plant rows.
+        db.add_all([
+            QualityRejectionMonthlyHistory(
+                record_key='OLD2020|2026-06|BORE O/S', month=date(2026,6,1), source='TEST',
+                source_sheet='Plant 2020', record_scope='PRODUCT_TOTAL', include_in_aggregate=True,
+                product_id=p.id, plant='2020', phenomenon_id=ph.id, reject_qty=Decimal('20'),
+                denominator_source='DISP_DONE', dispatch_qty=Decimal('5000'), ppm=Decimal('4000'),
+            ),
+            QualityRejectionMonthlyHistory(
+                record_key='OLD2050|2026-06|BORE O/S', month=date(2026,6,1), source='TEST',
+                source_sheet='Plant 2050', record_scope='PRODUCT_TOTAL', include_in_aggregate=True,
+                product_id=p.id, plant='2050', phenomenon_id=ph.id, reject_qty=Decimal('30'),
+                denominator_source='DISP_DONE', dispatch_qty=Decimal('5000'), ppm=Decimal('6000'),
+            ),
+        ])
+        db.commit()
+
+    client = TestClient(app)
+    h = _headers_for_quality(client)
+    response = client.get('/api/quality/report-pack?from_date=2026-06-01&to_date=2026-06-30&plant=2020', headers=h)
+    assert response.status_code == 200, response.text
+    summary = response.json()['summary']
+    assert summary['reject_qty'] == 20.0
+    assert summary['denominator_qty'] == 0.0
+    assert summary['ppm'] is None
+    assert summary['ppm_pending_rows'] == 1
