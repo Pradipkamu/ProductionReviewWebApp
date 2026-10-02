@@ -36,3 +36,11 @@
 
 /* v0.4.7: controlled OEE capture and loss-to-action workflow */
 .oee-scope .filters{align-items:end;flex-wrap:wrap;margin-bottom:8px}.oee-scope .filters label{min-width:210px;flex:1;margin:0}.oee-entry-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:0 12px}.oee-entry-grid .span-2{grid-column:span 2}.oee-entry-grid input[readonly]{background:#eef3f8;color:#40526c;font-weight:700}.panel-title p{margin:4px 0 0;color:#758297;font-size:12px}@media(max-width:850px){.oee-entry-grid{grid-template-columns:1fr 1fr}.oee-entry-grid .span-2{grid-column:span 2}}@media(max-width:540px){.oee-entry-grid{grid-template-columns:1fr}.oee-entry-grid .span-2{grid-column:auto}}
+
+/* click-to-filter report charts */
+.rank-row{border-radius:8px;padding:3px 4px}
+.rank-row.clickable{cursor:pointer}
+.rank-row.clickable:hover,.rank-row.clickable:focus{background:#f3f7fc;outline:none}
+.rank-row.selected{background:#e7f0fb;box-shadow:inset 3px 0 0 #255ea8}
+.filter-chip.removable{width:auto;background:#edf3fb;color:#436083;border:1px solid #d8e3f2;padding:5px 9px;font-size:11px;font-weight:700}
+.filter-chip.removable:hover{background:#dfeaf7}

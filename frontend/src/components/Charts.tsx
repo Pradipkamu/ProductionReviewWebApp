@@ -90,10 +90,10 @@ export function ValueTrendChart({rows,keyName='value',label='Value',suffix='',pr
   </svg></div>
 }
 
-export function RankedBars({rows,valueKey='value',labelKey='name',valueLabel='Value',suffix='',prefix=''}:{rows:any[],valueKey?:string,labelKey?:string,valueLabel?:string,suffix?:string,prefix?:string}){
+export function RankedBars({rows,valueKey='value',labelKey='name',valueLabel='Value',suffix='',prefix='',onSelect,selectedName}:{rows:any[],valueKey?:string,labelKey?:string,valueLabel?:string,suffix?:string,prefix?:string,onSelect?:(row:any)=>void,selectedName?:string}){
   if(!rows?.length) return <div className="empty">No data available.</div>
   const max=Math.max(1,...rows.map(r=>Math.abs(Number(r[valueKey]||0))))
-  return <div className="rank-bars">{rows.map((r:any,i:number)=>{const v=Number(r[valueKey]||0);return <div className="rank-row" key={`${r[labelKey]}-${i}`}><div className="rank-name"><b>{r[labelKey]}</b>{r.sub&&<small>{r.sub}</small>}</div><div className="rank-track"><div className="rank-fill" style={{width:`${Math.min(100,Math.abs(v)/max*100)}%`}}></div></div><strong>{prefix}{new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(v)}{suffix}</strong></div>})}</div>
+  return <div className="rank-bars">{rows.map((r:any,i:number)=>{const v=Number(r[valueKey]||0),selected=selectedName&&String(r[labelKey])===selectedName;return <div className={`rank-row ${onSelect?'clickable':''} ${selected?'selected':''}`} key={`${r[labelKey]}-${i}`} role={onSelect?'button':undefined} tabIndex={onSelect?0:undefined} title={onSelect?`Filter by ${r[labelKey]}`:valueLabel} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==='Enter'||e.key===' ')onSelect?.(r)}}><div className="rank-name"><b>{r[labelKey]}</b>{r.sub&&<small>{r.sub}</small>}</div><div className="rank-track"><div className="rank-fill" style={{width:`${Math.min(100,Math.abs(v)/max*100)}%`}}></div></div><strong>{prefix}{new Intl.NumberFormat('en-IN',{maximumFractionDigits:1}).format(v)}{suffix}</strong></div>})}</div>
 }
 
 export function ProcessFunnelChart({rows}:{rows:any[]}){
