@@ -26,6 +26,8 @@ export default function Quality(){
   const [partPareto,setPartPareto]=useState<any[]>([]); const [phenPareto,setPhenPareto]=useState<any[]>([]); const [busy,setBusy]=useState(false); const [err,setErr]=useState('')
   const [dailyFile,setDailyFile]=useState<File|null>(null); const [historyFile,setHistoryFile]=useState<File|null>(null); const [importResult,setImportResult]=useState<any>(null)
   const [newPhen,setNewPhen]=useState('')
+  const [showManual,setShowManual]=useState(false); const [manualOps,setManualOps]=useState<any[]>([]); const [manualSaving,setManualSaving]=useState(false); const [manualMsg,setManualMsg]=useState('')
+  const [manual,setManual]=useState<any>({rejection_date:iso(today),shift:'A',product_id:'',detection_route_operation_id:'',responsible_route_operation_id:'',machine_id:'',phenomenon_id:'',reject_qty:'',rework_qty:'0',scrap_qty:'0',remark:'',action_required:false})
 
   const qs=useMemo(()=>{const p=new URLSearchParams({from_date:fromDate,to_date:toDate});if(plant.length)p.set('plant',plant.join(','));if(productId.length)p.set('product_id',productId.join(','));if(phenomenonId.length)p.set('phenomenon_id',phenomenonId.join(','));if(operationId.length)p.set('operation_id',operationId.join(','));if(machineId.length)p.set('machine_id',machineId.join(','));if(shift.length)p.set('shift',shift.join(','));return p.toString()},[fromDate,toDate,plant,productId,phenomenonId,operationId,machineId,shift])
 
@@ -42,12 +44,55 @@ export default function Quality(){
   }
   useEffect(()=>{loadMasters().catch(e=>setErr(e.message))},[])
   useEffect(()=>{load()},[qs])
+  useEffect(()=>{
+    if(!manual.product_id){setManualOps([]);return}
+    let active=true
+    api(`/masters/routes/${manual.product_id}?on_date=${manual.rejection_date}`).then((versions:any)=>{
+      if(!active)return
+      const on=manual.rejection_date
+      const current=(versions||[]).find((v:any)=>String(v.effective_from).slice(0,10)<=on&&(!v.effective_to||String(v.effective_to).slice(0,10)>=on))||(versions||[])[0]
+      const ops=current?.operations||[]
+      setManualOps(ops)
+      setManual((prev:any)=>({
+        ...prev,
+        detection_route_operation_id:ops.some((x:any)=>String(x.route_operation_id)===String(prev.detection_route_operation_id))?prev.detection_route_operation_id:'',
+        responsible_route_operation_id:ops.some((x:any)=>String(x.route_operation_id)===String(prev.responsible_route_operation_id))?prev.responsible_route_operation_id:'',
+      }))
+    }).catch((e:any)=>setErr(e.message))
+    return()=>{active=false}
+  },[manual.product_id,manual.rejection_date])
 
   async function upload(file:File|null,type:'daily'|'history'){
     if(!file)return;setBusy(true);setErr('');const fd=new FormData();fd.append('file',file)
     location.href='/import';setBusy(false)
   }
   async function addPhenomenon(){if(!newPhen.trim())return;try{await api('/quality/phenomena',{method:'POST',body:JSON.stringify({name:newPhen,default_responsible_team:'Operation',criticality:'NORMAL'})});setNewPhen('');await loadMasters()}catch(e:any){setErr(e.message)}}
+  async function saveManualRejection(){
+    setManualMsg('');setErr('')
+    if(!manual.rejection_date||!manual.product_id||!manual.detection_route_operation_id||!manual.phenomenon_id||Number(manual.reject_qty)<=0){setErr('Date, Product, Detection Process, Phenomenon and Reject Qty are required.');return}
+    setManualSaving(true)
+    try{
+      const payload={
+        rejection_date:manual.rejection_date,shift:manual.shift,product_id:Number(manual.product_id),
+        detection_route_operation_id:Number(manual.detection_route_operation_id),
+        responsible_route_operation_id:manual.responsible_route_operation_id?Number(manual.responsible_route_operation_id):null,
+        machine_id:manual.machine_id?Number(manual.machine_id):null,phenomenon_id:Number(manual.phenomenon_id),
+        reject_qty:Number(manual.reject_qty),rework_qty:Number(manual.rework_qty||0),scrap_qty:Number(manual.scrap_qty||0),
+        remark:manual.remark||null,action_required:Boolean(manual.action_required),
+      }
+      const saved:any=await api('/quality/daily',{method:'POST',body:JSON.stringify(payload)})
+      let actionText=''
+      if(manual.action_required){
+        const a:any=await api(`/quality/rejections/${saved.id}/raise-action`,{method:'POST',body:JSON.stringify({priority:'HIGH',action_description:'Immediate containment and standard Why-Why analysis required'})})
+        actionText=` • ${a.action_no} created`
+      }
+      setManualMsg(`Rejection saved successfully${saved.ppm_pending?' • PPM pending (production denominator not available yet)':''}${actionText}`)
+      setManual((prev:any)=>({...prev,reject_qty:'',rework_qty:'0',scrap_qty:'0',remark:'',action_required:false}))
+      if(manual.rejection_date<fromDate)setFromDate(manual.rejection_date)
+      if(manual.rejection_date>toDate)setToDate(manual.rejection_date)
+      await load()
+    }catch(e:any){setErr(e.message)}finally{setManualSaving(false)}
+  }
   async function raiseAction(id:number){try{const r:any=await api(`/quality/rejections/${id}/raise-action`,{method:'POST',body:JSON.stringify({priority:'HIGH',action_description:'Immediate containment and standard Why-Why analysis required'})});alert(`${r.action_no} ${r.status==='already_linked'?'already linked':'created'}`);await load()}catch(e:any){setErr(e.message)}}
   function showImportedHistory(){if(!historyRange?.min_month||!historyRange?.max_month)return;setFromDate(String(historyRange.min_month).slice(0,10));setToDate(monthEnd(String(historyRange.max_month)))}
   function pickProduct(row:any){
@@ -73,7 +118,26 @@ export default function Quality(){
   const monthlyPpmRows=monthlyTrend.filter((x:any)=>x.ppm!=null).map((x:any)=>({...x,value:Number(x.ppm)}))
   const monthlyPpmPending=monthlyTrend.filter((x:any)=>x.ppm==null&&Number(x.reject_qty||0)>0).length
   return <>
-    <PageHeader title="Quality / Rejection" subtitle="Daily rejection, historical monthly rejection, PPM, Pareto and Why-Why actions." actions={<div className="button-row"><button className="secondary" onClick={()=>downloadApi('/quality/template','Daily_Rejection_Upload_v0.4.6.xlsx')}>Download Daily Template</button>{historyRange?.records>0&&<button className="secondary" onClick={showImportedHistory}>Show Imported History</button>}<button onClick={()=>window.print()}>Print / PDF</button></div>}/>
+    <PageHeader title="Quality / Rejection" subtitle="Daily rejection, historical monthly rejection, PPM, Pareto and Why-Why actions." actions={<div className="button-row"><button onClick={()=>{setShowManual(!showManual);setManualMsg('')}}>{showManual?'Close Entry':'+ Add Rejection'}</button><button className="secondary" onClick={()=>downloadApi('/quality/template','Daily_Rejection_Upload_v0.4.6.xlsx')}>Download Daily Template</button>{historyRange?.records>0&&<button className="secondary" onClick={showImportedHistory}>Show Imported History</button>}<button onClick={()=>window.print()}>Print / PDF</button></div>}/>
+
+    {showManual&&<section className="panel manual-rejection-panel"><div className="panel-title"><div><h2>Add Rejection</h2><p>Manual entry for a single daily rejection. Master-linked fields use the same validation and PPM denominator logic as Excel import.</p></div></div>
+      <div className="quality-entry-grid">
+        <label>Date<input type="date" value={manual.rejection_date} onChange={e=>setManual({...manual,rejection_date:e.target.value})}/></label>
+        <label>Shift<select value={manual.shift} onChange={e=>setManual({...manual,shift:e.target.value})}>{['A','B','C','General'].map(x=><option key={x} value={x}>{x}</option>)}</select></label>
+        <label>Product<select value={manual.product_id} onChange={e=>setManual({...manual,product_id:e.target.value,detection_route_operation_id:'',responsible_route_operation_id:''})}><option value="">Select Product</option>{products.map((x:any)=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label>Detection Process<select value={manual.detection_route_operation_id} onChange={e=>setManual({...manual,detection_route_operation_id:e.target.value})} disabled={!manual.product_id}><option value="">Select Process</option>{manualOps.map((x:any)=><option key={x.route_operation_id} value={x.route_operation_id}>{x.operation}</option>)}</select></label>
+        <label>Responsible Process<select value={manual.responsible_route_operation_id} onChange={e=>setManual({...manual,responsible_route_operation_id:e.target.value})} disabled={!manual.product_id}><option value="">Optional</option>{manualOps.map((x:any)=><option key={x.route_operation_id} value={x.route_operation_id}>{x.operation}</option>)}</select></label>
+        <label>Machine<select value={manual.machine_id} onChange={e=>setManual({...manual,machine_id:e.target.value})}><option value="">Optional</option>{machines.filter((x:any)=>x.active!==false).map((x:any)=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label>Phenomenon<select value={manual.phenomenon_id} onChange={e=>setManual({...manual,phenomenon_id:e.target.value})}><option value="">Select Phenomenon</option>{phenomena.map((x:any)=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+        <label>Reject Qty<input type="number" min="0.001" step="0.001" value={manual.reject_qty} onChange={e=>setManual({...manual,reject_qty:e.target.value})}/></label>
+        <label>Rework Qty<input type="number" min="0" step="0.001" value={manual.rework_qty} onChange={e=>setManual({...manual,rework_qty:e.target.value})}/></label>
+        <label>Scrap Qty<input type="number" min="0" step="0.001" value={manual.scrap_qty} onChange={e=>setManual({...manual,scrap_qty:e.target.value})}/></label>
+        <label className="span-2">Remark<textarea value={manual.remark} onChange={e=>setManual({...manual,remark:e.target.value})} placeholder="Optional observation / containment note"/></label>
+        <label className="inline-check manual-action"><input type="checkbox" checked={manual.action_required} onChange={e=>setManual({...manual,action_required:e.target.checked})}/> Raise Why-Why action after saving</label>
+      </div>
+      <div className="button-row"><button onClick={saveManualRejection} disabled={manualSaving}>{manualSaving?'Saving...':'Save Rejection'}</button><button className="secondary" onClick={()=>setShowManual(false)}>Cancel</button></div>
+      {manualMsg&&<div className="notice">{manualMsg}</div>}
+    </section>}
     <section className="panel"><div className="filters quality-filters"><label>From<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/></label><label>To<input type="date" value={toDate} onChange={e=>setToDate(e.target.value)}/></label><label>Plant<MultiSelect value={plant} onChange={setPlant} placeholder="All Plants" options={(filters.plants||[]).map((x:string)=>({value:String(x),label:String(x)}))}/></label><label>Product<MultiSelect value={productId} onChange={setProductId} placeholder="All Products" options={products.map(x=>({value:String(x.id),label:x.name}))}/></label><label>Phenomenon<MultiSelect value={phenomenonId} onChange={setPhenomenonId} placeholder="All Phenomena" options={phenomena.map(x=>({value:String(x.id),label:x.name}))}/></label><label>Process<MultiSelect value={operationId} onChange={setOperationId} placeholder="All Processes" options={operations.map(x=>({value:String(x.id),label:x.name}))}/></label><label>Machine<MultiSelect value={machineId} onChange={setMachineId} placeholder="All Machines" options={machines.map(x=>({value:String(x.id),label:x.name}))}/></label><label>Shift<MultiSelect value={shift} onChange={setShift} placeholder="All Shifts" searchable={false} options={['A','B','C','General'].map(x=>({value:x,label:x}))}/></label></div>{hasGraphFilter&&<div className="filter-summary"><span className="filter-chip">Graph filter</span>{selectedProductNames.map((name:string)=><button key={`p-${name}`} className="filter-chip removable" onClick={()=>setProductId([])}>Part: {name} ×</button>)}{selectedPhenomenonNames.map((name:string)=><button key={`ph-${name}`} className="filter-chip removable" onClick={()=>setPhenomenonId([])}>Phenomenon: {name} ×</button>)}<button className="filter-chip removable" onClick={()=>{setProductId([]);setPhenomenonId([])}}>Clear graph filters</button></div>}{historyRange?.records>0&&<p className="muted">Imported history: {historyRange.min_month} to {historyRange.max_month} • {num(historyRange.records)} phenomenon rows. Historical PPM automatically uses matching Daily MIS Actual Qty as the Dispatch Done denominator when available; otherwise PPM stays Pending.</p>}{summary.history_note&&<div className="warning">{summary.history_note}</div>}{err&&<div className="error">{err}</div>}</section>
 
     <div className="kpi-grid"><Kpi label="Rejected Qty" value={num(summary.reject_qty||0)} tone={(summary.reject_qty||0)>0?'bad':'good'} sub={`${num(summary.daily_records||0)} daily + ${num(summary.historical_records||0)} historical rows`}/><Kpi label="PPM" value={ppm} tone={summary.ppm==null?'warn':'neutral'} sub={`${num(summary.denominator_qty||0)} Dispatch/denominator qty`}/><Kpi label="Rework" value={num(summary.rework_qty||0)}/><Kpi label="Scrap" value={num(summary.scrap_qty||0)} tone={(summary.scrap_qty||0)>0?'bad':'neutral'}/><Kpi label="Open Actions" value={summary.open_actions||0} tone={(summary.open_actions||0)>0?'warn':'good'}/><Kpi label="Overdue Actions" value={summary.overdue_actions||0} tone={(summary.overdue_actions||0)>0?'bad':'good'}/></div>
