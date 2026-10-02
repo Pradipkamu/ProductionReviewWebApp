@@ -216,43 +216,88 @@ def _is_dispatch_denominator(value: str | None) -> bool:
     return "DISP" in text or "DISPATCH" in text
 
 
-def _history_dispatch_resolution(db: Session, rows: list[QualityRejectionMonthlyHistory]) -> dict[int, tuple[float | None, str | None]]:
-    """Resolve historical Dispatch Done denominator.
+def _history_dispatch_resolution(
+    db: Session,
+    rows: list[QualityRejectionMonthlyHistory],
+    *,
+    plant_filter: str | None = None,
+) -> dict[int, tuple[float | None, str | None]]:
+    """Resolve historical Dispatch Done denominator without breaking filter scope.
 
-    Priority: explicit imported dispatch_qty, then Historical Daily MIS actual_qty for
-    the same Product + Month. The MIS fallback is intentionally limited to aggregate
-    product-total history rows because plant/vendor breakups can have a different
-    denominator that is not represented in Daily MIS.
+    Priority is explicit plant/product scoped Dispatch_Qty, then matching Historical
+    Daily MIS actual_qty. Daily MIS has Product + Date but no independent historical
+    plant split, so when one Product + Month exists under multiple historical plants
+    and only a subset of those plants is selected, a product-total MIS denominator
+    must not be reused for the filtered numerator.
     """
-    resolved: dict[int, tuple[float | None, str | None]] = {}
-    missing_keys: set[tuple[date, int]] = set()
+    if not rows:
+        return {}
+
+    selected_plants = set(csv_strings(plant_filter))
+    eligible_keys: set[tuple[date, int]] = set()
     for x in rows:
         scope = str(x.record_scope or "").strip().upper()
-        eligible_scope = scope in {"PRODUCT_TOTAL", "AGGREGATE_TOTAL", "TOTAL", ""}
-        if x.include_in_aggregate and eligible_scope and _is_dispatch_denominator(x.denominator_source):
-            missing_keys.add((_month_start(x.month), x.product_id))
-        else:
-            resolved[x.id] = ((_num(x.dispatch_qty), "UPLOADED") if x.dispatch_qty is not None and _num(x.dispatch_qty)>0 else (None, None))
+        if x.include_in_aggregate and scope in {"PRODUCT_TOTAL", "AGGREGATE_TOTAL", "TOTAL", ""} and _is_dispatch_denominator(x.denominator_source):
+            eligible_keys.add((_month_start(x.month), x.product_id))
 
-    if missing_keys:
-        months = [m for m, _ in missing_keys]
-        product_ids = sorted({pid for _, pid in missing_keys})
+    monthly: dict[tuple[date, int], float] = defaultdict(float)
+    all_plants_by_key: dict[tuple[date, int], set[str]] = defaultdict(set)
+    if eligible_keys:
+        months = [m for m, _ in eligible_keys]
+        product_ids = sorted({pid for _, pid in eligible_keys})
         start = min(months)
         last = max(months)
         next_month = (last.replace(day=28) + timedelta(days=4)).replace(day=1)
-        q = select(DailyMIS).where(
+
+        mis_q = select(DailyMIS).where(
             DailyMIS.product_id.in_(product_ids),
             DailyMIS.mis_date >= start,
             DailyMIS.mis_date < next_month,
         )
-        monthly: dict[tuple[date, int], float] = defaultdict(float)
-        for mis in db.scalars(q).all():
+        for mis in db.scalars(mis_q).all():
             monthly[(_month_start(mis.mis_date), mis.product_id)] += _num(mis.actual_qty)
-        for x in rows:
-            if x.id in resolved:
-                continue
-            qty = monthly.get((_month_start(x.month), x.product_id), 0.0)
-            resolved[x.id] = ((qty, "MIS_HISTORY") if qty > 0 else ((_num(x.dispatch_qty), "UPLOADED") if x.dispatch_qty is not None and _num(x.dispatch_qty)>0 else (None,None)))
+
+        if selected_plants:
+            plant_q = select(
+                QualityRejectionMonthlyHistory.month,
+                QualityRejectionMonthlyHistory.product_id,
+                QualityRejectionMonthlyHistory.plant,
+            ).where(
+                QualityRejectionMonthlyHistory.product_id.in_(product_ids),
+                QualityRejectionMonthlyHistory.month >= start,
+                QualityRejectionMonthlyHistory.month <= last,
+            )
+            for month, product_id, plant in db.execute(plant_q).all():
+                if plant not in (None, ""):
+                    all_plants_by_key[(_month_start(month), product_id)].add(str(plant).strip())
+
+    resolved: dict[int, tuple[float | None, str | None]] = {}
+    for x in rows:
+        key = (_month_start(x.month), x.product_id)
+        scope = str(x.record_scope or "").strip().upper()
+        eligible = x.include_in_aggregate and scope in {"PRODUCT_TOTAL", "AGGREGATE_TOTAL", "TOTAL", ""} and _is_dispatch_denominator(x.denominator_source)
+        stored_qty = _num(x.dispatch_qty) if x.dispatch_qty is not None else 0.0
+        mis_qty = monthly.get(key, 0.0)
+
+        # A plant filter is scope-safe only when it covers every historical plant for
+        # this Product + Month. Otherwise Daily MIS is too broad because it has no
+        # separate plant dimension.
+        known_plants = all_plants_by_key.get(key, set())
+        plant_scope_restricted = bool(selected_plants and known_plants and not known_plants.issubset(selected_plants))
+
+        # Explicit plant-scoped Dispatch_Qty must win over Daily MIS. Historical
+        # imports from older app versions may have persisted the MIS fallback into
+        # dispatch_qty; if that value exactly equals product-total MIS while the
+        # plant scope is restricted, treat it as unsafe rather than as explicit.
+        stored_looks_like_mis = bool(stored_qty > 0 and mis_qty > 0 and abs(stored_qty - mis_qty) < 0.0005)
+        if stored_qty > 0 and not (plant_scope_restricted and stored_looks_like_mis):
+            resolved[x.id] = (stored_qty, "UPLOADED")
+        elif eligible and mis_qty > 0 and not plant_scope_restricted:
+            resolved[x.id] = (mis_qty, "MIS_HISTORY")
+        elif plant_scope_restricted:
+            resolved[x.id] = (None, "PLANT_SCOPE_UNAVAILABLE")
+        else:
+            resolved[x.id] = (None, None)
     return resolved
 
 
@@ -694,7 +739,7 @@ def dashboard(from_date: date, to_date: date, plant: str | None = None, product_
                                    phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group)
         history = _exclude_history_covered_by_daily(history, daily)
 
-    dispatch_resolution = _history_dispatch_resolution(db, history) if history else {}
+    dispatch_resolution = _history_dispatch_resolution(db, history, plant_filter=plant) if history else {}
     return _dashboard_data(db, daily, history, dispatch_resolution, history_supported)
 
 
@@ -733,7 +778,7 @@ def pareto(from_date: date, to_date: date, group_by: str = "phenomenon", plant: 
                                    phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group)
         history = _exclude_history_covered_by_daily(history, daily)
 
-    dispatch_resolution = _history_dispatch_resolution(db, history) if history else {}
+    dispatch_resolution = _history_dispatch_resolution(db, history, plant_filter=plant) if history else {}
 
     return _pareto_data(db, daily, history, dispatch_resolution, group_by)
 
@@ -834,7 +879,7 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
                                customer_id=customer_id, product_group=product_group)
     supported = not csv_ints(operation_id) and not csv_ints(machine_id) and not csv_strings(shift)
     aggregate_history = _exclude_history_covered_by_daily(history, daily) if supported else []
-    resolved = _history_dispatch_resolution(db, history) if history else {}
+    resolved = _history_dispatch_resolution(db, history, plant_filter=plant) if history else {}
     context = _daily_context(db, daily)
     products = _by_id(db, Product, {x.product_id for x in history})
     phenomena = _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in history})
@@ -867,7 +912,7 @@ def list_history(from_date: date, to_date: date, plant: str | None = None, produ
                  db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = _historical_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
                             phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group)
-    dispatch_resolution = _history_dispatch_resolution(db, rows) if rows else {}
+    dispatch_resolution = _history_dispatch_resolution(db, rows, plant_filter=plant) if rows else {}
     products = _by_id(db, Product, {x.product_id for x in rows})
     phenomena = _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in rows})
     return [_serialize_history(x, products, phenomena, dispatch_resolution) for x in rows]
@@ -896,7 +941,7 @@ def monthly_trend(from_month: date, to_month: date, plant: str | None = None, pr
     if customer_ids: q=q.where(Product.customer_id.in_(customer_ids))
     if groups: q=q.where(Product.product_group.in_(groups))
     hist=list(db.scalars(q).all())
-    dispatch_resolution = _history_dispatch_resolution(db, hist) if hist else {}
+    dispatch_resolution = _history_dispatch_resolution(db, hist, plant_filter=plant) if hist else {}
     hist_by_month: dict[date,list[QualityRejectionMonthlyHistory]]=defaultdict(list)
     for x in hist: hist_by_month[x.month.replace(day=1)].append(x)
 
