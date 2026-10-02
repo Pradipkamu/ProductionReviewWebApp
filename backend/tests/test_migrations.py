@@ -22,7 +22,8 @@ def test_new_database_and_legacy_adoption_preserve_rows(tmp_path):
         assert conn.scalar(text('SELECT name FROM products WHERE id=1'))=='Original Part'
         assert conn.scalar(text('SELECT password_hash FROM users WHERE id=1'))=='legacy-hash'
         assert conn.scalar(text('SELECT must_change_password FROM users WHERE id=1'))==1
-        assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0005_shop_capture'
+        assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0006_report_performance'
+        assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))==0
         diffs=compare_metadata(MigrationContext.configure(conn),Base.metadata)
         assert not diffs,diffs
     with engine.begin() as conn:
@@ -54,6 +55,9 @@ def test_postgresql_migrations_when_service_available():
             assert conn.scalar(text('SELECT name FROM products WHERE id=1'))=='Original Part'
             assert conn.scalar(text('SELECT must_change_password FROM users WHERE id=1')) is True
             assert not compare_metadata(MigrationContext.configure(conn),Base.metadata)
+            initial=conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))
+            conn.execute(text("UPDATE products SET name='Updated Part' WHERE id=1"))
+            assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))>initial
         with target.begin() as conn:
             config.attributes['connection']=conn;command.upgrade(config,'head')
     finally:

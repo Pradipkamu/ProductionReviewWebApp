@@ -2,12 +2,13 @@ from datetime import date, datetime, timedelta
 from io import BytesIO
 from openpyxl import Workbook
 from fastapi.testclient import TestClient
-from sqlalchemy import select, func
+from sqlalchemy import event, select, func
 from app.main import app
 from app.db import SessionLocal
 from app.models import Product, DailyMIS, Vendor, Operation, RouteVersion, RouteOperation, VendorMovement, VendorReceipt, Action, ActionWhyWhy, ActionReminder
 from app.enums import ActionStatus
 from test_governance_security import headers
+from app.api.insights import data_quality
 
 
 def workbook():
@@ -27,6 +28,29 @@ def test_preview_is_read_only_and_confirmation_is_atomic():
     assert confirmed.status_code==200,confirmed.text
     with SessionLocal() as db:assert db.scalar(select(func.count()).select_from(DailyMIS))==1
     assert c.post('/api/import/confirm',headers=h,json={'preview_token':r.json()['preview_token']}).status_code==409
+
+
+def test_data_quality_queries_are_independent_of_product_count():
+    with SessionLocal() as db:
+        products=[Product(code=f'CHECK-{i}',name=f'Check {i}') for i in range(15)]
+        db.add_all(products);db.flush()
+        statements=[]
+
+        def track(_conn,_cursor,statement,_params,_context,_many):
+            if statement.lstrip().upper().startswith('SELECT'):statements.append(statement)
+
+        event.listen(db.bind,'before_cursor_execute',track)
+        try:
+            single=data_quality(db,date(2026,9,30),products[:1])
+            single_queries=len(statements)
+            statements.clear()
+            all_products=data_quality(db,date(2026,9,30),products)
+            all_queries=len(statements)
+        finally:
+            event.remove(db.bind,'before_cursor_execute',track)
+        assert single['counts']['route_missing']==1
+        assert all_products['counts']['route_missing']==15
+        assert all_queries==single_queries
 
 
 def test_preview_becomes_stale_after_master_edit():

@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric,
+    BigInteger, Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric,
     String, Text, UniqueConstraint, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -292,6 +292,7 @@ class VendorMovement(Base, TimestampMixin):
     receipt_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
     reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    __table_args__ = (Index("ix_vendor_product_expected_return", "product_id", "expected_return_date"),)
 
 
 class MachineShiftProduction(Base, TimestampMixin):
@@ -311,6 +312,7 @@ class MachineShiftProduction(Base, TimestampMixin):
     ideal_cycle_time_sec: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("0"))
     source: Mapped[SourceType] = mapped_column(SAEnum(SourceType), default=SourceType.MANUAL)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    __table_args__ = (Index("ix_machine_shift_date_machine_product", "production_date", "machine_id", "product_id"),)
 
 
 class MachineLossEvent(Base, TimestampMixin):
@@ -329,6 +331,7 @@ class MachineLossEvent(Base, TimestampMixin):
     remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[SourceType] = mapped_column(SAEnum(SourceType), default=SourceType.MANUAL)
     loss_category: Mapped[LossCategory] = relationship()
+    __table_args__ = (Index("ix_machine_loss_date_machine_product", "loss_date", "machine_id", "product_id"),)
 
 
 
@@ -380,7 +383,10 @@ class QualityRejectionDaily(Base, TimestampMixin):
     action_required: Mapped[bool] = mapped_column(Boolean, default=False)
     import_batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_import_batches.id"), nullable=True, index=True)
     entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    __table_args__ = (Index("ix_quality_daily_date_product", "rejection_date", "product_id"),)
+    __table_args__ = (
+        Index("ix_quality_daily_date_product", "rejection_date", "product_id"),
+        Index("ix_quality_daily_date_phenomenon", "rejection_date", "phenomenon_id"),
+    )
 
 
 class QualityRejectionMonthlyHistory(Base, TimestampMixin):
@@ -410,6 +416,7 @@ class QualityRejectionMonthlyHistory(Base, TimestampMixin):
     source_reported_ppm: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 3), nullable=True)
     data_quality_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     import_batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_import_batches.id"), nullable=True, index=True)
+    __table_args__ = (Index("ix_quality_history_month_product_phenomenon", "month", "product_id", "phenomenon_id"),)
 
 
 class QualityActionLink(Base):
@@ -661,3 +668,9 @@ class ShopCapture(Base, TimestampMixin):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String(30), default='draft')
     __table_args__ = (UniqueConstraint('owner_id', 'file_sha256', name='uq_capture_owner_hash'),)
+
+
+class BusinessDataRevision(Base):
+    __tablename__ = 'business_data_revision'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

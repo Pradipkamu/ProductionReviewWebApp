@@ -28,8 +28,6 @@ export default function Quality(){
   const [newPhen,setNewPhen]=useState('')
 
   const qs=useMemo(()=>{const p=new URLSearchParams({from_date:fromDate,to_date:toDate});if(plant.length)p.set('plant',plant.join(','));if(productId.length)p.set('product_id',productId.join(','));if(phenomenonId.length)p.set('phenomenon_id',phenomenonId.join(','));if(operationId.length)p.set('operation_id',operationId.join(','));if(machineId.length)p.set('machine_id',machineId.join(','));if(shift.length)p.set('shift',shift.join(','));return p.toString()},[fromDate,toDate,plant,productId,phenomenonId,operationId,machineId,shift])
-  const historyQs=useMemo(()=>{const p=new URLSearchParams({from_date:fromDate,to_date:toDate});if(plant.length)p.set('plant',plant.join(','));if(productId.length)p.set('product_id',productId.join(','));if(phenomenonId.length)p.set('phenomenon_id',phenomenonId.join(','));return p.toString()},[fromDate,toDate,plant,productId,phenomenonId])
-  const monthlyQs=useMemo(()=>{const p=new URLSearchParams({from_month:`${fromDate.slice(0,7)}-01`,to_month:`${toDate.slice(0,7)}-01`});if(plant.length)p.set('plant',plant.join(','));if(productId.length)p.set('product_id',productId.join(','));if(phenomenonId.length)p.set('phenomenon_id',phenomenonId.join(','));return p.toString()},[fromDate,toDate,plant,productId,phenomenonId])
 
   async function loadMasters(){
     const [p,f,ph,o,m,hr]=await Promise.all([api('/masters/products'),api('/masters/filter-options'),api('/quality/phenomena'),api('/masters/operations'),api('/masters/machines'),api('/quality/history-range')])
@@ -38,16 +36,12 @@ export default function Quality(){
   async function load(){
     setBusy(true);setErr('')
     try{
-      const [s,r,t,pp,dp,mt,hr]=await Promise.all([
-        api(`/quality/dashboard?${qs}`),api(`/quality/daily?${qs}`),api(`/quality/trend?${qs}`),
-        api(`/quality/pareto?group_by=product&${qs}`),api(`/quality/pareto?group_by=phenomenon&${qs}`),
-        api(`/quality/monthly-trend?${monthlyQs}`),api(`/quality/history?${historyQs}`)
-      ])
-      setSummary(s);setRows(r as any[]);setTrend(t as any[]);setPartPareto(pp as any[]);setPhenPareto(dp as any[]);setMonthlyTrend(mt as any[]);setHistoryRows(hr as any[])
+      const report:any=await api(`/quality/report-pack?${qs}`)
+      setSummary(report.summary);setRows(report.rows);setTrend(report.trend);setPartPareto(report.part_pareto);setPhenPareto(report.phenomenon_pareto);setMonthlyTrend(report.monthly_trend);setHistoryRows(report.history)
     }catch(e:any){setErr(e.message)}finally{setBusy(false)}
   }
   useEffect(()=>{loadMasters().catch(e=>setErr(e.message))},[])
-  useEffect(()=>{load()},[qs,historyQs,monthlyQs])
+  useEffect(()=>{load()},[qs])
 
   async function upload(file:File|null,type:'daily'|'history'){
     if(!file)return;setBusy(true);setErr('');const fd=new FormData();fd.append('file',file)

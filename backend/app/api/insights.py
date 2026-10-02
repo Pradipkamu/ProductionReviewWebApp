@@ -1,14 +1,15 @@
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, extract, func
 from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db import get_db
 from ..models import (User, Product, RouteVersion, RouteOperation, StandardCycleTime, OperationMachineMap,
  SalesPriceHistory, DailyMIS, DailyRequirement, QualityRejectionDaily, QualityRejectionMonthlyHistory,
  ImportBatch, QualityRejectionImportBatch, MachineShiftProduction, MachineLossEvent, Action, ActionContext,
- ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory)
+ ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory,
+ ProcessFlowVersion, ProcessFlowStage, StageScheduleAllocation, Operation)
 from ..services.oee import calculate_oee
 from ..services.escalation import refresh_reminders
 from ..services.filtering import csv_ints, csv_strings
@@ -25,44 +26,90 @@ def data_quality(db, as_of, products):
     issues=[]; ids={p.id for p in products}
     def add(kind,p,detail,entity=None):
         issues.append(dict(kind=kind,product_id=p.id if p else None,product=p.name if p else '',detail=detail,entity_id=entity))
+    routes_by_product=defaultdict(list)
+    for route in db.scalars(select(RouteVersion).where(
+        RouteVersion.product_id.in_(ids), RouteVersion.is_active.is_(True),
+        RouteVersion.effective_from<=as_of,
+        (RouteVersion.effective_to.is_(None)) | (RouteVersion.effective_to>=as_of))):
+        routes_by_product[route.product_id].append(route)
+    flows={}
+    for flow in db.scalars(select(ProcessFlowVersion).where(
+        ProcessFlowVersion.product_id.in_(ids), ProcessFlowVersion.effective_from<=as_of
+    ).order_by(ProcessFlowVersion.effective_from.desc(), ProcessFlowVersion.revision_no.desc())):
+        flows.setdefault(flow.product_id, flow)
+    stages_by_flow=defaultdict(list)
+    for stage in db.scalars(select(ProcessFlowStage).where(
+        ProcessFlowStage.flow_id.in_([flow.id for flow in flows.values()]),
+        ProcessFlowStage.is_active.is_(True))):
+        stages_by_flow[stage.flow_id].append(stage)
+    stage_ids={stage.id for stages in stages_by_flow.values() for stage in stages}
+    scheduled_stages=set(db.scalars(select(StageScheduleAllocation.stage_id).where(
+        StageScheduleAllocation.stage_id.in_(stage_ids),
+        StageScheduleAllocation.month==as_of.replace(day=1),
+        StageScheduleAllocation.effective_from<=as_of)).all())
+    route_ids={route.id for routes in routes_by_product.values() for route in routes}
+    ops_by_route=defaultdict(list)
+    for route_op in db.scalars(select(RouteOperation).where(
+        RouteOperation.route_version_id.in_(route_ids), RouteOperation.is_enabled.is_(True))):
+        ops_by_route[route_op.route_version_id].append(route_op)
+    op_ids={op.id for ops in ops_by_route.values() for op in ops}
+    names={op.id:op for op in db.scalars(select(Operation).where(
+        Operation.id.in_({r.operation_id for ops in ops_by_route.values() for r in ops})))}
+    stage_by_operation={stage.route_operation_id:stage for stage in db.scalars(select(ProcessFlowStage).where(
+        ProcessFlowStage.route_operation_id.in_(op_ids)))}
+    mapped_ops=set(db.scalars(select(OperationMachineMap.route_operation_id).where(OperationMachineMap.route_operation_id.in_(op_ids))).all())
+    timed_ops=set(db.scalars(select(StandardCycleTime.route_operation_id).where(
+        StandardCycleTime.route_operation_id.in_(op_ids), StandardCycleTime.effective_from<=as_of,
+        (StandardCycleTime.effective_to.is_(None)) | (StandardCycleTime.effective_to>=as_of),
+        StandardCycleTime.ideal_cycle_time_sec>0)).all())
+    prices_by_product=defaultdict(list)
+    for price in db.scalars(select(SalesPriceHistory).where(
+        SalesPriceHistory.product_id.in_(ids), SalesPriceHistory.effective_from<=as_of,
+        (SalesPriceHistory.effective_to.is_(None)) | (SalesPriceHistory.effective_to>=as_of))):
+        prices_by_product[price.product_id].append(price)
     for p in products:
         for kind,value in [('customer_missing',p.customer_id),('plant_missing',p.plant),('type_missing',p.product_group),('weight_missing',p.finish_weight_kg)]:
             if not value or (kind=='weight_missing' and value<=0):add(kind,p,'Complete product master')
-        routes=db.scalars(select(RouteVersion).where(RouteVersion.product_id==p.id,RouteVersion.is_active.is_(True),RouteVersion.effective_from<=as_of,
-            (RouteVersion.effective_to.is_(None))|(RouteVersion.effective_to>=as_of))).all()
-        from ..services.process_flows import active_flow
-        from ..models import ProcessFlowStage, StageScheduleAllocation
-        flow=active_flow(db,p.id,as_of)
+        routes=routes_by_product[p.id]
+        flow=flows.get(p.id)
         if flow:
             routes=[r for r in routes if r.id==flow.route_version_id]
             if not flow.company:add('company_missing',p,'Complete company in the next process definition revision')
-            for stage in db.scalars(select(ProcessFlowStage).where(ProcessFlowStage.flow_id==flow.id,ProcessFlowStage.is_active.is_(True))):
+            for stage in stages_by_flow[flow.id]:
                 if stage.role.startswith('VENDOR') and not stage.vendor_name:add('vendor_missing',p,stage.name,stage.id)
-                allocated=db.scalar(select(StageScheduleAllocation.id).where(StageScheduleAllocation.stage_id==stage.id,StageScheduleAllocation.month==as_of.replace(day=1),StageScheduleAllocation.effective_from<=as_of).limit(1))
-                if allocated is None:add('stage_schedule_missing',p,stage.name,stage.id)
+                if stage.id not in scheduled_stages:add('stage_schedule_missing',p,stage.name,stage.id)
         if not routes:add('route_missing',p,'No active route on selected date')
         if len(routes)>1:add('conflict',p,'Overlapping active routes')
         for route in routes:
-            ops=db.scalars(select(RouteOperation).where(RouteOperation.route_version_id==route.id,RouteOperation.is_enabled.is_(True))).all()
+            ops=ops_by_route[route.id]
             if not ops:add('route_missing',p,'Route has no enabled operations',route.id)
             for operation in ops:
-                maps=db.scalars(select(OperationMachineMap).where(OperationMachineMap.route_operation_id==operation.id)).all()
-                stage=db.scalar(select(ProcessFlowStage).where(ProcessFlowStage.route_operation_id==operation.id)) if flow else None
-                requires_machine=stage.role=='PRODUCTION' if stage else operation.operation.operation_type.value=='INTERNAL'
-                if not maps and requires_machine:add('machine_mapping_missing',p,f'Operation {operation.operation.name}',operation.id)
-                cycles=db.scalars(select(StandardCycleTime).where(StandardCycleTime.route_operation_id==operation.id,StandardCycleTime.effective_from<=as_of,
-                    (StandardCycleTime.effective_to.is_(None))|(StandardCycleTime.effective_to>=as_of),StandardCycleTime.ideal_cycle_time_sec>0)).all()
-                if not cycles and requires_machine:add('cycle_time_missing',p,f'Operation {operation.operation.name}',operation.id)
-        prices=db.scalars(select(SalesPriceHistory).where(SalesPriceHistory.product_id==p.id,SalesPriceHistory.effective_from<=as_of,
-            (SalesPriceHistory.effective_to.is_(None))|(SalesPriceHistory.effective_to>=as_of))).all()
+                stage=stage_by_operation.get(operation.id) if flow else None
+                op=names[operation.operation_id]
+                requires_machine=stage.role=='PRODUCTION' if stage else op.operation_type.value=='INTERNAL'
+                if operation.id not in mapped_ops and requires_machine:add('machine_mapping_missing',p,f'Operation {op.name}',operation.id)
+                if operation.id not in timed_ops and requires_machine:add('cycle_time_missing',p,f'Operation {op.name}',operation.id)
+        prices=prices_by_product[p.id]
         if not prices or not any(x.price>0 for x in prices):add('price_missing',p,'No positive effective price')
         if len(prices)>1:add('conflict',p,'Overlapping effective price ranges')
     byid={p.id:p for p in products}
     for r in db.scalars(select(QualityRejectionDaily).where(QualityRejectionDaily.product_id.in_(ids),QualityRejectionDaily.rejection_date<=as_of)):
         if r.denominator_qty is None or r.denominator_qty<=0:add('ppm_denominator_pending',byid[r.product_id],str(r.rejection_date),r.id)
-    for r in db.scalars(select(QualityRejectionMonthlyHistory).where(QualityRejectionMonthlyHistory.product_id.in_(ids),QualityRejectionMonthlyHistory.month<=as_of)):
-        dispatch=db.scalars(select(DailyMIS.actual_qty).where(DailyMIS.product_id==r.product_id,DailyMIS.mis_date>=r.month,DailyMIS.mis_date<(r.month.replace(day=28)+timedelta(days=4)).replace(day=1))).all()
-        if not dispatch or sum(dispatch)<=0:add('ppm_denominator_pending',byid[r.product_id],f'Historical MIS dispatch missing for {r.month}',r.id)
+    history=db.scalars(select(QualityRejectionMonthlyHistory).where(
+        QualityRejectionMonthlyHistory.product_id.in_(ids),QualityRejectionMonthlyHistory.month<=as_of)).all()
+    dispatch_by_month={}
+    if history:
+        start=min(r.month for r in history)
+        end=(max(r.month for r in history).replace(day=28)+timedelta(days=4)).replace(day=1)
+        dispatch_by_month={
+            (pid,int(year),int(month)):quantity for pid,year,month,quantity in db.execute(
+                select(DailyMIS.product_id,extract('year',DailyMIS.mis_date),extract('month',DailyMIS.mis_date),func.sum(DailyMIS.actual_qty))
+                .where(DailyMIS.product_id.in_(ids),DailyMIS.mis_date>=start,DailyMIS.mis_date<end)
+                .group_by(DailyMIS.product_id,extract('year',DailyMIS.mis_date),extract('month',DailyMIS.mis_date)))
+        }
+    for r in history:
+        if dispatch_by_month.get((r.product_id,r.month.year,r.month.month),0)<=0:
+            add('ppm_denominator_pending',byid[r.product_id],f'Historical MIS dispatch missing for {r.month}',r.id)
         if r.data_quality_note:add('conflict',byid[r.product_id],r.data_quality_note,r.id)
     for model in [ImportBatch,QualityRejectionImportBatch]:
         for batch in db.scalars(select(model)):
@@ -105,13 +152,18 @@ def drilldown(kind:str,from_date:date,to_date:date,product_id:str|None=None,plan
         requirements=db.scalars(select(DailyRequirement).where(DailyRequirement.req_date.between(from_date,to_date),DailyRequirement.product_id.in_(ids))).all()
         return {'mis':mis,'requirements':requirements,'actions':[db.get(Action,c.action_id) for c in contexts]}
     if kind=='ppm':
-        from .quality import _daily_rows, _historical_rows, _serialize_daily, _serialize_history
+        from .quality import _by_id, _daily_context, _daily_rows, _historical_rows, _serialize_daily, _serialize_history
         daily=_daily_rows(db,from_date=from_date,to_date=to_date,plant=plant,product_id=product_id,phenomenon_id=phenomenon_id,operation_id=operation_id,machine_id=machine_id,shift=shift,customer_id=customer_id,product_group=product_group)
         history=_historical_rows(db,from_date=from_date,to_date=to_date,plant=plant,product_id=product_id,phenomenon_id=phenomenon_id,customer_id=customer_id,product_group=product_group) if not any([operation_id,machine_id,shift]) else []
         # Same denominator resolver as existing quality reports.
         from .quality import _history_dispatch_resolution
         resolved = _history_dispatch_resolution(db,history)
-        return {'daily':[_serialize_daily(db,r) for r in daily],'history':[_serialize_history(db,r,resolved) for r in history],'phenomena':db.scalars(select(QualityPhenomenon)).all()}
+        products = _by_id(db, Product, {r.product_id for r in history})
+        phenomena = _by_id(db, QualityPhenomenon, {r.phenomenon_id for r in history})
+        context = _daily_context(db, daily)
+        return {'daily':[_serialize_daily(r,context) for r in daily],
+                'history':[_serialize_history(r,products,phenomena,resolved) for r in history],
+                'phenomena':db.scalars(select(QualityPhenomenon)).all()}
     if kind=='oee':
         q=select(MachineShiftProduction).where(MachineShiftProduction.production_date.between(from_date,to_date),MachineShiftProduction.product_id.in_(ids))
         lq=select(MachineLossEvent).where(MachineLossEvent.loss_date.between(from_date,to_date))

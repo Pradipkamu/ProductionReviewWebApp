@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..config import get_settings
 from ..db import get_db, Base
-from ..models import User, ImportBatch, QualityRejectionImportBatch
+from ..models import BusinessDataRevision, User, ImportBatch, QualityRejectionImportBatch
 from ..services.excel_import import import_daily_production_workbook
 from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
@@ -30,10 +30,16 @@ def authorize(kind,user):
         raise HTTPException(403,'Import kind is outside your role')
 
 
-def fingerprint(db):
+def fingerprint(db, *, lock=False):
+    if db.bind.dialect.name == 'postgresql':
+        q = select(BusinessDataRevision.revision).where(BusinessDataRevision.id == 1)
+        revision = db.scalar(q.with_for_update() if lock else q)
+        if revision is None:
+            raise RuntimeError('Business data revision is missing; run Alembic migrations')
+        return str(revision)
     h=hashlib.sha256()
     # Conservative: any relevant business/master change invalidates an earlier preview.
-    exclude={'governance_audit','action_reminders','historical_correction_grants','import_batches','quality_rejection_import_batches'}
+    exclude={'governance_audit','action_reminders','historical_correction_grants','import_batches','quality_rejection_import_batches','business_data_revision'}
     for table in sorted(Base.metadata.tables.values(),key=lambda t:t.name):
         if table.name in exclude:continue
         for row in db.execute(select(table).order_by(*table.primary_key.columns)):
@@ -132,7 +138,7 @@ def confirm(payload:Confirm,db:Session=Depends(get_db),user:User=Depends(get_cur
     batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
     previous=db.scalar(select(batch_model).where(batch_model.file_sha256==claims.get('batch_sha',claims['sha'])))
     if previous:raise HTTPException(409,'Workbook was already confirmed')
-    if fingerprint(db)!=claims['fingerprint']:raise HTTPException(409,'Data changed after preview; preview again before confirming')
+    if fingerprint(db,lock=True)!=claims['fingerprint']:raise HTTPException(409,'Data changed after preview; preview again before confirming')
     try:
         batch=batch_model(file_name=claims['filename'],file_sha256=claims.get('batch_sha',claims['sha']),imported_by_id=user.id,status='RUNNING')
         if kind.startswith('quality-'):batch.import_type='DAILY' if kind=='quality-daily' else 'HISTORICAL'

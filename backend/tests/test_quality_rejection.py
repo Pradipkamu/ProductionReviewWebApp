@@ -4,7 +4,7 @@ from pathlib import Path
 from io import BytesIO
 
 from openpyxl import Workbook, load_workbook
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from app.db import SessionLocal
 from app.enums import OperationType, SourceType
@@ -13,6 +13,7 @@ from app.models import (
     RouteOperation, RouteVersion,
 )
 from app.services.quality_import import import_daily_rejection_workbook, upsert_phenomenon
+from app.api.quality import _daily_context, _serialize_daily
 
 
 def _headers_for_quality(client):
@@ -67,6 +68,34 @@ def test_daily_rejection_business_key_updates_instead_of_duplicate(tmp_path):
         row=db.scalar(select(QualityRejectionDaily))
         assert row.reject_qty==Decimal('18')
         assert row.ppm==Decimal('9000.000')
+
+
+def test_daily_detail_queries_do_not_grow_per_rejection_row():
+    with SessionLocal() as db:
+        p, ro, ph = _seed_quality_context(db)
+        db.add_all([
+            QualityRejectionDaily(record_key=f'bulk-{i}', rejection_date=date(2026, 9, 30),
+                                  product_id=p.id, phenomenon_id=ph.id,
+                                  detection_route_operation_id=ro.id, reject_qty=Decimal('1'))
+            for i in range(12)
+        ])
+        db.commit()
+        rows = db.scalars(select(QualityRejectionDaily)).all()
+        statements = []
+
+        def track(_conn, _cursor, statement, _params, _context, _many):
+            if statement.lstrip().upper().startswith('SELECT'):
+                statements.append(statement)
+
+        event.listen(db.bind, 'before_cursor_execute', track)
+        try:
+            context = _daily_context(db, rows)
+            details = [_serialize_daily(row, context) for row in rows]
+        finally:
+            event.remove(db.bind, 'before_cursor_execute', track)
+        assert len(details) == 12
+        assert all(row['product'] == p.name and row['phenomenon'] == ph.name for row in details)
+        assert len(statements) <= 7
 
 
 def test_daily_rejection_template_uses_required_master_dropdowns_and_protected_formulas(tmp_path):
@@ -208,6 +237,15 @@ def test_historical_rejection_visible_without_dispatch_qty():
     assert hist.status_code == 200, hist.text
     assert len(hist.json()) == 1
     assert hist.json()[0]['dispatch_qty'] is None
+    pack = client.get('/api/quality/report-pack?from_date=2026-06-01&to_date=2026-06-30', headers=h)
+    assert pack.status_code == 200, pack.text
+    assert pack.json()['summary'] == j
+    assert pack.json()['phenomenon_pareto'] == pto.json()
+    assert pack.json()['history'] == hist.json()
+    filtered = client.get('/api/quality/report-pack?from_date=2026-06-01&to_date=2026-06-30&shift=A', headers=h)
+    assert filtered.status_code == 200, filtered.text
+    assert filtered.json()['summary']['history_included'] is False
+    assert filtered.json()['history'] == hist.json()
 
 
 def test_zero_rejection_without_denominator_does_not_block_month_ppm():

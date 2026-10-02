@@ -17,7 +17,7 @@ from openpyxl.styles import Alignment, Font, PatternFill, Protection
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -75,16 +75,38 @@ def _save_upload(file: UploadFile, prefix: str) -> Path:
     return target
 
 
-def _serialize_daily(db: Session, row: QualityRejectionDaily) -> dict:
-    p = db.get(Product, row.product_id)
-    ph = db.get(QualityPhenomenon, row.phenomenon_id)
-    machine = db.get(Machine, row.machine_id) if row.machine_id else None
-    det = db.get(RouteOperation, row.detection_route_operation_id) if row.detection_route_operation_id else None
-    resp = db.get(RouteOperation, row.responsible_route_operation_id) if row.responsible_route_operation_id else None
-    det_op = db.get(Operation, det.operation_id) if det else None
-    resp_op = db.get(Operation, resp.operation_id) if resp else None
-    link = db.scalar(select(QualityActionLink).where(QualityActionLink.daily_rejection_id == row.id).order_by(QualityActionLink.id.desc()).limit(1))
-    action = db.get(Action, link.action_id) if link else None
+def _by_id(db: Session, model, ids: set[int]) -> dict:
+    return {item.id: item for item in db.scalars(select(model).where(model.id.in_(ids))).all()} if ids else {}
+
+
+def _daily_context(db: Session, rows: list[QualityRejectionDaily]) -> dict:
+    products = _by_id(db, Product, {x.product_id for x in rows})
+    phenomena = _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in rows})
+    machines = _by_id(db, Machine, {x.machine_id for x in rows if x.machine_id})
+    routes = _by_id(db, RouteOperation, {
+        route_id for x in rows for route_id in (x.detection_route_operation_id, x.responsible_route_operation_id) if route_id
+    })
+    operations = _by_id(db, Operation, {x.operation_id for x in routes.values()})
+    links = db.scalars(select(QualityActionLink).where(
+        QualityActionLink.daily_rejection_id.in_([x.id for x in rows])
+    ).order_by(QualityActionLink.id.desc())).all() if rows else []
+    latest_links = {}
+    for link in links:
+        latest_links.setdefault(link.daily_rejection_id, link.action_id)
+    actions = _by_id(db, Action, set(latest_links.values()))
+    return dict(products=products, phenomena=phenomena, machines=machines,
+                routes=routes, operations=operations, latest_links=latest_links, actions=actions)
+
+
+def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
+    p = context['products'].get(row.product_id)
+    ph = context['phenomena'].get(row.phenomenon_id)
+    machine = context['machines'].get(row.machine_id)
+    det = context['routes'].get(row.detection_route_operation_id)
+    resp = context['routes'].get(row.responsible_route_operation_id)
+    det_op = context['operations'].get(det.operation_id) if det else None
+    resp_op = context['operations'].get(resp.operation_id) if resp else None
+    action = context['actions'].get(context['latest_links'].get(row.id))
     return {
         "id": row.id,
         "date": row.rejection_date,
@@ -298,9 +320,10 @@ def _aggregate_combined(daily: list[QualityRejectionDaily], history: list[Qualit
     }
 
 
-def _serialize_history(db: Session, row: QualityRejectionMonthlyHistory, dispatch_resolution: dict[int, tuple[float | None, str | None]] | None = None) -> dict:
-    p = db.get(Product, row.product_id)
-    ph = db.get(QualityPhenomenon, row.phenomenon_id)
+def _serialize_history(row: QualityRejectionMonthlyHistory, products: dict, phenomena: dict,
+                       dispatch_resolution: dict[int, tuple[float | None, str | None]] | None = None) -> dict:
+    p = products.get(row.product_id)
+    ph = phenomena.get(row.phenomenon_id)
     resolved_qty, resolved_source = (dispatch_resolution.get(row.id, (None, None)) if dispatch_resolution is not None else ((_num(row.dispatch_qty), "UPLOADED") if row.dispatch_qty is not None else (None, None)))
     resolved_ppm = (_num(row.reject_qty) / resolved_qty * 1_000_000) if resolved_qty is not None and resolved_qty > 0 else None
     return {
@@ -543,7 +566,8 @@ def list_daily(from_date: date, to_date: date, plant: str | None = None, product
     rows = _daily_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
                        phenomenon_id=phenomenon_id, operation_id=operation_id, machine_id=machine_id, shift=shift,
                        customer_id=customer_id, product_group=product_group)
-    return [_serialize_daily(db, x) for x in rows]
+    context = _daily_context(db, rows)
+    return [_serialize_daily(x, context) for x in rows]
 
 
 @router.get("/dashboard")
@@ -566,6 +590,10 @@ def dashboard(from_date: date, to_date: date, plant: str | None = None, product_
         history = _exclude_history_covered_by_daily(history, daily)
 
     dispatch_resolution = _history_dispatch_resolution(db, history) if history else {}
+    return _dashboard_data(db, daily, history, dispatch_resolution, history_supported)
+
+
+def _dashboard_data(db, daily, history, dispatch_resolution, history_supported):
     agg = _aggregate_combined(daily, history, dispatch_resolution)
     daily_links = list(db.scalars(select(QualityActionLink).where(
         QualityActionLink.daily_rejection_id.in_([x.id for x in daily] or [-1])
@@ -573,7 +601,8 @@ def dashboard(from_date: date, to_date: date, plant: str | None = None, product_
     history_links = list(db.scalars(select(QualityActionLink).where(
         QualityActionLink.monthly_history_id.in_([x.id for x in history] or [-1])
     )).all())
-    actions = [db.get(Action, x.action_id) for x in [*daily_links, *history_links]]
+    actions_by_id = _by_id(db, Action, {x.action_id for x in [*daily_links, *history_links]})
+    actions = [actions_by_id.get(x.action_id) for x in [*daily_links, *history_links]]
     agg.update({
         "records": len(daily) + len(history),
         "open_actions": sum(1 for a in actions if a and a.status != ActionStatus.CLOSED),
@@ -601,19 +630,26 @@ def pareto(from_date: date, to_date: date, group_by: str = "phenomenon", plant: 
 
     dispatch_resolution = _history_dispatch_resolution(db, history) if history else {}
 
+    return _pareto_data(db, daily, history, dispatch_resolution, group_by)
+
+
+def _pareto_data(db, daily, history, dispatch_resolution, group_by, daily_context=None, products=None, phenomena=None):
     valid = {"product", "plant", "phenomenon", "operation", "machine"}
     if group_by not in valid:
         raise HTTPException(400, "group_by must be product, plant, phenomenon, operation or machine")
 
+    daily_context = daily_context or _daily_context(db, daily)
+    products = products or _by_id(db, Product, {x.product_id for x in history})
+    phenomena = phenomena or _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in history})
     daily_groups: dict[str, list[QualityRejectionDaily]] = defaultdict(list)
     history_groups: dict[str, list[QualityRejectionMonthlyHistory]] = defaultdict(list)
 
     for x in daily:
-        p = db.get(Product, x.product_id)
-        ph = db.get(QualityPhenomenon, x.phenomenon_id)
-        m = db.get(Machine, x.machine_id) if x.machine_id else None
-        ro = db.get(RouteOperation, x.detection_route_operation_id) if x.detection_route_operation_id else None
-        op = db.get(Operation, ro.operation_id) if ro else None
+        p = daily_context['products'].get(x.product_id)
+        ph = daily_context['phenomena'].get(x.phenomenon_id)
+        m = daily_context['machines'].get(x.machine_id)
+        ro = daily_context['routes'].get(x.detection_route_operation_id)
+        op = daily_context['operations'].get(ro.operation_id) if ro else None
         key = {
             "product": p.name if p else "Unknown",
             "plant": x.plant or (p.plant if p else None) or "Unassigned",
@@ -624,8 +660,8 @@ def pareto(from_date: date, to_date: date, group_by: str = "phenomenon", plant: 
         daily_groups[key].append(x)
 
     for x in history:
-        p = db.get(Product, x.product_id)
-        ph = db.get(QualityPhenomenon, x.phenomenon_id)
+        p = products.get(x.product_id)
+        ph = phenomena.get(x.phenomenon_id)
         key = {
             "product": p.name if p else "Unknown",
             "plant": x.plant or (p.plant if p else None) or "Unassigned",
@@ -663,6 +699,10 @@ def trend(from_date: date, to_date: date, plant: str | None = None, product_id: 
     rows = _daily_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
                        phenomenon_id=phenomenon_id, operation_id=operation_id, machine_id=machine_id, shift=shift,
                        customer_id=customer_id, product_group=product_group)
+    return _trend_data(rows, from_date, to_date)
+
+
+def _trend_data(rows, from_date, to_date):
     grouped: dict[date, list[QualityRejectionDaily]] = defaultdict(list)
     d=from_date
     while d<=to_date:
@@ -675,13 +715,45 @@ def trend(from_date: date, to_date: date, plant: str | None = None, product_id: 
     return out
 
 
+@router.get('/report-pack')
+def report_pack(from_date: date, to_date: date, plant: str | None = None, product_id: str | None = None,
+                phenomenon_id: str | None = None, operation_id: str | None = None,
+                machine_id: str | None = None, shift: str | None = None,
+                customer_id: str | None = None, product_group: str | None = None,
+                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    daily = _daily_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
+                        phenomenon_id=phenomenon_id, operation_id=operation_id, machine_id=machine_id,
+                        shift=shift, customer_id=customer_id, product_group=product_group)
+    history = _historical_rows(db, from_date=from_date, to_date=to_date, plant=plant,
+                               product_id=product_id, phenomenon_id=phenomenon_id,
+                               customer_id=customer_id, product_group=product_group)
+    supported = not csv_ints(operation_id) and not csv_ints(machine_id) and not csv_strings(shift)
+    aggregate_history = _exclude_history_covered_by_daily(history, daily) if supported else []
+    resolved = _history_dispatch_resolution(db, history) if history else {}
+    context = _daily_context(db, daily)
+    products = _by_id(db, Product, {x.product_id for x in history})
+    phenomena = _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in history})
+    month_first = from_date.replace(day=1)
+    month_last = to_date.replace(day=1)
+    return {
+        'summary': _dashboard_data(db, daily, aggregate_history, resolved, supported),
+        'rows': [_serialize_daily(x, context) for x in daily],
+        'trend': _trend_data(daily, from_date, to_date),
+        'part_pareto': _pareto_data(db, daily, aggregate_history, resolved, 'product', context, products, phenomena),
+        'phenomenon_pareto': _pareto_data(db, daily, aggregate_history, resolved, 'phenomenon', context, products, phenomena),
+        'monthly_trend': monthly_trend(from_month=month_first, to_month=month_last, plant=plant,
+                                      product_id=product_id, phenomenon_id=phenomenon_id,
+                                      customer_id=customer_id, product_group=product_group, db=db, _=user),
+        'history': [_serialize_history(x, products, phenomena, resolved) for x in history],
+    }
+
+
 @router.get("/history-range")
 def history_range(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    rows = list(db.scalars(select(QualityRejectionMonthlyHistory.month).order_by(QualityRejectionMonthlyHistory.month)).all())
-    if not rows:
-        return {"min_month": None, "max_month": None, "records": 0}
-    count = db.query(QualityRejectionMonthlyHistory).count()
-    return {"min_month": min(rows), "max_month": max(rows), "records": count}
+    first, last, count = db.execute(select(func.min(QualityRejectionMonthlyHistory.month),
+                                           func.max(QualityRejectionMonthlyHistory.month),
+                                           func.count(QualityRejectionMonthlyHistory.id))).one()
+    return {"min_month": first, "max_month": last, "records": count}
 
 
 @router.get("/history")
@@ -691,7 +763,9 @@ def list_history(from_date: date, to_date: date, plant: str | None = None, produ
     rows = _historical_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
                             phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group)
     dispatch_resolution = _history_dispatch_resolution(db, rows) if rows else {}
-    return [_serialize_history(db, x, dispatch_resolution) for x in rows]
+    products = _by_id(db, Product, {x.product_id for x in rows})
+    phenomena = _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in rows})
+    return [_serialize_history(x, products, phenomena, dispatch_resolution) for x in rows]
 
 
 @router.get("/monthly-trend")
