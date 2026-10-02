@@ -234,12 +234,21 @@ def import_daily_rejection_workbook(db: Session, path: str | Path, *, batch_id: 
         raise ValueError("Missing columns: " + ", ".join(missing))
 
     stats = {"rows_read": 0, "created": 0, "updated": 0, "unchanged": 0, "errors": [], "warnings": [], "ppm_pending": 0}
+    direct_input_columns = [h.get(_norm(x)) for x in [
+        "Date", "Shift", "Product", "Detection Process", "Responsible Process", "Machine",
+        "Phenomenon", "Reject Qty", "Rework Qty", "Scrap Qty", "Remark", "Raise Action",
+    ]]
+    direct_input_columns = [c for c in direct_input_columns if c]
     for r in range(2, ws.max_row + 1):
-        if all(ws.cell(r, c).value in (None, "") for c in range(1, min(ws.max_column, 20) + 1)):
+        # Formula-assisted Plant/Customer/Type cells exist in every template row.
+        # They do not make an otherwise blank row an import record.
+        if all(ws.cell(r, c).value in (None, "") for c in direct_input_columns):
             continue
         stats["rows_read"] += 1
         on_date = _to_date(_cell(ws, r, h, "Date"))
-        shift = str(_cell(ws, r, h, "Shift") or "General").strip()
+        shift_raw = _cell(ws, r, h, "Shift")
+        shift_map = {"a": "A", "b": "B", "c": "C", "general": "General"}
+        shift = shift_map.get(_norm(shift_raw))
         product_name = _cell(ws, r, h, "Product", "Part Name")
         plant = _cell(ws, r, h, "Plant")
         if isinstance(plant, str) and plant.startswith("="):
@@ -250,14 +259,24 @@ def import_daily_rejection_workbook(db: Session, path: str | Path, *, batch_id: 
         resp_label = _cell(ws, r, h, "Responsible Process", "Responsible Operation")
         machine_label = _cell(ws, r, h, "Machine")
         phen_name = _cell(ws, r, h, "Phenomenon", "Rejection Phenomenon")
-        reject_qty = _dec(_cell(ws, r, h, "Reject Qty", "Rejection Qty"))
-        rework_qty = _dec(_cell(ws, r, h, "Rework Qty"))
-        scrap_qty = _dec(_cell(ws, r, h, "Scrap Qty"))
+        reject_raw = _cell(ws, r, h, "Reject Qty", "Rejection Qty")
+        rework_raw = _cell(ws, r, h, "Rework Qty")
+        scrap_raw = _cell(ws, r, h, "Scrap Qty")
+        try:
+            reject_qty = Decimal(str(reject_raw).replace(",", "").strip()) if reject_raw not in (None, "") else None
+            rework_qty = Decimal(str(rework_raw).replace(",", "").strip()) if rework_raw not in (None, "") else Decimal("0")
+            scrap_qty = Decimal(str(scrap_raw).replace(",", "").strip()) if scrap_raw not in (None, "") else Decimal("0")
+        except (InvalidOperation, ValueError, AttributeError):
+            stats["errors"].append(f"Row {r}: Reject, Rework and Scrap quantities must be numeric")
+            continue
         remark = _cell(ws, r, h, "Remark", "Remarks")
         action_required_raw = _norm(_cell(ws, r, h, "Raise Action", "Action Required"))
 
         if not on_date:
             stats["errors"].append(f"Row {r}: invalid Date")
+            continue
+        if not shift:
+            stats["errors"].append(f"Row {r}: Shift is required and must be A, B, C or General")
             continue
         product = _find_product(db, str(product_name or ""))
         if not product:
@@ -284,8 +303,14 @@ def import_daily_rejection_workbook(db: Session, path: str | Path, *, batch_id: 
         if not phenomenon:
             stats["errors"].append(f"Row {r}: Phenomenon '{phen_name}' is not in Quality Phenomenon Master. Add it once in the web app, then re-download the template.")
             continue
-        if reject_qty < 0 or rework_qty < 0 or scrap_qty < 0:
+        if reject_qty is None or reject_qty <= 0:
+            stats["errors"].append(f"Row {r}: Reject Qty is required and must be greater than zero")
+            continue
+        if rework_qty < 0 or scrap_qty < 0:
             stats["errors"].append(f"Row {r}: quantities cannot be negative")
+            continue
+        if action_required_raw not in {"", "yes", "no", "y", "n", "true", "false", "1", "0"}:
+            stats["errors"].append(f"Row {r}: Raise Action must be Yes or No")
             continue
 
         denom_source, denom_qty = denominator_for_rejection(

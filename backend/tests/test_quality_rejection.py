@@ -1,8 +1,9 @@
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from io import BytesIO
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import select
 
 from app.db import SessionLocal
@@ -66,6 +67,62 @@ def test_daily_rejection_business_key_updates_instead_of_duplicate(tmp_path):
         row=db.scalar(select(QualityRejectionDaily))
         assert row.reject_qty==Decimal('18')
         assert row.ppm==Decimal('9000.000')
+
+
+def test_daily_rejection_template_uses_required_master_dropdowns_and_protected_formulas(tmp_path):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with SessionLocal() as db:
+        _seed_quality_context(db)
+
+    client = TestClient(app)
+    response = client.get('/api/quality/template', headers=_headers_for_quality(client))
+    assert response.status_code == 200, response.text
+    wb = load_workbook(BytesIO(response.content), data_only=False)
+    ws = wb['Daily_Rejection_Data']
+    masters = wb['Masters']
+
+    assert masters.sheet_state == 'hidden'
+    assert ws.protection.sheet is True
+    assert ws['C2'].protection.locked is False
+    assert ws['D2'].protection.locked is True
+    assert ws['D2'].value.startswith('=IFERROR(VLOOKUP(')
+    assert ws['C2'].fill.fgColor.rgb.endswith('FFF2CC')
+    assert ws['C1'].fill.fgColor.rgb.endswith('C65911')
+    assert wb.defined_names['ProductList'].attr_text.startswith("'Masters'!$A$2")
+    assert wb.defined_names['PhenomenonList'].attr_text.startswith("'Masters'!$G$2")
+
+    validations = {str(dv.sqref): dv for dv in ws.data_validations.dataValidation}
+    assert validations['C2:C501'].formula1 == '=ProductList'
+    assert validations['C2:C501'].allow_blank is False
+    assert validations['J2:J501'].formula1 == '=PhenomenonList'
+    assert validations['J2:J501'].errorStyle == 'stop'
+    assert validations['K2:K501'].operator == 'greaterThan'
+
+    # Formula-assisted blank rows must not become 500 false import errors.
+    path = tmp_path / 'daily_rejection_template.xlsx'
+    path.write_bytes(response.content)
+    with SessionLocal() as db:
+        stats = import_daily_rejection_workbook(db, path)
+        assert stats['rows_read'] == 0
+        assert stats['errors'] == []
+
+
+def test_daily_rejection_preview_rejects_invalid_shift_and_missing_reject_qty(tmp_path):
+    path = tmp_path / 'daily_quality_required.xlsx'
+    wb = Workbook(); ws = wb.active; ws.title = 'Daily_Rejection_Data'
+    ws.append(['Date','Shift','Product','Detection Process','Phenomenon','Reject Qty'])
+    ws.append([date(2026,9,30),'Night','K70 Cylinder block','Disp_Done','BORE O/S',5])
+    ws.append([date(2026,9,30),'A','K70 Cylinder block','Disp_Done','BORE O/S',None])
+    wb.save(path)
+
+    with SessionLocal() as db:
+        _seed_quality_context(db)
+        stats = import_daily_rejection_workbook(db, path)
+        assert stats['rows_read'] == 2
+        assert any('Shift is required and must be A, B, C or General' in x for x in stats['errors'])
+        assert any('Reject Qty is required and must be greater than zero' in x for x in stats['errors'])
 
 
 def test_phenomenon_upsert_dedupes_same_batch_and_suffixes_code_collisions():

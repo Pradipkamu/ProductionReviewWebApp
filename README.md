@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.5
+# ProductionReviewWebApp v0.4.6
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -49,3 +49,7 @@ Shop Production Capture has been removed from the application. Existing daily Ex
 ## v0.4.5 — Daily Production Control
 
 Built on the v0.4.4 parent `Disp_Done` schedule unification, the home page now guides the daily review through three steps: schedule readiness, one combined production upload, and early-warning action. Missing uploads remain distinct from reported zero production. Warnings cover missing process/stage plans, low dispatch or stage output, high PPM or missing denominator, overdue actions, and overdue vendor receipts. Each warning opens the relevant work page. The updater now starts and waits for PostgreSQL automatically before it creates its verified backup. See [release notes](docs/RELEASE_v0.4.5.md).
+
+## v0.4.6 — Controlled Daily Rejection Template
+
+The Quality page now creates a fresh Daily Rejection workbook from the current Product, Process, Machine and Phenomenon masters. Required master fields use reliable named-range dropdowns, Product-dependent Plant/Customer/Type fields are protected, and Preview independently rejects missing or invalid fixed data. Formula-filled unused rows are ignored. See [release notes](docs/RELEASE_v0.4.6.md).

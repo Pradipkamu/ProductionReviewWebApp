@@ -1,11 +1,13 @@
-# Quality / Rejection Module — v0.2.4
+# Quality / Rejection Module — v0.4.6
 
 ## Daily Excel workflow
 1. Open **Quality / Rejection**.
 2. Click **Download Daily Template**.
-3. Enter daily rejection only using dropdown master values.
+3. Enter daily rejection only using dropdown master values. Orange headers and yellow cells are mandatory.
 4. Upload the workbook from the same page.
-5. The importer validates Product, Plant, Process, Machine and Phenomenon masters and updates existing business keys instead of duplicating them.
+5. Preview validates Date, Shift, Product, Detection Process, Phenomenon and positive Reject Qty before confirmation. It also checks Product, Plant, Process, Machine and Phenomenon masters and updates existing business keys instead of duplicating them.
+
+The template is generated from current web-app masters. Download it again after any Product, Process, Machine or Phenomenon master change. Plant, Customer and Type are formulas from Product Master and are protected from accidental editing. Excel dropdown validation helps during entry; server Preview remains the final control because pasted values can bypass spreadsheet validation.
 
 ### PPM denominator
 - Detection Process = `Disp_Done` → Daily MIS actual / dispatch-done actual.

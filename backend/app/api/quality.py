@@ -12,7 +12,9 @@ import uuid
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook as XLWorkbook
-from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.styles import Alignment, Font, PatternFill, Protection
+from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -56,6 +58,10 @@ def _num(value) -> float:
 
 def _bool(value) -> bool:
     return bool(value)
+
+
+def _label_key(value) -> str:
+    return " ".join(str(value or "").strip().lower().replace("_", " ").split())
 
 
 def _save_upload(file: UploadFile, prefix: str) -> Path:
@@ -348,16 +354,22 @@ def download_daily_template(db: Session = Depends(get_db), _: User = Depends(get
     operations = db.scalars(select(Operation).where(Operation.is_active.is_(True)).order_by(Operation.name)).all()
     machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.name)).all()
     phen = db.scalars(select(QualityPhenomenon).where(QualityPhenomenon.is_active.is_(True)).order_by(QualityPhenomenon.name)).all()
+    if not products:
+        raise HTTPException(409, "No active products are available. Add Product Master data before downloading the Daily Rejection template.")
+    if not phen:
+        raise HTTPException(409, "No active rejection phenomena are available. Add the approved Phenomenon Master first, then download the template again.")
 
     wb = XLWorkbook()
     ws = wb.active
     ws.title = "Daily_Rejection_Data"
+    instructions = wb.create_sheet("Instructions")
     master = wb.create_sheet("Masters")
     headers = ["Date", "Shift", "Product", "Plant", "Customer", "Type", "Detection Process", "Responsible Process", "Machine",
                "Phenomenon", "Reject Qty", "Rework Qty", "Scrap Qty", "Remark", "Raise Action"]
     ws.append(headers)
+    required_columns = {1, 2, 3, 7, 10, 11}
     for cell in ws[1]:
-        cell.fill = PatternFill("solid", fgColor="1F4E78")
+        cell.fill = PatternFill("solid", fgColor="C65911" if cell.column in required_columns else "1F4E78")
         cell.font = Font(color="FFFFFF", bold=True)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.freeze_panes = "A2"
@@ -369,7 +381,7 @@ def download_daily_template(db: Session = Depends(get_db), _: User = Depends(get
     master_headers = ["Product", "Plant", "Customer", "Type", "Process", "Machine", "Phenomenon", "Shift", "YesNo"]
     master.append(master_headers)
     max_rows = max(len(products), len(operations)+1, len(machines), len(phen), 4, 2)
-    process_names = ["Disp_Done"] + [x.name for x in operations if _norm(x.name) not in {"disp_done", "disp done", "dispatch done"}]
+    process_names = ["Disp_Done"] + [x.name for x in operations if _label_key(x.name) not in {"disp done", "dispatch done"}]
     for i in range(max_rows):
         p, c = products[i] if i < len(products) else (None, None)
         master.append([
@@ -390,32 +402,93 @@ def download_daily_template(db: Session = Depends(get_db), _: User = Depends(get
     phen_last = max(2, len(phen)+1)
     shift_last = 5
     yesno_last = 3
-    validations = [
-        ("B2:B501", f"Masters!$H$2:$H${shift_last}"),
-        ("C2:C501", f"Masters!$A$2:$A${product_last}"),
-        ("G2:G501", f"Masters!$E$2:$E${process_last}"),
-        ("H2:H501", f"Masters!$E$2:$E${process_last}"),
-        ("I2:I501", f"Masters!$F$2:$F${machine_last}"),
-        ("J2:J501", f"Masters!$G$2:$G${phen_last}"),
-        ("O2:O501", f"Masters!$I$2:$I${yesno_last}"),
-    ]
-    for cell_range, formula in validations:
-        dv = DataValidation(type="list", formula1=formula, allow_blank=True)
-        ws.add_data_validation(dv); dv.add(cell_range)
+    named_ranges = {
+        "ProductList": f"'Masters'!$A$2:$A${product_last}",
+        "ProcessList": f"'Masters'!$E$2:$E${process_last}",
+        "MachineList": f"'Masters'!$F$2:$F${machine_last}",
+        "PhenomenonList": f"'Masters'!$G$2:$G${phen_last}",
+        "ShiftList": f"'Masters'!$H$2:$H${shift_last}",
+        "YesNoList": f"'Masters'!$I$2:$I${yesno_last}",
+    }
+    for name, reference in named_ranges.items():
+        wb.defined_names.add(DefinedName(name, attr_text=reference))
+
+    def add_list_validation(cell_range: str, list_name: str, label: str, required: bool) -> None:
+        dv = DataValidation(type="list", formula1=f"={list_name}", allow_blank=not required)
+        dv.errorStyle = "stop"
+        dv.errorTitle = f"Invalid {label}"
+        dv.error = f"Select {label} from the dropdown. Typed values outside the approved master are not accepted."
+        dv.promptTitle = label
+        dv.prompt = f"Select an approved {label} from the dropdown."
+        dv.showErrorMessage = True
+        dv.showInputMessage = True
+        ws.add_data_validation(dv)
+        dv.add(cell_range)
+
+    add_list_validation("B2:B501", "ShiftList", "Shift", True)
+    add_list_validation("C2:C501", "ProductList", "Product", True)
+    add_list_validation("G2:G501", "ProcessList", "Detection Process", True)
+    add_list_validation("H2:H501", "ProcessList", "Responsible Process", False)
+    add_list_validation("I2:I501", "MachineList", "Machine", False)
+    add_list_validation("J2:J501", "PhenomenonList", "Phenomenon", True)
+    add_list_validation("O2:O501", "YesNoList", "Raise Action", False)
+
+    date_dv = DataValidation(type="date", operator="between", formula1="DATE(2020,1,1)", formula2="DATE(2100,12,31)", allow_blank=False)
+    date_dv.errorStyle = "stop"; date_dv.errorTitle = "Date required"; date_dv.error = "Enter a valid rejection date."
+    date_dv.showErrorMessage = True; ws.add_data_validation(date_dv); date_dv.add("A2:A501")
+    reject_dv = DataValidation(type="decimal", operator="greaterThan", formula1="0", allow_blank=False)
+    reject_dv.errorStyle = "stop"; reject_dv.errorTitle = "Reject Qty required"; reject_dv.error = "Reject Qty must be greater than zero."
+    reject_dv.showErrorMessage = True; ws.add_data_validation(reject_dv); reject_dv.add("K2:K501")
+    nonnegative_dv = DataValidation(type="decimal", operator="greaterThanOrEqual", formula1="0", allow_blank=True)
+    nonnegative_dv.errorStyle = "stop"; nonnegative_dv.errorTitle = "Invalid quantity"; nonnegative_dv.error = "Quantity cannot be negative."
+    nonnegative_dv.showErrorMessage = True; ws.add_data_validation(nonnegative_dv); nonnegative_dv.add("L2:M501")
+
+    missing_fill = PatternFill("solid", fgColor="FCE4D6")
+    for column in ("A", "B", "C", "G", "J", "K"):
+        ws.conditional_formatting.add(
+            f"{column}2:{column}501",
+            FormulaRule(formula=[f'AND(COUNTA($A2:$O2)>3,{column}2="")'], fill=missing_fill),
+        )
     for r in range(2, 502):
         ws.cell(r, 4).value = f'=IFERROR(VLOOKUP(C{r},Masters!$A$2:$D${product_last},2,FALSE),"")'
         ws.cell(r, 5).value = f'=IFERROR(VLOOKUP(C{r},Masters!$A$2:$D${product_last},3,FALSE),"")'
         ws.cell(r, 6).value = f'=IFERROR(VLOOKUP(C{r},Masters!$A$2:$D${product_last},4,FALSE),"")'
         for c in (4,5,6):
             ws.cell(r,c).fill = PatternFill("solid", fgColor="E7E6E6")
+            ws.cell(r,c).protection = Protection(locked=True)
+        for c in (1,2,3,7,8,9,10,11,12,13,14,15):
+            ws.cell(r,c).protection = Protection(locked=False)
+        for c in required_columns:
+            if c not in (4,5,6):
+                ws.cell(r,c).fill = PatternFill("solid", fgColor="FFF2CC")
         ws.cell(r,1).number_format = "dd-mmm-yyyy"
-    ws["A503"] = "Rule"
-    ws["B503"] = "Select Product / Process / Machine / Phenomenon from dropdowns. Plant, Customer and Type auto-fill from Product Master. Do not type new master names into the upload sheet."
-    ws["B503"].alignment = Alignment(wrap_text=True)
+    instructions.append(["Daily Rejection Upload v0.4.6"])
+    instructions.append(["Use", "Enter one rejection combination per row in Daily_Rejection_Data."])
+    instructions.append(["Required", "Date, Shift, Product, Detection Process, Phenomenon and Reject Qty."])
+    instructions.append(["Dropdowns", "Always select fixed master data from the dropdown. Do not type alternate spellings."])
+    instructions.append(["Auto-filled", "Plant, Customer and Type come from Product Master and are protected."])
+    instructions.append(["Quantities", "Reject Qty must be greater than zero. Rework and Scrap may be blank or zero."])
+    instructions.append(["Before upload", "Use Excel Import Preview. Correct all rejected rows before confirmation."])
+    instructions.append(["Master change", "Download a fresh template after Product, Process, Machine or Phenomenon masters change."])
+    instructions["A1"].font = Font(size=15, bold=True, color="1F4E78")
+    instructions["A2"].font = Font(bold=True, color="C65911")
+    for r in range(2, 9):
+        instructions.cell(r, 1).font = Font(bold=True, color="1F4E78")
+        instructions.cell(r, 2).alignment = Alignment(wrap_text=True, vertical="top")
+    instructions.column_dimensions["A"].width = 18
+    instructions.column_dimensions["B"].width = 95
+    instructions.freeze_panes = "A2"
+    instructions.sheet_view.showGridLines = False
+    ws.protection.sheet = True
+    ws.protection.password = "PRWUpload"
+    ws.protection.autoFilter = False
+    ws.protection.sort = False
+    master["K1"] = "Template Version"
+    master["K2"] = "v0.4.6"
     master.sheet_state = "hidden"
     bio = BytesIO(); wb.save(bio); bio.seek(0)
     return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition": 'attachment; filename="Daily_Rejection_Standard_Template.xlsx"'})
+                             headers={"Content-Disposition": 'attachment; filename="Daily_Rejection_Upload_v0.4.6.xlsx"'})
 
 
 def _quality_import(file: UploadFile, import_type: str, db: Session, user: User) -> dict:
