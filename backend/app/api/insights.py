@@ -8,11 +8,11 @@ from ..db import get_db
 from ..models import (User, Product, RouteVersion, RouteOperation, StandardCycleTime, OperationMachineMap,
  SalesPriceHistory, DailyMIS, DailyRequirement, QualityRejectionDaily, QualityRejectionMonthlyHistory,
  ImportBatch, QualityRejectionImportBatch, MachineShiftProduction, MachineLossEvent, Action, ActionContext,
- ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer)
+ ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory)
 from ..services.oee import calculate_oee
 from ..services.escalation import refresh_reminders
 from ..services.filtering import csv_ints, csv_strings
-from ..enums import ActionStatus
+from ..enums import ActionStatus, OEEComponent
 router=APIRouter(prefix='/insights',tags=['insights'])
 
 def scope(db, product_id=None, plant=None, customer_id=None, product_group=None):
@@ -71,6 +71,23 @@ def data_quality(db, as_of, products):
     seen=Counter((r.req_date,r.product_id,r.route_operation_id) for r in db.scalars(select(DailyRequirement).where(DailyRequirement.product_id.in_(ids),DailyRequirement.req_date<=as_of)))
     for key,count in seen.items():
         if count>1:add('duplicate',byid[key[1]],f'{count} requirements share {key[0]} / operation {key[2]}')
+    # Daily OEE readiness: expose bad starters before they distort management trends.
+    oee_rows=db.scalars(select(MachineShiftProduction).where(MachineShiftProduction.product_id.in_(ids),MachineShiftProduction.production_date==as_of)).all()
+    availability_loss=defaultdict(float)
+    for loss,category in db.execute(select(MachineLossEvent,LossCategory).join(LossCategory,LossCategory.id==MachineLossEvent.loss_category_id).where(
+        MachineLossEvent.loss_date==as_of,MachineLossEvent.product_id.in_(ids),LossCategory.oee_component==OEEComponent.AVAILABILITY)):
+        availability_loss[(loss.machine_id,loss.shift,loss.product_id,loss.route_operation_id)]+=float(loss.duration_min or 0)
+    oee_seen=Counter((r.production_date,r.shift,r.product_id,r.route_operation_id,r.machine_id) for r in oee_rows)
+    for key,count in oee_seen.items():
+        if count>1:add('oee_duplicate_shift',byid[key[2]],f'{count} OEE entries share shift {key[1]} / machine {key[4]} / operation {key[3]}')
+    for r in oee_rows:
+        if not r.ideal_cycle_time_sec or r.ideal_cycle_time_sec<=0:add('oee_cycle_missing',byid[r.product_id],f'Shift {r.shift}, machine {r.machine_id}',r.id)
+        unexplained=float(r.total_count or 0)-float(r.good_count or 0)-float(r.reject_count or 0)
+        if unexplained>0:add('oee_output_unclassified',byid[r.product_id],f'{unexplained:g} output not classified on shift {r.shift}, machine {r.machine_id}',r.id)
+        captured=availability_loss[(r.machine_id,r.shift,r.product_id,r.route_operation_id)]
+        unclassified=float(r.downtime_min or 0)-captured
+        if unclassified>0.01:add('oee_downtime_unclassified',byid[r.product_id],f'{unclassified:g} downtime minutes not classified on shift {r.shift}, machine {r.machine_id}',r.id)
+        if unclassified<-0.01:add('oee_loss_overclassified',byid[r.product_id],f'{-unclassified:g} availability-loss minutes exceed downtime on shift {r.shift}, machine {r.machine_id}',r.id)
     return {'counts':dict(Counter(r['kind'] for r in issues)),'issues':issues,'total':len(issues)}
 
 @router.get('/data-quality')

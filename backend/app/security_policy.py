@@ -22,6 +22,11 @@ def enforce_api_policy(user, request: Request):
     section = path.split('/')[2] if len(path.split('/')) > 2 else ''
     if user.role == UserRole.ADMIN:
         return
+    # OEE/loss action creation is an action-management write even though the
+    # source endpoint lives under /oee. Management may raise the action without
+    # receiving permission to edit the underlying production record.
+    if section == 'oee' and path.endswith('/raise-action') and user.role.value in WRITE_ROLES['actions']:
+        return
     if section == 'insights' and '/reminders/' in path and user.role.value != 'VIEW_ONLY':
         return
     if user.role.value not in WRITE_ROLES.get(section, set()):

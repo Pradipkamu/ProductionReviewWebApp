@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.6
+# ProductionReviewWebApp v0.4.7
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -44,7 +44,7 @@ Tests default to a disposable SQLite file. CI also uses isolated PostgreSQL test
 
 ## v0.4.3 — OCR feature reverted
 
-Shop Production Capture has been removed from the application. Existing daily Excel/MIS workflows remain. Capture schema and evidence are retained for safe updates from v0.4.2. Further OEE work is deferred. See [safe revert instructions](docs/RELEASE_v0.4.3.md).
+Shop Production Capture has been removed from the application. Existing daily Excel/MIS workflows remain. Capture schema and evidence are retained for safe updates from v0.4.2. OCR remains removed; controlled manual OEE capture resumes in v0.4.7. See [safe revert instructions](docs/RELEASE_v0.4.3.md).
 
 ## v0.4.5 — Daily Production Control
 
@@ -53,3 +53,7 @@ Built on the v0.4.4 parent `Disp_Done` schedule unification, the home page now g
 ## v0.4.6 — Controlled Daily Rejection Template
 
 The Quality page now creates a fresh Daily Rejection workbook from the current Product, Process, Machine and Phenomenon masters. Required master fields use reliable named-range dropdowns, Product-dependent Plant/Customer/Type fields are protected, and Preview independently rejects missing or invalid fixed data. Formula-filled unused rows are ignored. See [release notes](docs/RELEASE_v0.4.6.md).
+
+## v0.4.7 — Controlled OEE and Loss Actions
+
+Machine / OEE now uses one controlled record per date, shift, product, operation and machine. Effective master cycle time and mapped machines drive entry, duplicate rows are blocked, corrections require a reason, Availability losses reconcile separately to downtime, and both low OEE and individual losses can open standard Why-Why actions. Management reports now include machine-shift and loss-event detail with action status. The Data Quality dashboard flags duplicate entries, unclassified output/downtime and over-classified losses. Excel OEE import/helper work remains intentionally pending until the actual machine-shop forms are supplied. See [release notes](docs/RELEASE_v0.4.7.md) and [OEE workflow/audit](docs/OEE_WORKFLOW_AND_AUDIT_v0.4.7.md).

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .enums import ActionStatus, OperationType, Priority, SourceType
 
@@ -158,23 +158,41 @@ class ActionWhyWhyUpdate(BaseModel):
 
 class MachineEntryCreate(BaseModel):
     production_date: date
-    shift: str
+    shift: str = Field(min_length=1, max_length=30)
     product_id: int
     route_operation_id: int
     machine_id: int
-    shift_duration_min: Decimal = Decimal("480")
-    planned_break_min: Decimal = Decimal("0")
-    downtime_min: Decimal = Decimal("0")
-    total_count: Decimal = Decimal("0")
-    good_count: Decimal = Decimal("0")
-    reject_count: Decimal = Decimal("0")
-    ideal_cycle_time_sec: Decimal = Decimal("0")
+    shift_duration_min: Decimal = Field(default=Decimal("480"), gt=0)
+    planned_break_min: Decimal = Field(default=Decimal("0"), ge=0)
+    downtime_min: Decimal = Field(default=Decimal("0"), ge=0)
+    total_count: Decimal = Field(default=Decimal("0"), ge=0)
+    good_count: Decimal = Field(default=Decimal("0"), ge=0)
+    reject_count: Decimal = Field(default=Decimal("0"), ge=0)
+    # Zero means "resolve the effective standard from the master". The API never
+    # persists zero, so OEE cannot silently calculate with a missing cycle time.
+    ideal_cycle_time_sec: Decimal = Field(default=Decimal("0"), ge=0)
     remarks: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_counts_and_time(self):
+        planned = self.shift_duration_min - self.planned_break_min
+        if planned <= 0:
+            raise ValueError("Planned break must be less than shift duration")
+        if self.downtime_min > planned:
+            raise ValueError("Downtime cannot exceed planned production time")
+        if self.good_count > self.total_count:
+            raise ValueError("Good count cannot exceed total count")
+        if self.reject_count > self.total_count:
+            raise ValueError("Reject count cannot exceed total count")
+        if self.good_count + self.reject_count > self.total_count:
+            raise ValueError("Good count plus reject count cannot exceed total count")
+        self.shift = self.shift.strip().upper()
+        return self
 
 
 class LossEventCreate(BaseModel):
     loss_date: date
-    shift: str
+    shift: str = Field(min_length=1, max_length=30)
     product_id: Optional[int] = None
     route_operation_id: Optional[int] = None
     machine_id: int
@@ -182,8 +200,15 @@ class LossEventCreate(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     duration_min: Decimal = Field(gt=0)
-    qty_loss: Decimal = Decimal("0")
+    qty_loss: Decimal = Field(default=Decimal("0"), ge=0)
     remark: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_times(self):
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValueError("Loss end time must be after start time")
+        self.shift = self.shift.strip().upper()
+        return self
 
 class VendorMovementCreate(BaseModel):
     product_id: int

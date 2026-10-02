@@ -633,12 +633,52 @@ def oee_trends_report(
     for m in sorted(by_month):
         a = _aggregate_oee_rows(by_month[m]); monthly.append({"label": m.strftime("%b %Y"), "date": m.isoformat(), **a})
     machines = []
+    action_by_machine: dict[int, set[int]] = defaultdict(set)
+    overdue_by_machine: dict[int, set[int]] = defaultdict(set)
+    action_rows = db.execute(
+        select(ActionContext.machine_id, Action).join(Action, Action.id == ActionContext.action_id).where(
+            ActionContext.context_date >= start, ActionContext.context_date <= as_of,
+            ActionContext.machine_id.in_(list(by_machine) or [-1]),
+            Action.status != ActionStatus.CLOSED,
+        )
+    ).all()
+    for mid, action in action_rows:
+        action_by_machine[mid].add(action.id)
+        if action.due_at and action.due_at.date() < as_of:
+            overdue_by_machine[mid].add(action.id)
     for mid, rs in by_machine.items():
         machine = db.get(Machine, mid); a = _aggregate_oee_rows(rs)
-        machines.append({"machine_id": mid, "name": machine.code if machine else f"Machine {mid}", **a})
+        machines.append({"machine_id": mid, "name": machine.code if machine else f"Machine {mid}",
+                         "open_actions": len(action_by_machine[mid]), "overdue_actions": len(overdue_by_machine[mid]), **a})
     machines.sort(key=lambda x: x["oee"])
     summary = _aggregate_oee_rows(rows)
-    return {"as_of": as_of.isoformat(), "summary": summary, "daily": daily, "monthly": monthly, "machines": machines}
+    product_map = {x.id: x.name for x in db.scalars(select(Product).where(Product.id.in_({r.product_id for r in rows} or {-1}))).all()}
+    machine_map = {x.id: x.code for x in db.scalars(select(Machine).where(Machine.id.in_({r.machine_id for r in rows} or {-1}))).all()}
+    route_rows = db.execute(
+        select(RouteOperation.id, Operation.name).join(Operation, Operation.id == RouteOperation.operation_id)
+        .where(RouteOperation.id.in_({r.route_operation_id for r in rows} or {-1}))
+    ).all()
+    operation_map = dict(route_rows)
+    entries = []
+    for r in sorted(rows, key=lambda x: (x.production_date, x.shift, x.machine_id), reverse=True):
+        calc = calculate_oee(r.shift_duration_min, r.planned_break_min, r.downtime_min,
+                             r.total_count, r.good_count, r.ideal_cycle_time_sec)
+        entries.append({
+            "id": r.id, "date": r.production_date.isoformat(), "shift": r.shift,
+            "product": product_map.get(r.product_id, f"Product {r.product_id}"),
+            "operation": operation_map.get(r.route_operation_id, f"Operation {r.route_operation_id}"),
+            "machine": machine_map.get(r.machine_id, f"Machine {r.machine_id}"),
+            "planned_min": calc["planned_production_min"], "run_min": calc["run_time_min"],
+            "downtime_min": float(r.downtime_min), "total_count": float(r.total_count),
+            "good_count": float(r.good_count), "reject_count": float(r.reject_count),
+            "ideal_cycle_time_sec": float(r.ideal_cycle_time_sec),
+            "availability": calc["availability"], "performance": calc["performance_capped"],
+            "performance_raw": calc["performance_raw"], "quality": calc["quality"],
+            "oee": calc["oee_reported"], "performance_master_warning": calc["performance_master_warning"],
+            "remarks": r.remarks,
+        })
+    return {"as_of": as_of.isoformat(), "summary": summary, "daily": daily, "monthly": monthly,
+            "machines": machines, "entries": entries}
 
 
 @router.get("/loss-pareto")
@@ -673,6 +713,20 @@ def loss_pareto_report(
     elif any([product_id is not None, plant, product_group, customer_id is not None]):
         return {"pareto": [], "monthly": [], "machines": [], "summary": {}}
     rows = db.execute(q).all()
+    event_ids = [event.id for event, _, _ in rows]
+    action_map: dict[int, Action] = {}
+    for loss_event_id, action in db.execute(
+        select(ActionContext.loss_event_id, Action).join(Action, Action.id == ActionContext.action_id)
+        .where(ActionContext.loss_event_id.in_(event_ids or [-1])).order_by(Action.id.desc())
+    ).all():
+        action_map.setdefault(loss_event_id, action)
+    product_ids = {event.product_id for event, _, _ in rows if event.product_id}
+    product_map = {x.id: x.name for x in db.scalars(select(Product).where(Product.id.in_(product_ids or {-1}))).all()}
+    route_ids = {event.route_operation_id for event, _, _ in rows if event.route_operation_id}
+    operation_map = dict(db.execute(
+        select(RouteOperation.id, Operation.name).join(Operation, Operation.id == RouteOperation.operation_id)
+        .where(RouteOperation.id.in_(route_ids or {-1}))
+    ).all())
     cat: dict[int, dict] = {}
     monthly_b: dict[date, Decimal] = defaultdict(lambda: ZERO)
     machine_b: dict[int, Decimal] = defaultdict(lambda: ZERO)
@@ -698,7 +752,20 @@ def loss_pareto_report(
     for mid, mins in sorted(machine_b.items(), key=lambda x: x[1], reverse=True):
         machine = db.get(Machine, mid)
         machines.append({"machine_id": mid, "name": machine.code if machine else f"Machine {mid}", "minutes": float(mins), "hours": float(mins/Decimal("60"))})
-    return {"pareto": pareto, "monthly": monthly, "machines": machines, "summary": {"loss_minutes": float(total), "loss_hours": float(total/Decimal("60")), "events": len(rows)}}
+    events = []
+    for event, loss, machine in sorted(rows, key=lambda x: (x[0].loss_date, x[0].id), reverse=True):
+        action = action_map.get(event.id)
+        events.append({
+            "id": event.id, "date": event.loss_date.isoformat(), "shift": event.shift,
+            "product": product_map.get(event.product_id) if event.product_id else None,
+            "operation": operation_map.get(event.route_operation_id) if event.route_operation_id else None,
+            "machine": machine.code, "category": loss.name, "component": loss.oee_component.value,
+            "duration_min": float(event.duration_min), "qty_loss": float(event.qty_loss), "remark": event.remark,
+            "action_id": action.id if action else None, "action_no": action.action_no if action else None,
+            "action_status": action.status.value if action else None,
+        })
+    return {"pareto": pareto, "monthly": monthly, "machines": machines, "events": events,
+            "summary": {"loss_minutes": float(total), "loss_hours": float(total/Decimal("60")), "events": len(rows)}}
 
 
 @router.get("/action-performance")

@@ -33,3 +33,6 @@
 .daily-action-cell small{font-size:.66rem;color:var(--muted,#64748b)}
 .daily-action-cell.has-actions{border-color:#f59e0b;background:#fff7ed;box-shadow:inset 0 0 0 1px rgba(245,158,11,.12)}
 .daily-action-cell.has-actions strong{color:#b45309}
+
+/* v0.4.7: controlled OEE capture and loss-to-action workflow */
+.oee-scope .filters{align-items:end;flex-wrap:wrap;margin-bottom:8px}.oee-scope .filters label{min-width:210px;flex:1;margin:0}.oee-entry-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:0 12px}.oee-entry-grid .span-2{grid-column:span 2}.oee-entry-grid input[readonly]{background:#eef3f8;color:#40526c;font-weight:700}.panel-title p{margin:4px 0 0;color:#758297;font-size:12px}@media(max-width:850px){.oee-entry-grid{grid-template-columns:1fr 1fr}.oee-entry-grid .span-2{grid-column:span 2}}@media(max-width:540px){.oee-entry-grid{grid-template-columns:1fr}.oee-entry-grid .span-2{grid-column:auto}}
