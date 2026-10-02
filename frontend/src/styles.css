@@ -44,3 +44,13 @@
 .rank-row.selected{background:#e7f0fb;box-shadow:inset 3px 0 0 #255ea8}
 .filter-chip.removable{width:auto;background:#edf3fb;color:#436083;border:1px solid #d8e3f2;padding:5px 9px;font-size:11px;font-weight:700}
 .filter-chip.removable:hover{background:#dfeaf7}
+
+
+/* manual quality rejection entry */
+.manual-rejection-panel{border-left:4px solid var(--blue)}
+.manual-rejection-panel .panel-title p{margin:4px 0 0;color:#758297;font-size:12px}
+.quality-entry-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0 12px}
+.quality-entry-grid .span-2{grid-column:span 2}
+.quality-entry-grid .manual-action{align-self:center;margin:4px 0 14px;min-height:38px}
+@media(max-width:1100px){.quality-entry-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}}
+@media(max-width:650px){.quality-entry-grid{grid-template-columns:1fr}.quality-entry-grid .span-2{grid-column:auto}}
