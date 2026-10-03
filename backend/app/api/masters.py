@@ -318,14 +318,31 @@ def create_route_version(product_id: int, payload: RouteVersionCreate, db: Sessi
 
 @router.post("/machine-maps")
 def add_machine_map(payload: MachineMapCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    row = OperationMachineMap(**payload.model_dump())
+    from ..services.capacity import close_previous_revision
+    user = _
+    if not db.get(RouteOperation, payload.route_operation_id) or not db.get(Machine, payload.machine_id):
+        raise HTTPException(404, "Product operation or machine not found")
+    close_previous_revision(db, OperationMachineMap, payload.effective_from,
+                            OperationMachineMap.route_operation_id == payload.route_operation_id,
+                            OperationMachineMap.machine_id == payload.machine_id)
+    db.info['reason'] = payload.reason
+    row = OperationMachineMap(**payload.model_dump(), entered_by_id=user.id)
     db.add(row); db.commit(); db.refresh(row)
     return {"id": row.id}
 
 
 @router.post("/cycle-times")
 def add_cycle_time(payload: CycleTimeCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    row = StandardCycleTime(**payload.model_dump())
+    from ..services.capacity import close_previous_revision
+    user = _
+    if not db.get(RouteOperation, payload.route_operation_id):
+        raise HTTPException(404, "Product operation not found")
+    if payload.machine_id is not None and not db.get(Machine, payload.machine_id):
+        raise HTTPException(404, "Machine not found")
+    filters = [StandardCycleTime.route_operation_id == payload.route_operation_id]
+    filters.append(StandardCycleTime.machine_id == payload.machine_id if payload.machine_id is not None else StandardCycleTime.machine_id.is_(None))
+    close_previous_revision(db, StandardCycleTime, payload.effective_from, *filters)
+    db.info['reason'] = payload.reason
+    row = StandardCycleTime(**payload.model_dump(), entered_by_id=user.id)
     db.add(row); db.commit(); db.refresh(row)
     return {"id": row.id}
-

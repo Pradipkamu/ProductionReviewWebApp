@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.8
+# ProductionReviewWebApp v0.5.0
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -61,3 +61,7 @@ Machine / OEE now uses one controlled record per date, shift, product, operation
 ## v0.4.8 — Restore Verification and System Diagnostics
 
 System Diagnostics now checks the loaded frontend/backend versions, database connection and schema revision, persistent imports/attachments/backups storage, disk capacity and latest backup status. The Windows and Linux restore-verification scripts restore a selected dump into a temporary isolated database, verify core tables, and remove the temporary database without modifying the live `pms` database. See [release notes](docs/RELEASE_v0.4.8.md).
+
+## v0.5.0 — Machine Capacity and Manpower Planning
+
+Capacity / Manpower Planning combines the monthly operation schedule with effective machine mapping, cycle time, operator requirement, plant calendar and machine capacity settings. It calculates available pieces, machine hours, capacity load, shortages and average/rounded operator needs; planners can auto-allocate or revise part-to-machine quantities without overwriting issued revisions. Cycle time, operator requirement, mapping and capacity changes retain effective-dated history and reasons. See [release notes](docs/RELEASE_v0.5.0.md).

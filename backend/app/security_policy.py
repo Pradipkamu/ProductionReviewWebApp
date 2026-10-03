@@ -8,6 +8,7 @@ WRITE_ROLES = {
     'actions': {'PRODUCTION', 'QUALITY', 'PLANNING', 'PURCHASE', 'DISPATCH', 'VENDOR', 'MANAGEMENT'},
     'reviews': {'MANAGEMENT', 'PRODUCTION', 'QUALITY', 'PLANNING'},
     'masters': {'PLANNING'}, 'governance': {'MANAGEMENT'}, 'insights': {'MANAGEMENT'},
+    'capacity': {'PLANNING', 'PRODUCTION'},
 }
 
 def enforce_api_policy(user, request: Request):

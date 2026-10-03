@@ -15,8 +15,11 @@ PERIOD_FIELDS = {
  'quality_rejection_monthly_history': ['month'], 'schedule_revisions': ['month', 'effective_from'],
  'working_calendar': ['work_date'], 'vendor_receipts': ['receipt_date'],
  'sales_price_history': ['effective_from'], 'route_versions': ['effective_from'], 'standard_cycle_times': ['effective_from'],
+ 'operation_machine_map': ['effective_from'], 'operator_requirement_history': ['effective_from'],
+ 'machine_capacity_settings': ['effective_from'], 'machine_monthly_allocations': ['month','effective_from'],
 }
-RANGE_TABLES = {'process_flow_versions', 'sales_price_history', 'route_versions', 'standard_cycle_times'}
+RANGE_TABLES = {'process_flow_versions', 'sales_price_history', 'route_versions', 'standard_cycle_times',
+                'operation_machine_map', 'operator_requirement_history', 'machine_capacity_settings'}
 
 def lock_month(db, month):
     if db.bind.dialect.name == 'postgresql':
@@ -41,7 +44,7 @@ def protect_months(db, flush_context, instances):
     candidates = list(db.new) + list(db.dirty) + list(db.deleted)
     for obj in candidates:
         table = getattr(obj, '__tablename__', '')
-        if table in {'process_flow_versions','process_flow_stages','stage_schedule_allocations'} and (obj in db.deleted or (obj in db.dirty and db.is_modified(obj,include_collections=False))):
+        if table in {'process_flow_versions','process_flow_stages','stage_schedule_allocations','machine_monthly_allocations'} and (obj in db.deleted or (obj in db.dirty and db.is_modified(obj,include_collections=False))):
             raise HTTPException(409,'Process definitions and allocation history are immutable; append a new revision')
         if table not in PERIOD_FIELDS or (obj in db.dirty and not db.is_modified(obj, include_collections=False)):
             continue

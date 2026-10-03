@@ -54,3 +54,6 @@
 .quality-entry-grid .manual-action{align-self:center;margin:4px 0 14px;min-height:38px}
 @media(max-width:1100px){.quality-entry-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}}
 @media(max-width:650px){.quality-entry-grid{grid-template-columns:1fr}.quality-entry-grid .span-2{grid-column:auto}}
+
+/* v0.5.0 machine capacity, part allocation and manpower planning */
+.capacity-scope .form-row{align-items:end}.capacity-master-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0 12px;align-items:end}.capacity-master-grid button{margin-bottom:12px;min-height:38px}.capacity-master-grid .span-all{grid-column:1/-1}.allocation-footer{display:grid;grid-template-columns:minmax(260px,1fr) minmax(260px,2fr) auto;gap:14px;align-items:end;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.allocation-footer label{margin:0}.allocation-footer span{align-self:center}.capacity-master-grid>span{min-height:1px}@media(max-width:1100px){.capacity-master-grid{grid-template-columns:repeat(2,minmax(150px,1fr))}.allocation-footer{grid-template-columns:1fr 1fr}.allocation-footer button{grid-column:1/-1}}@media(max-width:650px){.capacity-master-grid,.allocation-footer{grid-template-columns:1fr}.capacity-master-grid .span-all,.allocation-footer button{grid-column:auto}}

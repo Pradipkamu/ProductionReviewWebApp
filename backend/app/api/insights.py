@@ -9,7 +9,8 @@ from ..models import (User, Product, RouteVersion, RouteOperation, StandardCycle
  SalesPriceHistory, DailyMIS, DailyRequirement, QualityRejectionDaily, QualityRejectionMonthlyHistory,
  ImportBatch, QualityRejectionImportBatch, MachineShiftProduction, MachineLossEvent, Action, ActionContext,
  ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory,
- ProcessFlowVersion, ProcessFlowStage, StageScheduleAllocation, Operation)
+ ProcessFlowVersion, ProcessFlowStage, StageScheduleAllocation, Operation,
+ OperatorRequirementHistory, MachineCapacitySetting)
 from ..services.oee import calculate_oee
 from ..services.escalation import refresh_reminders
 from ..services.filtering import csv_ints, csv_strings
@@ -57,11 +58,27 @@ def data_quality(db, as_of, products):
         Operation.id.in_({r.operation_id for ops in ops_by_route.values() for r in ops})))}
     stage_by_operation={stage.route_operation_id:stage for stage in db.scalars(select(ProcessFlowStage).where(
         ProcessFlowStage.route_operation_id.in_(op_ids)))}
-    mapped_ops=set(db.scalars(select(OperationMachineMap.route_operation_id).where(OperationMachineMap.route_operation_id.in_(op_ids))).all())
+    active_maps=db.scalars(select(OperationMachineMap).where(
+        OperationMachineMap.route_operation_id.in_(op_ids), OperationMachineMap.is_active.is_(True),
+        OperationMachineMap.effective_from<=as_of,
+        (OperationMachineMap.effective_to.is_(None)) | (OperationMachineMap.effective_to>=as_of))).all()
+    mapped_ops={x.route_operation_id for x in active_maps}
+    maps_by_op=defaultdict(list)
+    for x in active_maps:maps_by_op[x.route_operation_id].append(x)
     timed_ops=set(db.scalars(select(StandardCycleTime.route_operation_id).where(
         StandardCycleTime.route_operation_id.in_(op_ids), StandardCycleTime.effective_from<=as_of,
         (StandardCycleTime.effective_to.is_(None)) | (StandardCycleTime.effective_to>=as_of),
         StandardCycleTime.ideal_cycle_time_sec>0)).all())
+    operator_ops=set(db.scalars(select(OperatorRequirementHistory.route_operation_id).where(
+        OperatorRequirementHistory.route_operation_id.in_(op_ids),
+        OperatorRequirementHistory.effective_from<=as_of,
+        (OperatorRequirementHistory.effective_to.is_(None)) | (OperatorRequirementHistory.effective_to>=as_of),
+        OperatorRequirementHistory.operators_per_machine>0)).all())
+    mapped_machine_ids={x.machine_id for x in active_maps}
+    capacity_machines=set(db.scalars(select(MachineCapacitySetting.machine_id).where(
+        MachineCapacitySetting.machine_id.in_(mapped_machine_ids),
+        MachineCapacitySetting.effective_from<=as_of,
+        (MachineCapacitySetting.effective_to.is_(None)) | (MachineCapacitySetting.effective_to>=as_of))).all()) if mapped_machine_ids else set()
     prices_by_product=defaultdict(list)
     for price in db.scalars(select(SalesPriceHistory).where(
         SalesPriceHistory.product_id.in_(ids), SalesPriceHistory.effective_from<=as_of,
@@ -89,6 +106,9 @@ def data_quality(db, as_of, products):
                 requires_machine=stage.role=='PRODUCTION' if stage else op.operation_type.value=='INTERNAL'
                 if operation.id not in mapped_ops and requires_machine:add('machine_mapping_missing',p,f'Operation {op.name}',operation.id)
                 if operation.id not in timed_ops and requires_machine:add('cycle_time_missing',p,f'Operation {op.name}',operation.id)
+                if operation.id not in operator_ops and requires_machine:add('operator_requirement_missing',p,f'Operation {op.name}',operation.id)
+                for mapping in maps_by_op.get(operation.id,[]):
+                    if mapping.machine_id not in capacity_machines and requires_machine:add('machine_capacity_setting_missing',p,f'Operation {op.name}, machine {mapping.machine_id}',mapping.id)
         prices=prices_by_product[p.id]
         if not prices or not any(x.price>0 for x in prices):add('price_missing',p,'No positive effective price')
         if len(prices)>1:add('conflict',p,'Overlapping effective price ranges')

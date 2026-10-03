@@ -185,6 +185,8 @@ class OperationMachineMap(Base, TimestampMixin):
     effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     route_operation: Mapped[RouteOperation] = relationship()
     machine: Mapped[Machine] = relationship()
 
@@ -201,6 +203,55 @@ class StandardCycleTime(Base, TimestampMixin):
     cavities: Mapped[int] = mapped_column(Integer, default=1)
     pieces_per_cycle: Mapped[int] = mapped_column(Integer, default=1)
     remark: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class OperatorRequirementHistory(Base, TimestampMixin):
+    __tablename__ = "operator_requirement_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    machine_id: Mapped[Optional[int]] = mapped_column(ForeignKey("machines.id"), nullable=True, index=True)
+    effective_from: Mapped[date] = mapped_column(Date, index=True)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    operators_per_machine: Mapped[Decimal] = mapped_column(Numeric(8, 3))
+    reason: Mapped[str] = mapped_column(String(250))
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class MachineCapacitySetting(Base, TimestampMixin):
+    __tablename__ = "machine_capacity_settings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    effective_from: Mapped[date] = mapped_column(Date, index=True)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    shifts_per_day: Mapped[int] = mapped_column(Integer)
+    shift_minutes: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    planned_break_minutes: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=Decimal("0"))
+    planning_efficiency: Mapped[Decimal] = mapped_column(Numeric(8, 5), default=Decimal("0.85"))
+    reason: Mapped[str] = mapped_column(String(250))
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class MachineMonthlyAllocation(Base, TimestampMixin):
+    __tablename__ = "machine_monthly_allocations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month: Mapped[date] = mapped_column(Date, index=True)
+    effective_from: Mapped[date] = mapped_column(Date, index=True)
+    revision_no: Mapped[int] = mapped_column(Integer)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    allocated_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    schedule_qty_snapshot: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    capacity_qty_snapshot: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    planning_cycle_time_sec: Mapped[Decimal] = mapped_column(Numeric(12, 3))
+    operators_per_machine_snapshot: Mapped[Decimal] = mapped_column(Numeric(8, 3))
+    reason: Mapped[str] = mapped_column(Text)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("product_id", "route_operation_id", "month", "revision_no", "machine_id", name="uq_machine_monthly_allocation"),
+    )
 
 
 class ScheduleRevision(Base, TimestampMixin):

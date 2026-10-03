@@ -246,6 +246,7 @@ class MachineMapCreate(BaseModel):
     effective_from: date
     effective_to: Optional[date] = None
     priority: int = 1
+    reason: str = Field(min_length=2, max_length=250)
 
 
 class CycleTimeCreate(BaseModel):
@@ -258,6 +259,59 @@ class CycleTimeCreate(BaseModel):
     cavities: int = Field(default=1, ge=1)
     pieces_per_cycle: int = Field(default=1, ge=1)
     remark: Optional[str] = None
+    reason: str = Field(min_length=2, max_length=250)
+
+    @model_validator(mode="after")
+    def validate_standard_cycle(self):
+        if self.standard_cycle_time_sec is not None and self.standard_cycle_time_sec <= 0:
+            raise ValueError("Standard cycle time must be greater than zero")
+        return self
+
+
+class OperatorRequirementCreate(BaseModel):
+    route_operation_id: int
+    machine_id: Optional[int] = None
+    effective_from: date
+    operators_per_machine: Decimal = Field(gt=0, le=100)
+    reason: str = Field(min_length=2, max_length=250)
+
+
+class MachineCapacitySettingCreate(BaseModel):
+    machine_id: int
+    effective_from: date
+    shifts_per_day: int = Field(ge=1, le=6)
+    shift_minutes: Decimal = Field(gt=0, le=1440)
+    planned_break_minutes: Decimal = Field(default=Decimal("0"), ge=0, le=1440)
+    planning_efficiency: Decimal = Field(default=Decimal("0.85"), gt=0, le=1)
+    reason: str = Field(min_length=2, max_length=250)
+
+    @model_validator(mode="after")
+    def validate_shift(self):
+        if self.planned_break_minutes >= self.shift_minutes:
+            raise ValueError("Planned break must be less than shift minutes")
+        return self
+
+
+class MachineAllocationItem(BaseModel):
+    machine_id: int
+    allocated_qty: Decimal = Field(ge=0)
+
+
+class MachineAllocationCreate(BaseModel):
+    product_id: int
+    route_operation_id: int
+    month: date
+    effective_from: date
+    reason: str = Field(min_length=2, max_length=1000)
+    allocations: list[MachineAllocationItem]
+
+    @model_validator(mode="after")
+    def validate_month(self):
+        if self.effective_from.replace(day=1) != self.month.replace(day=1):
+            raise ValueError("Effective date must be inside the allocation month")
+        if len({x.machine_id for x in self.allocations}) != len(self.allocations):
+            raise ValueError("A machine can appear only once in one allocation revision")
+        return self
 
 
 class CalendarUpsert(BaseModel):

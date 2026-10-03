@@ -30,13 +30,19 @@
 - Review-session API
 - Isolated PostgreSQL backup restore verification scripts
 - One-click system diagnostics for frontend/backend version, database, storage and backup status
+- Effective-dated machine mapping, standard cycle time and operator requirement history
+- Effective-dated machine shift, break and planning-efficiency capacity settings
+- Monthly machine capacity, load, shortage, machine-hours and operator calculations
+- Revisioned monthly part-to-machine allocation with calculation snapshots
 
 ## Deliberately left configurable, not guessed
 
 - Exact standard yield by operation
 - Operation lead time by product
-- Machine-to-operation maps
-- Ideal cycle times
+- Initial machine-to-operation assignments
+- Initial standard/ideal cycle times and pieces per cycle
+- Initial operators per running machine
+- Initial shifts, minutes, breaks and planning efficiency by machine
 - Vendor expected lead-time rules
 - User/department ownership hierarchy
 - Closed-month correction authorization matrix
@@ -50,7 +56,7 @@ These are master-data decisions and should not be invented from Excel.
 - Attachments to actions
 - Email / WhatsApp alerts
 - Predictive month-end risk
-- Capacity-constrained machine scheduling
+- Finite day/shift sequencing inside the monthly machine allocation
 - Power BI direct PostgreSQL model
 
 
@@ -94,7 +100,7 @@ These are master-data decisions and should not be invented from Excel.
 - AFMS/MQTT automatic cycle/loss feed
 - ERP/API transactional import
 - Native XLSX/PDF server-side report packs
-- Capacity-constrained finite scheduling
+- Finite day/shift sequencing inside the monthly machine allocation
 - Predictive models beyond current run-rate forecast
 
 ### v0.2.1
