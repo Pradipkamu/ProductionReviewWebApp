@@ -341,8 +341,8 @@ def save_allocation(db: Session, payload, user_id: int) -> dict:
         raise HTTPException(422, f"Machine(s) not mapped for this part operation: {sorted(unknown)}")
     total = sum(supplied.values(), ZERO)
     schedule_qty = Decimal(str(operation["schedule_qty"]))
-    if abs(total - schedule_qty) > Decimal("0.001"):
-        raise HTTPException(422, f"Allocated quantity {total} must equal monthly operation schedule {schedule_qty}")
+    if total > schedule_qty + Decimal("0.001"):
+        raise HTTPException(422, f"Allocated quantity {total} cannot exceed monthly operation schedule {schedule_qty}")
     revision = int(db.scalar(select(func.coalesce(func.max(MachineMonthlyAllocation.revision_no), 0)).where(
         MachineMonthlyAllocation.product_id == payload.product_id,
         MachineMonthlyAllocation.route_operation_id == payload.route_operation_id,
@@ -374,4 +374,9 @@ def save_allocation(db: Session, payload, user_id: int) -> dict:
             reason=payload.reason, entered_by_id=user_id,
         ))
     db.flush()
-    return {"revision_no": revision, "allocated_qty": float(total), "schedule_qty": float(schedule_qty)}
+    return {
+        "revision_no": revision,
+        "allocated_qty": float(total),
+        "schedule_qty": float(schedule_qty),
+        "allocation_gap": float(schedule_qty - total),
+    }
