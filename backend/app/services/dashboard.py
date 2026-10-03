@@ -270,7 +270,7 @@ def daily_review_summary(
                 "achievement": 0, "critical_products": 0, "watch_products": 0,
                 "open_actions": 0, "overdue_actions": 0, "closed_today": 0,
             },
-            "exceptions": [],
+            "exceptions": [], "ok_products": [], "products": [],
         }
 
     rows = db.execute(
@@ -363,6 +363,8 @@ def daily_review_summary(
         total_actual_tonnage += aton
 
     products.sort(key=lambda x: x["gap_sales"])
+    priority_products = [x for x in products if x["status"] in {"CRITICAL", "WATCH", "NO PLAN"}]
+    ok_products = [x for x in products if x["status"] in {"GOOD", "DONE"}]
 
     # Action KPIs follow the same product scope as the dashboard filters.
     now = datetime.utcnow()
@@ -407,44 +409,73 @@ def daily_review_summary(
             "overdue_actions": int(overdue_actions),
             "closed_today": int(closed_today),
         },
-        "exceptions": products[:15],
+        "exceptions": priority_products,
+        "ok_products": ok_products,
+        "products": products,
     }
 
 
-def process_monitor(db: Session, product_id: int, d: date) -> dict:
-    from .planning import get_active_route
+def process_monitor(db: Session, product_id: int, d: date, start_date: date | None = None) -> dict:
+    from .planning import get_active_route, working_days, product_plant
+    period_start = start_date or d
+    if period_start > d:
+        raise ValueError("start_date must be on or before monitor date")
     route = get_active_route(db, product_id, d)
     if not route:
         return {"product_id": product_id, "date": d.isoformat(), "route": None, "operations": []}
+    effective_start = max(period_start, route.effective_from)
+    work_dates = working_days(db, effective_start, d, product_plant(db, product_id))
+    work_set = set(work_dates)
     ops = db.execute(
         select(RouteOperation, Operation)
         .join(Operation, Operation.id == RouteOperation.operation_id)
         .where(RouteOperation.route_version_id == route.id, RouteOperation.is_enabled.is_(True))
         .order_by(RouteOperation.sequence_no)
     ).all()
+    route_ids = [ro.id for ro, _ in ops]
+    summaries_by_route: dict[int, list[ProcessDailySummary]] = defaultdict(list)
+    reqs_by_route: dict[int, list[DailyRequirement]] = defaultdict(list)
+    if route_ids and work_dates:
+        for row in db.scalars(select(ProcessDailySummary).where(
+            ProcessDailySummary.product_id == product_id,
+            ProcessDailySummary.route_operation_id.in_(route_ids),
+            ProcessDailySummary.summary_date >= effective_start,
+            ProcessDailySummary.summary_date <= d,
+        )):
+            if row.summary_date in work_set:
+                summaries_by_route[row.route_operation_id].append(row)
+        for row in db.scalars(select(DailyRequirement).where(
+            DailyRequirement.product_id == product_id,
+            DailyRequirement.route_operation_id.in_(route_ids),
+            DailyRequirement.req_date >= effective_start,
+            DailyRequirement.req_date <= d,
+        )):
+            if row.req_date in work_set:
+                reqs_by_route[row.route_operation_id].append(row)
     from ..models import ProcessFlowVersion
     explicit_flow = db.scalar(select(ProcessFlowVersion.id).where(ProcessFlowVersion.route_version_id == route.id))
     out = []
     prior_actual = None
     for ro, op in ops:
-        summary = db.scalar(select(ProcessDailySummary).where(
-            ProcessDailySummary.summary_date == d,
-            ProcessDailySummary.product_id == product_id,
-            ProcessDailySummary.route_operation_id == ro.id,
-        ))
-        req = db.scalar(select(DailyRequirement).where(
-            DailyRequirement.req_date == d,
-            DailyRequirement.product_id == product_id,
-            DailyRequirement.route_operation_id == ro.id,
-        ))
-        actual = _d(summary.actual_qty if summary else 0)
-        plan = _d(req.revised_plan_qty if req else (summary.plan_qty if summary else 0))
+        summary_rows = summaries_by_route.get(ro.id, [])
+        req_rows = reqs_by_route.get(ro.id, [])
+        data_days = len({r.summary_date for r in summary_rows})
+        plan_days = len({r.req_date for r in req_rows})
+        actual = (sum((_d(r.actual_qty) for r in summary_rows), Decimal("0")) / data_days) if data_days else Decimal("0")
+        reject = (sum((_d(r.reject_qty) for r in summary_rows), Decimal("0")) / data_days) if data_days else Decimal("0")
+        if plan_days:
+            plan = sum((_d(r.revised_plan_qty) for r in req_rows), Decimal("0")) / plan_days
+        elif data_days:
+            plan = sum((_d(r.plan_qty) for r in summary_rows), Decimal("0")) / data_days
+        else:
+            plan = Decimal("0")
         wip = max(Decimal("0"), prior_actual - actual) if prior_actual is not None else Decimal("0")
         action_count = db.scalar(
             select(func.count(ActionContext.id))
             .join(Action, Action.id == ActionContext.action_id)
             .where(
-                ActionContext.context_date == d,
+                ActionContext.context_date >= effective_start,
+                ActionContext.context_date <= d,
                 ActionContext.product_id == product_id,
                 ActionContext.route_operation_id == ro.id,
                 Action.status != ActionStatus.CLOSED,
@@ -458,6 +489,9 @@ def process_monitor(db: Session, product_id: int, d: date) -> dict:
             "vendor_id": ro.vendor_id,
             "plan_qty": float(plan),
             "actual_qty": float(actual),
+            "reject_qty": float(reject),
+            "days_with_plan": plan_days,
+            "days_with_data": data_days,
             "gap_qty": float(actual - plan),
             "achievement": float(actual / plan) if plan > 0 else None,
             "calculated_wip_from_previous": None if explicit_flow else float(wip),
@@ -468,6 +502,15 @@ def process_monitor(db: Session, product_id: int, d: date) -> dict:
     return {
         "product_id": product_id,
         "date": d.isoformat(),
+        "period": {
+            "requested_start": period_start.isoformat(),
+            "start": effective_start.isoformat(),
+            "end": d.isoformat(),
+            "working_days": len(work_dates),
+            "off_days": (d - effective_start).days + 1 - len(work_dates),
+            "is_range": period_start != d,
+            "truncated_to_route": effective_start != period_start,
+        },
         "route_revision": route.revision_no,
         "operations": out,
     }
