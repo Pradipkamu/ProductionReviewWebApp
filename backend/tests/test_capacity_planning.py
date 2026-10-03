@@ -168,7 +168,7 @@ def test_shared_machine_capacity_blocks_overallocation_across_products():
     machine_a = plan_a['operations'][0]['machines'][0]
     assert machine_a['capacity_qty'] == 960
     assert machine_a['available_capacity_qty'] == 960
-    assert plan_a['operations'][0]['allocation_qty'] == 600
+    assert plan_a['operations'][0]['allocated_qty'] == 600
 
     _post(client, h, '/api/capacity/allocations', {
         'product_id': p1, 'route_operation_id': ro1,
