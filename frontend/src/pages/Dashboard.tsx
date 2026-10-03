@@ -102,10 +102,15 @@ export default function Dashboard(){
       <Kpi label="Plan tonnage MT" value={num(k.plan_tonnage_mt)}/><Kpi label="Actual tonnage MT" value={num(k.actual_tonnage_mt)} tone="good"/><Kpi label="Tonnage gap MT" value={num(k.tonnage_gap_mt)} tone={k.tonnage_gap_mt<0?'bad':'good'}/>
       <Kpi label="Critical products" value={k.critical_products} tone="bad"/><Kpi label="Open actions" value={k.open_actions}/><Kpi label="Overdue actions" value={k.overdue_actions} tone={k.overdue_actions?'bad':'good'}/><Kpi label="Closed today" value={k.closed_today} tone="good"/>
     </div></>}
-    <section className="panel"><div className="panel-title"><h2>Priority exceptions</h2><span>Sorted by sales gap inside the selected scope</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Plant</th><th>Group</th><th>Product</th><th>Plan Qty</th><th>Actual</th><th>Qty Gap</th><th>Sales Gap</th><th>Tonnage Gap MT</th><th>Ach.</th><th>Recovery / Day</th><th>Status</th><th>Action</th></tr></thead><tbody>
+    <section className="panel"><div className="panel-title"><h2>Priority exceptions</h2><span>Critical, watch and no-plan products first</span></div>
+      {(data?.exceptions||[]).length===0?<div className="empty">No priority dispatch exception in the selected scope.</div>:<div className="table-wrap"><table><thead><tr><th>Plant</th><th>Group</th><th>Product</th><th>Plan Qty</th><th>Actual</th><th>Qty Gap</th><th>Sales Gap</th><th>Tonnage Gap MT</th><th>Ach.</th><th>Recovery / Day</th><th>Status</th><th>Action</th></tr></thead><tbody>
         {(data?.exceptions||[]).map((r:any)=><tr key={r.product_id}><td>{r.plant||'—'}</td><td>{r.product_group||'—'}</td><td><b>{r.product}</b></td><td>{num(r.plan_qty)}</td><td>{num(r.actual_qty)}</td><td className={r.gap_qty<0?'neg':'pos'}>{num(r.gap_qty)}</td><td className={r.gap_sales<0?'neg':'pos'}>{money(r.gap_sales)}</td><td className={r.tonnage_gap_mt<0?'neg':'pos'}>{num(r.tonnage_gap_mt)}</td><td>{pct(r.achievement)}</td><td>{num(r.recovery_qty_per_day)}</td><td><Status value={r.status}/></td><td><button className="small" onClick={()=>raiseAction(r.product_id,r.product)}>Raise</button></td></tr>)}
-      </tbody></table></div>
+      </tbody></table></div>}
+    </section>
+    <section className="panel"><div className="panel-title"><h2>OK / Running products</h2><span>All remaining dispatch products in the selected scope</span></div>
+      {(data?.ok_products||[]).length===0?<div className="empty">No GOOD or DONE products are available for this period.</div>:<div className="table-wrap"><table><thead><tr><th>Plant</th><th>Group</th><th>Product</th><th>Plan Qty</th><th>Actual</th><th>Qty Gap</th><th>Sales Gap</th><th>Tonnage Gap MT</th><th>Ach.</th><th>Recovery / Day</th><th>Status</th><th>Action</th></tr></thead><tbody>
+        {(data?.ok_products||[]).map((r:any)=><tr key={r.product_id}><td>{r.plant||'—'}</td><td>{r.product_group||'—'}</td><td><b>{r.product}</b></td><td>{num(r.plan_qty)}</td><td>{num(r.actual_qty)}</td><td className={r.gap_qty<0?'neg':'pos'}>{num(r.gap_qty)}</td><td className={r.gap_sales<0?'neg':'pos'}>{money(r.gap_sales)}</td><td className={r.tonnage_gap_mt<0?'neg':'pos'}>{num(r.tonnage_gap_mt)}</td><td>{pct(r.achievement)}</td><td>{num(r.recovery_qty_per_day)}</td><td><Status value={r.status}/></td><td><button className="small secondary" onClick={()=>raiseAction(r.product_id,r.product)}>Raise</button></td></tr>)}
+      </tbody></table></div>}
     </section>
   </>
 }
