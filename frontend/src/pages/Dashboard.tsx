@@ -12,12 +12,15 @@ export default function Dashboard(){
   const navigate=useNavigate()
   const [asOf,setAsOf]=useState(today()); const [data,setData]=useState<any>(null); const [control,setControl]=useState<any>(null); const [err,setErr]=useState(''); const [message,setMessage]=useState('')
   const [activeReview,setActiveReview]=useState<string|null>(null)
+  const [blockerThreshold,setBlockerThreshold]=useState<number>(()=>{const n=Number(localStorage.getItem('dailyBlockerThresholdPct')||80);return n>=1&&n<=100?n:80})
   const [scope,setScope]=useState<ScopeValues>(emptyScope); const [options,setOptions]=useState<any>({}); const [products,setProducts]=useState<any[]>([]); const [role,setRole]=useState('')
   useEffect(()=>{Promise.all([api('/masters/filter-options'),api('/masters/products'),api('/auth/me')]).then(([o,p,m]:any)=>{setOptions(o);setProducts(p);setRole(m.role)})},[])
   async function load(){
     try{
       const q=appendScope(new URLSearchParams({as_of:asOf}),scope)
-      const [summary,dailyControl]=await Promise.all([api(`/dashboard/summary?${q}`),api(`/dashboard/daily-control?${q}`)])
+      const controlQ=new URLSearchParams(q)
+      controlQ.set('blocker_threshold_pct',String(blockerThreshold))
+      const [summary,dailyControl]=await Promise.all([api(`/dashboard/summary?${q}`),api(`/dashboard/daily-control?${controlQ}`)])
       setData(summary);setControl(dailyControl);setErr('')
     }catch(e:any){setErr(e.message)}
   }
@@ -28,7 +31,8 @@ export default function Dashboard(){
       else{localStorage.removeItem('activeReview');setActiveReview(null)}
     }catch(e:any){setErr(`Unable to check review session: ${e.message}`)}
   }
-  useEffect(()=>{load()},[asOf,scope.plant,scope.productGroup,scope.customerId,scope.productId])
+  useEffect(()=>{load()},[asOf,scope.plant,scope.productGroup,scope.customerId,scope.productId,blockerThreshold])
+  useEffect(()=>{localStorage.setItem('dailyBlockerThresholdPct',String(blockerThreshold))},[blockerThreshold])
   useEffect(()=>{syncReview()},[asOf])
 
   async function startReview(){
@@ -77,7 +81,7 @@ export default function Dashboard(){
   const alerts=control?.alerts||[]
   const canUpload=['ADMIN','PLANNING'].includes(role)
   return <>
-    <PageHeader title="Daily Production Control" subtitle="Check readiness, upload once and act on the earliest production warnings." actions={<div className="button-row"><button onClick={()=>raiseAction()}>Raise action</button><input type="date" value={asOf} onChange={e=>setAsOf(e.target.value)}/>{activeReview?<button className="secondary" onClick={closeReview}>Close review</button>:<button className="secondary" onClick={startReview}>Start review</button>}</div>}/>
+    <PageHeader title="Daily Production Control" subtitle="Check readiness, upload once and act on the earliest production warnings." actions={<div className="button-row"><label>Avg blocker &lt; %<input type="number" min="1" max="100" step="1" value={blockerThreshold} onChange={e=>{const n=Number(e.target.value);if(n>=1&&n<=100)setBlockerThreshold(n)}}/></label><button onClick={()=>raiseAction()}>Raise action</button><input type="date" value={asOf} onChange={e=>setAsOf(e.target.value)}/>{activeReview?<button className="secondary" onClick={closeReview}>Close review</button>:<button className="secondary" onClick={startReview}>Start review</button>}</div>}/>
     <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
     {err && <div className="error">{err}</div>}
     {message && <div className="notice">{message}</div>}
@@ -86,7 +90,7 @@ export default function Dashboard(){
       <div className="daily-steps">
         <article className="daily-step"><div className="step-number">1</div><div><small>CHECK</small><h3>Schedule readiness</h3><Status value={workflow.schedule?.status||'LOADING'}/><p>{workflow.schedule?.planned_products||0} customer plans • {workflow.schedule?.planned_stages||0} stage plans</p><button className="secondary small" onClick={()=>navigate('/schedule')}>Open schedules</button></div></article>
         <article className="daily-step"><div className="step-number">2</div><div><small>UPLOAD ONCE</small><h3>Daily production</h3><Status value={workflow.upload?.status||'LOADING'}/><p>{workflow.upload?.reported_rows||0} of {workflow.upload?.expected_rows||0} planned rows reported</p>{canUpload?<button className="small" onClick={openUpload}>Upload workbook</button>:<span className="muted">Admin or Planning uploads the workbook.</span>}</div></article>
-        <article className="daily-step"><div className="step-number">3</div><div><small>ACT</small><h3>Review exceptions</h3><Status value={workflow.review?.status||'LOADING'}/><p>{workflow.review?.blockers||0} blockers • {workflow.review?.critical||0} critical • {workflow.review?.warnings||0} warnings</p><button className="secondary small" onClick={()=>document.getElementById('daily-alerts')?.scrollIntoView({behavior:'smooth'})}>Review warnings</button></div></article>
+        <article className="daily-step"><div className="step-number">3</div><div><small>ACT</small><h3>Review exceptions</h3><Status value={workflow.review?.status||'LOADING'}/><p>{workflow.review?.blockers||0} blockers • {workflow.review?.critical||0} critical • {workflow.review?.warnings||0} warnings • avg threshold {workflow.review?.blocker_threshold_pct??blockerThreshold}%</p><button className="secondary small" onClick={()=>document.getElementById('daily-alerts')?.scrollIntoView({behavior:'smooth'})}>Review warnings</button></div></article>
       </div>
       {canUpload&&<details id="daily-upload" className="daily-upload"><summary>Daily Production Upload</summary><p>Select the approved workbook containing <b>Daily_Actuals</b> and <b>Historical_Daily_MIS_Import</b>. Preview first; one confirmation commits customer MIS and every stage actual together.</p><ImportPreview kind="daily-production" onComplete={()=>{setMessage('Daily production upload completed. Readiness and warnings have been refreshed.');load()}}/></details>}
     </section>
