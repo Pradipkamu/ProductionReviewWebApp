@@ -183,16 +183,59 @@ def _latest_saved(db: Session, product_id: int, route_operation_id: int, month: 
     return int(revision), {x.machine_id: Decimal(x.allocated_qty) for x in rows}
 
 
+def _other_saved_machine_loads(
+    db: Session,
+    month: date,
+    product_id: int,
+    route_operation_id: int,
+) -> dict[int, Decimal]:
+    """Return machine load already committed by other latest allocation revisions.
+
+    Load is expressed as a fraction of machine-month capacity, not as pieces.
+    This is important because different products can have different cycle times
+    on the same physical machine.
+    """
+    month = month.replace(day=1)
+    rows = db.scalars(select(MachineMonthlyAllocation).where(
+        MachineMonthlyAllocation.month == month,
+    ).order_by(
+        MachineMonthlyAllocation.product_id,
+        MachineMonthlyAllocation.route_operation_id,
+        MachineMonthlyAllocation.revision_no.desc(),
+        MachineMonthlyAllocation.id.desc(),
+    )).all()
+
+    latest_revision: dict[tuple[int, int], int] = {}
+    loads: dict[int, Decimal] = defaultdict(lambda: ZERO)
+    for row in rows:
+        context = (row.product_id, row.route_operation_id)
+        if context == (product_id, route_operation_id):
+            continue
+        if context not in latest_revision:
+            latest_revision[context] = int(row.revision_no)
+        if int(row.revision_no) != latest_revision[context]:
+            continue
+        capacity_snapshot = Decimal(str(row.capacity_qty_snapshot or 0))
+        allocated = max(ZERO, Decimal(str(row.allocated_qty or 0)))
+        if capacity_snapshot > 0 and allocated > 0:
+            loads[row.machine_id] += allocated / capacity_snapshot
+    return dict(loads)
+
+
 def _suggest(schedule_qty: Decimal, machines: list[dict]) -> dict[int, Decimal]:
     remaining = max(ZERO, schedule_qty)
     result: dict[int, Decimal] = {x["machine_id"]: ZERO for x in machines}
-    usable = [x for x in machines if x["complete"] and Decimal(str(x["capacity_qty"])) > 0]
+    usable = [
+        x for x in machines
+        if x["complete"] and Decimal(str(x.get("available_capacity_qty", 0))) > 0
+    ]
     for item in sorted(usable, key=lambda x: (x["priority"], x["machine_code"])):
-        qty = min(remaining, Decimal(str(item["capacity_qty"])).quantize(Decimal("1"), rounding=ROUND_FLOOR))
+        available = Decimal(str(item["available_capacity_qty"])).quantize(Decimal("1"), rounding=ROUND_FLOOR)
+        qty = min(remaining, available)
         result[item["machine_id"]] = qty
         remaining -= qty
-    if remaining > 0 and usable:
-        result[usable[0]["machine_id"]] += remaining
+        if remaining <= 0:
+            break
     return result
 
 
@@ -218,35 +261,54 @@ def capacity_plan(db: Session, product_id: int, month: date) -> dict:
             for machine, mappings in mapping_groups.values()
         ]
         machine_rows.sort(key=lambda item: (item["priority"], item["machine_code"]))
+        other_loads = _other_saved_machine_loads(db, first, product_id, route_operation.id)
+        for item in machine_rows:
+            capacity = Decimal(str(item["capacity_qty"]))
+            other_load = max(ZERO, other_loads.get(item["machine_id"], ZERO))
+            remaining_fraction = max(ZERO, Decimal("1") - other_load)
+            available_capacity = capacity * remaining_fraction
+            item.update(
+                other_allocated_load_percent=float(other_load * 100),
+                available_capacity_qty=float(available_capacity),
+            )
+
         schedule_qty = scheduled.get(route_operation.id, ZERO)
         revision, saved = _latest_saved(db, product_id, route_operation.id, first)
         allocations = saved if revision is not None else _suggest(schedule_qty, machine_rows)
         for item in machine_rows:
             allocated = allocations.get(item["machine_id"], ZERO)
             capacity = Decimal(str(item["capacity_qty"]))
-            load = allocated / capacity if capacity > 0 else ZERO
+            own_load = allocated / capacity if capacity > 0 else ZERO
+            other_load = Decimal(str(item["other_allocated_load_percent"])) / Decimal(100)
+            total_machine_load = other_load + own_load
             gross_hours = Decimal(str(item["gross_available_hours"]))
             op_rate = Decimal(str(item["operators_per_machine"]))
             hourly_cost = Decimal(str(item["estimated_hourly_cost"]))
             cycle_per_piece = Decimal(str(item["planning_cycle_time_sec"]))
             cost_per_piece = hourly_cost * cycle_per_piece / Decimal(3600) if cycle_per_piece > 0 else ZERO
             item.update(
-                allocation_qty=float(allocated), load_percent=float(load * 100),
-                required_machine_hours=float(gross_hours * load),
-                operator_hours=float(gross_hours * load * op_rate),
-                average_operators=float(load * op_rate),
-                operators_required=math.ceil(float(load * op_rate)) if allocated > 0 else 0,
+                allocation_qty=float(allocated), load_percent=float(own_load * 100),
+                total_machine_load_percent=float(total_machine_load * 100),
+                over_capacity=bool(total_machine_load > Decimal("1.000001")),
+                required_machine_hours=float(gross_hours * own_load),
+                operator_hours=float(gross_hours * own_load * op_rate),
+                average_operators=float(own_load * op_rate),
+                operators_required=math.ceil(float(own_load * op_rate)) if allocated > 0 else 0,
                 estimated_cost_per_piece=float(cost_per_piece),
                 estimated_run_cost=float(cost_per_piece * allocated),
             )
         allocated_total = sum((Decimal(str(x["allocation_qty"])) for x in machine_rows), ZERO)
+        total_capacity = sum((Decimal(str(x["capacity_qty"])) for x in machine_rows), ZERO)
+        total_available_capacity = sum((Decimal(str(x["available_capacity_qty"])) for x in machine_rows), ZERO)
         operation_rows.append({
             "route_operation_id": route_operation.id, "operation_id": operation.id,
             "sequence_no": route_operation.sequence_no, "operation": operation.name,
             "schedule_qty": float(schedule_qty), "allocation_revision": revision,
             "allocation_source": "SAVED" if revision is not None else "SUGGESTED",
             "allocated_qty": float(allocated_total), "allocation_gap": float(schedule_qty - allocated_total),
-            "total_capacity_qty": sum(x["capacity_qty"] for x in machine_rows),
+            "total_capacity_qty": float(total_capacity),
+            "total_available_capacity_qty": float(total_available_capacity),
+            "capacity_shortage": float(max(ZERO, schedule_qty - total_available_capacity)),
             "operators_required": math.ceil(sum(x["average_operators"] for x in machine_rows)),
             "estimated_run_cost": sum(x["estimated_run_cost"] for x in machine_rows),
             "machines": machine_rows,
@@ -260,6 +322,14 @@ def capacity_plan(db: Session, product_id: int, month: date) -> dict:
 
 
 def save_allocation(db: Session, payload, user_id: int) -> dict:
+    # Serialize allocation saves for the physical machines involved so two users
+    # cannot commit overlapping capacity at the same time.
+    machine_ids = sorted({x.machine_id for x in payload.allocations})
+    if machine_ids:
+        db.execute(select(Machine.id).where(
+            Machine.id.in_(machine_ids)
+        ).order_by(Machine.id).with_for_update()).all()
+
     plan = capacity_plan(db, payload.product_id, payload.month)
     operation = next((x for x in plan["operations"] if x["route_operation_id"] == payload.route_operation_id), None)
     if not operation:
@@ -282,6 +352,15 @@ def save_allocation(db: Session, payload, user_id: int) -> dict:
         detail = valid[machine_id]
         if qty > 0 and not detail["complete"]:
             raise HTTPException(422, f"{detail['machine_code']} has incomplete capacity/cycle/operator masters")
+        available = Decimal(str(detail.get("available_capacity_qty", detail["capacity_qty"])))
+        if qty > available + Decimal("0.001"):
+            other_load = Decimal(str(detail.get("other_allocated_load_percent", 0)))
+            raise HTTPException(
+                422,
+                f"{detail['machine_code']} allocation {qty} exceeds available capacity "
+                f"{available.quantize(Decimal('0.001'))}. Other monthly allocations already use "
+                f"{other_load.quantize(Decimal('0.1'))}% of this machine."
+            )
         db.add(MachineMonthlyAllocation(
             month=payload.month.replace(day=1), effective_from=payload.effective_from,
             revision_no=revision, product_id=payload.product_id,
