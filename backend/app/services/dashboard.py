@@ -180,12 +180,6 @@ def daily_control_summary(
                 f"Month-to-date average dispatch is {avg_ratio * 100:.1f}% below the {blocker_threshold_pct:g}% blocker threshold",
                 pid, avg_ratio, plan, actual, "action",
             )
-        elif actual > 0:
-            ratio = actual / plan
-            if ratio < critical_target:
-                add("CRITICAL", "low_daily_compliance", "Daily dispatch is below 80% of plan", pid, ratio, plan, actual, "action")
-            elif ratio < compliance_target:
-                add("WARNING", "low_daily_compliance", "Daily dispatch is below 90% of plan", pid, ratio, plan, actual, "action")
         if _d(row.sales_price) <= 0:
             add("WARNING", "price_missing", "Effective sales price is missing; sales risk cannot be valued", pid, action="data-quality")
 
@@ -203,12 +197,6 @@ def daily_control_summary(
                 f"{stage_name}: month-to-date average is {avg_ratio * 100:.1f}% below the {blocker_threshold_pct:g}% blocker threshold",
                 pid, avg_ratio, plan, actual, "process",
             )
-        elif actual > 0:
-            ratio = actual / plan
-            if ratio < critical_target:
-                add("CRITICAL", "stage_bottleneck", f"{stage_name}: output is below 80% of stage plan", pid, ratio, plan, actual, "process")
-            elif ratio < compliance_target:
-                add("WARNING", "stage_bottleneck", f"{stage_name}: output is below 90% of stage plan", pid, ratio, plan, actual, "process")
 
     quality_rows = list(db.scalars(select(QualityRejectionDaily).where(
         QualityRejectionDaily.rejection_date == as_of,
