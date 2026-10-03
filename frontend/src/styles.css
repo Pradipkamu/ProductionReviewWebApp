@@ -49,6 +49,7 @@
 /* manual quality rejection entry */
 .manual-rejection-panel{border-left:4px solid var(--blue)}
 .manual-rejection-panel .panel-title p{margin:4px 0 0;color:#758297;font-size:12px}
+.ppm-quantity-matrix{margin-top:-4px;border:1px solid var(--line);border-radius:9px}.ppm-quantity-matrix table{width:max-content;min-width:100%}.ppm-quantity-matrix th,.ppm-quantity-matrix td{text-align:center;min-width:88px;white-space:nowrap}.ppm-quantity-matrix th:first-child{position:sticky;left:0;z-index:2;min-width:132px;text-align:left;background:#f4f7fb}.ppm-quantity-matrix thead th:first-child{z-index:3}.ppm-quantity-matrix tbody th{color:var(--navy);font-weight:800}.ppm-quantity-matrix tbody tr:last-child th,.ppm-quantity-matrix tbody tr:last-child td{border-bottom:0}.ppm-quantity-matrix .ppm-rejection-row td{color:var(--red);font-weight:800}.ppm-trend-panel>.muted:last-child{margin-bottom:0}
 .quality-entry-grid{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0 12px}
 .quality-entry-grid .span-2{grid-column:span 2}
 .quality-entry-grid .manual-action{align-self:center;margin:4px 0 14px;min-height:38px}

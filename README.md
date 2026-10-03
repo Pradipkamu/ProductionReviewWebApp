@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.5.1
+# ProductionReviewWebApp v0.5.2
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -69,3 +69,7 @@ Capacity / Manpower Planning combines the monthly operation schedule with effect
 ## v0.5.1 — Machine PM, Utilities and Costing Master
 
 The dedicated Machine Master captures fractional default manpower, last PM date/frequency, rated power, expected power load, compressed-air consumption and transparent labor/utility/maintenance/consumable/depreciation/overhead cost rates. It calculates hourly conversion cost, feeds part cycle-time cost estimates into Capacity / Manpower, and retains reasoned machine-master history. See [release notes](docs/RELEASE_v0.5.1.md).
+
+## v0.5.2 — Horizontal Monthly PPM Quantities
+
+The Quality / Rejection page now places a horizontal month matrix directly below the Monthly PPM graph. It contains only Rejection Qty and Dispatch Qty rows, keeps PPM values on the graph, preserves pending-denominator warnings, and follows the selected machine and other Quality filters. See [release notes](docs/RELEASE_v0.5.2.md).

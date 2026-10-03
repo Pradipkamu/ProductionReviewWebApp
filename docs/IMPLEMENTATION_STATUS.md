@@ -39,6 +39,7 @@
 - Fractional default machine manpower, rated power and compressed-air consumption
 - Labor, energy, air, maintenance, consumables, depreciation and overhead cost model
 - Hourly, per-piece and monthly planned machine conversion-cost estimates
+- Horizontal two-row Rejection Qty / Dispatch Qty matrix within the Monthly PPM graph panel
 
 ## Deliberately left configurable, not guessed
 

@@ -1,4 +1,4 @@
-ProductionReviewWebApp v0.5.1 — build validation
+ProductionReviewWebApp v0.5.2 — build validation
 
 Backend automated tests: 70 passed, 2 skipped.
 - Full suite executed with the pinned requirements in backend/requirements.txt and backend/requirements-dev.txt.
@@ -7,6 +7,7 @@ Backend automated tests: 70 passed, 2 skipped.
 - Historical quality PPM denominator precedence and plant-scope regressions passed.
 - Effective-dated machine capacity, operator requirement, cycle-time and monthly allocation coverage passed.
 - Fractional manpower, PM schedule, utility costing and machine-master history coverage passed.
+- Quality Monthly PPM graph quantity-matrix TypeScript production build passed.
 
 Frontend production validation:
 - Clean npm ci completed from the committed package-lock.json.
