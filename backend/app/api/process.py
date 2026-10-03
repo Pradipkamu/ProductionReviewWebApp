@@ -14,8 +14,17 @@ router = APIRouter(prefix="/process", tags=["process"])
 
 
 @router.get("/monitor")
-def monitor(product_id: int, monitor_date: date, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return process_monitor(db, product_id, monitor_date)
+def monitor(product_id: int, monitor_date: date, from_date: date | None = None, to_date: date | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    if (from_date is None) != (to_date is None):
+        raise HTTPException(422, 'Provide both From and To dates')
+    start, end = (from_date, to_date) if from_date is not None else (monitor_date, monitor_date)
+    if start > end:
+        raise HTTPException(422, 'From date must be on or before To date')
+    from ..services.planning import get_active_route
+    route = get_active_route(db, product_id, end)
+    if route and start < route.effective_from:
+        raise HTTPException(422, f'Current route R{route.revision_no} starts {route.effective_from}; choose a range within this revision')
+    return process_monitor(db, product_id, end, start)
 
 
 @router.post("/entry")
