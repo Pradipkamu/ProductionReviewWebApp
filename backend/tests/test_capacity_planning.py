@@ -190,7 +190,7 @@ def test_shared_machine_capacity_blocks_overallocation_across_products():
     machine_b = operation_b['machines'][0]
     assert machine_b['other_allocated_load_percent'] == 62.5
     assert machine_b['available_capacity_qty'] == 360
-    assert operation_b['allocation_qty'] == 360
+    assert operation_b['allocated_qty'] == 360
     assert operation_b['allocation_gap'] == 140
     assert operation_b['capacity_shortage'] == 140
 
