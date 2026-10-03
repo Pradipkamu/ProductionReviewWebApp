@@ -2,14 +2,14 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
 from ..enums import ActionStatus
 from ..services.filtering import csv_ints, csv_strings
-from ..models import Action, ActionContext, DailyMIS, Product, User
+from ..models import Action, ActionContext, DailyMIS, DailyRequirement, Product, User
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -45,17 +45,46 @@ def monthly(
     start = first_end - relativedelta(months=max(1, months)-1)
     next_after_end = first_end + relativedelta(months=1)
     month_expr = func.strftime('%Y-%m', DailyMIS.mis_date) if db.bind.dialect.name == 'sqlite' else func.to_char(DailyMIS.mis_date, 'YYYY-MM')
+
+    # History must use the current/revised dispatch plan when one exists.
+    # Schedule revisions intentionally update DailyRequirement rather than
+    # overwriting the historical DailyMIS baseline plan. Aggregate the single
+    # dispatch-level requirement per product/date and fall back to DailyMIS only
+    # where no revised requirement exists.
+    req_plan = (
+        select(
+            DailyRequirement.req_date.label("req_date"),
+            DailyRequirement.product_id.label("product_id"),
+            func.max(DailyRequirement.revised_plan_qty).label("revised_plan_qty"),
+        )
+        .where(
+            DailyRequirement.route_operation_id.is_(None),
+            DailyRequirement.req_date >= start,
+            DailyRequirement.req_date < next_after_end,
+        )
+        .group_by(DailyRequirement.req_date, DailyRequirement.product_id)
+        .subquery()
+    )
+    plan_qty = func.coalesce(req_plan.c.revised_plan_qty, DailyMIS.plan_qty)
+    plan_sales = plan_qty * DailyMIS.sales_price
     q = (
         select(
             month_expr.label("month"),
-            func.coalesce(func.sum(DailyMIS.plan_qty),0),
+            func.coalesce(func.sum(plan_qty),0),
             func.coalesce(func.sum(DailyMIS.actual_qty),0),
-            func.coalesce(func.sum(DailyMIS.plan_sales),0),
+            func.coalesce(func.sum(plan_sales),0),
             func.coalesce(func.sum(DailyMIS.actual_sales),0),
-            func.coalesce(func.sum(DailyMIS.plan_qty * func.coalesce(Product.finish_weight_kg, 0) / 1000),0),
+            func.coalesce(func.sum(plan_qty * func.coalesce(Product.finish_weight_kg, 0) / 1000),0),
             func.coalesce(func.sum(DailyMIS.actual_qty * func.coalesce(Product.finish_weight_kg, 0) / 1000),0),
         )
         .join(Product, Product.id == DailyMIS.product_id)
+        .outerjoin(
+            req_plan,
+            and_(
+                req_plan.c.req_date == DailyMIS.mis_date,
+                req_plan.c.product_id == DailyMIS.product_id,
+            ),
+        )
         .where(DailyMIS.mis_date >= start, DailyMIS.mis_date < next_after_end)
     )
     q = _apply_product_filters(q, plant, product_group, customer_id, product_id)
