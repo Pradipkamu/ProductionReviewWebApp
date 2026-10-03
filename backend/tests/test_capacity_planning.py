@@ -223,3 +223,13 @@ def test_shared_machine_capacity_blocks_overallocation_across_products():
     assert operation_b_saved['allocated_qty'] == 360
     assert operation_b_saved['allocation_gap'] == 140
     assert machine_b_saved['total_machine_load_percent'] == 100
+
+    summary = client.get('/api/capacity/machine-loading?month=2026-02-01', headers=h)
+    assert summary.status_code == 200, summary.text
+    loading = summary.json()
+    shared = next(x for x in loading['machines'] if x['machine_id'] == machine_id)
+    assert shared['allocated_load_percent'] == 100
+    assert shared['available_load_percent'] == 0
+    assert shared['allocation_count'] == 2
+    assert shared['status'] == 'FULL'
+    assert {x['product_code'] for x in shared['allocations']} == {'CAP-SH-A', 'CAP-SH-B'}
