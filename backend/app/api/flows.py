@@ -79,7 +79,7 @@ def monitor(
         'flow':dict(id=flow.id,revision=flow.revision_no,effective_from=flow.effective_from,company=flow.company),
         'period':{
             'requested_start':period_start.isoformat(),'start':effective_start.isoformat(),'end':period_end.isoformat(),
-            'working_days':len(work_dates),'off_days':(period_end-period_start).days+1-len(work_dates),
+            'working_days':len(work_dates),'off_days':(period_end-effective_start).days+1-len(work_dates),
             'is_range':period_start!=period_end,'truncated_to_flow':effective_start!=period_start,
         },
         'stages':result,
