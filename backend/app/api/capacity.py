@@ -12,7 +12,7 @@ from ..models import (
     OperatorRequirementHistory, Product, RouteOperation, RouteVersion, User,
 )
 from ..schemas import MachineAllocationCreate, MachineCapacitySettingCreate, OperatorRequirementCreate
-from ..services.capacity import capacity_plan, close_previous_revision, save_allocation
+from ..services.capacity import capacity_plan, close_previous_revision, machine_loading_summary, save_allocation
 
 router = APIRouter(prefix="/capacity", tags=["capacity"])
 
@@ -20,6 +20,11 @@ router = APIRouter(prefix="/capacity", tags=["capacity"])
 @router.get("/plan")
 def plan(product_id: int, month: date, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return capacity_plan(db, product_id, month)
+
+
+@router.get("/machine-loading")
+def machine_loading(month: date, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return machine_loading_summary(db, month)
 
 
 @router.post("/allocations")
