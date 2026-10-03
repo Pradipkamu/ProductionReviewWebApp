@@ -184,9 +184,13 @@ def daily_control_summary(
         if row is None:
             add("BLOCKER", "missing_stage_actual", f"{stage_name}: actual has not been uploaded", pid, plan=plan, action="upload")
 
-    # Threshold blockers are evaluated against every valid month-to-date
-    # product/stage average, independent of whether that item has a plan today.
+    # Production-compliance blockers apply only to items that are actively
+    # running on the selected day. A stored selected-day Actual = 0 is skipped.
+    # Missing rows remain separate data blockers above.
     for pid, avg_ratio in dispatch_average.items():
+        today_row = mis.get(pid)
+        if today_row is None or _d(today_row.actual_qty) <= 0:
+            continue
         if avg_ratio < blocker_threshold:
             vals = dispatch_totals[pid]
             add(
@@ -196,6 +200,9 @@ def daily_control_summary(
             )
 
     for (pid, operation_id), avg_ratio in stage_average.items():
+        today_row = stage_actual.get((pid, operation_id))
+        if today_row is None or _d(today_row.actual_qty) <= 0:
+            continue
         if avg_ratio < blocker_threshold:
             vals = stage_totals[(pid, operation_id)]
             stage_name = operations.get(operation_id, f"Stage #{operation_id}")
