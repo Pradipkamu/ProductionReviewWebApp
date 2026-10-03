@@ -14,8 +14,17 @@ router = APIRouter(prefix="/process", tags=["process"])
 
 
 @router.get("/monitor")
-def monitor(product_id: int, monitor_date: date, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return process_monitor(db, product_id, monitor_date)
+def monitor(
+    product_id: int,
+    monitor_date: date,
+    start_date: date | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    try:
+        return process_monitor(db, product_id, monitor_date, start_date=start_date)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.post("/entry")
