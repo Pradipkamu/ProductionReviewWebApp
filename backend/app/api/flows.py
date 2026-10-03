@@ -70,10 +70,24 @@ def monitor(
         plan=(sum((r.revised_plan_qty for r in req_rows),0)/plan_days) if plan_days else None
         actual=(sum((r.actual_qty for r in actual_rows),0)/data_days) if data_days else None
         reject=(sum((r.reject_qty for r in actual_rows),0)/data_days) if data_days else None
+        plan_by_date={}
+        for r in req_rows:
+            plan_by_date[r.req_date]=plan_by_date.get(r.req_date,0)+r.revised_plan_qty
+        actual_by_date={}
+        reject_by_date={}
+        for r in actual_rows:
+            actual_by_date[r.summary_date]=actual_by_date.get(r.summary_date,0)+r.actual_qty
+            reject_by_date[r.summary_date]=reject_by_date.get(r.summary_date,0)+r.reject_qty
+        daily=[{
+            'date':d.isoformat(),
+            'plan':float(plan_by_date[d]) if d in plan_by_date else None,
+            'actual':float(actual_by_date[d]) if d in actual_by_date else None,
+            'reject':float(reject_by_date[d]) if d in reject_by_date else None,
+        } for d in work_dates]
         allocation=db.scalar(select(StageScheduleAllocation).where(StageScheduleAllocation.stage_id==stage.id,StageScheduleAllocation.month==period_end.replace(day=1),StageScheduleAllocation.effective_from<=period_end).order_by(StageScheduleAllocation.effective_from.desc(),StageScheduleAllocation.revision_no.desc()).limit(1))
         result.append(dict(id=stage.id,code=stage.code,name=stage.name,role=stage.role,branch=stage.branch,variant=stage.variant,vendor=stage.vendor_name,source_column=stage.source_column,active=stage.is_active,parent_dispatch=stage.parent_dispatch,alias_of=stage.alias_of,predecessors=json.loads(stage.predecessors_json),route_operation_id=stage.route_operation_id,
           plan=float(plan) if plan is not None else None,actual=float(actual) if actual is not None else None,reject=float(reject) if reject is not None else None,
-          days_with_plan=plan_days,days_with_data=data_days,
+          days_with_plan=plan_days,days_with_data=data_days,daily=daily,
           allocated_qty=float(allocation.allocated_qty) if allocation else None,allocation_reference=allocation.reference if allocation else None))
     return {
         'flow':dict(id=flow.id,revision=flow.revision_no,effective_from=flow.effective_from,company=flow.company),
