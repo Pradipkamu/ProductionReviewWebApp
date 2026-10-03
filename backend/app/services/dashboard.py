@@ -29,12 +29,15 @@ def daily_control_summary(
     product_ids: list[int] | None = None,
     compliance_target: Decimal = Decimal("0.90"),
     critical_target: Decimal = Decimal("0.80"),
+    blocker_threshold_pct: float = 80.0,
 ) -> dict:
     """One daily readiness/upload/exception view.
 
-    A missing row means the daily upload is incomplete. A stored zero is a
-    reported operational result and is therefore shown as a production alert.
-    Keeping those states separate avoids hiding missing uploads as zero output.
+    Missing required rows remain blockers. A stored zero actual is intentionally
+    ignored for output/compliance alerts. Average compliance is calculated over
+    month-to-date rows that have both a positive plan and a positive actual; if
+    that average falls below the configurable blocker threshold, a blocker is
+    raised for the product or stage.
     """
     q = select(Product).where(Product.is_active.is_(True))
     if plants:
@@ -83,6 +86,74 @@ def daily_control_summary(
         ).all()
     }
 
+    blocker_threshold = Decimal(str(blocker_threshold_pct)) / Decimal("100")
+    month_start = as_of.replace(day=1)
+
+    # Month-to-date average compliance. Reported zero actuals are deliberately
+    # excluded from the average, per review rule; missing rows remain blockers.
+    dispatch_plan_by_day: dict[tuple[date, int], Decimal] = {}
+    for req in db.scalars(select(DailyRequirement).where(
+        DailyRequirement.req_date >= month_start,
+        DailyRequirement.req_date <= as_of,
+        DailyRequirement.product_id.in_(ids),
+        DailyRequirement.route_operation_id.is_(None),
+        DailyRequirement.revised_plan_qty > 0,
+    )).all():
+        dispatch_plan_by_day[(req.req_date, req.product_id)] = _d(req.revised_plan_qty)
+
+    dispatch_totals: dict[int, dict[str, Decimal]] = defaultdict(lambda: {"plan": Decimal("0"), "actual": Decimal("0")})
+    for row in db.scalars(select(DailyMIS).where(
+        DailyMIS.mis_date >= month_start,
+        DailyMIS.mis_date <= as_of,
+        DailyMIS.product_id.in_(ids),
+    )).all():
+        actual_qty = _d(row.actual_qty)
+        plan_qty = dispatch_plan_by_day.get((row.mis_date, row.product_id), _d(row.plan_qty))
+        if actual_qty <= 0 or plan_qty <= 0:
+            continue
+        dispatch_totals[row.product_id]["plan"] += plan_qty
+        dispatch_totals[row.product_id]["actual"] += actual_qty
+
+    dispatch_average = {
+        pid: vals["actual"] / vals["plan"]
+        for pid, vals in dispatch_totals.items()
+        if vals["plan"] > 0
+    }
+
+    stage_req_by_day: dict[tuple[date, int, int], Decimal] = {}
+    stage_route_ids = list({key[1] for key in stage_plan})
+    if stage_route_ids:
+        for req in db.scalars(select(DailyRequirement).where(
+            DailyRequirement.req_date >= month_start,
+            DailyRequirement.req_date <= as_of,
+            DailyRequirement.product_id.in_(ids),
+            DailyRequirement.route_operation_id.in_(stage_route_ids),
+            DailyRequirement.revised_plan_qty > 0,
+        )).all():
+            stage_req_by_day[(req.req_date, req.product_id, req.route_operation_id)] = _d(req.revised_plan_qty)
+
+    stage_totals: dict[tuple[int, int], dict[str, Decimal]] = defaultdict(lambda: {"plan": Decimal("0"), "actual": Decimal("0")})
+    if stage_route_ids:
+        for row in db.scalars(select(ProcessDailySummary).where(
+            ProcessDailySummary.summary_date >= month_start,
+            ProcessDailySummary.summary_date <= as_of,
+            ProcessDailySummary.product_id.in_(ids),
+            ProcessDailySummary.route_operation_id.in_(stage_route_ids),
+        )).all():
+            actual_qty = _d(row.actual_qty)
+            plan_qty = stage_req_by_day.get((row.summary_date, row.product_id, row.route_operation_id), _d(row.plan_qty))
+            if actual_qty <= 0 or plan_qty <= 0:
+                continue
+            key = (row.product_id, row.route_operation_id)
+            stage_totals[key]["plan"] += plan_qty
+            stage_totals[key]["actual"] += actual_qty
+
+    stage_average = {
+        key: vals["actual"] / vals["plan"]
+        for key, vals in stage_totals.items()
+        if vals["plan"] > 0
+    }
+
     alerts: list[dict] = []
     rank = {"BLOCKER": 0, "CRITICAL": 1, "WARNING": 2, "WATCH": 3}
 
@@ -102,9 +173,14 @@ def daily_control_summary(
             add("BLOCKER", "missing_dispatch_actual", "Daily MIS / dispatch actual has not been uploaded", pid, plan=plan, action="upload")
             continue
         actual = _d(row.actual_qty)
-        if actual == 0:
-            add("CRITICAL", "zero_dispatch_actual", "Zero dispatch was reported against a positive plan", pid, 0, plan, actual, "action")
-        else:
+        avg_ratio = dispatch_average.get(pid)
+        if avg_ratio is not None and avg_ratio < blocker_threshold:
+            add(
+                "BLOCKER", "low_average_dispatch_compliance",
+                f"Month-to-date average dispatch is {avg_ratio * 100:.1f}% below the {blocker_threshold_pct:g}% blocker threshold",
+                pid, avg_ratio, plan, actual, "action",
+            )
+        elif actual > 0:
             ratio = actual / plan
             if ratio < critical_target:
                 add("CRITICAL", "low_daily_compliance", "Daily dispatch is below 80% of plan", pid, ratio, plan, actual, "action")
@@ -120,9 +196,14 @@ def daily_control_summary(
             add("BLOCKER", "missing_stage_actual", f"{stage_name}: actual has not been uploaded", pid, plan=plan, action="upload")
             continue
         actual = _d(row.actual_qty)
-        if actual == 0:
-            add("CRITICAL", "zero_stage_actual", f"{stage_name}: zero production reported", pid, 0, plan, actual, "action")
-        else:
+        avg_ratio = stage_average.get((pid, operation_id))
+        if avg_ratio is not None and avg_ratio < blocker_threshold:
+            add(
+                "BLOCKER", "low_average_stage_compliance",
+                f"{stage_name}: month-to-date average is {avg_ratio * 100:.1f}% below the {blocker_threshold_pct:g}% blocker threshold",
+                pid, avg_ratio, plan, actual, "process",
+            )
+        elif actual > 0:
             ratio = actual / plan
             if ratio < critical_target:
                 add("CRITICAL", "stage_bottleneck", f"{stage_name}: output is below 80% of stage plan", pid, ratio, plan, actual, "process")
@@ -218,7 +299,7 @@ def daily_control_summary(
         "workflow": {
             "schedule": {"status": schedule_status, "planned_products": len(customer_plan), "planned_stages": len(stage_plan)},
             "upload": {"status": upload_status, "expected_rows": expected, "reported_rows": reported, "missing_customer_rows": missing_customer, "missing_stage_rows": missing_stage},
-            "review": {"status": review_status, "blockers": blockers, "critical": critical, "warnings": warnings},
+            "review": {"status": review_status, "blockers": blockers, "critical": critical, "warnings": warnings, "blocker_threshold_pct": float(blocker_threshold_pct)},
         },
         "counts": {
             "planned_products": len(customer_plan), "reported_products": len(set(customer_plan) & set(mis)),
