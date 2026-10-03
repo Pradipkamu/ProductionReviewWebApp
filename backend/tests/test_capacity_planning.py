@@ -204,3 +204,22 @@ def test_shared_machine_capacity_blocks_overallocation_across_products():
     })
     assert rejected.status_code == 422
     assert 'exceeds available capacity' in rejected.json()['detail']
+
+    # A legitimate shortage can still be saved as a partial monthly allocation.
+    saved_shortage = _post(client, h, '/api/capacity/allocations', {
+        'product_id': p2, 'route_operation_id': ro2,
+        'month': '2026-02-01', 'effective_from': '2026-02-01',
+        'reason': 'Approved partial loading with capacity shortage',
+        'allocations': [{'machine_id': machine_id, 'allocated_qty': 360}],
+    })
+    assert saved_shortage['allocated_qty'] == 360
+    assert saved_shortage['schedule_qty'] == 500
+    assert saved_shortage['allocation_gap'] == 140
+
+    # The saved revision must retain the gap without exceeding the physical machine.
+    plan_b_saved = client.get(f'/api/capacity/plan?product_id={p2}&month=2026-02-01', headers=h).json()
+    operation_b_saved = plan_b_saved['operations'][0]
+    machine_b_saved = operation_b_saved['machines'][0]
+    assert operation_b_saved['allocated_qty'] == 360
+    assert operation_b_saved['allocation_gap'] == 140
+    assert machine_b_saved['total_machine_load_percent'] == 100
