@@ -222,6 +222,110 @@ def _other_saved_machine_loads(
     return dict(loads)
 
 
+def machine_loading_summary(db: Session, month: date) -> dict:
+    """Consolidated physical-machine loading from latest saved monthly allocations.
+
+    Quantities are not added across products because different parts can have
+    different cycle times. Each saved allocation is converted to its machine-time
+    load fraction using allocated_qty / capacity_qty_snapshot, then the fractions
+    are summed for the physical machine.
+    """
+    month = month.replace(day=1)
+    rows = db.execute(
+        select(MachineMonthlyAllocation, Machine, Product, RouteOperation, Operation)
+        .join(Machine, Machine.id == MachineMonthlyAllocation.machine_id)
+        .join(Product, Product.id == MachineMonthlyAllocation.product_id)
+        .join(RouteOperation, RouteOperation.id == MachineMonthlyAllocation.route_operation_id)
+        .join(Operation, Operation.id == RouteOperation.operation_id)
+        .where(MachineMonthlyAllocation.month == month)
+        .order_by(
+            MachineMonthlyAllocation.product_id,
+            MachineMonthlyAllocation.route_operation_id,
+            MachineMonthlyAllocation.revision_no.desc(),
+            MachineMonthlyAllocation.id.desc(),
+        )
+    ).all()
+
+    latest_revision: dict[tuple[int, int], int] = {}
+    by_machine: dict[int, dict] = {}
+    for allocation, machine, product, route_operation, operation in rows:
+        context = (allocation.product_id, allocation.route_operation_id)
+        if context not in latest_revision:
+            latest_revision[context] = int(allocation.revision_no)
+        if int(allocation.revision_no) != latest_revision[context]:
+            continue
+
+        capacity_snapshot = Decimal(str(allocation.capacity_qty_snapshot or 0))
+        allocated = max(ZERO, Decimal(str(allocation.allocated_qty or 0)))
+        load = allocated / capacity_snapshot if capacity_snapshot > 0 else ZERO
+
+        row = by_machine.setdefault(machine.id, {
+            "machine_id": machine.id,
+            "machine_code": machine.code,
+            "machine_name": machine.name,
+            "plant": machine.plant,
+            "department": machine.department,
+            "is_active": machine.is_active,
+            "load_fraction": ZERO,
+            "allocations": [],
+        })
+        row["load_fraction"] += load
+        if allocated > 0:
+            row["allocations"].append({
+                "product_id": product.id,
+                "product_code": product.code,
+                "product": product.name,
+                "route_operation_id": route_operation.id,
+                "operation": operation.name,
+                "revision_no": int(allocation.revision_no),
+                "allocated_qty": float(allocated),
+                "capacity_qty_snapshot": float(capacity_snapshot),
+                "load_percent": float(load * 100),
+                "planning_cycle_time_sec": float(allocation.planning_cycle_time_sec),
+                "operators_per_machine": float(allocation.operators_per_machine_snapshot),
+            })
+
+    # Show active machines even before their first monthly allocation.
+    machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.code)).all()
+    for machine in machines:
+        by_machine.setdefault(machine.id, {
+            "machine_id": machine.id,
+            "machine_code": machine.code,
+            "machine_name": machine.name,
+            "plant": machine.plant,
+            "department": machine.department,
+            "is_active": machine.is_active,
+            "load_fraction": ZERO,
+            "allocations": [],
+        })
+
+    result = []
+    for row in by_machine.values():
+        load_percent = row.pop("load_fraction") * Decimal(100)
+        available_percent = max(ZERO, Decimal(100) - load_percent)
+        overload_percent = max(ZERO, load_percent - Decimal(100))
+        row["allocated_load_percent"] = float(load_percent)
+        row["available_load_percent"] = float(available_percent)
+        row["overload_percent"] = float(overload_percent)
+        row["allocation_count"] = len(row["allocations"])
+        row["status"] = (
+            "OVERLOADED" if overload_percent > 0 else
+            "FULL" if load_percent >= Decimal("99.999") else
+            "AVAILABLE"
+        )
+        row["allocations"].sort(key=lambda x: (x["product"], x["operation"]))
+        result.append(row)
+
+    result.sort(key=lambda x: (x["machine_code"], x["machine_name"]))
+    return {
+        "month": month.isoformat(),
+        "machines": result,
+        "machine_count": len(result),
+        "allocated_machine_count": sum(1 for x in result if x["allocated_load_percent"] > 0),
+        "overloaded_machine_count": sum(1 for x in result if x["overload_percent"] > 0),
+    }
+
+
 def _suggest(schedule_qty: Decimal, machines: list[dict]) -> dict[int, Decimal]:
     remaining = max(ZERO, schedule_qty)
     result: dict[int, Decimal] = {x["machine_id"]: ZERO for x in machines}
