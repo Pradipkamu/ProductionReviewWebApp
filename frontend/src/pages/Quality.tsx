@@ -18,8 +18,8 @@ function monthEnd(monthStart:string){
 export default function Quality(){
   const navigate=useNavigate()
   function drill(r:any){const month=r.month;const first=month||r.date||r.rejection_date||fromDate;const last=month?monthEnd(month):first;const q=new URLSearchParams({kind:'ppm',from_date:first,to_date:last});if(productId.length)q.set('product_id',productId.join(','));if(plant.length)q.set('plant',plant.join(','));if(phenomenonId.length)q.set('phenomenon_id',phenomenonId.join(','));if(machineId.length)q.set('machine_id',machineId.join(','));if(operationId.length)q.set('operation_id',operationId.join(','));if(shift.length)q.set('shift',shift.join(','));navigate(`/insights?${q}`)}
-  const today=new Date(); const monthStart=new Date(today.getFullYear(),today.getMonth(),1)
-  const [fromDate,setFromDate]=useState(iso(monthStart)); const [toDate,setToDate]=useState(iso(today))
+  const today=new Date(); const weekAgo=new Date(today); weekAgo.setDate(today.getDate()-7)
+  const [fromDate,setFromDate]=useState(iso(weekAgo)); const [toDate,setToDate]=useState(iso(today))
   const [plant,setPlant]=useState<string[]>([]); const [productId,setProductId]=useState<string[]>([]); const [phenomenonId,setPhenomenonId]=useState<string[]>([])
   const [operationId,setOperationId]=useState<string[]>([]); const [machineId,setMachineId]=useState<string[]>([]); const [shift,setShift]=useState<string[]>([])
   const [products,setProducts]=useState<any[]>([]); const [filters,setFilters]=useState<any>({plants:[]}); const [phenomena,setPhenomena]=useState<any[]>([])
