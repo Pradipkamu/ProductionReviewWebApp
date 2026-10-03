@@ -43,6 +43,26 @@ def test_all_corrected_definitions_preserve_inactive_columns_and_no_fake_plans()
   assert not db.get(Product,ids['Platina 99 Cylinder block']).is_active
   assert import_process_workbook(db,TEMPLATE,'process-design')['unchanged']==235
 
+def test_monitor_date_range_sums_saved_days_and_shows_coverage():
+ ids=setup()
+ with SessionLocal() as db:
+  stage=db.scalar(select(ProcessFlowStage).join(ProcessFlowVersion).where(ProcessFlowVersion.product_id==ids['Kubota Head'],ProcessFlowStage.code=='P04_VMC'))
+  for day,plan in [(date(2026,10,1),12),(date(2026,10,2),14)]:
+   db.add(DailyRequirement(req_date=day,product_id=ids['Kubota Head'],route_operation_id=stage.route_operation_id,baseline_plan_qty=plan,revised_plan_qty=plan))
+  db.add(ProcessDailySummary(summary_date=date(2026,10,2),product_id=ids['Kubota Head'],route_operation_id=stage.route_operation_id,actual_qty=9,reject_qty=1))
+  db.commit()
+ c=TestClient(app);h=headers(c)
+ base=f"/api/flows/monitor?product_id={ids['Kubota Head']}&monitor_date=2026-10-02"
+ r=c.get(base+'&from_date=2026-10-01&to_date=2026-10-02',headers=h)
+ assert r.status_code==200,r.text
+ data=r.json();row=next(s for s in data['stages'] if s['code']=='P04_VMC')
+ assert data['period_days']==2 and (row['plan'],row['actual'],row['reject'])==(26,9,1)
+ assert (row['plan_days'],row['actual_days'])==(2,1)
+ single=c.get(base,headers=h).json();row=next(s for s in single['stages'] if s['code']=='P04_VMC')
+ assert (row['plan'],row['actual'])==(14,9)
+ assert c.get(base+'&from_date=2026-10-03&to_date=2026-10-02',headers=h).status_code==422
+ assert c.get(base+'&from_date=2026-09-30&to_date=2026-10-02',headers=h).status_code==422
+
 def test_working_day_allocation_exact_total_effective_revision_and_zero(tmp_path):
  setup()
  with SessionLocal() as db:

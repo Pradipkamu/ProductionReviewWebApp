@@ -411,40 +411,43 @@ def daily_review_summary(
     }
 
 
-def process_monitor(db: Session, product_id: int, d: date) -> dict:
+def process_monitor(db: Session, product_id: int, d: date, start: date | None = None) -> dict:
     from .planning import get_active_route
+    start = start or d
     route = get_active_route(db, product_id, d)
     if not route:
-        return {"product_id": product_id, "date": d.isoformat(), "route": None, "operations": []}
+        return {"product_id": product_id, "date": d.isoformat(), "from_date": start.isoformat(), "to_date": d.isoformat(), "route": None, "operations": []}
     ops = db.execute(
         select(RouteOperation, Operation)
         .join(Operation, Operation.id == RouteOperation.operation_id)
         .where(RouteOperation.route_version_id == route.id, RouteOperation.is_enabled.is_(True))
         .order_by(RouteOperation.sequence_no)
     ).all()
+    ids = [ro.id for ro, _ in ops]
+    requirements = {rid: (qty, days) for rid, qty, days in db.execute(
+        select(DailyRequirement.route_operation_id, func.sum(DailyRequirement.revised_plan_qty), func.count(DailyRequirement.id))
+        .where(DailyRequirement.product_id == product_id, DailyRequirement.route_operation_id.in_(ids), DailyRequirement.req_date >= start, DailyRequirement.req_date <= d)
+        .group_by(DailyRequirement.route_operation_id))}
+    summaries = {rid: (plan, actual, days) for rid, plan, actual, days in db.execute(
+        select(ProcessDailySummary.route_operation_id, func.sum(ProcessDailySummary.plan_qty), func.sum(ProcessDailySummary.actual_qty), func.count(ProcessDailySummary.id))
+        .where(ProcessDailySummary.product_id == product_id, ProcessDailySummary.route_operation_id.in_(ids), ProcessDailySummary.summary_date >= start, ProcessDailySummary.summary_date <= d)
+        .group_by(ProcessDailySummary.route_operation_id))}
     from ..models import ProcessFlowVersion
     explicit_flow = db.scalar(select(ProcessFlowVersion.id).where(ProcessFlowVersion.route_version_id == route.id))
     out = []
     prior_actual = None
     for ro, op in ops:
-        summary = db.scalar(select(ProcessDailySummary).where(
-            ProcessDailySummary.summary_date == d,
-            ProcessDailySummary.product_id == product_id,
-            ProcessDailySummary.route_operation_id == ro.id,
-        ))
-        req = db.scalar(select(DailyRequirement).where(
-            DailyRequirement.req_date == d,
-            DailyRequirement.product_id == product_id,
-            DailyRequirement.route_operation_id == ro.id,
-        ))
-        actual = _d(summary.actual_qty if summary else 0)
-        plan = _d(req.revised_plan_qty if req else (summary.plan_qty if summary else 0))
+        summary = summaries.get(ro.id)
+        req = requirements.get(ro.id)
+        actual = _d(summary[1] if summary else 0)
+        plan = _d(req[0] if req else (summary[0] if summary else 0))
         wip = max(Decimal("0"), prior_actual - actual) if prior_actual is not None else Decimal("0")
         action_count = db.scalar(
-            select(func.count(ActionContext.id))
+            select(func.count(func.distinct(ActionContext.action_id)))
             .join(Action, Action.id == ActionContext.action_id)
             .where(
-                ActionContext.context_date == d,
+                ActionContext.context_date >= start,
+                ActionContext.context_date <= d,
                 ActionContext.product_id == product_id,
                 ActionContext.route_operation_id == ro.id,
                 Action.status != ActionStatus.CLOSED,
@@ -458,9 +461,11 @@ def process_monitor(db: Session, product_id: int, d: date) -> dict:
             "vendor_id": ro.vendor_id,
             "plan_qty": float(plan),
             "actual_qty": float(actual),
+            "plan_days": int(req[1]) if req else (int(summary[2]) if summary else 0),
+            "actual_days": int(summary[2]) if summary else 0,
             "gap_qty": float(actual - plan),
             "achievement": float(actual / plan) if plan > 0 else None,
-            "calculated_wip_from_previous": None if explicit_flow else float(wip),
+            "calculated_wip_from_previous": None if explicit_flow or start != d else float(wip),
             "open_actions": int(action_count),
             "is_dispatch": ro.is_dispatch,
         })
@@ -468,6 +473,9 @@ def process_monitor(db: Session, product_id: int, d: date) -> dict:
     return {
         "product_id": product_id,
         "date": d.isoformat(),
+        "from_date": start.isoformat(),
+        "to_date": d.isoformat(),
+        "period_days": (d-start).days+1,
         "route_revision": route.revision_no,
         "operations": out,
     }
