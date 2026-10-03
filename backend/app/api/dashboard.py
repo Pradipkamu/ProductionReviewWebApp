@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -19,6 +19,7 @@ def daily_control(
     product_group: str | None = None,
     customer_id: str | None = None,
     product_id: str | None = None,
+    blocker_threshold_pct: float = Query(80.0, ge=1.0, le=100.0),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -26,6 +27,7 @@ def daily_control(
         db, as_of,
         plants=csv_strings(plant), product_groups=csv_strings(product_group),
         customer_ids=csv_ints(customer_id), product_ids=csv_ints(product_id),
+        blocker_threshold_pct=blocker_threshold_pct,
     )
 
 
