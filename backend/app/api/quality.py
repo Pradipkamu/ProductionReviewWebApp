@@ -224,11 +224,11 @@ def _history_dispatch_resolution(
 ) -> dict[int, tuple[float | None, str | None]]:
     """Resolve historical Dispatch Done denominator without breaking filter scope.
 
-    Priority is explicit plant/product scoped Dispatch_Qty, then matching Historical
-    Daily MIS actual_qty. Daily MIS has Product + Date but no independent historical
-    plant split, so when one Product + Month exists under multiple historical plants
-    and only a subset of those plants is selected, a product-total MIS denominator
-    must not be reused for the filtered numerator.
+    An unfiltered product/month uses matching Historical Daily MIS as the current
+    authoritative dispatch total. A plant-filtered report uses explicit plant/product
+    Dispatch_Qty because Daily MIS has no independent historical plant split. When
+    one Product + Month exists under multiple historical plants and only a subset is
+    selected, a product-total MIS denominator must not be reused for that numerator.
     """
     if not rows:
         return {}
@@ -290,10 +290,13 @@ def _history_dispatch_resolution(
         # dispatch_qty; if that value exactly equals product-total MIS while the
         # plant scope is restricted, treat it as unsafe rather than as explicit.
         stored_looks_like_mis = bool(stored_qty > 0 and mis_qty > 0 and abs(stored_qty - mis_qty) < 0.0005)
-        if stored_qty > 0 and not (plant_scope_restricted and stored_looks_like_mis):
+        unsafe_stored = plant_scope_restricted and stored_looks_like_mis
+        if selected_plants and stored_qty > 0 and not unsafe_stored:
             resolved[x.id] = (stored_qty, "UPLOADED")
         elif eligible and mis_qty > 0 and not plant_scope_restricted:
             resolved[x.id] = (mis_qty, "MIS_HISTORY")
+        elif stored_qty > 0 and not unsafe_stored:
+            resolved[x.id] = (stored_qty, "UPLOADED")
         elif plant_scope_restricted:
             resolved[x.id] = (None, "PLANT_SCOPE_UNAVAILABLE")
         else:

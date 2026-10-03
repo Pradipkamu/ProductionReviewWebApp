@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { clearToken } from '../api'
 
 const nav = [
-  ['/insights', 'Exceptions / Data Quality'], ['/account', 'Account / Users'], ['/governance', 'Month Close / Audit'], ['/', 'Daily Review'], ['/mis', 'MIS'], ['/schedule', 'Schedule / Price / Calendar'], ['/process', 'Process Monitor'], ['/quality', 'Quality / Rejection'],
+  ['/insights', 'Exceptions / Data Quality'], ['/diagnostics', 'System Diagnostics'], ['/account', 'Account / Users'], ['/governance', 'Month Close / Audit'], ['/', 'Daily Review'], ['/mis', 'MIS'], ['/schedule', 'Schedule / Price / Calendar'], ['/process', 'Process Monitor'], ['/quality', 'Quality / Rejection'],
   ['/reports', 'Compliance Reports'], ['/management-reports', 'Management Reports'], ['/actions', 'Actions'], ['/vendor', 'Vendor WIP'], ['/oee', 'Machine / OEE'], ['/analytics', 'Analytics'], ['/masters', 'Masters'], ['/import', 'Excel Import']
 ]
 

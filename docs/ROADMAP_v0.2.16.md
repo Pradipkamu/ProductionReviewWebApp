@@ -6,7 +6,7 @@
 3. Enforce role permissions on write/close/reopen/import APIs, not only expose a role field.
 4. Add month close/reopen/correction authorization with immutable audit history.
 5. Make frontend installs reproducible with package-lock.json + npm ci; keep dependency overrides only as temporary safeguards.
-6. Add backup restore verification and a one-click health/diagnostics page covering DB, backend, frontend, storage, and build/version.
+6. [Completed v0.4.8] Add backup restore verification and a one-click health/diagnostics page covering DB, backend, frontend, storage, and build/version.
 
 ## P1 — Data quality and operational control
 1. Add import preview/staging with row-level Accepted/Updated/Rejected reasons before commit.

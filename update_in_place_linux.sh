@@ -12,7 +12,7 @@ for attempt in $(seq 1 30); do
 done
 # Quiesce app writes before taking the pre-migration database snapshot.
 docker compose stop frontend backend
-backup="database/backups/pms_before_v046_$(date -u +%Y%m%dT%H%M%SZ).dump"
+backup="database/backups/pms_before_update_$(date -u +%Y%m%dT%H%M%SZ).dump"
 if ! docker compose exec -T db pg_dump -U pms -d pms -Fc > "$backup"; then
   rm -f "$backup"
   echo 'Backup failed; database migration has NOT run.' >&2

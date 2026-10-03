@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     plant_name: str = "Main Plant"
     upload_dir: str = "./uploads"
     attachments_dir: str = "./attachments"
+    backup_dir: str = "./backups"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

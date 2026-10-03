@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.4.7
+# ProductionReviewWebApp v0.4.8
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -57,3 +57,7 @@ The Quality page now creates a fresh Daily Rejection workbook from the current P
 ## v0.4.7 — Controlled OEE and Loss Actions
 
 Machine / OEE now uses one controlled record per date, shift, product, operation and machine. Effective master cycle time and mapped machines drive entry, duplicate rows are blocked, corrections require a reason, Availability losses reconcile separately to downtime, and both low OEE and individual losses can open standard Why-Why actions. Management reports now include machine-shift and loss-event detail with action status. The Data Quality dashboard flags duplicate entries, unclassified output/downtime and over-classified losses. Excel OEE import/helper work remains intentionally pending until the actual machine-shop forms are supplied. See [release notes](docs/RELEASE_v0.4.7.md) and [OEE workflow/audit](docs/OEE_WORKFLOW_AND_AUDIT_v0.4.7.md).
+
+## v0.4.8 — Restore Verification and System Diagnostics
+
+System Diagnostics now checks the loaded frontend/backend versions, database connection and schema revision, persistent imports/attachments/backups storage, disk capacity and latest backup status. The Windows and Linux restore-verification scripts restore a selected dump into a temporary isolated database, verify core tables, and remove the temporary database without modifying the live `pms` database. See [release notes](docs/RELEASE_v0.4.8.md).

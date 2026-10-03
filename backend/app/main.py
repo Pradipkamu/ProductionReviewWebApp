@@ -5,10 +5,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
+from . import __version__
 from .db import Base, SessionLocal, engine
 from .migrate import upgrade_database
 from .seed import seed_defaults
-from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, governance, insights, import_preview, flows
+from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, governance, insights, import_preview, flows, diagnostics
 
 settings = get_settings()
 
@@ -43,7 +44,7 @@ async def lifespan(app: FastAPI):
             await task
 
 
-app = FastAPI(title=settings.app_name, version="0.4.7", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -53,10 +54,10 @@ app.add_middleware(
 )
 
 for router in [auth.router, masters.router, imports.router, schedules.router, mis.router,
-               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, governance.router, insights.router, import_preview.router, flows.router]:
+               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, governance.router, insights.router, import_preview.router, flows.router, diagnostics.router]:
     app.include_router(router, prefix="/api")
 
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": settings.app_name}
+    return {"status": "ok", "service": settings.app_name, "version": __version__}

@@ -1,6 +1,17 @@
-ProductionReviewWebApp v0.2.6 Fresh Start — build validation
+ProductionReviewWebApp v0.4.8 — build validation
 
-Backend automated tests: 14 passed, 1 skipped (PYTHONPATH=. pytest -q)
-Included regression coverage: planning, reports, OEE, review/actions, Why-Why closure, price/calendar, quality/rejection, historical MIS, historical sales-price effective-date import.
-Frontend source syntax: validated with TypeScript transpile parser in packaging environment.
-Note: full npm/Vite production build could not be completed in the packaging environment because npm dependency installation timed out. Docker will install frontend dependencies during the normal image build when network access to the npm registry is available.
+Backend automated tests: 68 passed, 2 skipped.
+- Full suite executed with the pinned requirements in backend/requirements.txt and backend/requirements-dev.txt.
+- The skipped cases require an optional external workbook and an isolated PostgreSQL CI service.
+- Diagnostics authentication/storage/backup coverage passed.
+- Historical quality PPM denominator precedence and plant-scope regressions passed.
+
+Frontend production validation:
+- Clean npm ci completed from the committed package-lock.json.
+- TypeScript and Vite production build completed successfully.
+
+Script validation:
+- Linux update and isolated restore-verification scripts pass bash syntax validation.
+- The restore scripts use a uniquely named temporary database and never restore over the live pms database.
+
+No production database, production backup, or update-in-place run was available in this packaging workspace. Run the supplied update script on the actual installation to create the verified pre-update backup before the new application starts.

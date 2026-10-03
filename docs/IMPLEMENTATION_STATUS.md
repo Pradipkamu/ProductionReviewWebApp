@@ -28,6 +28,8 @@
 - Month-over-month sales analytics
 - Action reason analytics
 - Review-session API
+- Isolated PostgreSQL backup restore verification scripts
+- One-click system diagnostics for frontend/backend version, database, storage and backup status
 
 ## Deliberately left configurable, not guessed
 
