@@ -15,6 +15,7 @@ from ..models import (
     RouteOperation, RouteVersion, StandardCycleTime,
 )
 from .planning import month_bounds, product_plant, working_days
+from .machine_cost import machine_cost
 
 ZERO = Decimal("0")
 
@@ -114,6 +115,7 @@ def machine_month_capacity(db: Session, product: Product, route_operation_id: in
         capacity = ZERO
     operator_avg = operator_capacity_weight / capacity if capacity > 0 else ZERO
     cycle_avg = cycle_capacity_weight / capacity if capacity > 0 else ZERO
+    cost = machine_cost(machine, operator_avg if operator_avg > 0 else None)
     return {
         "machine_id": machine.id, "machine_code": machine.code, "machine_name": machine.name,
         "priority": mappings[0].priority, "mapping_id": mappings[0].id,
@@ -122,6 +124,9 @@ def machine_month_capacity(db: Session, product: Product, route_operation_id: in
         "gross_available_hours": float(gross_hours),
         "planning_cycle_time_sec": float(cycle_avg),
         "operators_per_machine": float(operator_avg),
+        "estimated_hourly_cost": cost["estimated_hourly_cost"],
+        "cost_complete": cost["cost_complete"], "cost_missing": cost["cost_missing"],
+        "cost_components": cost["components"],
         "cycle_revision_ids": sorted(cycle_ids), "operator_revision_ids": sorted(operator_ids),
         "capacity_setting_ids": sorted(setting_ids),
     }
@@ -222,12 +227,17 @@ def capacity_plan(db: Session, product_id: int, month: date) -> dict:
             load = allocated / capacity if capacity > 0 else ZERO
             gross_hours = Decimal(str(item["gross_available_hours"]))
             op_rate = Decimal(str(item["operators_per_machine"]))
+            hourly_cost = Decimal(str(item["estimated_hourly_cost"]))
+            cycle_per_piece = Decimal(str(item["planning_cycle_time_sec"]))
+            cost_per_piece = hourly_cost * cycle_per_piece / Decimal(3600) if cycle_per_piece > 0 else ZERO
             item.update(
                 allocation_qty=float(allocated), load_percent=float(load * 100),
                 required_machine_hours=float(gross_hours * load),
                 operator_hours=float(gross_hours * load * op_rate),
                 average_operators=float(load * op_rate),
                 operators_required=math.ceil(float(load * op_rate)) if allocated > 0 else 0,
+                estimated_cost_per_piece=float(cost_per_piece),
+                estimated_run_cost=float(cost_per_piece * allocated),
             )
         allocated_total = sum((Decimal(str(x["allocation_qty"])) for x in machine_rows), ZERO)
         operation_rows.append({
@@ -238,6 +248,7 @@ def capacity_plan(db: Session, product_id: int, month: date) -> dict:
             "allocated_qty": float(allocated_total), "allocation_gap": float(schedule_qty - allocated_total),
             "total_capacity_qty": sum(x["capacity_qty"] for x in machine_rows),
             "operators_required": math.ceil(sum(x["average_operators"] for x in machine_rows)),
+            "estimated_run_cost": sum(x["estimated_run_cost"] for x in machine_rows),
             "machines": machine_rows,
         })
     return {
@@ -279,6 +290,8 @@ def save_allocation(db: Session, payload, user_id: int) -> dict:
             capacity_qty_snapshot=Decimal(str(detail["capacity_qty"])),
             planning_cycle_time_sec=Decimal(str(detail["planning_cycle_time_sec"] or 0)),
             operators_per_machine_snapshot=Decimal(str(detail["operators_per_machine"] or 0)),
+            estimated_hourly_cost_snapshot=Decimal(str(detail["estimated_hourly_cost"])),
+            estimated_cost_per_piece_snapshot=Decimal(str(detail["estimated_cost_per_piece"])),
             reason=payload.reason, entered_by_id=user_id,
         ))
     db.flush()

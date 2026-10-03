@@ -48,6 +48,47 @@ class MasterCreate(BaseModel):
     name: str
 
 
+class MachineMasterCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=60)
+    name: str = Field(min_length=1, max_length=160)
+    machine_type: Optional[str] = Field(default=None, max_length=120)
+    plant: Optional[str] = Field(default=None, max_length=120)
+    department: Optional[str] = Field(default=None, max_length=120)
+    cost_center: Optional[str] = Field(default=None, max_length=80)
+    manufacturer: Optional[str] = Field(default=None, max_length=120)
+    model_number: Optional[str] = Field(default=None, max_length=120)
+    serial_number: Optional[str] = Field(default=None, max_length=120)
+    commissioned_on: Optional[date] = None
+    pm_done_date: Optional[date] = None
+    pm_frequency_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    default_manpower_required: Optional[Decimal] = Field(default=None, gt=0, le=100)
+    rated_power_kw: Optional[Decimal] = Field(default=None, ge=0)
+    power_load_factor: Optional[Decimal] = Field(default=None, gt=0, le=1)
+    air_consumption_cfm: Optional[Decimal] = Field(default=None, ge=0)
+    labor_rate_per_operator_hour: Optional[Decimal] = Field(default=None, ge=0)
+    electricity_rate_per_kwh: Optional[Decimal] = Field(default=None, ge=0)
+    compressed_air_rate_per_1000_cuft: Optional[Decimal] = Field(default=None, ge=0)
+    maintenance_cost_per_hour: Optional[Decimal] = Field(default=None, ge=0)
+    consumables_cost_per_hour: Optional[Decimal] = Field(default=None, ge=0)
+    depreciation_cost_per_hour: Optional[Decimal] = Field(default=None, ge=0)
+    other_overhead_cost_per_hour: Optional[Decimal] = Field(default=None, ge=0)
+    remarks: Optional[str] = Field(default=None, max_length=500)
+    is_active: bool = True
+    reason: str = Field(default="Machine master created", min_length=2, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.commissioned_on and self.pm_done_date and self.pm_done_date < self.commissioned_on:
+            raise ValueError("PM done date cannot be earlier than commissioning date")
+        return self
+
+
+class MachineMasterUpdate(MachineMasterCreate):
+    code: str = Field(min_length=1, max_length=60)
+    name: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=2, max_length=500)
+
+
 class ScheduleRevisionCreate(BaseModel):
     product_id: int
     month: date

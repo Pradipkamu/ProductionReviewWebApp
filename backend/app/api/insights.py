@@ -10,7 +10,7 @@ from ..models import (User, Product, RouteVersion, RouteOperation, StandardCycle
  ImportBatch, QualityRejectionImportBatch, MachineShiftProduction, MachineLossEvent, Action, ActionContext,
  ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory,
  ProcessFlowVersion, ProcessFlowStage, StageScheduleAllocation, Operation,
- OperatorRequirementHistory, MachineCapacitySetting)
+ OperatorRequirementHistory, MachineCapacitySetting, Machine)
 from ..services.oee import calculate_oee
 from ..services.escalation import refresh_reminders
 from ..services.filtering import csv_ints, csv_strings
@@ -27,6 +27,11 @@ def data_quality(db, as_of, products):
     issues=[]; ids={p.id for p in products}
     def add(kind,p,detail,entity=None):
         issues.append(dict(kind=kind,product_id=p.id if p else None,product=p.name if p else '',detail=detail,entity_id=entity))
+    from ..services.machine_cost import next_pm_date
+    for machine in db.scalars(select(Machine).where(Machine.is_active.is_(True))):
+        pm_due = next_pm_date(machine)
+        if pm_due and pm_due < as_of:
+            add('machine_pm_overdue', None, f'{machine.code} PM was due on {pm_due}', machine.id)
     routes_by_product=defaultdict(list)
     for route in db.scalars(select(RouteVersion).where(
         RouteVersion.product_id.in_(ids), RouteVersion.is_active.is_(True),

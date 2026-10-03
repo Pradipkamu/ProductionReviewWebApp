@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -11,11 +12,13 @@ from ..enums import OEEComponent, OperationType, UserRole
 from ..models import (
     Customer, LossCategory, Machine, Operation, Product, RouteOperation,
     RouteVersion, SalesPriceHistory, User, Vendor, WorkingCalendar, WorkingCalendarChangeLog,
-    OperationMachineMap, StandardCycleTime, DailyMIS,
+    OperationMachineMap, StandardCycleTime, DailyMIS, MachineMasterHistory,
 )
-from ..schemas import (MasterCreate, RouteVersionCreate, MachineMapCreate, CycleTimeCreate, CalendarUpsert,
+from ..schemas import (RouteVersionCreate, MachineMapCreate, CycleTimeCreate, CalendarUpsert,
                        CalendarBulkUpdate, UserCreate, ProductMasterUpdate, SalesPriceRevisionCreate)
+from ..schemas import MachineMasterCreate, MachineMasterUpdate
 from ..services.pricing import create_or_replace_manual_price, price_for_date
+from ..services.machine_cost import machine_cost, next_pm_date
 
 router = APIRouter(prefix="/masters", tags=["masters"])
 
@@ -89,16 +92,90 @@ def vendors(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
 
 @router.get("/machines")
 def machines(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return [{"id": x.id, "code": x.code, "name": x.name, "department": x.department, "active": x.is_active} for x in db.scalars(select(Machine).order_by(Machine.code)).all()]
+    return [_machine_payload(x) for x in db.scalars(select(Machine).order_by(Machine.code)).all()]
 
 
 @router.post("/machines")
-def create_machine(payload: MasterCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    if db.scalar(select(Machine).where(Machine.code == payload.code)):
+def create_machine(payload: MachineMasterCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    code = payload.code.strip()
+    if not code or not payload.name.strip():
+        raise HTTPException(422, "Machine code and name are required")
+    if db.scalar(select(Machine).where(Machine.code == code)):
         raise HTTPException(409, "Machine code already exists")
-    row = Machine(code=payload.code, name=payload.name)
-    db.add(row); db.commit(); db.refresh(row)
-    return {"id": row.id, "code": row.code, "name": row.name}
+    values = payload.model_dump(exclude={"reason"})
+    values.update(code=code, name=payload.name.strip())
+    row = Machine(**values)
+    db.add(row); db.flush()
+    _record_machine_history(db, row, "CREATE", payload.reason, user.id)
+    db.commit(); db.refresh(row)
+    return _machine_payload(row)
+
+
+@router.patch("/machines/{machine_id}")
+def update_machine(machine_id: int, payload: MachineMasterUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    row = db.get(Machine, machine_id)
+    if not row:
+        raise HTTPException(404, "Machine not found")
+    code = payload.code.strip()
+    if not code or not payload.name.strip():
+        raise HTTPException(422, "Machine code and name are required")
+    duplicate = db.scalar(select(Machine).where(Machine.code == code, Machine.id != machine_id))
+    if duplicate:
+        raise HTTPException(409, "Machine code already exists")
+    for field, value in payload.model_dump(exclude={"reason"}).items():
+        setattr(row, field, value)
+    row.code = code; row.name = payload.name.strip()
+    _record_machine_history(db, row, "UPDATE", payload.reason, user.id)
+    db.commit(); db.refresh(row)
+    return _machine_payload(row)
+
+
+@router.get("/machines/{machine_id}/history")
+def machine_history(machine_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    if not db.get(Machine, machine_id):
+        raise HTTPException(404, "Machine not found")
+    rows = db.execute(select(MachineMasterHistory, User).outerjoin(
+        User, User.id == MachineMasterHistory.changed_by_id
+    ).where(MachineMasterHistory.machine_id == machine_id).order_by(
+        MachineMasterHistory.created_at.desc(), MachineMasterHistory.id.desc()
+    )).all()
+    return [{
+        "id": row.id, "change_type": row.change_type, "snapshot": json.loads(row.snapshot_json),
+        "reason": row.reason, "changed_by": user.full_name if user else None,
+        "changed_at": row.created_at,
+    } for row, user in rows]
+
+
+def _machine_payload(row: Machine):
+    fields = {
+        column.name: getattr(row, column.name)
+        for column in Machine.__table__.columns
+        if column.name not in {"created_at", "updated_at"}
+    }
+    fields["active"] = row.is_active
+    due = next_pm_date(row)
+    fields["next_pm_date"] = due
+    fields["pm_status"] = (
+        "Not configured" if due is None else
+        "Overdue" if due < date.today() else
+        "Due soon" if due <= date.today() + timedelta(days=30) else
+        "Current"
+    )
+    fields["cost"] = machine_cost(row)
+    return fields
+
+
+def _record_machine_history(db: Session, row: Machine, change_type: str, reason: str, user_id: int):
+    snapshot = {
+        column.name: getattr(row, column.name)
+        for column in Machine.__table__.columns
+        if column.name not in {"created_at", "updated_at"}
+    }
+    db.add(MachineMasterHistory(
+        machine_id=row.id, change_type=change_type,
+        snapshot_json=json.dumps(snapshot, default=str, sort_keys=True),
+        reason=reason.strip(), changed_by_id=user_id,
+    ))
 
 
 @router.get("/loss-categories")

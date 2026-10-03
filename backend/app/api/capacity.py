@@ -46,6 +46,8 @@ def allocation_history(product_id: int, route_operation_id: int, month: date,
         "schedule_qty": float(row.schedule_qty_snapshot), "capacity_qty": float(row.capacity_qty_snapshot),
         "cycle_time_sec": float(row.planning_cycle_time_sec),
         "operators_per_machine": float(row.operators_per_machine_snapshot),
+        "estimated_hourly_cost": float(row.estimated_hourly_cost_snapshot) if row.estimated_hourly_cost_snapshot is not None else None,
+        "estimated_cost_per_piece": float(row.estimated_cost_per_piece_snapshot) if row.estimated_cost_per_piece_snapshot is not None else None,
         "reason": row.reason, "entered_by_id": row.entered_by_id,
         "entered_by": user.full_name if user else None, "created_at": row.created_at,
     } for row, machine, user in rows]

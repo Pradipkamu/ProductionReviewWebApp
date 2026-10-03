@@ -34,6 +34,11 @@
 - Effective-dated machine shift, break and planning-efficiency capacity settings
 - Monthly machine capacity, load, shortage, machine-hours and operator calculations
 - Revisioned monthly part-to-machine allocation with calculation snapshots
+- Dedicated Machine Master with plant/shop, type, manufacturer, model, serial and cost center
+- PM completed date/frequency, calculated next-PM status and overdue data-quality warning
+- Fractional default machine manpower, rated power and compressed-air consumption
+- Labor, energy, air, maintenance, consumables, depreciation and overhead cost model
+- Hourly, per-piece and monthly planned machine conversion-cost estimates
 
 ## Deliberately left configurable, not guessed
 
@@ -43,6 +48,7 @@
 - Initial standard/ideal cycle times and pieces per cycle
 - Initial operators per running machine
 - Initial shifts, minutes, breaks and planning efficiency by machine
+- Machine utility rates, hourly burden assumptions and PM frequency
 - Vendor expected lead-time rules
 - User/department ownership hierarchy
 - Closed-month correction authorization matrix

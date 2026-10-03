@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.5.0
+# ProductionReviewWebApp v0.5.1
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -65,3 +65,7 @@ System Diagnostics now checks the loaded frontend/backend versions, database con
 ## v0.5.0 — Machine Capacity and Manpower Planning
 
 Capacity / Manpower Planning combines the monthly operation schedule with effective machine mapping, cycle time, operator requirement, plant calendar and machine capacity settings. It calculates available pieces, machine hours, capacity load, shortages and average/rounded operator needs; planners can auto-allocate or revise part-to-machine quantities without overwriting issued revisions. Cycle time, operator requirement, mapping and capacity changes retain effective-dated history and reasons. See [release notes](docs/RELEASE_v0.5.0.md).
+
+## v0.5.1 — Machine PM, Utilities and Costing Master
+
+The dedicated Machine Master captures fractional default manpower, last PM date/frequency, rated power, expected power load, compressed-air consumption and transparent labor/utility/maintenance/consumable/depreciation/overhead cost rates. It calculates hourly conversion cost, feeds part cycle-time cost estimates into Capacity / Manpower, and retains reasoned machine-master history. See [release notes](docs/RELEASE_v0.5.1.md).

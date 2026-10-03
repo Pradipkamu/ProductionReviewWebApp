@@ -87,9 +87,39 @@ class Machine(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
     machine_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    plant: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
     department: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    cost_center: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    manufacturer: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    model_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    serial_number: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    commissioned_on: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    pm_done_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    pm_frequency_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    default_manpower_required: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 3), nullable=True)
+    rated_power_kw: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3), nullable=True)
+    power_load_factor: Mapped[Optional[Decimal]] = mapped_column(Numeric(8, 5), nullable=True)
+    air_consumption_cfm: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3), nullable=True)
+    labor_rate_per_operator_hour: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    electricity_rate_per_kwh: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    compressed_air_rate_per_1000_cuft: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    maintenance_cost_per_hour: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    consumables_cost_per_hour: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    depreciation_cost_per_hour: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    other_overhead_cost_per_hour: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     capacity_per_shift: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MachineMasterHistory(Base, TimestampMixin):
+    __tablename__ = "machine_master_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    change_type: Mapped[str] = mapped_column(String(20))
+    snapshot_json: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(String(500))
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class LossCategory(Base, TimestampMixin):
@@ -247,6 +277,8 @@ class MachineMonthlyAllocation(Base, TimestampMixin):
     capacity_qty_snapshot: Mapped[Decimal] = mapped_column(Numeric(16, 3))
     planning_cycle_time_sec: Mapped[Decimal] = mapped_column(Numeric(12, 3))
     operators_per_machine_snapshot: Mapped[Decimal] = mapped_column(Numeric(8, 3))
+    estimated_hourly_cost_snapshot: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    estimated_cost_per_piece_snapshot: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 6), nullable=True)
     reason: Mapped[str] = mapped_column(Text)
     entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
     __table_args__ = (

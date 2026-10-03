@@ -1,11 +1,12 @@
-ProductionReviewWebApp v0.5.0 — build validation
+ProductionReviewWebApp v0.5.1 — build validation
 
-Backend automated tests: 69 passed, 2 skipped.
+Backend automated tests: 70 passed, 2 skipped.
 - Full suite executed with the pinned requirements in backend/requirements.txt and backend/requirements-dev.txt.
 - The skipped cases require an optional external workbook and an isolated PostgreSQL CI service.
 - Diagnostics authentication/storage/backup coverage passed.
 - Historical quality PPM denominator precedence and plant-scope regressions passed.
 - Effective-dated machine capacity, operator requirement, cycle-time and monthly allocation coverage passed.
+- Fractional manpower, PM schedule, utility costing and machine-master history coverage passed.
 
 Frontend production validation:
 - Clean npm ci completed from the committed package-lock.json.
