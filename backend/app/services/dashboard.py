@@ -78,14 +78,6 @@ def daily_control_summary(
         ProcessDailySummary.product_id.in_(ids),
     )).all())
     stage_actual = {(r.product_id, r.route_operation_id): r for r in stage_rows}
-    operations = {
-        ro.id: op.name for ro, op in db.execute(
-            select(RouteOperation, Operation)
-            .join(Operation, Operation.id == RouteOperation.operation_id)
-            .where(RouteOperation.id.in_([key[1] for key in stage_plan] or [-1]))
-        ).all()
-    }
-
     blocker_threshold = Decimal(str(blocker_threshold_pct)) / Decimal("100")
     month_start = as_of.replace(day=1)
 
@@ -120,17 +112,27 @@ def daily_control_summary(
         if vals["plan"] > 0
     }
 
+    # Stage averages must use every MTD stage with saved plan data, not only
+    # stages planned on the selected single day.
     stage_req_by_day: dict[tuple[date, int, int], Decimal] = {}
-    stage_route_ids = list({key[1] for key in stage_plan})
-    if stage_route_ids:
-        for req in db.scalars(select(DailyRequirement).where(
-            DailyRequirement.req_date >= month_start,
-            DailyRequirement.req_date <= as_of,
-            DailyRequirement.product_id.in_(ids),
-            DailyRequirement.route_operation_id.in_(stage_route_ids),
-            DailyRequirement.revised_plan_qty > 0,
-        )).all():
-            stage_req_by_day[(req.req_date, req.product_id, req.route_operation_id)] = _d(req.revised_plan_qty)
+    mtd_stage_requirements = list(db.scalars(select(DailyRequirement).where(
+        DailyRequirement.req_date >= month_start,
+        DailyRequirement.req_date <= as_of,
+        DailyRequirement.product_id.in_(ids),
+        DailyRequirement.route_operation_id.is_not(None),
+        DailyRequirement.revised_plan_qty > 0,
+    )).all())
+    for req in mtd_stage_requirements:
+        stage_req_by_day[(req.req_date, req.product_id, req.route_operation_id)] = _d(req.revised_plan_qty)
+
+    stage_route_ids = sorted({req.route_operation_id for req in mtd_stage_requirements if req.route_operation_id is not None})
+    operations = {
+        ro.id: op.name for ro, op in db.execute(
+            select(RouteOperation, Operation)
+            .join(Operation, Operation.id == RouteOperation.operation_id)
+            .where(RouteOperation.id.in_(stage_route_ids or [-1]))
+        ).all()
+    }
 
     stage_totals: dict[tuple[int, int], dict[str, Decimal]] = defaultdict(lambda: {"plan": Decimal("0"), "actual": Decimal("0")})
     if stage_route_ids:
@@ -167,19 +169,12 @@ def daily_control_summary(
             "action": action,
         })
 
+    # Selected-day missing upload checks remain separate from MTD performance.
     for pid, plan in customer_plan.items():
         row = mis.get(pid)
         if row is None:
             add("BLOCKER", "missing_dispatch_actual", "Daily MIS / dispatch actual has not been uploaded", pid, plan=plan, action="upload")
             continue
-        actual = _d(row.actual_qty)
-        avg_ratio = dispatch_average.get(pid)
-        if avg_ratio is not None and avg_ratio < blocker_threshold:
-            add(
-                "BLOCKER", "low_average_dispatch_compliance",
-                f"Month-to-date average dispatch is {avg_ratio * 100:.1f}% below the {blocker_threshold_pct:g}% blocker threshold",
-                pid, avg_ratio, plan, actual, "action",
-            )
         if _d(row.sales_price) <= 0:
             add("WARNING", "price_missing", "Effective sales price is missing; sales risk cannot be valued", pid, action="data-quality")
 
@@ -188,14 +183,26 @@ def daily_control_summary(
         stage_name = operations.get(operation_id, f"Stage #{operation_id}")
         if row is None:
             add("BLOCKER", "missing_stage_actual", f"{stage_name}: actual has not been uploaded", pid, plan=plan, action="upload")
-            continue
-        actual = _d(row.actual_qty)
-        avg_ratio = stage_average.get((pid, operation_id))
-        if avg_ratio is not None and avg_ratio < blocker_threshold:
+
+    # Threshold blockers are evaluated against every valid month-to-date
+    # product/stage average, independent of whether that item has a plan today.
+    for pid, avg_ratio in dispatch_average.items():
+        if avg_ratio < blocker_threshold:
+            vals = dispatch_totals[pid]
+            add(
+                "BLOCKER", "low_average_dispatch_compliance",
+                f"Month-to-date average dispatch is {avg_ratio * 100:.1f}% below the {blocker_threshold_pct:g}% blocker threshold",
+                pid, avg_ratio, vals["plan"], vals["actual"], "action",
+            )
+
+    for (pid, operation_id), avg_ratio in stage_average.items():
+        if avg_ratio < blocker_threshold:
+            vals = stage_totals[(pid, operation_id)]
+            stage_name = operations.get(operation_id, f"Stage #{operation_id}")
             add(
                 "BLOCKER", "low_average_stage_compliance",
                 f"{stage_name}: month-to-date average is {avg_ratio * 100:.1f}% below the {blocker_threshold_pct:g}% blocker threshold",
-                pid, avg_ratio, plan, actual, "process",
+                pid, avg_ratio, vals["plan"], vals["actual"], "process",
             )
 
     quality_rows = list(db.scalars(select(QualityRejectionDaily).where(
