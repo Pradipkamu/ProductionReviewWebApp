@@ -184,3 +184,41 @@ def test_closed_month_authorization_survives_preview_and_consumes_at_confirm(tmp
  with SessionLocal() as db:
   assert db.get(HistoricalCorrectionGrant,gid).used_at is not None
   assert db.scalar(select(ProcessDailySummary)).actual_qty==10
+
+
+def test_process_monitor_range_returns_daily_plan_actual_working_days_only():
+ ids=setup();c=TestClient(app);h=headers(c)
+ with SessionLocal() as db:
+  product_id=ids['Kubota Head']
+  stage=db.scalar(select(ProcessFlowStage).join(ProcessFlowVersion).where(
+   ProcessFlowVersion.product_id==product_id,
+   ProcessFlowStage.code=='P04_VMC',
+   ProcessFlowStage.is_active.is_(True),
+  ).order_by(ProcessFlowVersion.effective_from.desc()))
+  assert stage and stage.route_operation_id
+  db.add_all([
+   WorkingCalendar(work_date=date(2026,10,5),plant='2020',is_working_day=False,reason='Planned OFF'),
+   WorkingCalendar(work_date=date(2026,10,6),plant='2020',is_working_day=True),
+   WorkingCalendar(work_date=date(2026,10,7),plant='2020',is_working_day=True),
+   DailyRequirement(req_date=date(2026,10,5),product_id=product_id,route_operation_id=stage.route_operation_id,baseline_plan_qty=999,revised_plan_qty=999),
+   DailyRequirement(req_date=date(2026,10,6),product_id=product_id,route_operation_id=stage.route_operation_id,baseline_plan_qty=100,revised_plan_qty=100),
+   DailyRequirement(req_date=date(2026,10,7),product_id=product_id,route_operation_id=stage.route_operation_id,baseline_plan_qty=120,revised_plan_qty=120),
+   ProcessDailySummary(summary_date=date(2026,10,5),product_id=product_id,route_operation_id=stage.route_operation_id,plan_qty=999,actual_qty=999,good_qty=999,reject_qty=0),
+   ProcessDailySummary(summary_date=date(2026,10,6),product_id=product_id,route_operation_id=stage.route_operation_id,plan_qty=100,actual_qty=90,good_qty=90,reject_qty=0),
+  ])
+  db.commit()
+
+ response=c.get(f'/api/flows/monitor?product_id={ids["Kubota Head"]}&start_date=2026-10-05&end_date=2026-10-07',headers=h)
+ assert response.status_code==200,response.text
+ body=response.json()
+ assert body['period']['working_days']==2
+ assert body['period']['off_days']==1
+ stage=next(s for s in body['stages'] if s['code']=='P04_VMC')
+ assert stage['plan']==110
+ assert stage['actual']==90
+ assert stage['days_with_plan']==2
+ assert stage['days_with_data']==1
+ assert stage['daily']==[
+  {'date':'2026-10-06','plan':100.0,'actual':90.0,'reject':0.0},
+  {'date':'2026-10-07','plan':120.0,'actual':None,'reject':None},
+ ]
