@@ -2,17 +2,17 @@ from datetime import date, timedelta
 from decimal import Decimal
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, hash_password
+from ..auth import get_current_user, hash_password, record_security_event
 from ..db import get_db
 from ..enums import OEEComponent, OperationType, UserRole
 from ..models import (
     Customer, LossCategory, Machine, Operation, Product, RouteOperation,
     RouteVersion, SalesPriceHistory, User, Vendor, WorkingCalendar, WorkingCalendarChangeLog,
-    OperationMachineMap, StandardCycleTime, DailyMIS, MachineMasterHistory,
+    OperationMachineMap, StandardCycleTime, DailyMIS, MachineMasterHistory, GovernanceAudit,
 )
 from ..schemas import (RouteVersionCreate, MachineMapCreate, CycleTimeCreate, CalendarUpsert,
                        CalendarBulkUpdate, UserCreate, ProductMasterUpdate, SalesPriceRevisionCreate)
@@ -192,14 +192,25 @@ def create_loss(code: str, name: str, component: OEEComponent, db: Session = Dep
 
 @router.get("/users")
 def users(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    return [{"id": x.id, "username": x.username, "full_name": x.full_name, "role": x.role.value, "is_active": x.is_active, "must_change_password": x.must_change_password} for x in db.scalars(select(User).order_by(User.full_name)).all()]
+    return [{
+        "id": x.id,
+        "username": x.username,
+        "full_name": x.full_name,
+        "role": x.role.value,
+        "is_active": x.is_active,
+        "must_change_password": x.must_change_password,
+        "failed_login_attempts": x.failed_login_attempts,
+        "locked_until": x.locked_until,
+        "last_login_at": x.last_login_at,
+    } for x in db.scalars(select(User).order_by(User.full_name)).all()]
 
 
 @router.post("/users")
-def create_user(payload: UserCreate, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+def create_user(payload: UserCreate, request: Request, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
     if current.role != UserRole.ADMIN:
         raise HTTPException(403, "Only ADMIN can create users")
-    if db.scalar(select(User).where(User.username == payload.username)):
+    username = payload.username.strip()
+    if db.scalar(select(User).where(User.username == username)):
         raise HTTPException(409, "Username already exists")
     try:
         role = UserRole(payload.role)
@@ -207,8 +218,11 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), current: Use
         raise HTTPException(400, "Invalid role")
     from ..security_policy import validate_password
     validate_password(payload.password)
-    row = User(username=payload.username, full_name=payload.full_name, password_hash=hash_password(payload.password), role=role, is_active=True)
-    db.add(row); db.commit(); db.refresh(row)
+    row = User(username=username, full_name=payload.full_name.strip(), password_hash=hash_password(payload.password), role=role, is_active=True)
+    db.add(row); db.flush()
+    db.add(GovernanceAudit(actor_id=current.id, event="USER_CREATED", entity="users", entity_id=str(row.id), reason="Administrator created user account"))
+    record_security_event(db, request, "USER_CREATED", success=True, user=row, detail=f"Created by {current.username}")
+    db.commit(); db.refresh(row)
     return {"id": row.id, "username": row.username, "full_name": row.full_name, "role": row.role.value}
 
 

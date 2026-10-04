@@ -18,7 +18,10 @@ def enforce_api_policy(user, request: Request):
     if path.startswith('/api/auth/users') or path.startswith('/api/masters/users'):
         if user.role != UserRole.ADMIN:
             raise HTTPException(403, 'Only ADMIN can manage users')
-    if request.method in {'GET', 'HEAD', 'OPTIONS'} or path == '/api/auth/change-password':
+    if path.startswith('/api/governance') or path.startswith('/api/diagnostics'):
+        if user.role not in {UserRole.ADMIN, UserRole.MANAGEMENT}:
+            raise HTTPException(403, 'This administration area requires Admin or Management')
+    if request.method in {'GET', 'HEAD', 'OPTIONS'} or path in {'/api/auth/change-password','/api/auth/logout'} or path.startswith('/api/auth/sessions'):
         return
     section = path.split('/')[2] if len(path.split('/')) > 2 else ''
     if user.role == UserRole.ADMIN:

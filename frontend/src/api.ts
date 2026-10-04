@@ -24,6 +24,14 @@ export async function login(username: string, password: string) {
   return api('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
 }
 
+export async function logout() {
+  try {
+    if (getToken()) await api('/auth/logout', { method: 'POST' })
+  } finally {
+    clearToken()
+  }
+}
+
 export async function downloadApi(path: string, filename: string) {
   const headers = new Headers()
   const token = getToken()

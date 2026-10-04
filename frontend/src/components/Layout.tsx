@@ -1,21 +1,60 @@
+import { useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
-import { clearToken } from '../api'
+import { clearToken, logout } from '../api'
 
-const nav = [
-  ['/insights', 'Exceptions / Data Quality'], ['/diagnostics', 'System Diagnostics'], ['/account', 'Account / Users'], ['/governance', 'Month Close / Audit'], ['/', 'Daily Review'], ['/mis', 'MIS'], ['/schedule', 'Schedule / Price / Calendar'], ['/machine-master', 'Machine Master'], ['/capacity', 'Capacity / Manpower'], ['/process', 'Process Monitor'], ['/process-actuals', 'Process Actuals / Edit'], ['/quality', 'Quality / Rejection'],
-  ['/reports', 'Compliance Reports'], ['/management-reports', 'Management Reports'], ['/actions', 'Actions'], ['/vendor', 'Vendor WIP'], ['/oee', 'Machine / OEE'], ['/analytics', 'Analytics'], ['/masters', 'Masters'], ['/import', 'Excel Import']
+type NavItem={to:string,label:string,roles?:string[]}
+const nav:NavItem[] = [
+  {to:'/insights',label:'Exceptions / Data Quality'},
+  {to:'/diagnostics',label:'System Diagnostics',roles:['ADMIN','MANAGEMENT']},
+  {to:'/account',label:'Security / Users'},
+  {to:'/governance',label:'Month Close / Audit',roles:['ADMIN','MANAGEMENT']},
+  {to:'/',label:'Daily Review'},
+  {to:'/mis',label:'MIS'},
+  {to:'/schedule',label:'Schedule / Price / Calendar'},
+  {to:'/machine-master',label:'Machine Master'},
+  {to:'/capacity',label:'Capacity / Manpower'},
+  {to:'/process',label:'Process Monitor'},
+  {to:'/process-actuals',label:'Process Actuals / Edit'},
+  {to:'/quality',label:'Quality / Rejection'},
+  {to:'/reports',label:'Compliance Reports'},
+  {to:'/management-reports',label:'Management Reports'},
+  {to:'/actions',label:'Actions'},
+  {to:'/vendor',label:'Vendor WIP'},
+  {to:'/oee',label:'Machine / OEE'},
+  {to:'/analytics',label:'Analytics'},
+  {to:'/masters',label:'Masters'},
+  {to:'/import',label:'Excel Import',roles:['ADMIN','PLANNING','QUALITY','PRODUCTION']},
 ]
 
-function CorrectionControls(){
+function CorrectionControls({role}:{role:string}){
+ if(role==='VIEW_ONLY')return null
  return <details><summary>Historical correction</summary><label>Change reason<input defaultValue={sessionStorage.getItem('changeReason')||''} onChange={e=>sessionStorage.setItem('changeReason',e.target.value)}/></label><label>Authorization number<input defaultValue={sessionStorage.getItem('correctionId')||''} onChange={e=>sessionStorage.setItem('correctionId',e.target.value)}/></label><p>Authorization is consumed after one successful correction request.</p></details>
 }
-export default function Layout({ children }: { children: React.ReactNode }) {
+
+export default function Layout({ children, me }: { children: React.ReactNode, me:any }) {
+  useEffect(()=>{
+    const minutes=Math.max(5,Number(me?.session_idle_timeout_minutes||60))
+    let timer:number
+    const expire=async()=>{try{await logout()}finally{location.reload()}}
+    const reset=()=>{window.clearTimeout(timer);timer=window.setTimeout(expire,minutes*60*1000)}
+    const events=['mousedown','keydown','touchstart','scroll']
+    events.forEach(event=>window.addEventListener(event,reset))
+    reset()
+    return()=>{window.clearTimeout(timer);events.forEach(event=>window.removeEventListener(event,reset))}
+  },[me?.session_idle_timeout_minutes])
+
+  async function signOut(){
+    try{await logout()}finally{clearToken();location.reload()}
+  }
+
+  const visible=nav.filter(item=>!item.roles||item.roles.includes(me?.role))
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">PR</div><div><b>Production Review</b><span>Process • Sales • Actions</span></div></div>
-      <nav>{nav.map(([to, label]) => <NavLink key={to} to={to} className={({isActive}) => isActive ? 'active' : ''}>{label}</NavLink>)}</nav>
-      <button className="ghost danger" onClick={() => { clearToken(); location.reload() }}>Sign out</button>
+      <div className="filter-summary"><b>{me?.full_name||me?.username}</b><span>{me?.role}</span></div>
+      <nav>{visible.map(({to,label}) => <NavLink key={to} to={to} end={to==='/'} className={({isActive}) => isActive ? 'active' : ''}>{label}</NavLink>)}</nav>
+      <button className="ghost danger" onClick={signOut}>Sign out</button>
     </aside>
-    <main className="content"><CorrectionControls/>{children}</main>
+    <main className="content"><CorrectionControls role={me?.role}/>{children}</main>
   </div>
 }
