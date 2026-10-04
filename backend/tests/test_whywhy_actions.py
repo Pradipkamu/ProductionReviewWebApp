@@ -58,6 +58,13 @@ def test_standard_whywhy_required_for_action_closure(tmp_path, monkeypatch):
     assert saved.json()['plan']['can_close'] is True
     assert saved.json()['plan']['completion_percent'] == 100
 
+    pdf = client.get(f'/api/actions/{action_id}/pdf', headers=h)
+    assert pdf.status_code == 200, pdf.text
+    assert pdf.headers['content-type'].startswith('application/pdf')
+    assert 'WhyWhy_ActionPlan.pdf' in pdf.headers.get('content-disposition', '')
+    assert pdf.content.startswith(b'%PDF')
+    assert len(pdf.content) > 1500
+
     closed = client.patch(f'/api/actions/{action_id}', headers=h, json={
         'status':'CLOSED', 'comment':'verified', 'closure_remark':'Why-Why completed and effective'
     })
