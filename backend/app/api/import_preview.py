@@ -18,6 +18,7 @@ from ..services.excel_import import import_daily_production_workbook
 from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
 from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook
+from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, save_limited_stream, validate_workbook_file
 router=APIRouter(prefix='/import',tags=['import preview'])
 KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history'}
 KIND_SCOPED_HASHES={'daily-production','process-design','stage-schedules','stage-daily'}
@@ -79,7 +80,7 @@ def counts(stats,kind):
     return {'new':stats.get(prefix+'_created',0),'updated':stats.get(prefix+'_updated',0),'unchanged':stats.get(prefix+'_unchanged',0),'rejected':len(stats.get('errors',[]))}
 
 
-def digest(path):return hashlib.sha256(path.read_bytes()).hexdigest()
+def digest(path):return hash_file(path)
 
 @router.post('/preview/{kind}')
 def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(get_current_user)):
