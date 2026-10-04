@@ -8,14 +8,16 @@ This release hardens uploads, secrets, database credentials and backup/restore e
 - Uploaded workbooks must be valid Office Open XML ZIP packages containing the expected workbook structure.
 - Upload size defaults to 32 MB.
 - Expanded Office-package size defaults to 128 MB to reduce ZIP-bomb risk.
-- Unsafe internal ZIP paths and corrupt Office archives are rejected before business parsing.
+- Unsafe/duplicate internal ZIP paths, encrypted entries, symbolic links, unsupported compression, corrupt archives and mismatched OOXML document identities are rejected before business parsing.
+- Macro-free Office extensions reject embedded VBA/ActiveX content. Intentional `.xlsm` imports remain supported; uploaded macros are never executed by the backend.
 - Action evidence uses an extension allow-list: PDF, PNG, JPG/JPEG, WEBP, XLSX/XLSM, DOCX, PPTX, TXT and CSV.
 - Executable, HTML, SVG, script and arbitrary archive uploads are rejected.
-- PDF/image signatures and Office document structure are validated rather than trusting the browser MIME type.
+- PDF/image structure, full text-file control bytes and Office document structure are validated rather than trusting the browser MIME type.
 - Stored attachment names are random UUIDs; original names are sanitized for display.
 - Attachment storage paths are containment-checked before write/read.
-- Evidence downloads use nosniff and private/no-store response headers.
+- Evidence downloads use nosniff and private/no-store response headers and recheck the stored SHA-256 before release.
 - Accepted/rejected Action evidence uploads are recorded in the Security Event audit.
+- Obsolete direct-import routes reject without parsing multipart file bodies; Preview and Confirm is the only workbook write path.
 
 ## Database and secret hardening
 
@@ -32,6 +34,8 @@ Linux:
 
 The rotation changes the live PostgreSQL pms role password, updates .env, recreates the backend and verifies /api/health.
 
+Docker Compose now requires the initialized `POSTGRES_PASSWORD` instead of silently falling back to `pms`, and PostgreSQL password storage is configured for SCRAM-SHA-256. Legacy `.env` files that only contain `DATABASE_URL` retain that working password until explicit rotation. Rotation writes are recoverable: if the database password change fails, the prior `.env` content is restored.
+
 The System Diagnostics page reports credential-strength warnings without displaying secret values.
 
 ## Backup and restore readiness
@@ -46,7 +50,7 @@ Linux:
 
 Restore verification still restores only into a temporary isolated database. After a successful test it now records database/backups/restore_verification.json.
 
-System Diagnostics displays latest backup freshness, custom/legacy format, SHA-256 verification, backup count, isolated restore verification, restored schema version, secret/network checks and active upload policy.
+System Diagnostics displays latest backup freshness, custom/legacy format, SHA-256 verification, backup count, isolated restore verification, restored schema version, secret/network/Oracle-HTTPS policy checks and active upload policy. Restore evidence cannot override a detected missing or hash-mismatched backup status.
 
 Default freshness policy: latest backup 48 hours; isolated restore verification 30 days.
 

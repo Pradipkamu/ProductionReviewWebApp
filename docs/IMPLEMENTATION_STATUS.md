@@ -40,6 +40,11 @@
 - Labor, energy, air, maintenance, consumables, depreciation and overhead cost model
 - Hourly, per-piece and monthly planned machine conversion-cost estimates
 - Horizontal two-row Rejection Qty / Dispatch Qty matrix within the Monthly PPM graph panel
+- Central workbook and action-evidence size/type/content validation
+- Generated fresh-install application, PostgreSQL and administrator credentials
+- Safe PostgreSQL password-rotation launchers for Windows and Linux
+- Backup checksum and isolated restore-evidence visibility in System Diagnostics
+- Localhost-only PostgreSQL/backend binding visibility with Oracle HTTP compatibility retained
 
 ## Deliberately left configurable, not guessed
 
