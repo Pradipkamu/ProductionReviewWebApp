@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import mimetypes
 import os
 import re
+import stat
 import zipfile
 from pathlib import Path
 from typing import BinaryIO
+from xml.etree import ElementTree
 
 
 class UploadSecurityError(ValueError):
@@ -36,6 +37,15 @@ OOXML_REQUIRED = {
     ".docx": "word/document.xml",
     ".pptx": "ppt/presentation.xml",
 }
+
+OOXML_MAIN_CONTENT_TYPE = {
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+    ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
+}
+
+MACRO_FREE_EXTENSIONS = {".xlsx", ".docx", ".pptx"}
 
 
 def safe_original_name(name: str | None, fallback: str = "upload") -> str:
@@ -96,7 +106,7 @@ def save_limited_stream(source: BinaryIO, target: Path, max_bytes: int) -> tuple
         raise
 
 
-def _validate_zip_members(path: Path, max_uncompressed_bytes: int) -> set[str]:
+def _validate_zip_members(path: Path, max_uncompressed_bytes: int) -> tuple[set[str], bytes]:
     try:
         with zipfile.ZipFile(path, "r") as zf:
             infos = zf.infolist()
@@ -109,27 +119,67 @@ def _validate_zip_members(path: Path, max_uncompressed_bytes: int) -> set[str]:
                 parts = [p for p in name.split("/") if p]
                 if name.startswith("/") or any(p == ".." for p in parts):
                     raise UploadSecurityError("Office file contains an unsafe internal path")
+                if name in names:
+                    raise UploadSecurityError("Office file contains duplicate internal entries")
+                if info.flag_bits & 0x1:
+                    raise UploadSecurityError("Encrypted Office files are not supported")
+                file_type = (info.external_attr >> 16) & 0o170000
+                if file_type == stat.S_IFLNK:
+                    raise UploadSecurityError("Office file contains an unsafe symbolic link")
+                if info.compress_type not in {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}:
+                    raise UploadSecurityError("Office file uses an unsupported compression method")
                 total += int(info.file_size or 0)
                 if total > max_uncompressed_bytes:
                     raise UploadSecurityError("Office file expands beyond the permitted safety limit")
                 names.add(name)
             if "[Content_Types].xml" not in names:
                 raise UploadSecurityError("File is not a valid Office Open XML document")
+            content_types_info = zf.getinfo("[Content_Types].xml")
+            if content_types_info.file_size > 1024 * 1024:
+                raise UploadSecurityError("Office content-type metadata exceeds the safety limit")
+            content_types = zf.read(content_types_info)
             bad = zf.testzip()
             if bad:
                 raise UploadSecurityError("Office file is damaged or failed integrity validation")
-            return names
-    except zipfile.BadZipFile as exc:
+            return names, content_types
+    except (zipfile.BadZipFile, RuntimeError) as exc:
         raise UploadSecurityError("File is not a valid Office Open XML document") from exc
 
 
 def validate_office_file(path: Path, extension: str, max_uncompressed_bytes: int) -> None:
-    required = OOXML_REQUIRED.get(extension.lower())
+    extension = extension.lower()
+    required = OOXML_REQUIRED.get(extension)
     if not required:
         raise UploadSecurityError("Unsupported Office file type")
-    names = _validate_zip_members(path, max_uncompressed_bytes)
+    names, content_types_xml = _validate_zip_members(path, max_uncompressed_bytes)
     if required not in names:
         raise UploadSecurityError("Office document type does not match its file extension")
+    try:
+        root = ElementTree.fromstring(content_types_xml)
+    except ElementTree.ParseError as exc:
+        raise UploadSecurityError("Office content-type metadata is invalid") from exc
+    required_part = "/" + required
+    actual_types = {
+        node.attrib.get("ContentType", "")
+        for node in root
+        if node.tag.rsplit("}", 1)[-1] == "Override" and node.attrib.get("PartName") == required_part
+    }
+    if not actual_types:
+        required_extension = Path(required).suffix.lstrip(".")
+        actual_types = {
+            node.attrib.get("ContentType", "")
+            for node in root
+            if node.tag.rsplit("}", 1)[-1] == "Default"
+            and node.attrib.get("Extension", "").lower() == required_extension.lower()
+        }
+    if OOXML_MAIN_CONTENT_TYPE[extension] not in actual_types:
+        raise UploadSecurityError("Office document content does not match its file extension")
+    lower_names = {name.lower() for name in names}
+    if extension in MACRO_FREE_EXTENSIONS and any(
+        name.endswith("vbaproject.bin") or "/activex/" in f"/{name}"
+        for name in lower_names
+    ):
+        raise UploadSecurityError("Macro or ActiveX content is not allowed in this Office file type")
 
 
 def validate_workbook_file(path: Path, original_name: str, max_uncompressed_bytes: int) -> str:
@@ -143,16 +193,34 @@ def validate_workbook_file(path: Path, original_name: str, max_uncompressed_byte
 def _matches_signature(path: Path, ext: str) -> bool:
     with path.open("rb") as f:
         head = f.read(64)
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - 2048))
+        tail = f.read()
     if ext == ".pdf":
-        return head.startswith(b"%PDF-")
+        return head.startswith(b"%PDF-") and b"%%EOF" in tail
     if ext == ".png":
-        return head.startswith(b"\x89PNG\r\n\x1a\n")
+        return head.startswith(b"\x89PNG\r\n\x1a\n") and tail.endswith(b"IEND\xaeB`\x82")
     if ext in {".jpg", ".jpeg"}:
-        return head.startswith(b"\xff\xd8\xff")
+        return head.startswith(b"\xff\xd8\xff") and tail.endswith(b"\xff\xd9")
     if ext == ".webp":
-        return len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+        return (
+            len(head) >= 16
+            and head[:4] == b"RIFF"
+            and head[8:12] == b"WEBP"
+            and int.from_bytes(head[4:8], "little") + 8 == size
+            and head[12:16] in {b"VP8 ", b"VP8L", b"VP8X"}
+        )
     if ext in {".txt", ".csv"}:
-        return b"\x00" not in head
+        control_count = 0
+        byte_count = 0
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                if b"\x00" in chunk:
+                    return False
+                byte_count += len(chunk)
+                control_count += sum(byte < 32 and byte not in {9, 10, 13} for byte in chunk)
+        return control_count <= max(1, byte_count // 100)
     return True
 
 
@@ -163,11 +231,12 @@ def validate_attachment_file(
     max_uncompressed_bytes: int,
 ) -> str:
     ext = Path(original_name).suffix.lower()
-    if ext not in allowed_extensions or ext not in SAFE_ATTACHMENT_MIME:
-        allowed = ", ".join(sorted(allowed_extensions))
+    effective_extensions = allowed_extensions.intersection(SAFE_ATTACHMENT_MIME)
+    if ext not in effective_extensions:
+        allowed = ", ".join(sorted(effective_extensions)) or "none"
         raise UploadSecurityError(f"Attachment type is not allowed. Allowed: {allowed}")
     if ext in OOXML_REQUIRED:
         validate_office_file(path, ext, max_uncompressed_bytes)
     elif not _matches_signature(path, ext):
         raise UploadSecurityError("Attachment content does not match its file extension")
-    return SAFE_ATTACHMENT_MIME.get(ext) or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+    return SAFE_ATTACHMENT_MIME[ext]
