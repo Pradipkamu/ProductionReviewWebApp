@@ -311,7 +311,15 @@ def edit_process_actual(
         row.good_qty = payload.actual_qty - payload.reject_qty
         row.remarks = reason
         row.source = SourceType.MANUAL
-        db.flush()
+        original_reason = db.info.get("reason")
+        db.info["reason"] = reason
+        try:
+            db.flush()
+        finally:
+            if original_reason is None:
+                db.info.pop("reason", None)
+            else:
+                db.info["reason"] = original_reason
 
     if not row:
         db.rollback()
