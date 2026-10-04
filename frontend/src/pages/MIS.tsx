@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { PageHeader, money, num, pct } from '../components/UI'
-function today(){return new Date().toISOString().slice(0,10)}
+function isoLocal(d:Date){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
+function lastCompletedDay(){const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d)}
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 export default function MIS(){
-  const [d,setD]=useState(today()); const [rows,setRows]=useState<any[]>([]); const [msg,setMsg]=useState('')
+  const [d,setD]=useState(lastCompletedDay()); const [rows,setRows]=useState<any[]>([]); const [msg,setMsg]=useState('')
   const [scope,setScope]=useState<ScopeValues>(emptyScope); const [options,setOptions]=useState<any>({}); const [products,setProducts]=useState<any[]>([])
   useEffect(()=>{Promise.all([api('/masters/filter-options'),api('/masters/products')]).then(([o,p]:any)=>{setOptions(o);setProducts(p)})},[])
   async function load(){const q=appendScope(new URLSearchParams({mis_date:d}),scope);setRows(await api(`/mis?${q}`))}
