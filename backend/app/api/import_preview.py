@@ -46,7 +46,7 @@ def fingerprint(db, *, lock=False):
             return str(revision)
     h=hashlib.sha256()
     # Conservative: any relevant business/master change invalidates an earlier preview.
-    exclude={'governance_audit','action_reminders','historical_correction_grants','import_batches','quality_rejection_import_batches','business_data_revision'}
+    exclude={'governance_audit','action_reminders','historical_correction_grants','import_batches','quality_rejection_import_batches','business_data_revision','users','user_sessions','security_events'}
     for table in sorted(Base.metadata.tables.values(),key=lambda t:t.name):
         if table.name in exclude:continue
         for row in db.execute(select(table).order_by(*table.primary_key.columns)):
