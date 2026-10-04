@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
+from pathlib import Path
+from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.api import actions as actions_api
 from app.main import app
-from app.models import Customer, Product
+from app.models import ActionAttachment, Customer, Product, SecurityEvent
 
 
 def auth_headers(client: TestClient):
@@ -70,7 +72,7 @@ def test_standard_whywhy_required_for_action_closure(tmp_path, monkeypatch):
     uploaded = client.post(
         f'/api/actions/{action_id}/attachments',
         headers=h,
-        files={'file':('evidence.pdf',b'%PDF-1.7\ncontrolled evidence','application/pdf')},
+        files={'file':('evidence.pdf',b'%PDF-1.7\ncontrolled evidence\n%%EOF','application/pdf')},
         data={'caption':'Verification evidence'},
     )
     assert uploaded.status_code == 200, uploaded.text
@@ -79,6 +81,12 @@ def test_standard_whywhy_required_for_action_closure(tmp_path, monkeypatch):
     assert downloaded.status_code == 200
     assert downloaded.headers['x-content-type-options']=='nosniff'
     assert downloaded.headers['cache-control']=='private, no-store'
+    with SessionLocal() as db:
+        attachment=db.get(ActionAttachment,attachment_id)
+        (Path(actions_api.settings.attachments_dir)/attachment.relative_path).write_bytes(b'tampered')
+    assert client.get(f'/api/actions/{action_id}/attachments/{attachment_id}',headers=h).status_code==409
+    with SessionLocal() as db:
+        assert db.scalar(select(SecurityEvent).where(SecurityEvent.event_type=='ATTACHMENT_INTEGRITY_FAILED')) is not None
 
     pdf = client.get(f'/api/actions/{action_id}/pdf', headers=h)
     assert pdf.status_code == 200, pdf.text

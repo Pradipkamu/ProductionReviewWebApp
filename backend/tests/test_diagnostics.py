@@ -81,5 +81,30 @@ def test_diagnostics_flags_backup_checksum_mismatch(tmp_path):
         diagnostics_api.settings.upload_dir,diagnostics_api.settings.attachments_dir,diagnostics_api.settings.backup_dir=previous
 
 
+def test_restore_marker_cannot_override_missing_backup_status(tmp_path):
+    backups=tmp_path/'backups';backups.mkdir()
+    (backups/'restore_verification.json').write_text(json.dumps({
+        'status':'ok',
+        'verified_at':datetime.now(timezone.utc).isoformat(),
+        'backup_file':'missing.dump',
+        'backup_sha256':'0'*64,
+        'schema_version':'test',
+        'core_tables':'OK',
+    }),encoding='utf-8')
+    result=diagnostics_api._restore_verification_check(str(backups))
+    assert result['status']=='warning'
+    assert 'no longer present' in result['detail']
+
+
+def test_backup_check_accepts_legacy_powershell_utf16_checksum(tmp_path):
+    backups=tmp_path/'backups';backups.mkdir()
+    backup=backups/'windows.dump';backup.write_bytes(b'valid-backup')
+    digest=hashlib.sha256(backup.read_bytes()).hexdigest()
+    Path(str(backup)+'.sha256').write_text(digest+'\r\n',encoding='utf-16')
+    result=diagnostics_api._backup_check(str(backups))
+    assert result['status']=='ok'
+    assert result['checksum_valid'] is True
+
+
 def test_diagnostics_requires_login():
     assert TestClient(app).get('/api/diagnostics').status_code == 401
