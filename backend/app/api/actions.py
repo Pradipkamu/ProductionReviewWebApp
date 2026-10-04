@@ -4,12 +4,12 @@ import hashlib
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, record_security_event
 from ..config import get_settings
 from ..db import get_db
 from ..enums import ActionStatus
@@ -20,6 +20,9 @@ from ..models import (
 from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
 from ..services.action_pdf import build_action_plan_pdf
+from ..services.file_security import (
+    UploadSecurityError, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
+)
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 settings = get_settings()
