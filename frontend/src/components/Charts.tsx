@@ -30,17 +30,12 @@ export function ComplianceLineChart({rows,height=245,onSelect}:{rows:Point[],hei
   if(!rows.length) return <div className="empty">No compliance data for this period.</div>
   const W=Math.max(760,rows.length*64),H=height,pad={l:52,r:20,t:20,b:58},innerW=W-pad.l-pad.r,innerH=H-pad.t-pad.b
   const vals=rows.map(r=>(r.compliance??0)*100)
-  const rawMax=Math.max(...vals,100)
-  const tickStep=rawMax<=125?25:Math.max(25,Math.ceil((rawMax/5)/25)*25)
-  const max=Math.max(125,Math.ceil(rawMax/tickStep)*tickStep), group=innerW/Math.max(1,rows.length-1)
-  const ticks=Array.from({length:Math.floor(max/tickStep)+1},(_,i)=>i*tickStep)
-  if(!ticks.includes(100))ticks.push(100)
-  ticks.sort((a,b)=>a-b)
+  const max=Math.max(120,Math.ceil(Math.max(...vals,100)/20)*20), group=innerW/Math.max(1,rows.length-1)
   const x=(i:number)=>rows.length===1?pad.l+innerW/2:pad.l+group*i
   const y=(v:number)=>pad.t+innerH-(Math.max(0,Math.min(max,v))/max)*innerH
   const pts=rows.map((r,i)=>`${x(i)},${y((r.compliance??0)*100)}`).join(' ')
   return <div className="svg-scroll"><svg className="report-svg" width={W} height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{width:W,height:H,minWidth:'100%'}}>
-    {ticks.map(v=><g key={v}><line x1={pad.l} y1={y(v)} x2={W-pad.r} y2={y(v)} className={v===100?'target-line':'grid-line'}/><text x={pad.l-8} y={y(v)+4} textAnchor="end" className="axis-text">{v}%</text></g>)}
+    {[0,25,50,75,100,125].filter(v=>v<=max).map(v=><g key={v}><line x1={pad.l} y1={y(v)} x2={W-pad.r} y2={y(v)} className={v===100?'target-line':'grid-line'}/><text x={pad.l-8} y={y(v)+4} textAnchor="end" className="axis-text">{v}%</text></g>)}
     <polyline points={pts} fill="none" className="compliance-line"/>
     {rows.map((r,i)=>{const v=(r.compliance??0)*100;return <g key={`${r.label}-${i}`} role={onSelect?"button":undefined} tabIndex={onSelect?0:undefined} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==="Enter")onSelect?.(r)}} style={{cursor:onSelect?"pointer":undefined}}><circle cx={x(i)} cy={y(v)} r="4.5" className={v>=100?'dot-good':v>=90?'dot-watch':'dot-bad'}><title>{`${r.label}: ${v.toFixed(1)}%`}</title></circle><text x={x(i)} y={Math.max(11,y(v)-9)} textAnchor="middle" className="data-label">{v.toFixed(1)}%</text><text x={x(i)} y={H-34} textAnchor="middle" className="axis-text x-label">{r.label}</text></g>})}
   </svg></div>
