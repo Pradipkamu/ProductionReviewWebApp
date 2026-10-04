@@ -85,20 +85,24 @@ def digest(path):return hash_file(path)
 @router.post('/preview/{kind}')
 def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     authorize(kind,user)
-    if not file.filename or not file.filename.lower().endswith(('.xlsx','.xlsm')):raise HTTPException(422,'Use .xlsx or .xlsm')
-    root=Path(get_settings().upload_dir)/'previews';root.mkdir(parents=True,exist_ok=True)
+    settings=get_settings()
+    original=safe_original_name(file.filename,'workbook.xlsx')
+    ext=Path(original).suffix.lower()
+    if ext not in {'.xlsx','.xlsm'}:
+        raise HTTPException(422,'Use a valid .xlsx or .xlsm workbook')
+    root=Path(settings.upload_dir)/'previews';root.mkdir(parents=True,exist_ok=True)
     # Remove expired temporary previews; original committed imports remain retained.
     import time
-    for old in root.glob('*.xlsx'):
-        if old.stat().st_mtime<time.time()-86400:old.unlink(missing_ok=True)
-    upload_id=uuid.uuid4().hex;path=root/(upload_id+'.xlsx')
-    size=0
-    with path.open('wb') as output:
-        while chunk:=file.file.read(1024*1024):
-            size+=len(chunk)
-            if size>32*1024*1024:path.unlink(missing_ok=True);raise HTTPException(413,'Workbook limit is 32 MB')
-            output.write(chunk)
-    sha=digest(path)
+    for old in root.iterdir():
+        if old.is_file() and old.stat().st_mtime<time.time()-86400:
+            old.unlink(missing_ok=True)
+    upload_id=uuid.uuid4().hex;path=root/(upload_id+ext)
+    try:
+        _,sha=save_limited_stream(file.file,path,settings.import_max_mb*1024*1024)
+        validate_workbook_file(path,original,settings.office_max_uncompressed_mb*1024*1024)
+    except UploadSecurityError as exc:
+        path.unlink(missing_ok=True)
+        raise HTTPException(exc.status_code,exc.detail) from exc
     batch_sha=hashlib.sha256((kind+':'+sha).encode()).hexdigest() if kind in KIND_SCOPED_HASHES else sha
     batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
     previous=db.scalar(select(batch_model).where(batch_model.file_sha256==batch_sha))
@@ -124,7 +128,7 @@ def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:U
     result={'status':'preview','counts':c,'errors':errors,'warnings':stats.get('warnings',[]),'stats':stats,'can_confirm':not errors,
             'count_scope':('Customer MIS rows plus stage actual rows; parent dispatch is reconciled, not added twice to MIS.' if kind=='daily-production' else 'Primary MIS, price or rejection business rows; supporting master/process counts are shown in stats.')}
     if errors:path.unlink(missing_ok=True);return result
-    claims={'sub':str(user.id),'purpose':'import-preview','kind':kind,'upload_id':upload_id,'filename':Path(file.filename).name,
+    claims={'sub':str(user.id),'purpose':'import-preview','kind':kind,'upload_id':upload_id,'filename':original,'ext':ext,
             'sha':sha,'batch_sha':batch_sha,'fingerprint':original_fp,'exp':datetime.now(timezone.utc)+timedelta(minutes=30)}
     result['preview_token']=jwt.encode(claims,get_settings().secret_key,algorithm='HS256')
     return result
@@ -141,7 +145,9 @@ def confirm(payload:Confirm,db:Session=Depends(get_db),user:User=Depends(get_cur
     except Exception as exc:raise HTTPException(409,'Invalid or expired preview; preview workbook again') from exc
     kind=claims['kind'];authorize(kind,user)
     if db.bind.dialect.name=='postgresql':db.execute(text('SELECT pg_advisory_xact_lock(2163001)'))
-    path=Path(get_settings().upload_dir)/'previews'/(claims['upload_id']+'.xlsx')
+    ext=claims.get('ext','.xlsx')
+    if ext not in {'.xlsx','.xlsm'}:raise HTTPException(409,'Invalid preview file type')
+    path=Path(get_settings().upload_dir)/'previews'/(claims['upload_id']+ext)
     if not path.is_file() or digest(path)!=claims['sha']:raise HTTPException(409,'Preview file is missing or changed')
     batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
     previous=db.scalar(select(batch_model).where(batch_model.file_sha256==claims.get('batch_sha',claims['sha'])))
