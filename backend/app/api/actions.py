@@ -4,12 +4,12 @@ import hashlib
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, record_security_event
 from ..config import get_settings
 from ..db import get_db
 from ..enums import ActionStatus
@@ -20,6 +20,9 @@ from ..models import (
 from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
 from ..services.action_pdf import build_action_plan_pdf
+from ..services.file_security import (
+    UploadSecurityError, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
+)
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 settings = get_settings()
@@ -261,6 +264,7 @@ def update_action_plan(action_id: int, payload: ActionWhyWhyUpdate, db: Session 
 @router.post("/{action_id}/attachments")
 async def upload_action_attachment(
     action_id: int,
+    request: Request,
     file: UploadFile = File(...),
     caption: str | None = Form(default=None),
     db: Session = Depends(get_db),
@@ -269,34 +273,38 @@ async def upload_action_attachment(
     a = db.get(Action, action_id)
     if not a:
         raise HTTPException(404, "Action not found")
-    content = await file.read()
-    if not content:
-        raise HTTPException(400, "Attachment is empty")
-    if len(content) > 25 * 1024 * 1024:
-        raise HTTPException(400, "Attachment exceeds 25 MB")
-    original = Path(file.filename or "attachment").name
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", original).strip("._") or "attachment"
-    ext = Path(safe).suffix
+    original = safe_original_name(file.filename, "attachment")
+    ext = Path(original).suffix.lower()
     stored_name = f"{uuid.uuid4().hex}{ext}"
     relative = Path(a.action_no) / stored_name
-    base = Path(settings.attachments_dir)
-    target = base / relative
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(content)
-    sha = hashlib.sha256(content).hexdigest()
+    target = safe_path(settings.attachments_dir, relative)
+    try:
+        size, sha = save_limited_stream(file.file, target, settings.attachment_max_mb * 1024 * 1024)
+        mime_type = validate_attachment_file(
+            target,
+            original,
+            settings.attachment_extension_set,
+            settings.office_max_uncompressed_mb * 1024 * 1024,
+        )
+    except UploadSecurityError as exc:
+        target.unlink(missing_ok=True)
+        record_security_event(db, request, "UPLOAD_REJECTED", success=False, user=user, detail=f"Action attachment: {exc.detail}")
+        db.commit()
+        raise HTTPException(exc.status_code, exc.detail) from exc
     att = ActionAttachment(
         action_id=a.id,
         file_name=original,
         stored_name=stored_name,
         relative_path=str(relative).replace("\\", "/"),
-        mime_type=file.content_type,
-        size_bytes=len(content),
+        mime_type=mime_type,
+        size_bytes=size,
         sha256=sha,
         caption=_clean_text(caption),
         uploaded_by_id=user.id,
     )
     db.add(att)
     db.add(ActionHistory(action_id=a.id, changed_by_id=user.id, old_status=a.status, new_status=a.status, comment=f"Attachment added: {original}"))
+    record_security_event(db, request, "UPLOAD_ACCEPTED", success=True, user=user, detail=f"Action attachment: {original}")
     db.commit(); db.refresh(att)
     return {"id": att.id, "file_name": att.file_name, "mime_type": att.mime_type, "size_bytes": att.size_bytes, "sha256": att.sha256, "caption": att.caption, "created_at": att.created_at}
 
@@ -306,10 +314,18 @@ def download_action_attachment(action_id: int, attachment_id: int, db: Session =
     att = db.scalar(select(ActionAttachment).where(ActionAttachment.id == attachment_id, ActionAttachment.action_id == action_id))
     if not att:
         raise HTTPException(404, "Attachment not found")
-    path = Path(settings.attachments_dir) / att.relative_path
-    if not path.exists():
+    try:
+        path = safe_path(settings.attachments_dir, att.relative_path)
+    except UploadSecurityError as exc:
+        raise HTTPException(400, exc.detail) from exc
+    if not path.is_file():
         raise HTTPException(404, "Attachment file is missing from storage")
-    return FileResponse(path, media_type=att.mime_type or "application/octet-stream", filename=att.file_name)
+    return FileResponse(
+        path,
+        media_type=att.mime_type or "application/octet-stream",
+        filename=att.file_name,
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
 
 
 @router.patch("/{action_id}")

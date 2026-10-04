@@ -10,8 +10,14 @@ if [ -z "$backup" ] || [ ! -s "$backup" ]; then
   echo 'No non-empty .dump backup was found. Pass the backup path as the first argument.' >&2
   exit 1
 fi
+
+actual_hash="$(sha256sum "$backup" | awk '{print $1}')"
 if [ -f "$backup.sha256" ]; then
-  sha256sum -c "$backup.sha256"
+  expected_hash="$(awk '{print $1}' "$backup.sha256" | tr '[:upper:]' '[:lower:]')"
+  if [ "$actual_hash" != "$expected_hash" ]; then
+    echo 'Backup SHA-256 verification failed.' >&2
+    exit 1
+  fi
 fi
 
 docker compose up -d db
@@ -38,4 +44,22 @@ if [ "$core_tables" != "OK" ]; then
   echo 'Restore completed but required users/products tables are missing.' >&2
   exit 1
 fi
+schema_version="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT COALESCE((SELECT version_num FROM alembic_version LIMIT 1),'unversioned')")"
+
+BACKUP_FILE="$(basename "$backup")" BACKUP_HASH="$actual_hash" SCHEMA_VERSION="$schema_version" python3 - <<'PY'
+import json, os
+from datetime import datetime, timezone
+from pathlib import Path
+marker={
+    "status":"ok",
+    "verified_at":datetime.now(timezone.utc).isoformat(),
+    "backup_file":os.environ["BACKUP_FILE"],
+    "backup_sha256":os.environ["BACKUP_HASH"],
+    "schema_version":os.environ["SCHEMA_VERSION"],
+    "core_tables":"OK",
+}
+Path("database/backups/restore_verification.json").write_text(json.dumps(marker,indent=2)+"\n",encoding="utf-8")
+PY
+
 echo "Restore verification passed in isolated database $scratch. Live database pms was not modified."
+echo "Verification marker updated: database/backups/restore_verification.json"
