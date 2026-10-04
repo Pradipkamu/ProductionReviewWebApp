@@ -34,9 +34,16 @@ def fingerprint(db, *, lock=False):
     if db.bind.dialect.name == 'postgresql':
         q = select(BusinessDataRevision.revision).where(BusinessDataRevision.id == 1)
         revision = db.scalar(q.with_for_update() if lock else q)
-        if revision is None:
-            raise RuntimeError('Business data revision is missing; run Alembic migrations')
-        return str(revision)
+        trigger_count = db.scalar(text(
+            "SELECT count(*) FROM pg_trigger "
+            "WHERE tgname LIKE 'revision_%' AND NOT tgisinternal"
+        )) or 0
+        # Production databases upgraded by Alembic have revision triggers and use
+        # the inexpensive monotonic counter. create_all/test/recovery databases do
+        # not, so fall through to the conservative content hash instead of allowing
+        # a stale preview to be confirmed.
+        if revision is not None and trigger_count:
+            return str(revision)
     h=hashlib.sha256()
     # Conservative: any relevant business/master change invalidates an earlier preview.
     exclude={'governance_audit','action_reminders','historical_correction_grants','import_batches','quality_rejection_import_batches','business_data_revision'}

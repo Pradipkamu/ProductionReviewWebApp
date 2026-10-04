@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import MIS from './pages/MIS'
 import Schedule from './pages/Schedule'
 import Process from './pages/Process'
+import ProcessActuals from './pages/ProcessActuals'
 import Actions from './pages/Actions'
 import OEE from './pages/OEE'
 import Vendor from './pages/Vendor'
@@ -42,7 +43,7 @@ export default function App(){
   if(me.must_change_password) return <div className="login-page"><PasswordForm required/></div>
   return <Layout><Routes>
     <Route path="/" element={<Dashboard/>}/><Route path="/mis" element={<MIS/>}/><Route path="/schedule" element={<Schedule/>}/>
-    <Route path="/process" element={<Process/>}/><Route path="/capacity" element={<CapacityPlanning/>}/><Route path="/machine-master" element={<MachineMaster/>}/><Route path="/quality" element={<Quality/>}/><Route path="/reports" element={<Reports/>}/><Route path="/management-reports" element={<AdvancedReports/>}/><Route path="/actions" element={<Actions/>}/><Route path="/vendor" element={<Vendor/>}/><Route path="/oee" element={<OEE/>}/><Route path="/analytics" element={<Analytics/>}/>
+    <Route path="/process" element={<Process/>}/><Route path="/process-actuals" element={<ProcessActuals/>}/><Route path="/capacity" element={<CapacityPlanning/>}/><Route path="/machine-master" element={<MachineMaster/>}/><Route path="/quality" element={<Quality/>}/><Route path="/reports" element={<Reports/>}/><Route path="/management-reports" element={<AdvancedReports/>}/><Route path="/actions" element={<Actions/>}/><Route path="/vendor" element={<Vendor/>}/><Route path="/oee" element={<OEE/>}/><Route path="/analytics" element={<Analytics/>}/>
     <Route path="/insights" element={<Insights/>}/><Route path="/diagnostics" element={<Diagnostics/>}/><Route path="/account" element={<Security/>}/><Route path="/governance" element={<Governance/>}/><Route path="/masters" element={<Masters/>}/><Route path="/import" element={<ImportExcel/>}/><Route path="*" element={<Navigate to="/"/>}/>
   </Routes></Layout>
 }

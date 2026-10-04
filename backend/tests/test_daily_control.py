@@ -77,7 +77,11 @@ def test_daily_control_separates_missing_upload_from_reported_zero():
     kinds = {x["kind"] for x in reported["alerts"]}
     assert "missing_dispatch_actual" not in kinds
     assert "missing_stage_actual" not in kinds
-    assert {"zero_dispatch_actual", "zero_stage_actual", "price_missing"} <= kinds
+    # A saved zero is valid data and is deliberately skipped from production
+    # compliance blockers; it must not be reclassified as a missing upload.
+    assert "zero_dispatch_actual" not in kinds
+    assert "zero_stage_actual" not in kinds
+    assert "price_missing" in kinds
 
 
 def test_daily_control_reports_missing_process_flow_as_readiness_blocker():

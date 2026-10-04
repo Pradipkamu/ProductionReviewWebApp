@@ -143,6 +143,21 @@ class ProcessEntry(BaseModel):
     source: SourceType = SourceType.MANUAL
 
 
+class ProcessActualEdit(BaseModel):
+    summary_date: date
+    product_id: int
+    route_operation_id: int
+    actual_qty: Decimal = Field(ge=0)
+    reject_qty: Decimal = Field(default=Decimal("0"), ge=0)
+    reason: str = Field(min_length=2, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_reject(self):
+        if self.reject_qty > self.actual_qty:
+            raise ValueError("Reject quantity cannot exceed actual quantity")
+        return self
+
+
 class ActionContextIn(BaseModel):
     context_date: date
     product_id: Optional[int] = None

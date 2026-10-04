@@ -5,7 +5,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,10 +15,11 @@ from ..db import get_db
 from ..enums import ActionStatus
 from ..models import (
     Action, ActionAttachment, ActionContext, ActionHistory, ActionWhyWhy,
-    Product, RouteOperation, Operation, ReviewActionLink, ReviewSession, User,
+    Product, RouteOperation, Operation, Machine, ReviewActionLink, ReviewSession, User,
 )
 from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
+from ..services.action_pdf import build_action_plan_pdf
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 settings = get_settings()
@@ -75,10 +76,11 @@ def _attachments(db: Session, action_id: int) -> list[dict]:
 
 def serialize_action(db: Session, a: Action) -> dict:
     contexts = db.execute(
-        select(ActionContext, Product, RouteOperation, Operation)
+        select(ActionContext, Product, RouteOperation, Operation, Machine)
         .outerjoin(Product, Product.id == ActionContext.product_id)
         .outerjoin(RouteOperation, RouteOperation.id == ActionContext.route_operation_id)
         .outerjoin(Operation, Operation.id == RouteOperation.operation_id)
+        .outerjoin(Machine, Machine.id == ActionContext.machine_id)
         .where(ActionContext.action_id == a.id)
     ).all()
     plan = db.scalar(select(ActionWhyWhy).where(ActionWhyWhy.action_id == a.id))
@@ -115,8 +117,9 @@ def serialize_action(db: Session, a: Action) -> dict:
             "route_operation_id": ctx.route_operation_id,
             "operation": op.name if op else None,
             "machine_id": ctx.machine_id,
+            "machine": (f"{machine.code} - {machine.name}" if machine else None),
             "loss_event_id": ctx.loss_event_id,
-        } for ctx, p, ro, op in contexts],
+        } for ctx, p, ro, op, machine in contexts],
     }
 
 
@@ -203,6 +206,32 @@ def get_action_plan(action_id: int, db: Session = Depends(get_db), _: User = Dep
         raise HTTPException(404, "Action not found")
     plan = db.scalar(select(ActionWhyWhy).where(ActionWhyWhy.action_id == action_id))
     return {"action": serialize_action(db, a), "plan": _serialize_plan(plan), "attachments": _attachments(db, action_id)}
+
+
+@router.get("/{action_id}/pdf")
+def download_action_plan_pdf(action_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    a = db.get(Action, action_id)
+    if not a:
+        raise HTTPException(404, "Action not found")
+    plan = db.scalar(select(ActionWhyWhy).where(ActionWhyWhy.action_id == action_id))
+    action_data = serialize_action(db, a)
+    owner = db.get(User, a.owner_id) if a.owner_id else None
+    updated_by = db.get(User, plan.updated_by_id) if plan and plan.updated_by_id else None
+    pdf = build_action_plan_pdf(
+        action=action_data,
+        plan=_serialize_plan(plan),
+        contexts=action_data["contexts"],
+        owner_name=owner.full_name if owner else None,
+        updated_by_name=updated_by.full_name if updated_by else None,
+        attachments=_attachments(db, action_id),
+    )
+    safe_action_no = re.sub(r"[^A-Za-z0-9._-]+", "_", a.action_no).strip("._") or f"action_{a.id}"
+    filename = f"{safe_action_no}_WhyWhy_ActionPlan.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.put("/{action_id}/plan")

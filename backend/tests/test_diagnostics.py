@@ -27,7 +27,7 @@ def test_diagnostics_reports_database_storage_and_backup(tmp_path):
         assert response.status_code == 200, response.text
         result = response.json()
         assert result['status'] == 'ok'
-        assert result['backend']['version'] == '0.5.2'
+        assert result['backend']['version'] == '0.5.3'
         assert result['database']['status'] == 'ok'
         assert result['backup']['file_name'] == backup.name
         assert all(row['writable'] for row in result['storage'])

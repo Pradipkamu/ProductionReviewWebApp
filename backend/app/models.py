@@ -361,6 +361,27 @@ class ProcessDailySummary(Base, TimestampMixin):
     __table_args__ = (UniqueConstraint("summary_date", "product_id", "route_operation_id", name="uq_process_daily_context"),)
 
 
+class ProcessActualHistory(Base):
+    __tablename__ = "process_actual_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    process_summary_id: Mapped[int] = mapped_column(ForeignKey("process_daily_summary.id", ondelete="CASCADE"), index=True)
+    summary_date: Mapped[date] = mapped_column(Date, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    change_type: Mapped[str] = mapped_column(String(30))
+    reason: Mapped[str] = mapped_column(Text)
+    old_actual_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    new_actual_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    old_good_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    new_good_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    old_reject_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    new_reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    old_source: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    new_source: Mapped[str] = mapped_column(String(40))
+
+
 class VendorMovement(Base, TimestampMixin):
     __tablename__ = "vendor_movements"
     id: Mapped[int] = mapped_column(primary_key=True)

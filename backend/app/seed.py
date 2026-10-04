@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from .auth import hash_password
 from .config import get_settings
 from .enums import OEEComponent, UserRole
-from .models import LossCategory, User
+from .models import BusinessDataRevision, LossCategory, User
 
 DEFAULT_LOSSES = [
     ("BREAKDOWN", "Breakdown", OEEComponent.AVAILABILITY),
@@ -35,4 +35,6 @@ def seed_defaults(db: Session) -> None:
     for code, name, component in DEFAULT_LOSSES:
         if not db.scalar(select(LossCategory).where(LossCategory.code == code)):
             db.add(LossCategory(code=code, name=name, oee_component=component))
+    if not db.get(BusinessDataRevision, 1):
+        db.add(BusinessDataRevision(id=1, revision=0))
     db.commit()
