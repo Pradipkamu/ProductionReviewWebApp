@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, func
 from app.main import app
 from app.db import SessionLocal
-from app.models import Product,ProcessFlowVersion,ProcessFlowStage,StageScheduleAllocation,DailyRequirement,ProcessDailySummary,DailyMIS,GovernanceAudit,MonthStatus,User,WorkingCalendar
+from app.models import Product,ProcessFlowVersion,ProcessFlowStage,StageScheduleAllocation,DailyRequirement,ProcessDailySummary,ProcessActualHistory,DailyMIS,GovernanceAudit,MonthStatus,User,WorkingCalendar
 from app.enums import MonthState,UserRole
 from app.services.process_flows import import_process_workbook,HEADERS,SHEETS
 from test_governance_security import headers
@@ -161,10 +161,21 @@ def test_manual_stage_entry_and_missing_data_dashboard(tmp_path):
  assert response.status_code==200,response.text
  stage=next(s for s in response.json()['stages'] if s['code']=='P04_VMC')
  assert stage['plan'] is None and stage['actual'] is None
+ missing=c.get(f'/api/process/actuals?actual_date=2026-10-02&product_id={ids["Kubota Head"]}&missing_only=true',headers=h)
+ assert missing.status_code==200,missing.text
+ assert any(x['route_operation_id']==stage['route_operation_id'] and x['status']=='MISSING' for x in missing.json()['rows'])
  r=c.post('/api/process/entry',headers=h,json={'summary_date':'2026-10-02','product_id':ids['Kubota Head'],'route_operation_id':stage['route_operation_id'],'actual_qty':8,'good_qty':7,'reject_qty':1,'plan_qty':999,'opening_wip':0,'closing_wip':0,'source':'MANUAL'})
  assert r.status_code==200,r.text
  with SessionLocal() as db:
   row=db.scalar(select(ProcessDailySummary));assert row.source.value=='MANUAL' and row.plan_qty==0
+  summary_id=row.id
+  assert db.scalar(select(func.count()).select_from(ProcessActualHistory))==1
+ corrected=c.put('/api/process/actuals',headers=h,json={'summary_date':'2026-10-02','product_id':ids['Kubota Head'],'route_operation_id':stage['route_operation_id'],'actual_qty':9,'reject_qty':2,'reason':'Correct missing process actual'})
+ assert corrected.status_code==200,corrected.text
+ assert corrected.json()['actual_qty']==9 and corrected.json()['good_qty']==7 and corrected.json()['reject_qty']==2
+ history=c.get(f'/api/process/actuals/{summary_id}/history',headers=h)
+ assert history.status_code==200,history.text
+ assert len(history.json())==2 and history.json()[0]['reason']=='Correct missing process actual'
  r=c.get('/api/insights/data-quality?as_of=2026-10-02',headers=h)
  assert r.status_code==200,r.text
  assert r.json()['counts']['stage_schedule_missing']==151
