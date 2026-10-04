@@ -52,7 +52,11 @@ export default function Security(){
  async function reset(u:any){
   const password=prompt('Temporary password (12+ characters, upper/lower/number/symbol)');if(!password)return
   const reason=prompt('Reason for password reset');if(!reason)return
-  try{await api(`/auth/users/${u.id}/reset-password`,{method:'POST',body:JSON.stringify({temporary_password:password,reason})});setMessage('Password reset. All existing sessions were revoked.');load()}catch(e:any){setError(e.message)}
+  try{await api(`/auth/users/${u.id}/reset-password`,{method:'POST',body:JSON.stringify({temporary_password:password,reason})});setMessage('Password reset. Account lock cleared and all existing sessions were revoked.');load()}catch(e:any){setError(e.message)}
+ }
+ async function unlock(u:any){
+  const reason=prompt('Reason for unlocking this account');if(!reason)return
+  try{await api(`/auth/users/${u.id}/unlock`,{method:'POST',body:JSON.stringify({reason})});setMessage('Account unlocked.');load()}catch(e:any){setError(e.message)}
  }
  async function revoke(s:any){
   if(!confirm(`Revoke this session${s.username?' for '+s.username:''}?`))return
@@ -94,7 +98,7 @@ export default function Security(){
    </tbody></table></div>
   </section>}
 
-  {me?.role==='ADMIN'&&<><section className="panel"><h2>Users & Roles</h2><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Active</th><th>Last Login</th><th>Lock</th><th>Password</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}<br/><small>{u.username}</small></td><td><select value={u.role} onChange={e=>update(u,e.target.value,u.is_active)}>{roles.map(r=><option key={r}>{r}</option>)}</select></td><td><input type="checkbox" checked={u.is_active} onChange={e=>update(u,u.role,e.target.checked)}/></td><td>{stamp(u.last_login_at)}</td><td>{u.locked_until?<span className="status bad">Until {stamp(u.locked_until)}</span>:<span className="status good">OK</span>}<br/><small>{u.failed_login_attempts||0} failed</small></td><td><button onClick={()=>reset(u)}>Reset</button></td></tr>)}</tbody></table></div></section>
+  {me?.role==='ADMIN'&&<><section className="panel"><h2>Users & Roles</h2><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Active</th><th>Last Login</th><th>Lock</th><th>Password</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}<br/><small>{u.username}</small></td><td><select value={u.role} onChange={e=>update(u,e.target.value,u.is_active)}>{roles.map(r=><option key={r}>{r}</option>)}</select></td><td><input type="checkbox" checked={u.is_active} onChange={e=>update(u,u.role,e.target.checked)}/></td><td>{stamp(u.last_login_at)}</td><td>{u.locked_until?<><span className="status bad">Until {stamp(u.locked_until)}</span><br/><button className="small secondary" onClick={()=>unlock(u)}>Unlock</button></>:<span className="status good">OK</span>}<br/><small>{u.failed_login_attempts||0} failed</small></td><td><button onClick={()=>reset(u)}>Reset</button></td></tr>)}</tbody></table></div></section>
    <section className="panel"><h2>Create User</h2><p>New accounts are forced to change their temporary password on first sign-in.</p><form onSubmit={create}>{['username','full_name','password'].map(k=><label key={k}>{k.replace('_',' ')}<input required type={k==='password'?'password':'text'} minLength={k==='password'?12:undefined} value={(form as any)[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<label>Role<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>{roles.map(r=><option key={r}>{r}</option>)}</select></label><button>Create user</button></form></section></>}
  </>
 }
