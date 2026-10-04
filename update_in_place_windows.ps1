@@ -7,6 +7,9 @@ function DockerChecked([string[]]$Arguments) {
     if ($LASTEXITCODE -ne 0) { throw ('Docker failed: ' + ($Arguments -join ' ')) }
 }
 DockerChecked @('compose','build','backend','frontend')
+# Validate the newly built source before stopping the currently running app.
+# This catches partially copied update packages (for example, a stale auth.py).
+DockerChecked @('compose','run','--rm','--no-deps','backend','python','-c','from app.auth import record_security_event; from app.main import app; print("Backend import preflight passed")')
 DockerChecked @('compose','up','-d','db')
 $dbReady = $false
 for ($i=0; $i -lt 30; $i++) {
