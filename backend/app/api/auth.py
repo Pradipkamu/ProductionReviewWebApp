@@ -241,10 +241,35 @@ def reset_password(
     validate_password(payload.temporary_password)
     user.password_hash = hash_password(payload.temporary_password)
     user.must_change_password = True
+    user.failed_login_attempts = 0
+    user.locked_until = None
     user.token_version += 1
     revoke_user_sessions(db, user.id)
     record_security_event(db, request, "PASSWORD_RESET", success=True, user=user, detail=f"Reset by {admin.username}")
     db.add(GovernanceAudit(actor_id=admin.id, event="PASSWORD_RESET", entity="users", entity_id=str(user_id), reason=payload.reason))
+    db.commit()
+    return serialize(user)
+
+
+class UnlockRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+
+
+@router.post("/users/{user_id}/unlock")
+def unlock_user(
+    user_id: int,
+    payload: UnlockRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_user),
+):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    record_security_event(db, request, "ACCOUNT_UNLOCKED", success=True, user=user, detail=f"Unlocked by {admin.username}")
+    db.add(GovernanceAudit(actor_id=admin.id, event="ACCOUNT_UNLOCKED", entity="users", entity_id=str(user_id), reason=payload.reason))
     db.commit()
     return serialize(user)
 
