@@ -5,12 +5,13 @@ import ImportPreview from '../components/ImportPreview'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { Kpi, PageHeader, Status, money, num, pct } from '../components/UI'
 
-function today(){ return new Date().toISOString().slice(0,10) }
+function isoLocal(d:Date){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
+function lastCompletedDay(){const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d)}
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 
 export default function Dashboard(){
   const navigate=useNavigate()
-  const [asOf,setAsOf]=useState(today()); const [data,setData]=useState<any>(null); const [control,setControl]=useState<any>(null); const [err,setErr]=useState(''); const [message,setMessage]=useState('')
+  const [asOf,setAsOf]=useState(lastCompletedDay()); const [data,setData]=useState<any>(null); const [control,setControl]=useState<any>(null); const [err,setErr]=useState(''); const [message,setMessage]=useState('')
   const [activeReview,setActiveReview]=useState<string|null>(null)
   const [blockerThreshold,setBlockerThreshold]=useState<number>(()=>{const n=Number(localStorage.getItem('dailyBlockerThresholdPct')||80);return n>=1&&n<=100?n:80})
   const [scope,setScope]=useState<ScopeValues>(emptyScope); const [options,setOptions]=useState<any>({}); const [products,setProducts]=useState<any[]>([]); const [role,setRole]=useState('')
