@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
+from app.api import actions as actions_api
 from app.main import app
 from app.models import Customer, Product
 
@@ -12,6 +13,7 @@ def auth_headers(client: TestClient):
 
 
 def test_standard_whywhy_required_for_action_closure(tmp_path, monkeypatch):
+    monkeypatch.setattr(actions_api.settings, 'attachments_dir', str(tmp_path / 'attachments'))
     with SessionLocal() as db:
         c = Customer(code='WW-C', name='WhyWhy Customer')
         db.add(c); db.flush()
@@ -57,6 +59,26 @@ def test_standard_whywhy_required_for_action_closure(tmp_path, monkeypatch):
     assert saved.status_code == 200, saved.text
     assert saved.json()['plan']['can_close'] is True
     assert saved.json()['plan']['completion_percent'] == 100
+
+    rejected = client.post(
+        f'/api/actions/{action_id}/attachments',
+        headers=h,
+        files={'file':('unsafe.html',b'<script>alert(1)</script>','text/html')},
+    )
+    assert rejected.status_code == 422
+
+    uploaded = client.post(
+        f'/api/actions/{action_id}/attachments',
+        headers=h,
+        files={'file':('evidence.pdf',b'%PDF-1.7\ncontrolled evidence','application/pdf')},
+        data={'caption':'Verification evidence'},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    attachment_id=uploaded.json()['id']
+    downloaded=client.get(f'/api/actions/{action_id}/attachments/{attachment_id}',headers=h)
+    assert downloaded.status_code == 200
+    assert downloaded.headers['x-content-type-options']=='nosniff'
+    assert downloaded.headers['cache-control']=='private, no-store'
 
     pdf = client.get(f'/api/actions/{action_id}/pdf', headers=h)
     assert pdf.status_code == 200, pdf.text
