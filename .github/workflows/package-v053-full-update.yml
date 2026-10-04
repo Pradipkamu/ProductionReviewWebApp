@@ -1,102 +1,44 @@
 name: Package v0.5.3 full update
-
 on:
   push:
-    branches:
-      - package-v053-full-update
+    branches: [package-v053-full-update]
 
 jobs:
   package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build update package
-        shell: bash
-        run: |
-          set -euo pipefail
-          PKG="ProductionReviewWebApp_Update_v0.5.3_FullFiles"
-          mkdir -p "$PKG"
-          files=(
-            "VERSION.txt"
-            "backend/alembic/versions/0009_process_actual_history.py"
-            "backend/app/__init__.py"
-            "backend/app/api/actions.py"
-            "backend/app/api/import_preview.py"
-            "backend/app/api/process.py"
-            "backend/app/models.py"
-            "backend/app/schemas.py"
-            "backend/app/seed.py"
-            "backend/app/services/action_pdf.py"
-            "backend/requirements.txt"
-            "backend/tests/test_daily_control.py"
-            "backend/tests/test_diagnostics.py"
-            "backend/tests/test_migrations.py"
-            "backend/tests/test_process_flows.py"
-            "backend/tests/test_shop_capture.py"
-            "backend/tests/test_whywhy_actions.py"
-            "frontend/package-lock.json"
-            "frontend/package.json"
-            "frontend/src/App.tsx"
-            "frontend/src/components/Layout.tsx"
-            "frontend/src/pages/Actions.tsx"
-            "frontend/src/pages/ProcessActuals.tsx"
-          )
-          for f in "${files[@]}"; do
-            mkdir -p "$PKG/$(dirname "$f")"
-            cp "$f" "$PKG/$f"
-          done
-          cat > "$PKG/UPDATE_README.txt" <<'EOF'
-ProductionReviewWebApp v0.5.3 full changed-files update
-
-GitHub main commit:
-896f36ea3b3c7a4d9069e814f8d5cf8a3b2d37d7
-
-Features:
-- Downloadable standard Why-Why / Action Plan PDF
-- Process Actuals / Historical Edit page
-- Missing-only process actual review
-- Auditable process actual corrections
-- Database migration 0009_process_actual_history
-- ReportLab PDF dependency
-- Version v0.5.3
-
-Install with the existing updater:
-cd "D:\Machine Shop MIS"
-.\auto_update_from_zip_windows.ps1 "D:\Downloads\ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip"
-
-Database migration is required and is included in this package.
-EOF
-          python - <<'PY'
-          import json, hashlib
-          from pathlib import Path
-          pkg=Path("ProductionReviewWebApp_Update_v0.5.3_FullFiles")
-          rows=[]
-          for p in sorted(pkg.rglob("*")):
-              if p.is_file():
-                  rows.append({
-                      "path": p.relative_to(pkg).as_posix(),
-                      "size": p.stat().st_size,
-                      "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
-                  })
-          manifest={
-              "package":"ProductionReviewWebApp_Update_v0.5.3_FullFiles",
-              "repository":"Pradipkamu/ProductionReviewWebApp",
-              "commit":"896f36ea3b3c7a4d9069e814f8d5cf8a3b2d37d7",
-              "version":"v0.5.3",
-              "database_migration_required":True,
-              "changed_source_files":23,
-              "files":rows,
-          }
-          (pkg/"MANIFEST.json").write_text(json.dumps(manifest,indent=2),encoding="utf-8")
-          PY
-          zip -qr "ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip" "$PKG"
-          unzip -t "ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip"
-          sha256sum "ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip" > "ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip.sha256"
+      - name: Package changed files
+        run: >
+          zip -r ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip
+          VERSION.txt
+          backend/alembic/versions/0009_process_actual_history.py
+          backend/app/__init__.py
+          backend/app/api/actions.py
+          backend/app/api/import_preview.py
+          backend/app/api/process.py
+          backend/app/models.py
+          backend/app/schemas.py
+          backend/app/seed.py
+          backend/app/services/action_pdf.py
+          backend/requirements.txt
+          backend/tests/test_daily_control.py
+          backend/tests/test_diagnostics.py
+          backend/tests/test_migrations.py
+          backend/tests/test_process_flows.py
+          backend/tests/test_shop_capture.py
+          backend/tests/test_whywhy_actions.py
+          frontend/package-lock.json
+          frontend/package.json
+          frontend/src/App.tsx
+          frontend/src/components/Layout.tsx
+          frontend/src/pages/Actions.tsx
+          frontend/src/pages/ProcessActuals.tsx
+      - name: Test ZIP
+        run: unzip -t ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
           name: ProductionReviewWebApp_Update_v0.5.3_FullFiles
-          path: |
-            ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip
-            ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip.sha256
+          path: ProductionReviewWebApp_Update_v0.5.3_FullFiles.zip
           if-no-files-found: error
