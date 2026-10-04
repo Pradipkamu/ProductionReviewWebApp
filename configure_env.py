@@ -31,10 +31,12 @@ secret = get_value("SECRET_KEY")
 if not secret or "CHANGE" in secret.upper() or secret == "dev-secret-change-me":
     set_value("SECRET_KEY", secrets.token_urlsafe(48))
 
-if created:
+db_placeholder = (get_value("POSTGRES_PASSWORD") or "").upper().startswith("CHANGE_") or "CHANGE_THIS" in (get_value("DATABASE_URL") or "").upper()
+if created or db_placeholder:
     db_password = secrets.token_hex(24)
     set_value("POSTGRES_PASSWORD", db_password)
     set_value("DATABASE_URL", f"postgresql+psycopg://pms:{db_password}@db:5432/pms")
+if created:
     admin_password = get_value("ADMIN_PASSWORD")
     if not admin_password or admin_password == "ChangeMe123!" or "CHANGE" in admin_password.upper():
         set_value("ADMIN_PASSWORD", "Init-" + secrets.token_urlsafe(18) + "!9aA")
