@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = False
     database_url: str = "sqlite:///./pms.db"
     cors_origins: str = "http://localhost:5173,http://localhost:8000"
+    db_bind: str = "127.0.0.1"
+    backend_bind: str = "127.0.0.1"
+    frontend_bind: str = "0.0.0.0"
+    frontend_port: int = 5173
     admin_username: str = "admin"
     admin_password: str = "ChangeMe123!"
     admin_full_name: str = "System Administrator"
