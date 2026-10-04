@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, func
 from app.main import app
 from app.db import SessionLocal
-from app.models import DailyMIS, DailyRequirement, ProcessDailySummary, ImportBatch, GovernanceAudit, HistoricalCorrectionGrant, User
+from app.models import DailyMIS, DailyRequirement, ProcessDailySummary, ImportBatch, GovernanceAudit, HistoricalCorrectionGrant, User, Product
 from app.enums import UserRole
 from test_governance_security import headers
 from test_process_flows import setup, actual, HEADERS, preview
