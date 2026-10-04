@@ -92,12 +92,21 @@ Frontend and backend set defense-in-depth headers including:
 
 No automatic HTTP-to-HTTPS redirect is enabled while Oracle HTTPS is unresolved.
 
+## Phase 2 implemented in v0.5.5
+
+- Workbook structure, upload size and expanded Office package validation.
+- Action attachment type allow-list, content signature checks and path containment.
+- Fresh-install strong database/bootstrap credentials.
+- Safe database password rotation scripts for existing installations.
+- Verified custom-format backups with SHA-256.
+- Recorded isolated restore-verification evidence.
+- Diagnostics for backup integrity, restore freshness, upload policy and secret/network hardening.
+
+See SECURITY_PHASE2_v0.5.5.md.
+
 ## Next hardening phase
 
-Recommended follow-up work:
-
-1. Upload allow-list, file-size limits and attachment malware-scanning integration point.
-2. Database credential rotation and secret-manager integration for cloud deployments.
-3. Backup status/restore verification page.
-4. Optional two-factor authentication for Admin/Management.
-5. Optional plant/department data-scope permissions if users should see only assigned areas.
+1. Optional two-factor authentication for Admin/Management.
+2. Optional plant/department data-scope permissions if users should see only assigned areas.
+3. Cloud secret-manager integration when the deployment platform is finalized.
+4. Optional external malware scanner integration if a ClamAV/service endpoint is available.
