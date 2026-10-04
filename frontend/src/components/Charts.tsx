@@ -26,6 +26,50 @@ export function PlanActualChart({rows, metric, height=260,onSelect,verticalLabel
   </svg></div>
 }
 
+export function PlanActualComplianceChart({rows,metric,height=280,onSelect,verticalLabels=false,percentLabel='Compliance %',targetPercent=100}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void,verticalLabels?:boolean,percentLabel?:string,targetPercent?:number}){
+  if(!rows.length) return <div className="empty">No data for this period.</div>
+  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):58
+  const W=Math.max(820,rows.length*(verticalLabels?96:72)),H=height+labelDepth-58,pad={l:58,r:72,t:24,b:labelDepth}
+  const innerW=W-pad.l-pad.r,innerH=H-pad.t-pad.b
+  const qtyMax=Math.max(1,...rows.flatMap(r=>[Number(r.plan||0),Number(r.actual||0)]))
+  const pctVals=rows.filter(r=>r.compliance!=null).map(r=>Number(r.compliance)*100)
+  const rawPctMax=Math.max(...pctVals,targetPercent,100)
+  const pctStep=rawPctMax<=125?25:Math.max(25,Math.ceil((rawPctMax/5)/25)*25)
+  const pctMax=Math.max(125,Math.ceil(rawPctMax/pctStep)*pctStep)
+  const pctTicks=Array.from({length:Math.floor(pctMax/pctStep)+1},(_,i)=>i*pctStep)
+  if(!pctTicks.includes(targetPercent))pctTicks.push(targetPercent)
+  pctTicks.sort((a,b)=>a-b)
+  const group=innerW/rows.length,bw=Math.min(20,group*.3)
+  const cx=(i:number)=>pad.l+group*i+group/2
+  const yQty=(v:number)=>pad.t+innerH-(Math.max(0,v)/qtyMax)*innerH
+  const yPct=(v:number)=>pad.t+innerH-(Math.max(0,Math.min(pctMax,v))/pctMax)*innerH
+  const valid=rows.map((r,i)=>({r,i})).filter(x=>x.r.compliance!=null)
+  const segments:{r:Point,i:number}[][]=[]
+  let segment:{r:Point,i:number}[]=[]
+  rows.forEach((r,i)=>{if(r.compliance==null){if(segment.length){segments.push(segment);segment=[]}}else segment.push({r,i})})
+  if(segment.length)segments.push(segment)
+  return <div className="svg-scroll"><svg className="report-svg" width={W} height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{width:W,height:H,minWidth:'100%'}}>
+    {[0,.25,.5,.75,1].map(t=>{const yy=pad.t+innerH-(t*innerH);return <g key={`q-${t}`}><line x1={pad.l} y1={yy} x2={W-pad.r} y2={yy} className="grid-line"/><text x={pad.l-8} y={yy+4} textAnchor="end" className="axis-text">{metric==='sales'?new Intl.NumberFormat('en-IN',{notation:'compact'}).format(qtyMax*t):num(qtyMax*t)}</text></g>})}
+    {pctTicks.map(v=><text key={`pct-${v}`} x={W-pad.r+10} y={yPct(v)+4} textAnchor="start" className="axis-text">{v}%</text>)}
+    <line x1={pad.l} y1={yPct(targetPercent)} x2={W-pad.r} y2={yPct(targetPercent)} className="target-line"/>
+    {rows.map((r,i)=>{const x=cx(i),ph=innerH*(Number(r.plan||0)/qtyMax),ah=innerH*(Number(r.actual||0)/qtyMax);return <g key={`bars-${r.label}-${i}`} role={onSelect?"button":undefined} tabIndex={onSelect?0:undefined} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==="Enter")onSelect?.(r)}} style={{cursor:onSelect?"pointer":undefined}}>
+      <rect x={x-bw-2} y={yQty(r.plan)} width={bw} height={Math.max(0,ph)} rx="3" className="chart-plan"><title>{`${r.label} Plan: ${formatValue(r.plan,metric)}`}</title></rect>
+      <rect x={x+2} y={yQty(r.actual)} width={bw} height={Math.max(0,ah)} rx="3" className="chart-actual"><title>{`${r.label} Actual: ${formatValue(r.actual,metric)}${r.compliance==null?'':` • ${percentLabel}: ${(Number(r.compliance)*100).toFixed(1)}%`}`}</title></rect>
+      <text x={x-bw/2-2} y={Math.max(11,yQty(r.plan)-5)} textAnchor="middle" className="data-label">{metric==='sales'?new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(r.plan):num(r.plan)}</text>
+      <text x={x+bw/2+2} y={Math.max(11,yQty(r.actual)-5)} textAnchor="middle" className="data-label">{metric==='sales'?new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(r.actual):num(r.actual)}</text>
+      {verticalLabels?<text x={x} y={pad.t+innerH+14} transform={`rotate(-90 ${x} ${pad.t+innerH+14})`} textAnchor="end" className="axis-text"><title>{r.label}</title>{r.label}</text>:<text x={x} y={H-34} textAnchor="middle" className="axis-text x-label">{r.label}</text>}
+    </g>})}
+    {segments.map((s,si)=><polyline key={`line-${si}`} points={s.map(({r,i})=>`${cx(i)},${yPct(Number(r.compliance)*100)}`).join(' ')} fill="none" className="compliance-line"/>)}
+    {valid.map(({r,i})=>{const v=Number(r.compliance)*100;return <g key={`comp-${r.label}-${i}`} role={onSelect?"button":undefined} tabIndex={onSelect?0:undefined} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==="Enter")onSelect?.(r)}} style={{cursor:onSelect?"pointer":undefined}}>
+      <circle cx={cx(i)} cy={yPct(v)} r="4.5" className={v>=targetPercent?'dot-good':v>=targetPercent*.9?'dot-watch':'dot-bad'}><title>{`${r.label} ${percentLabel}: ${v.toFixed(1)}%`}</title></circle>
+      <text x={cx(i)} y={Math.max(11,yPct(v)-9)} textAnchor="middle" className="data-label">{v.toFixed(1)}%</text>
+    </g>})}
+    <line x1={pad.l} y1={pad.t+innerH} x2={W-pad.r} y2={pad.t+innerH} className="axis-line"/>
+    <line x1={W-pad.r} y1={pad.t} x2={W-pad.r} y2={pad.t+innerH} className="axis-line"/>
+    <text x={W-10} y={pad.t-8} textAnchor="end" className="axis-text">{percentLabel}</text>
+  </svg></div>
+}
+
 export function ComplianceLineChart({rows,height=245,onSelect}:{rows:Point[],height?:number,onSelect?:(row:Point)=>void}){
   if(!rows.length) return <div className="empty">No compliance data for this period.</div>
   const W=Math.max(760,rows.length*64),H=height,pad={l:52,r:20,t:20,b:58},innerW=W-pad.l-pad.r,innerH=H-pad.t-pad.b
