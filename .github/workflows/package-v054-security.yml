@@ -1,0 +1,61 @@
+name: Package v0.5.4 security update
+on:
+  push:
+    branches: [package-v054-security-update]
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build changed-files update ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="ProductionReviewWebApp_Update_v0.5.4_SecurityGovernance"
+          mkdir -p "$PKG"
+          files=(
+            ".env.example"
+            "VERSION.txt"
+            "backend/alembic/versions/0010_security_sessions.py"
+            "backend/app/__init__.py"
+            "backend/app/api/auth.py"
+            "backend/app/api/import_preview.py"
+            "backend/app/api/masters.py"
+            "backend/app/auth.py"
+            "backend/app/config.py"
+            "backend/app/main.py"
+            "backend/app/models.py"
+            "backend/app/security_policy.py"
+            "backend/tests/test_daily_production_import.py"
+            "backend/tests/test_diagnostics.py"
+            "backend/tests/test_governance_security.py"
+            "backend/tests/test_migrations.py"
+            "backend/tests/test_shop_capture.py"
+            "docker-compose.yml"
+            "docs/SECURITY_GOVERNANCE.md"
+            "frontend/nginx.conf"
+            "frontend/package-lock.json"
+            "frontend/package.json"
+            "frontend/src/App.tsx"
+            "frontend/src/api.ts"
+            "frontend/src/components/Layout.tsx"
+            "frontend/src/pages/Security.tsx"
+          )
+          for f in "${files[@]}"; do
+            mkdir -p "$PKG/$(dirname "$f")"
+            cp "$f" "$PKG/$f"
+          done
+          printf '%s\n'             'ProductionReviewWebApp v0.5.4 - Security & Governance update'             ''             'GitHub main commit: efbc0977fa890b194ecb0da530b3a164d2921048'             'Database migration required: 0010_security_sessions'             ''             'Oracle HTTP compatibility:'             '- REQUIRE_HTTPS remains false by default.'             '- Current HTTP deployment will continue to work.'             '- PostgreSQL and FastAPI host ports now default to localhost only.'             '- Frontend remains externally reachable on port 5173 unless changed.'             ''             'Install:'             'cd "D:\Machine Shop MIS"'             '.\auto_update_from_zip_windows.ps1 "D:\Downloads\ProductionReviewWebApp_Update_v0.5.4_SecurityGovernance.zip"'             ''             'After update, press Ctrl+F5.'             > "$PKG/UPDATE_README.txt"
+          find "$PKG" -type f | sort > "$PKG/FILE_LIST.txt"
+          zip -qr "$PKG.zip" "$PKG"
+          unzip -t "$PKG.zip"
+          sha256sum "$PKG.zip" > "$PKG.zip.sha256"
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProductionReviewWebApp_Update_v0.5.4_SecurityGovernance
+          path: |
+            ProductionReviewWebApp_Update_v0.5.4_SecurityGovernance.zip
+            ProductionReviewWebApp_Update_v0.5.4_SecurityGovernance.zip.sha256
+          if-no-files-found: error
