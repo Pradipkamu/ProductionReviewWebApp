@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
-import { ComplianceLineChart, NamedComplianceBars, PercentTrendChart, PlanActualChart, ProcessFunnelChart, RankedBars, ValueTrendChart } from '../components/Charts'
+import { PercentTrendChart, PlanActualComplianceChart, ProcessFunnelChart, RankedBars, ValueTrendChart } from '../components/Charts'
 import { Kpi, PageHeader, money, num, pct } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
@@ -61,10 +61,10 @@ export default function AdvancedReports(){
 
 function ProcessReport({data,funnel,product,onExport}:{data:any,funnel:any,product:any,onExport:()=>void}){
   return <><div className="export-row"><button className="secondary" onClick={onExport}>Export CSV (Excel)</button></div>
-    <section className="panel report-panel"><div className="panel-title"><div><h2>Operation Compliance — Daily</h2><p>Revised operation requirement vs actual.</p></div><span>Current report range</span></div><PlanActualChart rows={data?.daily||[]} metric="qty"/><ComplianceLineChart rows={data?.daily||[]}/></section>
-    <section className="panel report-panel"><div className="panel-title"><div><h2>Operation Compliance — Weekly</h2><p>Weekly process execution trend.</p></div></div><PlanActualChart rows={data?.weekly||[]} metric="qty"/><ComplianceLineChart rows={data?.weekly||[]}/></section>
-    <section className="panel report-panel"><div className="panel-title"><div><h2>Operation Compliance — Monthly</h2><p>Month-over-month operation compliance.</p></div></div><PlanActualChart rows={data?.monthly||[]} metric="qty"/><ComplianceLineChart rows={data?.monthly||[]}/></section>
-    <section className="panel"><div className="panel-title"><div><h2>Operation Comparison</h2><p>Current month bottleneck view across selected scope.</p></div></div><NamedComplianceBars rows={data?.operations||[]} metric="qty"/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Operation Compliance — Daily</h2><p>Revised operation requirement vs actual with Compliance % on the secondary right axis.</p></div><span>Current report range</span></div><PlanActualComplianceChart rows={data?.daily||[]} metric="qty"/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Operation Compliance — Weekly</h2><p>Weekly process execution with Plan/Actual bars and Compliance % on the secondary right axis.</p></div></div><PlanActualComplianceChart rows={data?.weekly||[]} metric="qty"/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Operation Compliance — Monthly</h2><p>Month-over-month Plan/Actual with Compliance % on the secondary right axis.</p></div></div><PlanActualComplianceChart rows={data?.monthly||[]} metric="qty"/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Operation Comparison</h2><p>Current month bottleneck view with Plan/Actual bars and Compliance % on the secondary right axis.</p></div></div><PlanActualComplianceChart rows={(data?.operations||[]).map((r:any)=>({...r,label:r.name}))} metric="qty" verticalLabels/></section>
     <section className="panel"><div className="panel-title"><div><h2>Process Funnel / WIP</h2><p>{product?`${product.name} • operation-by-operation flow`:'Select a single part to see its route funnel and WIP.'}</p></div></div><ProcessFunnelChart rows={funnel?.operations||[]}/></section>
   </>
 }
@@ -74,8 +74,8 @@ function VendorReport({data,vendors,vendorId,setVendorId,onExport}:{data:any,ven
   const monthly=(data?.monthly||[]).map((r:any)=>({label:r.label,plan:r.sent,actual:r.received,gap:r.received-r.sent,compliance:r.compliance}))
   return <><div className="filters"><MultiSelect value={vendorId} onChange={setVendorId} placeholder="All Vendors" options={vendors.map(v=>({value:String(v.id),label:v.name}))}/><button className="secondary" onClick={onExport}>Export CSV (Excel)</button></div>
     <div className="kpi-grid"><Kpi label="Sent" value={num(s.sent||0)}/><Kpi label="Received" value={num(s.received||0)} tone="good"/><Kpi label="Pending" value={num(s.pending||0)} tone={(s.pending||0)>0?'warn':'good'}/><Kpi label="Receipt Compliance" value={pct(s.receipt_compliance)} /><Kpi label="Overdue Movements" value={s.overdue_movements||0} tone={(s.overdue_movements||0)>0?'bad':'good'}/></div>
-    <section className="panel"><h2>Vendor Receipt Compliance</h2><NamedComplianceBars rows={data?.vendors||[]} metric="qty"/></section>
-    <section className="panel report-panel"><h2>Monthly Sent vs Received</h2><PlanActualChart rows={monthly} metric="qty"/><PercentTrendChart rows={data?.monthly||[]} series={[{key:'compliance',label:'Receipt compliance'},{key:'on_time_ratio',label:'On-time return'}]} target={100}/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Vendor Receipt Compliance</h2><p>Sent vs Received with Receipt Compliance % on the secondary right axis.</p></div></div><PlanActualComplianceChart rows={(data?.vendors||[]).map((r:any)=>({...r,label:r.name}))} metric="qty" verticalLabels percentLabel="Receipt Compliance %"/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Monthly Sent vs Received</h2><p>Sent/Received bars with Receipt Compliance % on the secondary right axis.</p></div></div><PlanActualComplianceChart rows={monthly} metric="qty" percentLabel="Receipt Compliance %"/><div className="panel-title"><div><h3>On-time Return %</h3><p>Return-timing performance remains a separate percentage trend.</p></div></div><PercentTrendChart rows={data?.monthly||[]} series={[{key:'on_time_ratio',label:'On-time return'}]} target={100}/></section>
     <section className="panel"><h2>Vendor Aging / Pending</h2><RankedBars rows={(data?.vendors||[]).map((r:any)=>({...r,sub:`${r.overdue_count} overdue • Avg ${r.average_age_days}d`}))} valueKey="pending" valueLabel="Pending" suffix=" pcs"/></section>
   </>
 }
@@ -108,7 +108,7 @@ function OeeReport({data,loss,machines,machineId,setMachineId,onExport}:{data:an
 function ActionReport({data,onExport}:{data:any,onExport:()=>void}){
   const s=data?.summary||{}; const monthly=(data?.monthly||[]).map((r:any)=>({label:r.label,plan:r.raised,actual:r.closed,gap:r.closed-r.raised,compliance:r.closure_compliance}))
   return <><div className="export-row"><button className="secondary" onClick={onExport}>Export CSV (Excel)</button></div><div className="kpi-grid"><Kpi label="Actions Raised" value={s.raised||0}/><Kpi label="Closed" value={s.closed||0} tone="good"/><Kpi label="Open" value={s.open||0} tone={(s.open||0)>0?'warn':'good'}/><Kpi label="Overdue" value={s.overdue||0} tone={(s.overdue||0)>0?'bad':'good'}/><Kpi label="Closure Compliance" value={pct(s.closure_compliance)}/><Kpi label="Closed On Time" value={s.on_time_closed||0}/></div>
-    <section className="panel report-panel"><h2>Monthly Action Closure Compliance</h2><PlanActualChart rows={monthly} metric="qty"/><ComplianceLineChart rows={monthly}/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Monthly Action Closure Compliance</h2><p>Actions Raised/Closed with Closure Compliance % on the secondary right axis.</p></div></div><PlanActualComplianceChart rows={monthly} metric="qty" percentLabel="Closure Compliance %"/></section>
     <div className="advanced-grid"><section className="panel"><h2>Owner-wise Open Action Aging</h2><RankedBars rows={(data?.owners||[]).map((r:any)=>({...r,sub:`${r.open} open • ${r.overdue} overdue • Avg ${r.average_age_days}d`}))} valueKey="max_age" suffix=" d"/></section><section className="panel"><h2>Recurring Problem Pareto</h2><RankedBars rows={data?.categories||[]} valueKey="count" suffix=" actions"/></section></div>
     <section className="panel"><div className="table-wrap"><table><thead><tr><th>Owner</th><th>Open</th><th>Closed</th><th>Overdue</th><th>Avg Age</th><th>Max Age</th></tr></thead><tbody>{(data?.owners||[]).map((r:any)=><tr key={r.name}><td><b>{r.name}</b></td><td>{r.open}</td><td>{r.closed}</td><td className={r.overdue?'neg':''}>{r.overdue}</td><td>{r.average_age_days}d</td><td>{r.max_age}d</td></tr>)}</tbody></table></div></section>
   </>
@@ -123,9 +123,9 @@ function ScheduleImpact({data,onExport}:{data:any,onExport:()=>void}){
 
 function ForecastReport({data,onExport}:{data:any,onExport:()=>void}){
   const s=data?.summary||{}
-  const comparison=(data?.products||[]).map((r:any)=>({name:r.product,plan:r.target_qty,actual:r.projected_qty,gap:r.projected_gap_qty,compliance:r.projected_compliance}))
+  const comparison=(data?.products||[]).map((r:any)=>({label:r.product,plan:r.target_qty,actual:r.projected_qty,gap:r.projected_gap_qty,compliance:r.projected_compliance}))
   return <><div className="export-row"><button className="secondary" onClick={onExport}>Export CSV (Excel)</button></div><div className="kpi-grid"><Kpi label="Monthly Target Qty" value={num(s.target_qty||0)}/><Kpi label="Actual Qty" value={num(s.actual_qty||0)}/><Kpi label="Projected Month End" value={num(s.projected_qty||0)}/><Kpi label="Critical" value={s.critical||0} tone={(s.critical||0)>0?'bad':'good'}/><Kpi label="Watch" value={s.watch||0} tone={(s.watch||0)>0?'warn':'good'}/><Kpi label="On Track" value={s.on_track||0} tone="good"/></div>
-    <section className="panel"><h2>Projected Month-end Compliance by Part</h2><NamedComplianceBars rows={comparison} metric="qty"/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Projected Month-end Compliance by Part</h2><p>Monthly Target vs Projected Month End with Projected Compliance % on the secondary right axis.</p></div></div><PlanActualComplianceChart rows={comparison} metric="qty" verticalLabels percentLabel="Projected Compliance %"/></section>
     <section className="panel"><h2>Month-end Risk & Recovery Requirement</h2><div className="table-wrap"><table><thead><tr><th>Plant</th><th>Customer</th><th>Part</th><th>Target</th><th>Actual</th><th>Projected</th><th>Projected %</th><th>Recovery / Day</th><th>Remaining Days</th><th>Projected Sales Gap</th><th>Risk</th></tr></thead><tbody>{(data?.products||[]).map((r:any)=><tr key={r.product_id}><td>{r.plant||'—'}</td><td>{r.customer||'—'}</td><td><b>{r.product}</b></td><td>{num(r.target_qty)}</td><td>{num(r.actual_qty)}</td><td>{num(r.projected_qty)}</td><td>{pct(r.projected_compliance)}</td><td>{num(r.recovery_required_per_day)}</td><td>{r.remaining_working_days}</td><td className={r.projected_gap_sales<0?'neg':'pos'}>{money(r.projected_gap_sales)}</td><td className={`risk-${String(r.risk).toLowerCase()}`}>{r.risk.replaceAll('_',' ')}</td></tr>)}</tbody></table></div></section>
   </>
 }
