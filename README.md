@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.5.2
+# ProductionReviewWebApp v0.5.5
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -73,3 +73,12 @@ The dedicated Machine Master captures fractional default manpower, last PM date/
 ## v0.5.2 — Horizontal Monthly PPM Quantities
 
 The Quality / Rejection page now places a horizontal month matrix directly below the Monthly PPM graph. It contains only Rejection Qty and Dispatch Qty rows, keeps PPM values on the graph, preserves pending-denominator warnings, and follows the selected machine and other Quality filters. See [release notes](docs/RELEASE_v0.5.2.md).
+
+
+## v0.5.4 — Security & Governance Phase 1
+
+Server-side sessions, inactivity logout, login lockout, session revocation, security event audit, account unlock, stricter administration access and safer localhost-only database/backend bindings. Oracle HTTP remains supported until HTTPS is configured. See docs/SECURITY_GOVERNANCE.md.
+
+## v0.5.5 — Security & Governance Phase 2
+
+Workbook and Action attachment uploads now use centralized size/type/content validation and safe storage paths. Fresh installations generate strong database/bootstrap credentials; existing databases can be rotated safely with the supplied Windows/Linux scripts. Manual backups use verified PostgreSQL custom-format dumps with SHA-256 sidecars, restore tests record evidence, and System Diagnostics shows backup integrity, restore freshness, upload controls and secret/network warnings. See docs/SECURITY_PHASE2_v0.5.5.md.
