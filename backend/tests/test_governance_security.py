@@ -1,8 +1,8 @@
-from datetime import date
+from datetime import date, datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from app.main import app
-from app.models import User, Product, DailyMIS, GovernanceAudit, HistoricalCorrectionGrant
+from app.models import User, Product, DailyMIS, GovernanceAudit, HistoricalCorrectionGrant, SecurityEvent, UserSession
 from app.db import SessionLocal
 from app.enums import UserRole
 from app.auth import hash_password
@@ -54,3 +54,58 @@ def test_month_close_grant_reason_audit_and_single_use():
         assert '10' in audit.before_json and '11' in audit.after_json
         assert db.get(HistoricalCorrectionGrant,grant).used_at is not None
         assert db.get(DailyMIS,rid).actual_qty == 11
+
+
+def test_login_lockout_session_revoke_and_security_audit():
+    with SessionLocal() as db:
+        db.add(User(
+            username='operator',
+            full_name='Operator',
+            role=UserRole.PRODUCTION,
+            password_hash=hash_password('OperatorPassword123!'),
+            must_change_password=False,
+        ))
+        db.commit()
+
+    c=TestClient(app)
+    for _ in range(4):
+        assert c.post('/api/auth/login',json={'username':'operator','password':'wrong'}).status_code == 401
+    locked=c.post('/api/auth/login',json={'username':'operator','password':'wrong'})
+    assert locked.status_code == 429
+    assert c.post('/api/auth/login',json={'username':'operator','password':'OperatorPassword123!'}).status_code == 429
+
+    with SessionLocal() as db:
+        user=db.scalar(select(User).where(User.username=='operator'))
+        assert user.failed_login_attempts == 5
+        assert user.locked_until is not None
+        assert db.scalar(select(SecurityEvent).where(SecurityEvent.username=='operator').order_by(SecurityEvent.id.desc())) is not None
+        user.locked_until=datetime.utcnow()-timedelta(minutes=1)
+        user.failed_login_attempts=0
+        db.commit()
+
+    login=c.post('/api/auth/login',json={'username':'operator','password':'OperatorPassword123!'})
+    assert login.status_code == 200,login.text
+    h={'Authorization':'Bearer '+login.json()['access_token']}
+    status=c.get('/api/auth/security-status',headers=h)
+    assert status.status_code == 200
+    assert status.json()['https_required'] is False
+    sessions=c.get('/api/auth/sessions',headers=h)
+    assert sessions.status_code == 200 and len(sessions.json()) == 1
+    session=sessions.json()[0]
+    assert session['is_current'] is True and session['revoked_at'] is None
+    revoked=c.delete(f"/api/auth/sessions/{session['id']}",headers=h)
+    assert revoked.status_code == 200 and revoked.json()['current_session'] is True
+    assert c.get('/api/auth/me',headers=h).status_code == 401
+    with SessionLocal() as db:
+        assert db.scalar(select(UserSession).where(UserSession.id==session['id'])).revoked_at is not None
+
+
+def test_admin_can_review_all_sessions_and_security_events():
+    c=TestClient(app)
+    admin=headers(c)
+    sessions=c.get('/api/auth/sessions?all_users=true',headers=admin)
+    assert sessions.status_code == 200
+    assert any(x['is_current'] for x in sessions.json())
+    events=c.get('/api/auth/security-events?limit=20',headers=admin)
+    assert events.status_code == 200
+    assert any(x['event_type']=='LOGIN_SUCCESS' for x in events.json())
