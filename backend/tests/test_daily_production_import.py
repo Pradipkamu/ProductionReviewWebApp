@@ -92,7 +92,7 @@ def test_stale_combined_preview_and_plan_roles(tmp_path):
     setup();c=TestClient(app);h=headers(c);p=workbook(tmp_path)
     r=preview(c,h,p,'daily-production');assert r.json()['can_confirm']
     with SessionLocal() as db:
-        u=db.scalar(select(User).where(User.username=='admin'));u.full_name='Changed after preview';db.commit()
+        product=db.scalar(select(Product).order_by(Product.id));product.name=product.name+' revised';db.commit()
     assert c.post('/api/import/confirm',headers=h,json={'preview_token':r.json()['preview_token']}).status_code==409
     for role in [UserRole.PRODUCTION,UserRole.QUALITY,UserRole.VIEW_ONLY]:
         with SessionLocal() as db:db.scalar(select(User).where(User.username=='admin')).role=role;db.commit()
