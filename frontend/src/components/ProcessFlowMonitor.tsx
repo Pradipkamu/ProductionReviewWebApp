@@ -1,8 +1,50 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { MultiSelect } from './MultiSelect'
-import { PlanActualAchievementChart } from './Charts'
 import { num } from './UI'
+type ProcessPoint={id:number,label:string,plan:number,actual:number,compliance:number|null,gap:number}
+
+function ProcessPlanActualAchievementChart({rows,onSelect}:{rows:ProcessPoint[],onSelect?:(row:ProcessPoint)=>void}){
+ if(!rows.length)return <div className="empty">No data for this period.</div>
+ const labelDepth=Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24)
+ const W=Math.max(820,rows.length*96),H=300+labelDepth-58,pad={l:58,r:68,t:22,b:labelDepth}
+ const innerW=W-pad.l-pad.r,innerH=H-pad.t-pad.b
+ const qtyMax=Math.max(1,...rows.flatMap(r=>[r.plan,r.actual]))
+ const pctVals=rows.filter(r=>r.compliance!=null).map(r=>Number(r.compliance)*100)
+ const rawPctMax=Math.max(...pctVals,100)
+ const pctStep=rawPctMax<=125?25:Math.max(25,Math.ceil((rawPctMax/5)/25)*25)
+ const pctMax=Math.max(125,Math.ceil(rawPctMax/pctStep)*pctStep)
+ const pctTicks=Array.from({length:Math.floor(pctMax/pctStep)+1},(_,i)=>i*pctStep)
+ if(!pctTicks.includes(100))pctTicks.push(100)
+ pctTicks.sort((a,b)=>a-b)
+ const group=innerW/rows.length,bw=Math.min(20,group*.3)
+ const cx=(i:number)=>pad.l+group*i+group/2
+ const yQty=(v:number)=>pad.t+innerH-(Math.max(0,v)/qtyMax)*innerH
+ const yPct=(v:number)=>pad.t+innerH-(Math.max(0,Math.min(pctMax,v))/pctMax)*innerH
+ const achievementRows=rows.map((r,i)=>({r,i})).filter(x=>x.r.compliance!=null)
+ const pts=achievementRows.map(({r,i})=>`${cx(i)},${yPct(Number(r.compliance)*100)}`).join(' ')
+ return <div className="svg-scroll"><svg className="report-svg" width={W} height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{width:W,height:H,minWidth:'100%'}}>
+   {[0,.25,.5,.75,1].map(t=>{const yy=pad.t+innerH-t*innerH;return <g key={t}><line x1={pad.l} y1={yy} x2={W-pad.r} y2={yy} className="grid-line"/><text x={pad.l-8} y={yy+4} textAnchor="end" className="axis-text">{num(qtyMax*t)}</text></g>})}
+   {pctTicks.map(v=><text key={`pct-${v}`} x={W-pad.r+10} y={yPct(v)+4} textAnchor="start" className="axis-text">{v}%</text>)}
+   <line x1={pad.l} y1={yPct(100)} x2={W-pad.r} y2={yPct(100)} className="target-line"/>
+   {rows.map((r,i)=>{const x=cx(i),ph=innerH*(r.plan/qtyMax),ah=innerH*(r.actual/qtyMax);return <g key={r.id} role="button" tabIndex={0} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==='Enter')onSelect?.(r)}} style={{cursor:'pointer'}}>
+     <rect x={x-bw-2} y={yQty(r.plan)} width={bw} height={Math.max(0,ph)} rx="3" className="chart-plan"><title>{`${r.label} Plan: ${num(r.plan)}`}</title></rect>
+     <rect x={x+2} y={yQty(r.actual)} width={bw} height={Math.max(0,ah)} rx="3" className="chart-actual"><title>{`${r.label} Actual: ${num(r.actual)}${r.compliance==null?'':` • Achievement: ${(Number(r.compliance)*100).toFixed(1)}%`}`}</title></rect>
+     <text x={x-bw/2-2} y={Math.max(11,yQty(r.plan)-5)} textAnchor="middle" className="data-label">{num(r.plan)}</text>
+     <text x={x+bw/2+2} y={Math.max(11,yQty(r.actual)-5)} textAnchor="middle" className="data-label">{num(r.actual)}</text>
+     <text x={x} y={pad.t+innerH+14} transform={`rotate(-90 ${x} ${pad.t+innerH+14})`} textAnchor="end" className="axis-text"><title>{r.label}</title>{r.label}</text>
+   </g>})}
+   {pts&&<polyline points={pts} fill="none" className="compliance-line"/>}
+   {achievementRows.map(({r,i})=>{const v=Number(r.compliance)*100;return <g key={`ach-${r.id}`} role="button" tabIndex={0} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==='Enter')onSelect?.(r)}} style={{cursor:'pointer'}}>
+     <circle cx={cx(i)} cy={yPct(v)} r="4.5" className={v>=100?'dot-good':v>=90?'dot-watch':'dot-bad'}><title>{`${r.label}: ${v.toFixed(1)}%`}</title></circle>
+     <text x={cx(i)} y={Math.max(11,yPct(v)-9)} textAnchor="middle" className="data-label">{v.toFixed(1)}%</text>
+   </g>})}
+   <line x1={pad.l} y1={pad.t+innerH} x2={W-pad.r} y2={pad.t+innerH} className="axis-line"/>
+   <line x1={W-pad.r} y1={pad.t} x2={W-pad.r} y2={pad.t+innerH} className="axis-line"/>
+   <text x={W-10} y={pad.t-7} textAnchor="end" className="axis-text">Achievement %</text>
+ </svg></div>
+}
+
 export default function ProcessFlowMonitor({data,date,productId,onChange}:{data:any,date:string,productId:number,onChange:()=>void}){
  const [branches,setBranches]=useState<string[]>([]),[variants,setVariants]=useState<string[]>([]),[selected,setSelected]=useState<any>(null),[actual,setActual]=useState(''),[reject,setReject]=useState('0'),[reason,setReason]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
  useEffect(()=>{setSelected(null);setBranches([]);setVariants([])},[data.flow.id,date,data.period?.start])
