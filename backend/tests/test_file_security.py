@@ -1,7 +1,10 @@
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from openpyxl import Workbook
+
+from app.main import app
 
 from app.services.file_security import (
     UploadSecurityError,
@@ -39,3 +42,16 @@ def test_rejects_mismatched_attachment_signature(tmp_path):
     disguised=tmp_path/'photo.png';disguised.write_bytes(b'<html>not an image</html>')
     with pytest.raises(UploadSecurityError):
         validate_attachment_file(disguised,'photo.png',{'.png'},128*1024*1024)
+
+
+def test_import_preview_rejects_disguised_workbook_before_parsing():
+    client=TestClient(app)
+    login=client.post('/api/auth/login',json={'username':'admin','password':'ChangeMe123!'})
+    headers={'Authorization':'Bearer '+login.json()['access_token']}
+    response=client.post(
+        '/api/import/preview/excel',
+        headers=headers,
+        files={'file':('malicious.xlsx',b'not-an-office-package','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')},
+    )
+    assert response.status_code == 422
+    assert 'Office Open XML' in response.text
