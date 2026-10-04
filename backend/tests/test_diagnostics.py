@@ -35,11 +35,13 @@ def test_diagnostics_reports_database_storage_backup_restore_and_security(tmp_pa
         diagnostics_api.settings.attachments_dir,
         diagnostics_api.settings.backup_dir,
         diagnostics_api.settings.admin_password,
+        diagnostics_api.settings.database_url,
     )
     diagnostics_api.settings.upload_dir = str(imports)
     diagnostics_api.settings.attachments_dir = str(attachments)
     diagnostics_api.settings.backup_dir = str(backups)
     diagnostics_api.settings.admin_password = 'NonDefaultBootstrapPassword123!'
+    diagnostics_api.settings.database_url = 'postgresql+psycopg://pms:StrongDatabasePassword123456@db:5432/pms'
     try:
         client = TestClient(app)
         response = client.get('/api/diagnostics', headers=_headers(client))
@@ -60,6 +62,7 @@ def test_diagnostics_reports_database_storage_backup_restore_and_security(tmp_pa
             diagnostics_api.settings.attachments_dir,
             diagnostics_api.settings.backup_dir,
             diagnostics_api.settings.admin_password,
+            diagnostics_api.settings.database_url,
         ) = previous
 
 
