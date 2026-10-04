@@ -34,10 +34,13 @@ if (!$secret -or $secret -match '(?i)change|dev-secret') {
     Set-EnvValue 'SECRET_KEY' ([Convert]::ToBase64String($bytes))
 }
 
-if ($created) {
+$dbPlaceholder = ((Get-EnvValue 'POSTGRES_PASSWORD') -match '(?i)^CHANGE_') -or ((Get-EnvValue 'DATABASE_URL') -match '(?i)CHANGE_THIS')
+if ($created -or $dbPlaceholder) {
     $dbPassword = New-RandomHex 24
     Set-EnvValue 'POSTGRES_PASSWORD' $dbPassword
     Set-EnvValue 'DATABASE_URL' ("postgresql+psycopg://pms:$dbPassword@db:5432/pms")
+}
+if ($created) {
     $adminPassword = Get-EnvValue 'ADMIN_PASSWORD'
     if (!$adminPassword -or $adminPassword -eq 'ChangeMe123!' -or $adminPassword -match '(?i)change') {
         Set-EnvValue 'ADMIN_PASSWORD' ('Init-' + (New-RandomHex 12) + '!9aA')
