@@ -1,10 +1,6 @@
-from pathlib import Path
-import hashlib
 import json
-import shutil
-import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,19 +8,7 @@ from ..auth import get_current_user
 from ..config import get_settings
 from ..db import get_db
 from ..models import ImportBatch, User
-from ..services.excel_import import import_daily_production_workbook
-from ..services.historical_mis_import import import_historical_daily_mis
-from ..services.historical_price_import import import_historical_sales_prices
-
 router = APIRouter(prefix="/import", tags=["import"])
-
-
-def _sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 @router.post('/excel')

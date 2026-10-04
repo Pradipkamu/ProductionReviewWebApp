@@ -4,12 +4,9 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from io import BytesIO
-from pathlib import Path
 import json
-import shutil
-import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook as XLWorkbook
 from openpyxl.formatting.rule import FormulaRule
@@ -21,7 +18,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
-from ..config import get_settings
 from ..db import get_db
 from ..enums import ActionStatus, Priority
 from ..models import (
@@ -32,13 +28,10 @@ from ..models import (
 from ..services.filtering import csv_ints, csv_strings
 from ..services.quality_import import (
     _daily_record_key, _route_for_date, denominator_for_rejection,
-    import_daily_rejection_workbook, import_historical_rejection_workbook, sha256_file, upsert_phenomenon,
+    upsert_phenomenon,
 )
 
 router = APIRouter(prefix="/quality", tags=["quality"])
-settings = get_settings()
-
-
 class PhenomenonCreate(BaseModel):
     name: str
     phenomenon_group: str | None = None
@@ -78,17 +71,6 @@ def _bool(value) -> bool:
 
 def _label_key(value) -> str:
     return " ".join(str(value or "").strip().lower().replace("_", " ").split())
-
-
-def _save_upload(file: UploadFile, prefix: str) -> Path:
-    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(400, "Please upload an .xlsx or .xlsm file")
-    base = Path(settings.upload_dir)
-    base.mkdir(parents=True, exist_ok=True)
-    target = base / f"{prefix}_{uuid.uuid4().hex}_{Path(file.filename).name}"
-    with target.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
-    return target
 
 
 def _by_id(db: Session, model, ids: set[int]) -> dict:
@@ -578,40 +560,13 @@ def download_daily_template(db: Session = Depends(get_db), _: User = Depends(get
                              headers={"Content-Disposition": 'attachment; filename="Daily_Rejection_Upload_v0.4.6.xlsx"'})
 
 
-def _quality_import(file: UploadFile, import_type: str, db: Session, user: User) -> dict:
-    path = _save_upload(file, f"quality_{import_type.lower()}")
-    digest = sha256_file(path)
-    previous = db.scalar(select(QualityRejectionImportBatch).where(QualityRejectionImportBatch.file_sha256 == digest))
-    if previous:
-        path.unlink(missing_ok=True)
-        stats = json.loads(previous.stats_json) if previous.stats_json else {}
-        return {"status": "already_imported", "message": f"Exact file already imported as quality batch #{previous.id}; no duplicates created.",
-                "import_batch_id": previous.id, **stats}
-    batch = QualityRejectionImportBatch(file_name=Path(file.filename or path.name).name, file_sha256=digest,
-                                        import_type=import_type, status="RUNNING", imported_by_id=user.id)
-    db.add(batch); db.flush()
-    try:
-        if import_type == "DAILY":
-            stats = import_daily_rejection_workbook(db, path, batch_id=batch.id, entered_by_id=user.id)
-        else:
-            stats = import_historical_rejection_workbook(db, path, batch_id=batch.id)
-        batch.status = "COMPLETED_WITH_ERRORS" if stats.get("errors") else "COMPLETED"
-        batch.stats_json = json.dumps(stats, default=str)
-        db.commit(); db.refresh(batch)
-        return {"status": "imported", "message": "Quality import completed. Existing business keys were updated/unchanged and new keys were inserted.",
-                "import_batch_id": batch.id, **stats}
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(400, f"Quality import failed: {exc}") from exc
-
-
 @router.post("/import-daily")
-def import_daily(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def import_daily(_: User = Depends(get_current_user)):
     raise HTTPException(409, "Use /api/import/preview/quality-daily then confirm")
 
 
 @router.post("/import-history")
-def import_history(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def import_history(_: User = Depends(get_current_user)):
     raise HTTPException(409, "Use /api/import/preview/quality-history then confirm")
 
 

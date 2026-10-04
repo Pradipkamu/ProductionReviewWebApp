@@ -1,6 +1,5 @@
 from datetime import date, datetime
 from pathlib import Path
-import hashlib
 import re
 import uuid
 
@@ -21,7 +20,7 @@ from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
 from ..services.action_pdf import build_action_plan_pdf
 from ..services.file_security import (
-    UploadSecurityError, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
+    UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
 )
 
 router = APIRouter(prefix="/actions", tags=["actions"])
@@ -262,7 +261,7 @@ def update_action_plan(action_id: int, payload: ActionWhyWhyUpdate, db: Session 
 
 
 @router.post("/{action_id}/attachments")
-async def upload_action_attachment(
+def upload_action_attachment(
     action_id: int,
     request: Request,
     file: UploadFile = File(...),
@@ -274,6 +273,9 @@ async def upload_action_attachment(
     if not a:
         raise HTTPException(404, "Action not found")
     original = safe_original_name(file.filename, "attachment")
+    clean_caption = _clean_text(caption)
+    if clean_caption and len(clean_caption) > 500:
+        raise HTTPException(422, "Attachment caption cannot exceed 500 characters")
     ext = Path(original).suffix.lower()
     stored_name = f"{uuid.uuid4().hex}{ext}"
     relative = Path(a.action_no) / stored_name
@@ -299,7 +301,7 @@ async def upload_action_attachment(
         mime_type=mime_type,
         size_bytes=size,
         sha256=sha,
-        caption=_clean_text(caption),
+        caption=clean_caption,
         uploaded_by_id=user.id,
     )
     db.add(att)
@@ -310,7 +312,13 @@ async def upload_action_attachment(
 
 
 @router.get("/{action_id}/attachments/{attachment_id}")
-def download_action_attachment(action_id: int, attachment_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def download_action_attachment(
+    action_id: int,
+    attachment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     att = db.scalar(select(ActionAttachment).where(ActionAttachment.id == attachment_id, ActionAttachment.action_id == action_id))
     if not att:
         raise HTTPException(404, "Attachment not found")
@@ -320,6 +328,10 @@ def download_action_attachment(action_id: int, attachment_id: int, db: Session =
         raise HTTPException(400, exc.detail) from exc
     if not path.is_file():
         raise HTTPException(404, "Attachment file is missing from storage")
+    if hash_file(path) != att.sha256:
+        record_security_event(db, request, "ATTACHMENT_INTEGRITY_FAILED", success=False, user=user, detail=f"Attachment id {att.id}")
+        db.commit()
+        raise HTTPException(409, "Attachment integrity check failed; contact the administrator")
     return FileResponse(
         path,
         media_type=att.mime_type or "application/octet-stream",

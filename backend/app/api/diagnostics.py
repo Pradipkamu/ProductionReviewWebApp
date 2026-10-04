@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
+import re
 import shutil
 import time
 from datetime import datetime, timezone
@@ -18,6 +20,7 @@ from ..auth import get_current_user
 from ..config import get_settings
 from ..db import get_db
 from ..models import User
+from ..services.file_security import SAFE_ATTACHMENT_MIME
 
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
 settings = get_settings()
@@ -29,6 +32,16 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _checksum_text(path: Path) -> str:
+    raw = path.read_bytes()
+    for encoding in ("utf-8-sig", "utf-16"):
+        try:
+            return raw.decode(encoding).strip()
+        except UnicodeError:
+            continue
+    raise UnicodeError("unsupported checksum encoding")
 
 
 def _storage_check(name: str, raw_path: str) -> dict:
@@ -62,8 +75,12 @@ def _backup_check(raw_path: str) -> dict:
     if not candidates:
         return {"status": "warning", "detail": "No database backup found", "count": 0, "total_bytes": 0}
 
-    latest = max(candidates, key=lambda p: p.stat().st_mtime)
-    modified = datetime.fromtimestamp(latest.stat().st_mtime, timezone.utc)
+    try:
+        latest = max(candidates, key=lambda p: p.stat().st_mtime)
+        latest_stat = latest.stat()
+    except OSError as exc:
+        return {"status": "error", "detail": f"Backup metadata cannot be read: {exc.__class__.__name__}", "count": len(candidates), "total_bytes": 0}
+    modified = datetime.fromtimestamp(latest_stat.st_mtime, timezone.utc)
     age_hours = max(0, (datetime.now(timezone.utc) - modified).total_seconds() / 3600)
     sidecar = Path(str(latest) + ".sha256")
     checksum_present = sidecar.is_file()
@@ -71,9 +88,11 @@ def _backup_check(raw_path: str) -> dict:
     checksum_detail = "No SHA-256 sidecar"
     if checksum_present:
         try:
-            expected = sidecar.read_text(encoding="utf-8").strip().split()[0].lower()
+            expected = _checksum_text(sidecar).split()[0].lower()
+            if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                raise ValueError("invalid checksum")
             actual = _sha256(latest)
-            checksum_valid = len(expected) == 64 and expected == actual
+            checksum_valid = hmac.compare_digest(expected, actual)
             checksum_detail = "SHA-256 verified" if checksum_valid else "SHA-256 mismatch"
         except Exception as exc:
             checksum_detail = f"Checksum could not be verified: {exc.__class__.__name__}"
@@ -101,7 +120,7 @@ def _backup_check(raw_path: str) -> dict:
         "detail": detail,
         "file_name": latest.name,
         "format": "CUSTOM" if custom_format else "SQL",
-        "size_bytes": latest.stat().st_size,
+        "size_bytes": latest_stat.st_size,
         "modified_at": modified.isoformat(),
         "age_hours": round(age_hours, 1),
         "checksum_present": checksum_present,
@@ -122,13 +141,20 @@ def _restore_verification_check(raw_path: str) -> dict:
         if verified.tzinfo is None:
             verified = verified.replace(tzinfo=timezone.utc)
         age_days = max(0, (datetime.now(timezone.utc) - verified.astimezone(timezone.utc)).total_seconds() / 86400)
-        backup_name = Path(str(data["backup_file"])).name
+        raw_backup_name = str(data["backup_file"])
+        backup_name = Path(raw_backup_name).name
+        if backup_name != raw_backup_name:
+            raise ValueError("unsafe backup name")
         backup = root / backup_name
-        if not backup.is_file():
-            return {"status": "warning", "detail": "Last verified backup is no longer present", **data, "age_days": round(age_days, 1)}
         expected = str(data.get("backup_sha256") or "").lower()
-        if expected and _sha256(backup) != expected:
-            return {"status": "error", "detail": "Last restore-verified backup now fails SHA-256 validation", **data, "age_days": round(age_days, 1)}
+        if not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise ValueError("invalid backup hash")
+        if data.get("status") != "ok" or data.get("core_tables") != "OK":
+            raise ValueError("restore evidence did not pass")
+        if not backup.is_file():
+            return {**data, "status": "warning", "detail": "Last verified backup is no longer present", "age_days": round(age_days, 1)}
+        if not hmac.compare_digest(_sha256(backup), expected):
+            return {**data, "status": "error", "detail": "Last restore-verified backup now fails SHA-256 validation", "age_days": round(age_days, 1)}
         fresh = age_days <= settings.restore_verify_max_age_days
         return {
             **data,
@@ -142,6 +168,12 @@ def _restore_verification_check(raw_path: str) -> dict:
 
 def _security_configuration() -> dict:
     checks: list[dict] = []
+
+    checks.append({
+        "name": "HTTPS enforcement",
+        "status": "ok",
+        "detail": "HTTPS is required" if settings.require_https else "Not forced while Oracle remains in HTTP compatibility mode",
+    })
 
     secret_ok = len(settings.secret_key) >= 32 and len(set(settings.secret_key)) >= 12
     checks.append({
@@ -221,7 +253,7 @@ def diagnostics(db: Session = Depends(get_db), _: User = Depends(get_current_use
         "import_max_mb": settings.import_max_mb,
         "attachment_max_mb": settings.attachment_max_mb,
         "office_max_uncompressed_mb": settings.office_max_uncompressed_mb,
-        "allowed_attachment_extensions": sorted(settings.attachment_extension_set),
+        "allowed_attachment_extensions": sorted(settings.attachment_extension_set.intersection(SAFE_ATTACHMENT_MIME)),
         "detail": "Extension, content signature/OOXML structure, size and expanded Office size are validated",
     }
     statuses = [

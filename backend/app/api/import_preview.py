@@ -6,11 +6,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import jwt
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
-from ..auth import get_current_user
+from ..auth import get_current_user, record_security_event
 from ..config import get_settings
 from ..db import get_db, Base
 from ..models import BusinessDataRevision, User, ImportBatch, QualityRejectionImportBatch
@@ -18,7 +18,7 @@ from ..services.excel_import import import_daily_production_workbook
 from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
 from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook
-from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, save_limited_stream, validate_workbook_file
+from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_workbook_file
 router=APIRouter(prefix='/import',tags=['import preview'])
 KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history'}
 KIND_SCOPED_HASHES={'daily-production','process-design','stage-schedules','stage-daily'}
@@ -83,7 +83,7 @@ def counts(stats,kind):
 def digest(path):return hash_file(path)
 
 @router.post('/preview/{kind}')
-def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+def preview(kind:str,request:Request,file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     authorize(kind,user)
     settings=get_settings()
     original=safe_original_name(file.filename,'workbook.xlsx')
@@ -102,6 +102,8 @@ def preview(kind:str,file:UploadFile=File(...),db:Session=Depends(get_db),user:U
         validate_workbook_file(path,original,settings.office_max_uncompressed_mb*1024*1024)
     except UploadSecurityError as exc:
         path.unlink(missing_ok=True)
+        record_security_event(db,request,'UPLOAD_REJECTED',success=False,user=user,detail=f'Workbook {kind}: {exc.detail}')
+        db.commit()
         raise HTTPException(exc.status_code,exc.detail) from exc
     batch_sha=hashlib.sha256((kind+':'+sha).encode()).hexdigest() if kind in KIND_SCOPED_HASHES else sha
     batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
@@ -165,6 +167,6 @@ def confirm(payload:Confirm,db:Session=Depends(get_db),user:User=Depends(get_cur
     except HTTPException:db.rollback();raise
     except Exception as exc:db.rollback();raise HTTPException(422,f'Import failed: {exc}') from exc
     # Retain the confirmed workbook outside the expiring previews directory.
-    target=Path(get_settings().upload_dir)/(claims['upload_id']+'_'+claims['filename'])
+    target=safe_path(get_settings().upload_dir,claims['upload_id']+'_'+safe_original_name(claims['filename'],'workbook.xlsx'))
     shutil.move(str(path),str(target))
     return {'status':'imported','import_batch_id':batch.id,'counts':counts(stats,kind),'message':'Preview confirmed; all rows committed together','stats':stats}
