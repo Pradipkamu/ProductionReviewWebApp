@@ -78,16 +78,17 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
             user.failed_login_attempts = int(user.failed_login_attempts or 0) + 1
             if user.failed_login_attempts >= settings.login_max_failures:
                 user.locked_until = now + timedelta(minutes=settings.login_lock_minutes)
+        locked_now = bool(user.is_active and user.locked_until and user.locked_until > now)
         record_security_event(
             db,
             request,
-            "LOGIN_FAILED",
+            "ACCOUNT_LOCKED" if locked_now else "LOGIN_FAILED",
             success=False,
             user=user,
-            detail="Inactive account" if not user.is_active else "Invalid password",
+            detail="Inactive account" if not user.is_active else ("Too many failed passwords" if locked_now else "Invalid password"),
         )
         db.commit()
-        if user.is_active and user.locked_until and user.locked_until > now:
+        if locked_now:
             raise HTTPException(429, "Account temporarily locked after repeated failed sign-ins. Try again later.")
         raise HTTPException(401, "Invalid username or password")
 
