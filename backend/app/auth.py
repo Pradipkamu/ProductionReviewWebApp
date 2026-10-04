@@ -1,3 +1,9 @@
+"""Authentication and security-audit helpers shared by API modules.
+
+Keep the exported security-event recorder in this module because update
+packages and API modules use it as a deployment compatibility contract.
+"""
+
 import hashlib
 import hmac
 import os
@@ -16,6 +22,18 @@ from .models import SecurityEvent, User, UserSession
 
 settings = get_settings()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+__all__ = [
+    "client_ip",
+    "create_access_token",
+    "create_session",
+    "get_current_user",
+    "hash_password",
+    "record_security_event",
+    "request_is_https",
+    "revoke_user_sessions",
+    "verify_password",
+]
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
