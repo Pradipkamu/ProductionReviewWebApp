@@ -27,7 +27,6 @@ def upgrade():
         sa.Column("user_agent", sa.String(length=500), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("session_id"),
     )
     op.create_index("ix_user_sessions_session_id", "user_sessions", ["session_id"], unique=True)
     op.create_index("ix_user_sessions_user_id", "user_sessions", ["user_id"], unique=False)
