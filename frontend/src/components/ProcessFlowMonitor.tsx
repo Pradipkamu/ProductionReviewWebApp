@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { MultiSelect } from './MultiSelect'
-import { PlanActualChart } from './Charts'
+import { ComplianceLineChart, PlanActualChart } from './Charts'
 import { num } from './UI'
 export default function ProcessFlowMonitor({data,date,productId,onChange}:{data:any,date:string,productId:number,onChange:()=>void}){
  const [branches,setBranches]=useState<string[]>([]),[variants,setVariants]=useState<string[]>([]),[selected,setSelected]=useState<any>(null),[actual,setActual]=useState(''),[reject,setReject]=useState('0'),[reason,setReason]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false)
@@ -11,11 +11,15 @@ export default function ProcessFlowMonitor({data,date,productId,onChange}:{data:
  const options=(field:string)=>[...new Set<string>(active.map((s:any)=>String(s[field]||'')))].filter(Boolean).map(value=>({value,label:value}))
  const stages=active.filter((s:any)=>(!branches.length||branches.includes(s.branch))&&(!variants.length||variants.includes(s.variant)))
  const points=stages.filter((s:any)=>s.plan!=null&&s.actual!=null).map((s:any)=>({id:s.id,label:s.name,plan:s.plan,actual:s.actual,compliance:s.plan>0?s.actual/s.plan:null,gap:s.actual-s.plan}))
+ const achievementPoints=points.filter((p:any)=>p.compliance!=null)
  function choose(s:any){setSelected(s);setActual(s.actual==null?'':String(s.actual));setReject(String(s.reject||0));setReason('');setError('')}
  function chooseGraph(s:any){if(isRange&&selected?.id===s?.id){setSelected(null);return}choose(s)}
  async function save(){setBusy(true);setError('');try{await api('/process/entry',{method:'POST',body:JSON.stringify({summary_date:date,product_id:productId,route_operation_id:selected.route_operation_id,plan_qty:selected.plan||0,actual_qty:Number(actual),good_qty:Number(actual)-Number(reject),reject_qty:Number(reject),opening_wip:0,closing_wip:0,remarks:reason,source:'MANUAL'})});setSelected(null);onChange()}catch(e:any){setError(e.message)}finally{setBusy(false)}}
  return <section className="panel"><h2>Approved process flow R{data.flow.revision}</h2><p>Effective {data.flow.effective_from}. {isRange?'Plan, actual and rejection are working-day averages for the selected period. OFF days and missing actual days are not treated as zero.':'Each stage has its own allocation. Parent dispatch alone feeds MIS. Blank plan or actual means missing data.'}</p>{data.period&&<div className="notice">{data.period.working_days} working day(s) included • {data.period.off_days} OFF day(s) excluded{data.period.truncated_to_flow?' • Period starts at this flow revision effective date':''}</div>}<div className="form-row"><MultiSelect value={branches} onChange={setBranches} options={options('branch')} placeholder="All branches"/><MultiSelect value={variants} onChange={setVariants} options={options('variant')} placeholder="All variants"/></div>
+ <div className="panel-title"><h3>Process Plan vs Actual</h3><span>{isRange?'Working-day average':'Selected day'}</span></div>
  <PlanActualChart rows={points} metric="qty" verticalLabels onSelect={r=>chooseGraph(stages.find((s:any)=>s.id===r.id))}/>
+ <div className="panel-title"><h3>Process Achievement %</h3><span>Actual ÷ Plan × 100 • target 100%</span></div>
+ <ComplianceLineChart rows={achievementPoints} onSelect={r=>chooseGraph(stages.find((s:any)=>s.id===r.id))}/>
  {selected&&isRange&&<div className="panel"><div className="panel-title"><div><h3>{selected.name} — Plan vs Actual</h3><p>{data.period?.start} to {data.period?.end} • working days only</p></div><button className="small secondary" onClick={()=>setSelected(null)}>Close</button></div>
  <div className="table-wrap" aria-label={`Plan versus actual by date for ${selected.name}`}><table><thead><tr><th>Quantity</th>{(selected.daily||[]).map((d:any)=><th key={d.date}>{new Date(d.date+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}</th>)}</tr></thead><tbody>
  <tr><th>Plan</th>{(selected.daily||[]).map((d:any)=><td key={`p-${d.date}`}>{d.plan==null?'Pending':num(d.plan)}</td>)}</tr>
