@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
+python3 configure_env.py
 
 new_password="${1:-}"
 if [ -z "$new_password" ]; then
@@ -14,8 +15,6 @@ if ! printf '%s' "$new_password" | grep -Eq '^[A-Za-z0-9._~-]{24,128}$'; then
   echo 'Database password must be 24-128 URL-safe characters: A-Z a-z 0-9 . _ ~ -' >&2
   exit 1
 fi
-[ -f .env ] || { echo '.env is missing. Run configure_env.py first.' >&2; exit 1; }
-
 docker compose up -d db
 for attempt in $(seq 1 30); do
   if docker compose exec -T db pg_isready -U pms -d pms >/dev/null; then break; fi
@@ -23,8 +22,18 @@ for attempt in $(seq 1 30); do
   sleep 2
 done
 
-sql_password="$(printf '%s' "$new_password" | sed "s/'/''/g")"
-docker compose exec -T db psql -U pms -d pms -v ON_ERROR_STOP=1 -c "ALTER ROLE pms WITH PASSWORD '$sql_password';"
+env_backup="$(mktemp .env.rotation.XXXXXX)"
+cp .env "$env_backup"
+chmod 600 "$env_backup" 2>/dev/null || true
+database_changed=0
+restore_env_on_failure() {
+  if [ "$database_changed" -eq 0 ] && [ -f "$env_backup" ]; then
+    mv -f "$env_backup" .env
+  else
+    rm -f "$env_backup"
+  fi
+}
+trap restore_env_on_failure EXIT
 
 NEW_DB_PASSWORD="$new_password" python3 - <<'PY'
 import os
@@ -52,6 +61,11 @@ path.write_text('\n'.join(out)+'\n',encoding='utf-8')
 try:path.chmod(0o600)
 except OSError:pass
 PY
+
+sql_password="$(printf '%s' "$new_password" | sed "s/'/''/g")"
+docker compose exec -T db psql -U pms -d pms -v ON_ERROR_STOP=1 -c "ALTER ROLE pms WITH PASSWORD '$sql_password';"
+database_changed=1
+rm -f "$env_backup"
 
 docker compose up -d --force-recreate backend
 for attempt in $(seq 1 40); do

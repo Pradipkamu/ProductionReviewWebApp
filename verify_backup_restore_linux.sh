@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
+python3 configure_env.py
 
 backup="${1:-}"
 if [ -z "$backup" ]; then

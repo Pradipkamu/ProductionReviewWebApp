@@ -34,11 +34,26 @@ if (!$secret -or $secret -match '(?i)change|dev-secret') {
     Set-EnvValue 'SECRET_KEY' ([Convert]::ToBase64String($bytes))
 }
 
-$dbPlaceholder = ((Get-EnvValue 'POSTGRES_PASSWORD') -match '(?i)^CHANGE_') -or ((Get-EnvValue 'DATABASE_URL') -match '(?i)CHANGE_THIS')
-if ($created -or $dbPlaceholder) {
+$dbPassword = Get-EnvValue 'POSTGRES_PASSWORD'
+$placeholderDbPassword = !$dbPassword -or $dbPassword -match '(?i)CHANGE_THIS'
+$dbUrl = Get-EnvValue 'DATABASE_URL'
+$parsedPassword = ''
+if ($dbUrl -match '^postgresql[^:]*://[^:]+:([^@]+)@') {
+    $parsedPassword = [uri]::UnescapeDataString($Matches[1])
+}
+$placeholderDatabaseUrl = !$parsedPassword -or $parsedPassword -match '(?i)CHANGE_THIS'
+if ($created -or ($placeholderDbPassword -and $placeholderDatabaseUrl)) {
     $dbPassword = New-RandomHex 24
     Set-EnvValue 'POSTGRES_PASSWORD' $dbPassword
     Set-EnvValue 'DATABASE_URL' ("postgresql+psycopg://pms:$dbPassword@db:5432/pms")
+} elseif ($placeholderDbPassword) {
+    # Older installations had only DATABASE_URL. Preserve its working password
+    # until the explicit rotation script changes PostgreSQL and .env together.
+    $legacyPassword = if ($parsedPassword) { $parsedPassword } else { 'pms' }
+    Set-EnvValue 'POSTGRES_PASSWORD' $legacyPassword
+} elseif ($placeholderDatabaseUrl) {
+    $encodedPassword = [uri]::EscapeDataString($dbPassword)
+    Set-EnvValue 'DATABASE_URL' ("postgresql+psycopg://pms:$encodedPassword@db:5432/pms")
 }
 if ($created) {
     $adminPassword = Get-EnvValue 'ADMIN_PASSWORD'

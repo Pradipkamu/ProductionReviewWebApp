@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+& "$PSScriptRoot\configure_env.ps1"
 New-Item -ItemType Directory -Force database\backups | Out-Null
 
 function DockerChecked([string[]]$Arguments) {

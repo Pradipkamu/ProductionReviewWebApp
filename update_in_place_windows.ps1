@@ -23,7 +23,8 @@ DockerChecked @('compose','exec','-T','db','sh','-c','pg_dump -U pms -d pms -Fc 
 DockerChecked @('compose','exec','-T','db','pg_restore','--list','/tmp/pms_pre_update.dump')
 DockerChecked @('compose','cp','db:/tmp/pms_pre_update.dump',$backup)
 if ((Get-Item $backup).Length -eq 0) { throw 'Empty backup; refusing to update.' }
-(Get-FileHash $backup -Algorithm SHA256).Hash | Set-Content "$backup.sha256"
+$backupHash = (Get-FileHash $backup -Algorithm SHA256).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText("$backup.sha256", $backupHash + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
 DockerChecked @('compose','up','-d','--no-deps','backend','frontend')
 for ($i=0; $i -lt 40; $i++) {
     try {

@@ -1,6 +1,7 @@
 """Initialize persistent secrets without breaking an existing database."""
 from pathlib import Path
 import secrets
+from urllib.parse import quote, unquote, urlsplit
 
 path = Path(__file__).resolve().parent / ".env"
 created = not path.exists()
@@ -31,11 +32,21 @@ secret = get_value("SECRET_KEY")
 if not secret or "CHANGE" in secret.upper() or secret == "dev-secret-change-me":
     set_value("SECRET_KEY", secrets.token_urlsafe(48))
 
-db_placeholder = (get_value("POSTGRES_PASSWORD") or "").upper().startswith("CHANGE_") or "CHANGE_THIS" in (get_value("DATABASE_URL") or "").upper()
-if created or db_placeholder:
+db_password = get_value("POSTGRES_PASSWORD")
+db_url = get_value("DATABASE_URL") or ""
+placeholder_db_password = not db_password or "CHANGE_THIS" in db_password.upper()
+parsed_password = unquote(urlsplit(db_url).password or "")
+placeholder_database_url = not parsed_password or "CHANGE_THIS" in parsed_password.upper()
+if created or (placeholder_db_password and placeholder_database_url):
     db_password = secrets.token_hex(24)
     set_value("POSTGRES_PASSWORD", db_password)
     set_value("DATABASE_URL", f"postgresql+psycopg://pms:{db_password}@db:5432/pms")
+elif placeholder_db_password:
+    # Older installations had only DATABASE_URL. Preserve its working password
+    # until the explicit rotation script safely changes PostgreSQL and .env together.
+    set_value("POSTGRES_PASSWORD", parsed_password or "pms")
+elif placeholder_database_url:
+    set_value("DATABASE_URL", f"postgresql+psycopg://pms:{quote(db_password, safe='')}@db:5432/pms")
 if created:
     admin_password = get_value("ADMIN_PASSWORD")
     if not admin_password or admin_password == "ChangeMe123!" or "CHANGE" in admin_password.upper():

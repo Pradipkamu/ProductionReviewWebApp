@@ -10,7 +10,7 @@ Read [Safe update](docs/UPDATE_v0.3.0.md). Copy application files over the exist
 
 ## Fresh installation
 
-Use `start_windows.bat` or `./start_linux.sh`. The launcher generates a persistent random `SECRET_KEY` when the environment contains a placeholder. Configure the initial `ADMIN_PASSWORD` privately in `.env`; the default temporary login is `admin` / `ChangeMe123!`. The first login must change its password before application access. Existing users must also change passwords after the first migration.
+Use `start_windows.bat` or `./start_linux.sh`. A fresh installation generates persistent random application, PostgreSQL and initial administrator credentials in the private `.env` file. Read the generated `ADMIN_PASSWORD` locally, sign in as `admin`, and change it immediately. Existing installations retain their working credentials until an administrator performs an explicit rotation.
 
 Application: http://localhost:5173 · API: http://localhost:8000/docs
 

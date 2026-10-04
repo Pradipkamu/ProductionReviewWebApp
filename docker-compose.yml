@@ -4,8 +4,9 @@ services:
     environment:
       POSTGRES_DB: pms
       POSTGRES_USER: pms
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run configure_env.py or configure_env.ps1 before Docker Compose}
       PGDATA: /var/lib/postgresql/data/pgdata
+    command: ["postgres", "-c", "password_encryption=scram-sha-256"]
     volumes:
       # Persistent database files deliberately live outside the application code.
       # Future app updates can replace backend/frontend without touching this folder.

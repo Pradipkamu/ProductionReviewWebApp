@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
+python3 configure_env.py
 
 mkdir -p database/backups
 docker compose up -d db

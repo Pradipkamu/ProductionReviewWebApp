@@ -1,6 +1,7 @@
 param([string]$BackupPath = '')
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
+& "$PSScriptRoot\configure_env.ps1"
 
 function DockerChecked([string[]]$Arguments) {
     & docker @Arguments
