@@ -63,6 +63,17 @@ class SecurityEvent(Base):
     detail: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
+class PageAccessRule(Base, TimestampMixin):
+    """Administrator-managed page visibility for one application role."""
+    __tablename__ = "page_access_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    role: Mapped[str] = mapped_column(String(40), index=True)
+    page_key: Mapped[str] = mapped_column(String(80))
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (UniqueConstraint("role", "page_key", name="uq_page_access_role_page"),)
+
+
 class Customer(Base, TimestampMixin):
     __tablename__ = "customers"
     id: Mapped[int] = mapped_column(primary_key=True)
