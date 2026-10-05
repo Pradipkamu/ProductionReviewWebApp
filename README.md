@@ -22,6 +22,7 @@ The corrected process design is implemented with 23 product definitions and 151 
 
 - Alembic adoption of legacy databases and additive schema revisions; no startup `create_all()` for upgrades.
 - Strong secret validation, initial password change, password change/reset, token invalidation and API roles.
+- Administrator-managed page visibility by role, with Admin/account lockout protection and unchanged backend API enforcement.
 - Month Close/Reopen, one-use correction authorization and before/after audit evidence.
 - Committed frontend lockfile, pinned direct dependencies and `npm ci` in Docker.
 - Data Quality / Management Exception dashboards, configurable thresholds, charts and detailed records.

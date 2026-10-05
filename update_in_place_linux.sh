@@ -6,7 +6,7 @@ mkdir -p database/backups
 docker compose build backend frontend
 # Validate the newly built source before stopping the currently running app.
 # This catches partially copied update packages (for example, a stale auth.py).
-docker compose run --rm --no-deps backend python -c 'from app.auth import record_security_event; from app.main import app; print("Backend import preflight passed")'
+docker compose run --rm --no-deps backend python -m app.preflight
 docker compose up -d db
 for attempt in $(seq 1 30); do
   if docker compose exec -T db pg_isready -U pms -d pms >/dev/null; then break; fi
