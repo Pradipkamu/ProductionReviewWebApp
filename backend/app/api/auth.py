@@ -18,7 +18,8 @@ from ..auth import (
 from ..config import get_settings
 from ..db import get_db
 from ..enums import UserRole
-from ..models import GovernanceAudit, SecurityEvent, User, UserSession
+from ..models import GovernanceAudit, PageAccessRule, SecurityEvent, User, UserSession
+from ..page_access import PAGE_KEYS, REQUIRED_PAGE_KEYS, effective_page_keys, page_access_configuration
 from ..schemas import LoginRequest, Token
 from ..security_policy import validate_password
 
@@ -102,8 +103,70 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 
 @router.get("/me")
-def me(user: User = Depends(get_current_user)):
-    return serialize(user)
+def me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    return {**serialize(user), "page_access": effective_page_keys(db, user.role)}
+
+
+class PageAccessUpdate(BaseModel):
+    access: dict[str, list[str]]
+    reason: str = Field(min_length=5, max_length=1000)
+
+
+@router.get("/page-access")
+def get_page_access(db: Session = Depends(get_db), admin: User = Depends(get_current_user)):
+    if admin.role != UserRole.ADMIN:
+        raise HTTPException(403, "Only ADMIN can configure page visibility")
+    return page_access_configuration(db)
+
+
+@router.put("/page-access")
+def update_page_access(
+    payload: PageAccessUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_user),
+):
+    if admin.role != UserRole.ADMIN:
+        raise HTTPException(403, "Only ADMIN can configure page visibility")
+    expected_roles = {role.value for role in UserRole if role != UserRole.ADMIN}
+    supplied_roles = set(payload.access)
+    if supplied_roles != expected_roles:
+        missing = sorted(expected_roles - supplied_roles)
+        extra = sorted(supplied_roles - expected_roles)
+        raise HTTPException(422, f"Page access must include every non-admin role; missing={missing}, extra={extra}")
+    valid_pages = set(PAGE_KEYS)
+    for role, keys in payload.access.items():
+        unknown = sorted(set(keys) - valid_pages)
+        if unknown:
+            raise HTTPException(422, f"Unknown page keys for {role}: {unknown}")
+        if not REQUIRED_PAGE_KEYS.issubset(keys):
+            raise HTTPException(422, f"Required account/security page cannot be hidden for {role}")
+
+    existing = {
+        (row.role, row.page_key): row
+        for row in db.scalars(select(PageAccessRule)).all()
+    }
+    for role in sorted(expected_roles):
+        visible = set(payload.access[role])
+        for page_key in PAGE_KEYS:
+            row = existing.get((role, page_key))
+            if row is None:
+                row = PageAccessRule(role=role, page_key=page_key)
+                db.add(row)
+            row.is_visible = page_key in visible or page_key in REQUIRED_PAGE_KEYS
+            row.updated_by_id = admin.id
+
+    counts = ", ".join(f"{role}={len(set(keys))}" for role, keys in sorted(payload.access.items()))
+    record_security_event(db, request, "PAGE_ACCESS_UPDATED", success=True, user=admin, detail=counts)
+    db.add(GovernanceAudit(
+        actor_id=admin.id,
+        event="PAGE_ACCESS_UPDATED",
+        entity="page_access_rules",
+        entity_id="role-matrix",
+        reason=payload.reason,
+    ))
+    db.commit()
+    return page_access_configuration(db)
 
 
 @router.get("/security-status")
