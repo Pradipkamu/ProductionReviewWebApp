@@ -13,20 +13,24 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, record_security_event
 from ..config import get_settings
 from ..db import get_db, Base
-from ..models import BusinessDataRevision, User, ImportBatch, QualityRejectionImportBatch
+from ..models import (
+    BusinessDataRevision, User, ImportBatch, QualityRejectionImportBatch,
+    CastingDefectImportBatch, CustomerRejectionImportBatch,
+)
 from ..services.excel_import import import_daily_production_workbook
 from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
 from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook
+from ..services.special_quality_import import import_casting_defects_workbook, import_customer_rejections_workbook
 from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_workbook_file
 router=APIRouter(prefix='/import',tags=['import preview'])
-KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history'}
+KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history','casting-daily','customer-quality-daily'}
 KIND_SCOPED_HASHES={'daily-production','process-design','stage-schedules','stage-daily'}
 
 
 def authorize(kind,user):
     if kind not in KINDS:raise HTTPException(404,'Unknown import kind')
-    allowed={'QUALITY'} if kind.startswith('quality-') else {'PRODUCTION','PLANNING'} if kind=='stage-daily' else {'PLANNING'}
+    allowed={'QUALITY'} if kind.startswith('quality-') or kind in {'casting-daily','customer-quality-daily'} else {'PRODUCTION','PLANNING'} if kind=='stage-daily' else {'PLANNING'}
     if user.role.value!='ADMIN' and user.role.value not in allowed:
         raise HTTPException(403,'Import kind is outside your role')
 
@@ -47,7 +51,7 @@ def fingerprint(db, *, lock=False):
             return str(revision)
     h=hashlib.sha256()
     # Conservative: any relevant business/master change invalidates an earlier preview.
-    exclude={'governance_audit','action_reminders','historical_correction_grants','import_batches','quality_rejection_import_batches','business_data_revision','users','user_sessions','security_events'}
+    exclude={'governance_audit','action_reminders','historical_correction_grants','import_batches','quality_rejection_import_batches','casting_defect_import_batches','customer_rejection_import_batches','business_data_revision','users','user_sessions','security_events'}
     for table in sorted(Base.metadata.tables.values(),key=lambda t:t.name):
         if table.name in exclude:continue
         for row in db.execute(select(table).order_by(*table.primary_key.columns)):
@@ -70,17 +74,26 @@ def run_import(db,path,kind,user,batch_id=None):
     if kind=='historical-daily-mis':return import_historical_daily_mis(db,path)
     if kind=='historical-sales-prices':return import_historical_sales_prices(db,path,user.id)
     if kind=='quality-daily':return import_daily_rejection_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
+    if kind=='casting-daily':return import_casting_defects_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
+    if kind=='customer-quality-daily':return import_customer_rejections_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
     return import_historical_rejection_workbook(db,path,batch_id=batch_id)
 
 
 def counts(stats,kind):
-    if kind in {'daily-production','quality-daily','quality-history','process-design','stage-schedules','stage-daily'}:
+    if kind in {'daily-production','quality-daily','quality-history','casting-daily','customer-quality-daily','process-design','stage-schedules','stage-daily'}:
         return {'new':stats.get('created',stats.get('new',0)),'updated':stats.get('updated',0),'unchanged':stats.get('unchanged',0),'rejected':len(stats.get('errors',[]))}
     prefix='price_rows' if kind=='historical-sales-prices' else 'mis'
     return {'new':stats.get(prefix+'_created',0),'updated':stats.get(prefix+'_updated',0),'unchanged':stats.get(prefix+'_unchanged',0),'rejected':len(stats.get('errors',[]))}
 
 
 def digest(path):return hash_file(path)
+
+
+def batch_model_for(kind):
+    if kind.startswith('quality-'):return QualityRejectionImportBatch
+    if kind=='casting-daily':return CastingDefectImportBatch
+    if kind=='customer-quality-daily':return CustomerRejectionImportBatch
+    return ImportBatch
 
 @router.post('/preview/{kind}')
 def preview(kind:str,request:Request,file:UploadFile=File(...),db:Session=Depends(get_db),user:User=Depends(get_current_user)):
@@ -106,7 +119,7 @@ def preview(kind:str,request:Request,file:UploadFile=File(...),db:Session=Depend
         db.commit()
         raise HTTPException(exc.status_code,exc.detail) from exc
     batch_sha=hashlib.sha256((kind+':'+sha).encode()).hexdigest() if kind in KIND_SCOPED_HASHES else sha
-    batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
+    batch_model=batch_model_for(kind)
     previous=db.scalar(select(batch_model).where(batch_model.file_sha256==batch_sha))
     if previous:
         path.unlink(missing_ok=True)
@@ -128,7 +141,7 @@ def preview(kind:str,request:Request,file:UploadFile=File(...),db:Session=Depend
         db.info.pop('grant_in_use',None)
     c=counts(stats,kind);errors=stats.get('errors',[])
     result={'status':'preview','counts':c,'errors':errors,'warnings':stats.get('warnings',[]),'stats':stats,'can_confirm':not errors,
-            'count_scope':('Customer MIS rows plus stage actual rows; parent dispatch is reconciled, not added twice to MIS.' if kind=='daily-production' else 'Primary MIS, price or rejection business rows; supporting master/process counts are shown in stats.')}
+            'count_scope':('Customer MIS rows plus stage actual rows; parent dispatch is reconciled, not added twice to MIS.' if kind=='daily-production' else 'Primary MIS, price or quality business rows; supporting master/process counts are shown in stats.')}
     if errors:path.unlink(missing_ok=True);return result
     claims={'sub':str(user.id),'purpose':'import-preview','kind':kind,'upload_id':upload_id,'filename':original,'ext':ext,
             'sha':sha,'batch_sha':batch_sha,'fingerprint':original_fp,'exp':datetime.now(timezone.utc)+timedelta(minutes=30)}
@@ -151,7 +164,7 @@ def confirm(payload:Confirm,db:Session=Depends(get_db),user:User=Depends(get_cur
     if ext not in {'.xlsx','.xlsm'}:raise HTTPException(409,'Invalid preview file type')
     path=Path(get_settings().upload_dir)/'previews'/(claims['upload_id']+ext)
     if not path.is_file() or digest(path)!=claims['sha']:raise HTTPException(409,'Preview file is missing or changed')
-    batch_model=QualityRejectionImportBatch if kind.startswith('quality-') else ImportBatch
+    batch_model=batch_model_for(kind)
     previous=db.scalar(select(batch_model).where(batch_model.file_sha256==claims.get('batch_sha',claims['sha'])))
     if previous:raise HTTPException(409,'Workbook was already confirmed')
     if fingerprint(db,lock=True)!=claims['fingerprint']:raise HTTPException(409,'Data changed after preview; preview again before confirming')
@@ -159,7 +172,7 @@ def confirm(payload:Confirm,db:Session=Depends(get_db),user:User=Depends(get_cur
         batch=batch_model(file_name=claims['filename'],file_sha256=claims.get('batch_sha',claims['sha']),imported_by_id=user.id,status='RUNNING')
         if kind.startswith('quality-'):batch.import_type='DAILY' if kind=='quality-daily' else 'HISTORICAL'
         db.add(batch);db.flush()
-        stats=run_import(db,path,kind,user,batch.id if kind.startswith('quality-') else None)
+        stats=run_import(db,path,kind,user,batch.id if kind.startswith('quality-') or kind in {'casting-daily','customer-quality-daily'} else None)
         if stats.get('errors'):raise HTTPException(422,stats['errors'])
         stats['import_kind']=kind;stats['file_sha256']=claims['sha']
         batch.status='COMPLETED';batch.stats_json=json.dumps(stats,default=str)

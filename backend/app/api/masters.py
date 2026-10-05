@@ -13,9 +13,11 @@ from ..models import (
     Customer, LossCategory, Machine, Operation, Product, RouteOperation,
     RouteVersion, SalesPriceHistory, User, Vendor, WorkingCalendar, WorkingCalendarChangeLog,
     OperationMachineMap, StandardCycleTime, DailyMIS, MachineMasterHistory, GovernanceAudit,
+    ProductValueAdditionHistory,
 )
 from ..schemas import (RouteVersionCreate, MachineMapCreate, CycleTimeCreate, CalendarUpsert,
-                       CalendarBulkUpdate, UserCreate, ProductMasterUpdate, SalesPriceRevisionCreate)
+                       CalendarBulkUpdate, UserCreate, ProductMasterUpdate, SalesPriceRevisionCreate,
+                       ProductValueAdditionRevisionCreate)
 from ..schemas import MachineMasterCreate, MachineMasterUpdate
 from ..services.pricing import create_or_replace_manual_price, price_for_date
 from ..services.machine_cost import machine_cost, next_pm_date
@@ -49,6 +51,7 @@ def products(
         "customer_id": p.customer_id, "actual_measure": p.actual_measure,
         "plant": p.plant, "product_group": p.product_group,
         "finish_weight_kg": float(p.finish_weight_kg) if p.finish_weight_kg is not None else None,
+        "value_addition_per_piece": float(p.value_addition_per_piece) if p.value_addition_per_piece is not None else None,
     } for p, c in rows]
 
 
@@ -77,7 +80,48 @@ def update_product_master(product_id: int, payload: ProductMasterUpdate, db: Ses
         "id": row.id, "name": row.name, "plant": row.plant,
         "product_group": row.product_group,
         "finish_weight_kg": float(row.finish_weight_kg) if row.finish_weight_kg is not None else None,
+        "value_addition_per_piece": float(row.value_addition_per_piece) if row.value_addition_per_piece is not None else None,
     }
+
+
+@router.get("/products/{product_id}/value-addition-history")
+def product_value_addition_history(product_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    if not db.get(Product, product_id):
+        raise HTTPException(404, "Product not found")
+    rows = db.scalars(select(ProductValueAdditionHistory).where(
+        ProductValueAdditionHistory.product_id == product_id
+    ).order_by(ProductValueAdditionHistory.effective_from.desc(), ProductValueAdditionHistory.id.desc())).all()
+    users = {u.id: u.full_name for u in db.scalars(select(User)).all()}
+    return [{"id": x.id, "effective_from": x.effective_from,
+             "value_addition_per_piece": float(x.value_addition_per_piece), "reason": x.reason,
+             "changed_by": users.get(x.changed_by_id), "created_at": x.created_at} for x in rows]
+
+
+@router.post("/products/{product_id}/value-addition-revisions")
+def add_product_value_addition_revision(product_id: int, payload: ProductValueAdditionRevisionCreate,
+                                        db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(404, "Product not found")
+    if payload.effective_from > date.today():
+        raise HTTPException(422, "Value-addition revisions cannot be future-dated")
+    if db.scalar(select(ProductValueAdditionHistory.id).where(
+        ProductValueAdditionHistory.product_id == product_id,
+        ProductValueAdditionHistory.effective_from == payload.effective_from,
+    )):
+        raise HTTPException(409, "A value-addition revision already exists for this product and effective date")
+    row = ProductValueAdditionHistory(product_id=product_id, effective_from=payload.effective_from,
+        value_addition_per_piece=payload.value_addition_per_piece, reason=payload.reason.strip(), changed_by_id=user.id)
+    db.add(row); db.flush()
+    current = db.scalar(select(ProductValueAdditionHistory).where(
+        ProductValueAdditionHistory.product_id == product_id,
+        ProductValueAdditionHistory.effective_from <= date.today(),
+    ).order_by(ProductValueAdditionHistory.effective_from.desc(), ProductValueAdditionHistory.id.desc()).limit(1))
+    product.value_addition_per_piece = current.value_addition_per_piece if current else None
+    db.commit(); db.refresh(row)
+    return {"id": row.id, "effective_from": row.effective_from,
+            "value_addition_per_piece": float(row.value_addition_per_piece), "current_value_addition_per_piece":
+            float(product.value_addition_per_piece) if product.value_addition_per_piece is not None else None}
 
 
 @router.get("/operations")
