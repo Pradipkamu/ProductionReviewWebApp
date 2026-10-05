@@ -47,11 +47,14 @@ Backend API authorization is authoritative. Frontend navigation is only a conven
 | OEE / Machine Loss | Production |
 | Schedule | Planning |
 | Quality / Rejection | Quality |
+| Casting Quality | Quality |
+| Customer Quality | Quality |
 | Vendor | Purchase, Vendor, Production |
 | Imports | Planning, Quality, Production |
 | Actions / Why-Why | Production, Quality, Planning, Purchase, Dispatch, Vendor, Management |
 | Reviews | Management, Production, Quality, Planning |
 | Masters | Planning |
+| Product Value Addition revisions | Quality (and Admin) |
 | Capacity | Planning, Production |
 | Month Close / Historical Authorization | Management |
 | User Administration | Admin |
