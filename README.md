@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.5.5
+# ProductionReviewWebApp v0.5.6
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -23,6 +23,8 @@ The corrected process design is implemented with 23 product definitions and 151 
 - Alembic adoption of legacy databases and additive schema revisions; no startup `create_all()` for upgrades.
 - Strong secret validation, initial password change, password change/reset, token invalidation and API roles.
 - Administrator-managed page visibility by role, with Admin/account lockout protection and unchanged backend API enforcement.
+- Separate Casting Quality and Customer Quality modules with controlled phenomena, quantity validation, PPM trends and Pareto analysis.
+- Effective-dated Product Value Addition (₹/piece) history for future costing, with reason and actor evidence.
 - Month Close/Reopen, one-use correction authorization and before/after audit evidence.
 - Committed frontend lockfile, pinned direct dependencies and `npm ci` in Docker.
 - Data Quality / Management Exception dashboards, configurable thresholds, charts and detailed records.
@@ -83,3 +85,7 @@ Server-side sessions, inactivity logout, login lockout, session revocation, secu
 ## v0.5.5 — Security & Governance Phase 2
 
 Workbook and Action attachment uploads now use centralized size/type/content validation and safe storage paths. Fresh installations generate strong database/bootstrap credentials; existing databases can be rotated safely with the supplied Windows/Linux scripts. Manual backups use verified PostgreSQL custom-format dumps with SHA-256 sidecars, restore tests record evidence, and System Diagnostics shows backup integrity, restore freshness, upload controls and secret/network warnings. See docs/SECURITY_PHASE2_v0.5.5.md.
+
+## v0.5.6 — Casting, Customer Quality and Value Addition
+
+Casting defects and customer rejections now have separate phenomenon masters, manual entry, controlled Excel preview/confirmation, quantity rules, PPM trends, Pareto analysis and detailed records. Casting PPM uses inspected quantity; Customer PPM uses dispatch/received quantity, so neither is mixed with internal machining PPM. Product Master adds current Value Addition in ₹/piece plus append-only effective-dated history, reason and user evidence. Administrators can configure both new pages in Security / Users → Page Visibility by Role. See [release notes](docs/RELEASE_v0.5.6.md).
