@@ -61,3 +61,6 @@
 
 /* v0.5.1 machine PM, utilities and costing master */
 .machine-master-layout{display:grid;grid-template-columns:minmax(520px,1.2fr) minmax(520px,1fr);gap:18px;align-items:start}.machine-field-grid{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:0 12px}.machine-form h3{margin:22px 0 8px;color:var(--muted)}.cost-breakdown{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 18px}.cost-breakdown span{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}.cost-breakdown b{display:block;margin-top:4px}@media(max-width:1200px){.machine-master-layout{grid-template-columns:1fr}}@media(max-width:750px){.machine-field-grid,.cost-breakdown{grid-template-columns:1fr}}
+
+/* Administrator-managed role/page visibility */
+.access-matrix th:not(:first-child),.access-matrix td:not(:first-child){text-align:center}.access-matrix input[type=checkbox]{width:auto;min-width:18px;min-height:18px}.access-matrix small{color:#778398}.access-save{display:grid;grid-template-columns:minmax(280px,1fr) auto;gap:12px;align-items:end;margin-top:16px}.access-save label{margin:0}.access-save button{min-height:38px}@media(max-width:700px){.access-save{grid-template-columns:1fr}}
