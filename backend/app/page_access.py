@@ -18,6 +18,8 @@ PAGE_CATALOG = (
     {"key": "process", "label": "Process Monitor", "path": "/process"},
     {"key": "process_actuals", "label": "Process Actuals / Edit", "path": "/process-actuals"},
     {"key": "quality", "label": "Quality / Rejection", "path": "/quality"},
+    {"key": "casting_quality", "label": "Casting Quality", "path": "/casting-quality"},
+    {"key": "customer_quality", "label": "Customer Quality", "path": "/customer-quality"},
     {"key": "reports", "label": "Compliance Reports", "path": "/reports"},
     {"key": "management_reports", "label": "Management Reports", "path": "/management-reports"},
     {"key": "actions", "label": "Actions", "path": "/actions"},

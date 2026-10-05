@@ -4,6 +4,7 @@ from .enums import UserRole
 WRITE_ROLES = {
     'mis': {'PRODUCTION', 'PLANNING'}, 'process': {'PRODUCTION'}, 'oee': {'PRODUCTION'},
     'schedules': {'PLANNING'}, 'schedule': {'PLANNING'}, 'quality': {'QUALITY'},
+    'casting-quality': {'QUALITY'}, 'customer-quality': {'QUALITY'},
     'vendor': {'PURCHASE', 'VENDOR', 'PRODUCTION'}, 'import': {'PLANNING', 'QUALITY', 'PRODUCTION'},
     'actions': {'PRODUCTION', 'QUALITY', 'PLANNING', 'PURCHASE', 'DISPATCH', 'VENDOR', 'MANAGEMENT'},
     'reviews': {'MANAGEMENT', 'PRODUCTION', 'QUALITY', 'PLANNING'},
@@ -32,6 +33,8 @@ def enforce_api_policy(user, request: Request):
     if section == 'oee' and path.endswith('/raise-action') and user.role.value in WRITE_ROLES['actions']:
         return
     if section == 'insights' and '/reminders/' in path and user.role.value != 'VIEW_ONLY':
+        return
+    if section == 'masters' and '/value-addition-' in path and user.role.value == 'QUALITY':
         return
     if user.role.value not in WRITE_ROLES.get(section, set()):
         raise HTTPException(403, f'{user.role.value} cannot modify {section}')

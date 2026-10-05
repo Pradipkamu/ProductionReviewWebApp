@@ -11,7 +11,7 @@ from . import __version__
 from .db import Base, SessionLocal, engine
 from .migrate import upgrade_database
 from .seed import seed_defaults
-from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, governance, insights, import_preview, flows, diagnostics, capacity
+from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, governance, insights, import_preview, flows, diagnostics, capacity, special_quality
 
 settings = get_settings()
 
@@ -84,7 +84,7 @@ async def security_headers(request: Request, call_next):
     return response
 
 for router in [auth.router, masters.router, imports.router, schedules.router, mis.router,
-               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, governance.router, insights.router, import_preview.router, flows.router, diagnostics.router, capacity.router]:
+               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, special_quality.router, governance.router, insights.router, import_preview.router, flows.router, diagnostics.router, capacity.router]:
     app.include_router(router, prefix="/api")
 
 

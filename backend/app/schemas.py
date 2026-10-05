@@ -33,6 +33,7 @@ class ProductOut(ORMModel):
     plant: Optional[str]
     product_group: Optional[str]
     finish_weight_kg: Optional[Decimal]
+    value_addition_per_piece: Optional[Decimal]
     sort_order: int
     is_active: bool
 
@@ -41,6 +42,12 @@ class ProductMasterUpdate(BaseModel):
     plant: Optional[str] = None
     product_group: Optional[str] = None
     finish_weight_kg: Optional[Decimal] = Field(default=None, ge=0)
+
+
+class ProductValueAdditionRevisionCreate(BaseModel):
+    effective_from: date
+    value_addition_per_piece: Decimal = Field(ge=0, max_digits=14, decimal_places=3)
+    reason: str = Field(min_length=2, max_length=500)
 
 
 class MasterCreate(BaseModel):

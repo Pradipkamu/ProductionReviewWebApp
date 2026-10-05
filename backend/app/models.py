@@ -96,10 +96,27 @@ class Product(Base, TimestampMixin):
     plant: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
     product_group: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
     finish_weight_kg: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
+    # Current snapshot used by reports. Effective-dated revisions are retained
+    # in product_value_addition_history so historical costing remains auditable.
+    value_addition_per_piece: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3), nullable=True)
 
     sort_order: Mapped[int] = mapped_column(Integer, default=999)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     customer: Mapped[Optional[Customer]] = relationship(back_populates="products")
+
+
+class ProductValueAdditionHistory(Base, TimestampMixin):
+    __tablename__ = "product_value_addition_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    effective_from: Mapped[date] = mapped_column(Date, index=True)
+    value_addition_per_piece: Mapped[Decimal] = mapped_column(Numeric(14, 3))
+    reason: Mapped[str] = mapped_column(Text)
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("product_id", "effective_from", name="uq_product_value_addition_effective"),
+        Index("ix_product_value_addition_product_effective", "product_id", "effective_from"),
+    )
 
 
 class Vendor(Base, TimestampMixin):
@@ -570,6 +587,98 @@ class QualityActionLink(Base):
     daily_rejection_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_daily.id", ondelete="CASCADE"), nullable=True, index=True)
     monthly_history_id: Mapped[Optional[int]] = mapped_column(ForeignKey("quality_rejection_monthly_history.id", ondelete="CASCADE"), nullable=True, index=True)
     __table_args__ = (UniqueConstraint("action_id", "daily_rejection_id", "monthly_history_id", name="uq_quality_action_link"),)
+
+
+class CastingDefectPhenomenon(Base, TimestampMixin):
+    __tablename__ = "casting_defect_phenomena"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(220), index=True)
+    normalized_name: Mapped[str] = mapped_column(String(220), unique=True, index=True)
+    phenomenon_group: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    criticality: Mapped[str] = mapped_column(String(40), default="NORMAL", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class CastingDefectImportBatch(Base, TimestampMixin):
+    __tablename__ = "casting_defect_import_batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_name: Mapped[str] = mapped_column(String(260))
+    file_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(40), default="COMPLETED")
+    stats_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    imported_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class CastingDefectDaily(Base, TimestampMixin):
+    __tablename__ = "casting_defect_daily"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    defect_date: Mapped[date] = mapped_column(Date, index=True)
+    shift: Mapped[str] = mapped_column(String(40), default="General", index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    plant: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    vendor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("vendors.id"), nullable=True, index=True)
+    heat_batch_no: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    phenomenon_id: Mapped[int] = mapped_column(ForeignKey("casting_defect_phenomena.id"), index=True)
+    inspected_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    defect_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    rework_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    scrap_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    ppm: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), default="MANUAL")
+    import_batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("casting_defect_import_batches.id"), nullable=True, index=True)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        Index("ix_casting_defect_date_product", "defect_date", "product_id"),
+        Index("ix_casting_defect_date_phenomenon", "defect_date", "phenomenon_id"),
+    )
+
+
+class CustomerRejectionPhenomenon(Base, TimestampMixin):
+    __tablename__ = "customer_rejection_phenomena"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(220), index=True)
+    normalized_name: Mapped[str] = mapped_column(String(220), unique=True, index=True)
+    phenomenon_group: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    criticality: Mapped[str] = mapped_column(String(40), default="NORMAL", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class CustomerRejectionImportBatch(Base, TimestampMixin):
+    __tablename__ = "customer_rejection_import_batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_name: Mapped[str] = mapped_column(String(260))
+    file_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(40), default="COMPLETED")
+    stats_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    imported_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class CustomerRejectionDaily(Base, TimestampMixin):
+    __tablename__ = "customer_rejection_daily"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_key: Mapped[str] = mapped_column(String(500), unique=True, index=True)
+    rejection_date: Mapped[date] = mapped_column(Date, index=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    reference_no: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    batch_no: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    phenomenon_id: Mapped[int] = mapped_column(ForeignKey("customer_rejection_phenomena.id"), index=True)
+    dispatch_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    ppm: Mapped[Decimal] = mapped_column(Numeric(18, 3), default=Decimal("0"))
+    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), default="MANUAL")
+    import_batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("customer_rejection_import_batches.id"), nullable=True, index=True)
+    entered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        Index("ix_customer_rejection_date_customer", "rejection_date", "customer_id"),
+        Index("ix_customer_rejection_date_product", "rejection_date", "product_id"),
+        Index("ix_customer_rejection_date_phenomenon", "rejection_date", "phenomenon_id"),
+    )
 
 
 class Action(Base, TimestampMixin):

@@ -17,9 +17,12 @@ PERIOD_FIELDS = {
  'sales_price_history': ['effective_from'], 'route_versions': ['effective_from'], 'standard_cycle_times': ['effective_from'],
  'operation_machine_map': ['effective_from'], 'operator_requirement_history': ['effective_from'],
  'machine_capacity_settings': ['effective_from'], 'machine_monthly_allocations': ['month','effective_from'],
+ 'casting_defect_daily': ['defect_date'], 'customer_rejection_daily': ['rejection_date'],
+ 'product_value_addition_history': ['effective_from'],
 }
 RANGE_TABLES = {'process_flow_versions', 'sales_price_history', 'route_versions', 'standard_cycle_times',
-                'operation_machine_map', 'operator_requirement_history', 'machine_capacity_settings'}
+                'operation_machine_map', 'operator_requirement_history', 'machine_capacity_settings',
+                'product_value_addition_history'}
 
 def lock_month(db, month):
     if db.bind.dialect.name == 'postgresql':
