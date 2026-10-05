@@ -48,7 +48,7 @@ def test_diagnostics_reports_database_storage_backup_restore_and_security(tmp_pa
         assert response.status_code == 200, response.text
         result = response.json()
         assert result['status'] == 'ok'
-        assert result['backend']['version'] == '0.5.6'
+        assert result['backend']['version'] == '0.5.7'
         assert result['database']['status'] == 'ok'
         assert result['backup']['file_name'] == backup.name
         assert result['backup']['checksum_valid'] is True

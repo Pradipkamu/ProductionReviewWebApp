@@ -30,7 +30,7 @@ function PageGate({me,pageKey,children}:{me:any,pageKey:string,children:React.Re
 }
 
 function Login() {
-  const [username, setUsername] = useState('admin'); const [password, setPassword] = useState('')
+  const [username, setUsername] = useState(''); const [password, setPassword] = useState('')
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
   async function submit(e: React.FormEvent) { e.preventDefault(); setBusy(true); setError(''); try { const r:any = await login(username,password); setToken(r.access_token); location.reload() } catch(e:any){setError(e.message)} finally {setBusy(false)} }
   return <div className="login-page"><form className="login-card" onSubmit={submit}>

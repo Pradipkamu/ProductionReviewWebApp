@@ -9,6 +9,7 @@ import jwt
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from ..auth import get_current_user, record_security_event
 from ..config import get_settings
@@ -89,6 +90,24 @@ def counts(stats,kind):
 def digest(path):return hash_file(path)
 
 
+def preview_error_message(exc: Exception) -> str:
+    """Return a useful, non-sensitive preview error instead of blank values such as ``[]``."""
+    detail = getattr(exc, 'detail', None)
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    if isinstance(detail, (list, tuple)) and detail:
+        rendered = '; '.join(str(item).strip() for item in detail if str(item).strip())
+        if rendered:
+            return rendered
+    if isinstance(exc, IntegrityError):
+        return (
+            'Workbook contains duplicate or conflicting business rows. '
+            'Combine duplicate combinations into one row and preview again.'
+        )
+    message = str(exc).strip()
+    return message if message and message != '[]' else 'Workbook preview failed. Review duplicate rows and master references.'
+
+
 def batch_model_for(kind):
     if kind.startswith('quality-'):return QualityRejectionImportBatch
     if kind=='casting-daily':return CastingDefectImportBatch
@@ -135,7 +154,7 @@ def preview(kind:str,request:Request,file:UploadFile=File(...),db:Session=Depend
         db.flush()
     except Exception as exc:
         db.rollback();path.unlink(missing_ok=True)
-        return {'status':'rejected','counts':{'new':0,'updated':0,'unchanged':0,'rejected':1},'errors':[str(getattr(exc,'detail',exc))], 'warnings':[], 'can_confirm':False}
+        return {'status':'rejected','counts':{'new':0,'updated':0,'unchanged':0,'rejected':1},'errors':[preview_error_message(exc)], 'warnings':[], 'can_confirm':False}
     finally:
         db.rollback()
         db.info.pop('grant_in_use',None)

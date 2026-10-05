@@ -1,4 +1,4 @@
-# ProductionReviewWebApp v0.5.6
+# ProductionReviewWebApp v0.5.7
 
 React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
 
@@ -89,3 +89,7 @@ Workbook and Action attachment uploads now use centralized size/type/content val
 ## v0.5.6 — Casting, Customer Quality and Value Addition
 
 Casting defects and customer rejections now have separate phenomenon masters, manual entry, controlled Excel preview/confirmation, quantity rules, PPM trends, Pareto analysis and detailed records. Casting PPM uses inspected quantity; Customer PPM uses dispatch/received quantity, so neither is mixed with internal machining PPM. Product Master adds current Value Addition in ₹/piece plus append-only effective-dated history, reason and user evidence. Administrators can configure both new pages in Security / Users → Page Visibility by Role. See [release notes](docs/RELEASE_v0.5.6.md).
+
+## v0.5.7 — Rejection Preview and Login Privacy Fix
+
+Daily Rejection preview now identifies duplicate business combinations with both Excel row numbers and asks the user to combine their quantities before confirmation. Preview exceptions no longer appear as a blank `[]` message. The sign-in page no longer exposes `admin` as a pre-filled username. See [release notes](docs/RELEASE_v0.5.7.md).

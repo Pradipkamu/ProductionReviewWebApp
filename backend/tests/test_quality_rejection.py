@@ -14,6 +14,7 @@ from app.models import (
 )
 from app.services.quality_import import import_daily_rejection_workbook, upsert_phenomenon
 from app.api.quality import _daily_context, _serialize_daily
+from app.api.import_preview import preview_error_message
 
 
 def _headers_for_quality(client):
@@ -152,6 +153,32 @@ def test_daily_rejection_preview_rejects_invalid_shift_and_missing_reject_qty(tm
         assert stats['rows_read'] == 2
         assert any('Shift is required and must be A, B, C or General' in x for x in stats['errors'])
         assert any('Reject Qty is required and must be greater than zero' in x for x in stats['errors'])
+
+
+def test_daily_rejection_preview_reports_duplicate_excel_rows(tmp_path):
+    path = tmp_path / 'daily_quality_duplicate.xlsx'
+    wb = Workbook(); ws = wb.active; ws.title = 'Daily_Rejection_Data'
+    ws.append(['Date','Shift','Product','Detection Process','Responsible Process','Phenomenon','Reject Qty'])
+    ws.append([date(2026,9,30),'A','K70 Cylinder block','Disp_Done','Disp_Done','BORE O/S',1])
+    ws.append([date(2026,9,30),'A','K70 Cylinder block','Disp_Done','Disp_Done','BORE O/S',2])
+    wb.save(path)
+
+    with SessionLocal() as db:
+        _seed_quality_context(db)
+        stats = import_daily_rejection_workbook(db, path)
+        db.flush()
+        assert stats['created'] == 1
+        assert len(stats['errors']) == 1
+        assert 'Rows 2 and 3' in stats['errors'][0]
+        assert 'Combine the quantities into one row' in stats['errors'][0]
+        assert db.query(QualityRejectionDaily).count() == 1
+
+
+def test_preview_error_message_does_not_render_empty_detail_list():
+    class EmptyDetailError(Exception):
+        detail = []
+
+    assert preview_error_message(EmptyDetailError('database preview failed')) == 'database preview failed'
 
 
 def test_phenomenon_upsert_dedupes_same_batch_and_suffixes_code_collisions():

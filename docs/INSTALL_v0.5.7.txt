@@ -1,0 +1,40 @@
+ProductionReviewWebApp v0.5.7
+
+WINDOWS EXISTING INSTALLATION
+1. Extract to a temporary folder.
+2. Copy the CONTENTS of ProductionReviewWebApp into your existing active
+   application folder, for example D:\Machine Shop MIS. Allow file replacement.
+   Do not create a second Compose project in a new folder.
+3. Preserve your existing .env and the entire database folder. Neither ZIP
+   contains live credentials, a database, attachments or production backups.
+4. With Docker Desktop running, open PowerShell in the existing app folder:
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\update_in_place_windows.ps1
+5. Verify:
+   curl.exe http://localhost:8000/api/health
+   Expected version: 0.5.7. Refresh the browser with Ctrl+F5.
+
+The ChangedFiles ZIP is ONLY for a complete v0.5.6 installation.
+The FullSource ZIP includes all application source and standard helpers.
+These are source packages; Docker downloads dependencies/builds the images.
+
+NEW UBUNTU HTTPS SERVER (EXISTING INSTALLATION)
+Use /home/ubuntu/ProductionReviewWebApp and retain the current .env.
+REQUIRE_HTTPS=true and TRUST_PROXY_HEADERS=true must remain enabled.
+After fetching and fast-forwarding to the published v0.5.7 commit, run:
+   bash deploy_v057_linux.sh
+The script preserves .env, builds/preflights the release, pauses app writes,
+creates a PostgreSQL custom-format backup, verifies its archive listing,
+starts the apps and checks version 0.5.7 plus public HTTPS auth status 401.
+An archive listing is an integrity check, not an isolated restore test.
+Previous application images are retained and restored on a deployment error.
+No database migration is introduced by v0.5.7. Nginx/Certbot are unchanged.
+Protect database/backups: its environment.env backup contains credentials.
+
+CHANGES
+- Repeated daily rejection business rows identify both Excel row numbers.
+- Duplicate quantities must be combined before import confirmation.
+- Empty preview errors receive useful feedback.
+- Login username starts blank.
+
+This package does not mean the remote server has already been updated.
+Deployment is complete only when its checks pass on your server.

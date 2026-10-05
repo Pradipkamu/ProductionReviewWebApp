@@ -234,6 +234,7 @@ def import_daily_rejection_workbook(db: Session, path: str | Path, *, batch_id: 
         raise ValueError("Missing columns: " + ", ".join(missing))
 
     stats = {"rows_read": 0, "created": 0, "updated": 0, "unchanged": 0, "errors": [], "warnings": [], "ppm_pending": 0}
+    workbook_keys: dict[str, int] = {}
     direct_input_columns = [h.get(_norm(x)) for x in [
         "Date", "Shift", "Product", "Detection Process", "Responsible Process", "Machine",
         "Phenomenon", "Reject Qty", "Rework Qty", "Scrap Qty", "Remark", "Raise Action",
@@ -325,6 +326,14 @@ def import_daily_rejection_workbook(db: Session, path: str | Path, *, batch_id: 
 
         key = _daily_record_key(on_date, shift, product.id, detection_ro.id, responsible_ro.id if responsible_ro else None,
                                 machine.id if machine else None, phenomenon.id)
+        first_row = workbook_keys.get(key)
+        if first_row is not None:
+            stats["errors"].append(
+                f"Rows {first_row} and {r}: duplicate daily rejection combination for "
+                f"{product.name} / {det_label} / {phenomenon.name}. Combine the quantities into one row."
+            )
+            continue
+        workbook_keys[key] = r
         row = db.scalar(select(QualityRejectionDaily).where(QualityRejectionDaily.record_key == key))
         desired = (
             reject_qty, rework_qty, scrap_qty, denom_source, denom_qty, ppm,
