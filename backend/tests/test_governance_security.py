@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from app.main import app
-from app.models import User, Product, DailyMIS, GovernanceAudit, HistoricalCorrectionGrant, SecurityEvent, UserSession
+from app.models import User, Product, DailyMIS, GovernanceAudit, HistoricalCorrectionGrant, PageAccessRule, SecurityEvent, UserSession
 from app.db import SessionLocal
 from app.enums import UserRole
 from app.auth import hash_password
@@ -109,3 +109,80 @@ def test_admin_can_review_all_sessions_and_security_events():
     events=c.get('/api/auth/security-events?limit=20',headers=admin)
     assert events.status_code == 200
     assert any(x['event_type']=='LOGIN_SUCCESS' for x in events.json())
+
+
+def test_admin_configures_role_page_visibility_without_changing_api_permissions():
+    with SessionLocal() as db:
+        db.add(User(
+            username='viewer',
+            full_name='Viewer',
+            role=UserRole.VIEW_ONLY,
+            password_hash=hash_password('ViewPassword123!'),
+            must_change_password=False,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    admin = headers(client)
+    config_response = client.get('/api/auth/page-access', headers=admin)
+    assert config_response.status_code == 200
+    config = config_response.json()
+    assert 'mis' in config['access']['VIEW_ONLY']
+    assert 'diagnostics' not in config['access']['VIEW_ONLY']
+    assert set(config['access']['ADMIN']) == {page['key'] for page in config['pages']}
+
+    access = {role: keys for role, keys in config['access'].items() if role != 'ADMIN'}
+    access['VIEW_ONLY'] = [key for key in access['VIEW_ONLY'] if key != 'mis'] + ['diagnostics']
+    updated = client.put(
+        '/api/auth/page-access',
+        headers=admin,
+        json={'access': access, 'reason': 'Limit viewer navigation for review'},
+    )
+    assert updated.status_code == 200, updated.text
+
+    viewer = headers(client, 'viewer', 'ViewPassword123!')
+    me = client.get('/api/auth/me', headers=viewer)
+    assert me.status_code == 200
+    assert 'mis' not in me.json()['page_access']
+    assert 'diagnostics' in me.json()['page_access']
+    assert 'account' in me.json()['page_access']
+    # Page visibility is a navigation control. Existing backend policy remains
+    # authoritative, so a visible Diagnostics page still cannot call its API.
+    assert client.get('/api/diagnostics', headers=viewer).status_code == 403
+    # A hidden read-only page does not silently create a new API authorization rule.
+    assert client.get('/api/masters/products', headers=viewer).status_code == 200
+
+    with SessionLocal() as db:
+        assert db.scalar(select(PageAccessRule).where(
+            PageAccessRule.role == 'VIEW_ONLY', PageAccessRule.page_key == 'mis'
+        )).is_visible is False
+        assert db.scalar(select(GovernanceAudit).where(GovernanceAudit.event == 'PAGE_ACCESS_UPDATED')) is not None
+        assert db.scalar(select(SecurityEvent).where(SecurityEvent.event_type == 'PAGE_ACCESS_UPDATED')) is not None
+
+
+def test_page_visibility_configuration_is_admin_only_and_required_page_is_locked():
+    with SessionLocal() as db:
+        db.add(User(
+            username='manager',
+            full_name='Manager',
+            role=UserRole.MANAGEMENT,
+            password_hash=hash_password('ManagerPassword123!'),
+            must_change_password=False,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    manager = headers(client, 'manager', 'ManagerPassword123!')
+    assert client.get('/api/auth/page-access', headers=manager).status_code == 403
+
+    admin = headers(client)
+    config = client.get('/api/auth/page-access', headers=admin).json()
+    access = {role: keys for role, keys in config['access'].items() if role != 'ADMIN'}
+    access['MANAGEMENT'] = [key for key in access['MANAGEMENT'] if key != 'account']
+    rejected = client.put(
+        '/api/auth/page-access',
+        headers=admin,
+        json={'access': access, 'reason': 'Attempt to hide required page'},
+    )
+    assert rejected.status_code == 422
+    assert 'cannot be hidden' in rejected.json()['detail']
