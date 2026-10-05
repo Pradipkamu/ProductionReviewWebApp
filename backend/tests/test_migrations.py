@@ -22,7 +22,7 @@ def test_new_database_and_legacy_adoption_preserve_rows(tmp_path):
         assert conn.scalar(text('SELECT name FROM products WHERE id=1'))=='Original Part'
         assert conn.scalar(text('SELECT password_hash FROM users WHERE id=1'))=='legacy-hash'
         assert conn.scalar(text('SELECT must_change_password FROM users WHERE id=1'))==1
-        assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0011_page_access_rules'
+        assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0012_casting_customer_quality'
         assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))==0
         diffs=compare_metadata(MigrationContext.configure(conn),Base.metadata)
         assert not diffs,diffs
