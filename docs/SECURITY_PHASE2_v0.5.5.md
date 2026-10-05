@@ -62,4 +62,4 @@ PostgreSQL and FastAPI host bindings remain localhost-only by default.
 
 ## Database migration
 
-No new database migration is required by v0.5.5. It uses the v0.5.4 schema head 0010_security_sessions.
+The additive `0011_page_access_rules` migration stores administrator-managed page visibility by role. The safe updater applies it automatically and preserves the previous hard-coded visibility as the default until an administrator saves changes.

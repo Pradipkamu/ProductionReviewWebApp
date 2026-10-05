@@ -59,6 +59,14 @@ Backend API authorization is authoritative. Frontend navigation is only a conven
 
 ADMIN bypasses normal write-role checks but remains subject to audit and month-protection rules.
 
+### Page visibility configuration
+
+An administrator can open **Security / Users → Page Visibility by Role** and choose which application pages appear for each role. Saving requires a reason and creates both governance-audit and security-event records. The same matrix blocks direct browser navigation to a hidden page.
+
+The Admin role always retains every page. The Security / Users page remains available to every role so users cannot lose password and session controls. Existing installations begin with the previous hard-coded visibility defaults.
+
+Page visibility does not grant backend permission. A visible page can still show an authorization error when its API requires a stricter role, and hiding a page does not replace backend API policy.
+
 ## Historical data
 
 - Closed months are protected.
