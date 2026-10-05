@@ -14,6 +14,8 @@ export default function ImportExcel(){
   ['historical-sales-prices','Historical Sales Price','Effective-dated prices; import before historical MIS'],
   ['historical-daily-mis','Historical Daily MIS','Historical or MIS-only import; use Daily Production Upload for normal combined daily uploads'],
   ['quality-daily','Daily Rejection','Use the Daily Rejection template from Quality'],
-  ['quality-history','Historical Rejection','Monthly history with matching MIS dispatch denominator']
+  ['quality-history','Historical Rejection','Monthly history with matching MIS dispatch denominator'],
+  ['casting-daily','Casting Defects','Incoming casting defects with inspected-quantity PPM'],
+  ['customer-quality-daily','Customer Rejection','Customer rejection with dispatch/received-quantity PPM']
  ].map(([kind,title,note])=><section className="panel" key={kind}><h2>{title}</h2><p>{note}</p><ImportPreview kind={kind}/></section>)}</>
 }
