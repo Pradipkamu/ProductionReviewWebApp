@@ -22,6 +22,7 @@ export function PasswordForm({required=false}:{required?:boolean}) {
 export default function Security(){
  const [users,setUsers]=useState<any[]>([]),[me,setMe]=useState<any>(null),[status,setStatus]=useState<any>(null)
  const [sessions,setSessions]=useState<any[]>([]),[events,setEvents]=useState<any[]>([])
+ const [pageConfig,setPageConfig]=useState<any>(null),[accessReason,setAccessReason]=useState('')
  const [error,setError]=useState(''),[message,setMessage]=useState('')
  const [form,setForm]=useState({username:'',full_name:'',password:'',role:'VIEW_ONLY'})
  const roles=['ADMIN','PRODUCTION','QUALITY','PLANNING','MANAGEMENT','VIEW_ONLY','PURCHASE','DISPATCH','VENDOR']
@@ -32,7 +33,9 @@ export default function Security(){
    const m:any=await api('/auth/me');setMe(m)
    const requests:Promise<any>[]=[api('/auth/security-status'),api(`/auth/sessions?all_users=${m.role==='ADMIN'}`)]
    const [s,ss]=await Promise.all(requests);setStatus(s);setSessions(ss)
-   if(m.role==='ADMIN')setUsers(await api('/masters/users'))
+   if(m.role==='ADMIN'){
+    const [u,p]=await Promise.all([api<any[]>('/masters/users'),api('/auth/page-access')]);setUsers(u);setPageConfig(p)
+   }
    if(['ADMIN','MANAGEMENT'].includes(m.role))setEvents(await api('/auth/security-events?limit=150'))
   }catch(e:any){setError(e.message)}
  }
@@ -64,6 +67,20 @@ export default function Security(){
    const r:any=await api(`/auth/sessions/${s.id}`,{method:'DELETE'})
    if(r.current_session){clearToken();location.reload();return}
    setMessage('Session revoked.');load()
+  }catch(e:any){setError(e.message)}
+ }
+ function togglePage(role:string,pageKey:string,checked:boolean){
+  setPageConfig((current:any)=>{
+   const keys=new Set<string>(current.access[role]||[]);checked?keys.add(pageKey):keys.delete(pageKey)
+   return {...current,access:{...current.access,[role]:current.pages.map((p:any)=>p.key).filter((key:string)=>keys.has(key))}}
+  })
+ }
+ async function savePageAccess(){
+  if(accessReason.trim().length<5){setError('Enter a reason of at least 5 characters for the page-access change.');return}
+  const access=Object.fromEntries(pageConfig.roles.filter((role:string)=>role!=='ADMIN').map((role:string)=>[role,pageConfig.access[role]||[]]))
+  try{
+   setError('');const updated=await api('/auth/page-access',{method:'PUT',body:JSON.stringify({access,reason:accessReason})})
+   setPageConfig(updated);setAccessReason('');setMessage('Page visibility updated. Users receive the new menu and route access on their next page load.')
   }catch(e:any){setError(e.message)}
  }
 
@@ -99,6 +116,7 @@ export default function Security(){
   </section>}
 
   {me?.role==='ADMIN'&&<><section className="panel"><h2>Users & Roles</h2><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Active</th><th>Last Login</th><th>Lock</th><th>Password</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}<br/><small>{u.username}</small></td><td><select value={u.role} onChange={e=>update(u,e.target.value,u.is_active)}>{roles.map(r=><option key={r}>{r}</option>)}</select></td><td><input type="checkbox" checked={u.is_active} onChange={e=>update(u,u.role,e.target.checked)}/></td><td>{stamp(u.last_login_at)}</td><td>{u.locked_until?<><span className="status bad">Until {stamp(u.locked_until)}</span><br/><button className="small secondary" onClick={()=>unlock(u)}>Unlock</button></>:<span className="status good">OK</span>}<br/><small>{u.failed_login_attempts||0} failed</small></td><td><button onClick={()=>reset(u)}>Reset</button></td></tr>)}</tbody></table></div></section>
+   {pageConfig&&<section className="panel"><div className="panel-title"><div><h2>Page Visibility by Role</h2><p>Checked pages appear in the menu and can be opened by that role. Backend API permissions remain separately enforced.</p></div></div><div className="table-wrap access-matrix"><table><thead><tr><th>Page</th>{pageConfig.roles.map((role:string)=><th key={role}>{role.replace('_',' ')}</th>)}</tr></thead><tbody>{pageConfig.pages.map((page:any)=><tr key={page.key}><th>{page.label}{page.required&&<><br/><small>Required</small></>}</th>{pageConfig.roles.map((role:string)=>{const locked=role==='ADMIN'||page.required;return <td key={role}><input type="checkbox" aria-label={`${page.label} for ${role}`} checked={role==='ADMIN'||(pageConfig.access[role]||[]).includes(page.key)} disabled={locked} onChange={e=>togglePage(role,page.key,e.target.checked)}/></td>})}</tr>)}</tbody></table></div><div className="access-save"><label>Reason for change<input value={accessReason} onChange={e=>setAccessReason(e.target.value)} placeholder="Example: Align menus with department responsibilities"/></label><button onClick={savePageAccess}>Save page visibility</button></div></section>}
    <section className="panel"><h2>Create User</h2><p>New accounts are forced to change their temporary password on first sign-in.</p><form onSubmit={create}>{['username','full_name','password'].map(k=><label key={k}>{k.replace('_',' ')}<input required type={k==='password'?'password':'text'} minLength={k==='password'?12:undefined} value={(form as any)[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<label>Role<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>{roles.map(r=><option key={r}>{r}</option>)}</select></label><button>Create user</button></form></section></>}
  </>
 }
