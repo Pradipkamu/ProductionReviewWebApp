@@ -1,30 +1,7 @@
 import { useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { clearToken, logout } from '../api'
-
-type NavItem={to:string,label:string,roles?:string[]}
-const nav:NavItem[] = [
-  {to:'/insights',label:'Exceptions / Data Quality'},
-  {to:'/diagnostics',label:'System Diagnostics',roles:['ADMIN','MANAGEMENT']},
-  {to:'/account',label:'Security / Users'},
-  {to:'/governance',label:'Month Close / Audit',roles:['ADMIN','MANAGEMENT']},
-  {to:'/',label:'Daily Review'},
-  {to:'/mis',label:'MIS'},
-  {to:'/schedule',label:'Schedule / Price / Calendar'},
-  {to:'/machine-master',label:'Machine Master'},
-  {to:'/capacity',label:'Capacity / Manpower'},
-  {to:'/process',label:'Process Monitor'},
-  {to:'/process-actuals',label:'Process Actuals / Edit'},
-  {to:'/quality',label:'Quality / Rejection'},
-  {to:'/reports',label:'Compliance Reports'},
-  {to:'/management-reports',label:'Management Reports'},
-  {to:'/actions',label:'Actions'},
-  {to:'/vendor',label:'Vendor WIP'},
-  {to:'/oee',label:'Machine / OEE'},
-  {to:'/analytics',label:'Analytics'},
-  {to:'/masters',label:'Masters'},
-  {to:'/import',label:'Excel Import',roles:['ADMIN','PLANNING','QUALITY','PRODUCTION']},
-]
+import { canViewPage, navItems } from '../pageAccess'
 
 function CorrectionControls({role}:{role:string}){
  if(role==='VIEW_ONLY')return null
@@ -47,7 +24,7 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
     try{await logout()}finally{clearToken();location.reload()}
   }
 
-  const visible=nav.filter(item=>!item.roles||item.roles.includes(me?.role))
+  const visible=navItems.filter(item=>canViewPage(me,item.key))
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">PR</div><div><b>Production Review</b><span>Process • Sales • Actions</span></div></div>
