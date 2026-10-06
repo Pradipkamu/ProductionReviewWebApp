@@ -322,7 +322,9 @@ def machine_loading_summary(db: Session, month: date) -> dict:
         row["status"] = (
             "OVERLOADED" if overload_percent > 0 else
             "FULL" if load_percent >= Decimal("99.999") else
-            "AVAILABLE"
+            "NEAR CAPACITY" if load_percent >= Decimal("85") else
+            "HEALTHY" if load_percent >= Decimal("60") else
+            "UNDERLOADED"
         )
         row["allocations"].sort(key=lambda x: (x["product"], x["operation"]))
         result.append(row)
