@@ -216,10 +216,13 @@ def _history_dispatch_resolution(
         return {}
 
     selected_plants = set(csv_strings(plant_filter))
+    # Dispatch Done is a denominator, not part of the rejection numerator.
+    # Resolve it for defect-detail rows too so each historical phenomenon can show
+    # PPM from the same product/month Historical Daily MIS dispatch total. The
+    # include_in_aggregate flag continues to control rejection aggregation only.
     eligible_keys: set[tuple[date, int]] = set()
     for x in rows:
-        scope = str(x.record_scope or "").strip().upper()
-        if x.include_in_aggregate and scope in {"PRODUCT_TOTAL", "AGGREGATE_TOTAL", "TOTAL", ""} and _is_dispatch_denominator(x.denominator_source):
+        if _is_dispatch_denominator(x.denominator_source):
             eligible_keys.add((_month_start(x.month), x.product_id))
 
     monthly: dict[tuple[date, int], float] = defaultdict(float)
@@ -256,8 +259,7 @@ def _history_dispatch_resolution(
     resolved: dict[int, tuple[float | None, str | None]] = {}
     for x in rows:
         key = (_month_start(x.month), x.product_id)
-        scope = str(x.record_scope or "").strip().upper()
-        eligible = x.include_in_aggregate and scope in {"PRODUCT_TOTAL", "AGGREGATE_TOTAL", "TOTAL", ""} and _is_dispatch_denominator(x.denominator_source)
+        eligible = _is_dispatch_denominator(x.denominator_source)
         stored_qty = _num(x.dispatch_qty) if x.dispatch_qty is not None else 0.0
         mis_qty = monthly.get(key, 0.0)
 
