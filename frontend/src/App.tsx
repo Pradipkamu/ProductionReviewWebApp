@@ -45,7 +45,7 @@ export default function App(){
   const [me,setMe]=useState<any>(null)
   useEffect(()=>{if(getToken())api('/auth/me').then(setMe).catch(()=>{})},[])
   if(!getToken()) return <Login />
-  if(!me) return <p>Loading account…</p>
+  if(!me) return <div className="loading-screen"><div><div className="brand-mark lg">PR</div><p>Loading your workspace…</p></div></div>
   if(me.must_change_password) return <div className="login-page"><PasswordForm required/></div>
   const page=(pageKey:string,element:React.ReactNode)=><PageGate me={me} pageKey={pageKey}>{element}</PageGate>
   return <Layout me={me}><Routes>
