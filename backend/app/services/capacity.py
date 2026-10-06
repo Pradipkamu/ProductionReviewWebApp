@@ -347,6 +347,8 @@ def machine_loading_summary(db: Session, month: date) -> dict:
         "machine_count": len(result),
         "allocated_machine_count": sum(1 for x in result if x["allocated_load_percent"] > 0),
         "overloaded_machine_count": sum(1 for x in result if x["overload_percent"] > 0),
+        "near_capacity_machine_count": sum(1 for x in result if x["status"] == "NEAR CAPACITY"),
+        "underloaded_machine_count": sum(1 for x in result if x["status"] == "UNDERLOADED"),
         "required_operator_equivalent": float(sum((Decimal(str(x["required_operator_equivalent"])) for x in result), ZERO)),
         "operator_hours": float(sum((Decimal(str(x["operator_hours"])) for x in result), ZERO)),
         "readiness": {
