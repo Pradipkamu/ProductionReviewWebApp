@@ -23,7 +23,7 @@ from ..enums import ActionStatus, Priority
 from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, Customer, DailyMIS, Machine, Operation, Product,
     QualityActionLink, QualityPhenomenon, QualityRejectionDaily, QualityRejectionImportBatch,
-    QualityRejectionMonthlyHistory, ReviewActionLink, ReviewSession, RouteOperation, User,
+    QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, ReviewActionLink, ReviewSession, RouteOperation, User,
 )
 from ..services.filtering import csv_ints, csv_strings
 from ..services.quality_import import (
@@ -226,6 +226,7 @@ def _history_dispatch_resolution(
             eligible_keys.add((_month_start(x.month), x.product_id))
 
     monthly: dict[tuple[date, int], float] = defaultdict(float)
+    historical_ppm_production: dict[tuple[date, int], float] = {}
     all_plants_by_key: dict[tuple[date, int], set[str]] = defaultdict(set)
     if eligible_keys:
         months = [m for m, _ in eligible_keys]
@@ -241,6 +242,16 @@ def _history_dispatch_resolution(
         )
         for mis in db.scalars(mis_q).all():
             monthly[(_month_start(mis.mis_date), mis.product_id)] += _num(mis.actual_qty)
+
+        ppm_q = select(QualityHistoricalPpmProduction).where(
+            QualityHistoricalPpmProduction.product_id.in_(product_ids),
+            QualityHistoricalPpmProduction.month >= start,
+            QualityHistoricalPpmProduction.month <= last,
+        )
+        for prod in db.scalars(ppm_q).all():
+            historical_ppm_production[(_month_start(prod.month), prod.product_id)] = (
+                _num(prod.siddharth_machining_qty) + _num(prod.silver_production_qty)
+            )
 
         if selected_plants:
             plant_q = select(
@@ -262,6 +273,13 @@ def _history_dispatch_resolution(
         eligible = _is_dispatch_denominator(x.denominator_source)
         stored_qty = _num(x.dispatch_qty) if x.dispatch_qty is not None else 0.0
         mis_qty = monthly.get(key, 0.0)
+        ppm_production_qty = historical_ppm_production.get(key, 0.0)
+
+        # The approved historical quality denominator is Siddharth Machining +
+        # Silver Production. It takes precedence over broad Daily MIS Dispatch.
+        if eligible and ppm_production_qty > 0:
+            resolved[x.id] = (ppm_production_qty, "SIDDHARTH_MACHINING_PLUS_SILVER")
+            continue
 
         # A plant filter is scope-safe only when it covers every historical plant for
         # this Product + Month. Otherwise Daily MIS is too broad because it has no
