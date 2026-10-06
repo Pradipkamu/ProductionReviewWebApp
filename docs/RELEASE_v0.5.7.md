@@ -15,3 +15,9 @@
 - Existing data and credentials are unchanged.
 
 For an existing installation, copy the release files over the application directory while retaining `.env` and `database/`, then run the normal update-in-place script.
+
+## Completion update (6 October 2026)
+
+- Restore the missing Process Monitor daily Plan/Actual chart below the average chart, with stage selection and the daily table. Working dates come from the existing API; missing quantities remain distinct from recorded zero.
+- Include the corrected Windows backup helper: native stderr status messages no longer stop successful SSH/SCP operations; nonzero exits and SHA-256 failures still stop the script.
+- No new database migration or version-number change; identify this completion update by its Git commit.
