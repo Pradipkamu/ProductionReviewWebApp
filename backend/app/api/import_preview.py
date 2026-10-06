@@ -21,11 +21,11 @@ from ..models import (
 from ..services.excel_import import import_daily_production_workbook
 from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
-from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook
+from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook, import_phenomenon_master_workbook
 from ..services.special_quality_import import import_casting_defects_workbook, import_customer_rejections_workbook
 from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_workbook_file
 router=APIRouter(prefix='/import',tags=['import preview'])
-KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history','casting-daily','customer-quality-daily'}
+KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history','quality-phenomena','casting-daily','customer-quality-daily'}
 KIND_SCOPED_HASHES={'daily-production','process-design','stage-schedules','stage-daily'}
 
 
@@ -74,14 +74,14 @@ def run_import(db,path,kind,user,batch_id=None):
         return import_daily_production_workbook(db,path)
     if kind=='historical-daily-mis':return import_historical_daily_mis(db,path)
     if kind=='historical-sales-prices':return import_historical_sales_prices(db,path,user.id)
-    if kind=='quality-daily':return import_daily_rejection_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
+    if kind=='quality-daily':return import_daily_rejection_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)\n    if kind=='quality-phenomena':return import_phenomenon_master_workbook(db,path)
     if kind=='casting-daily':return import_casting_defects_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
     if kind=='customer-quality-daily':return import_customer_rejections_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
     return import_historical_rejection_workbook(db,path,batch_id=batch_id)
 
 
 def counts(stats,kind):
-    if kind in {'daily-production','quality-daily','quality-history','casting-daily','customer-quality-daily','process-design','stage-schedules','stage-daily'}:
+    if kind in {'daily-production','quality-daily','quality-history','quality-phenomena','casting-daily','customer-quality-daily','process-design','stage-schedules','stage-daily'}:
         return {'new':stats.get('created',stats.get('new',0)),'updated':stats.get('updated',0),'unchanged':stats.get('unchanged',0),'rejected':len(stats.get('errors',[]))}
     prefix='price_rows' if kind=='historical-sales-prices' else 'mis'
     return {'new':stats.get(prefix+'_created',0),'updated':stats.get(prefix+'_updated',0),'unchanged':stats.get(prefix+'_unchanged',0),'rejected':len(stats.get('errors',[]))}
@@ -189,7 +189,7 @@ def confirm(payload:Confirm,db:Session=Depends(get_db),user:User=Depends(get_cur
     if fingerprint(db,lock=True)!=claims['fingerprint']:raise HTTPException(409,'Data changed after preview; preview again before confirming')
     try:
         batch=batch_model(file_name=claims['filename'],file_sha256=claims.get('batch_sha',claims['sha']),imported_by_id=user.id,status='RUNNING')
-        if kind.startswith('quality-'):batch.import_type='DAILY' if kind=='quality-daily' else 'HISTORICAL'
+        if kind.startswith('quality-'):batch.import_type='DAILY' if kind=='quality-daily' else ('PHENOMENON_MASTER' if kind=='quality-phenomena' else 'HISTORICAL')
         db.add(batch);db.flush()
         stats=run_import(db,path,kind,user,batch.id if kind.startswith('quality-') or kind in {'casting-daily','customer-quality-daily'} else None)
         if stats.get('errors'):raise HTTPException(422,stats['errors'])
