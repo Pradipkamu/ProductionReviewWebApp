@@ -904,15 +904,29 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
     phenomena = _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in history})
     month_first = from_date.replace(day=1)
     month_last = to_date.replace(day=1)
+    monthly = monthly_trend(from_month=month_first, to_month=month_last, plant=plant,
+                            product_id=product_id, phenomenon_id=phenomenon_id,
+                            customer_id=customer_id, product_group=product_group, db=db, _=user)
+    summary = _dashboard_data(db, aggregate_daily, aggregate_history, resolved, supported)
+    # KPI cards and monthly charts must use one authoritative aggregation path.
+    # This prevents a partial daily upload from making the cards disagree with
+    # an existing historical monthly aggregate displayed in the chart.
+    summary["reject_qty"] = sum(_num(x.get("reject_qty")) for x in monthly)
+    summary["denominator_qty"] = sum(_num(x.get("denominator_qty")) for x in monthly)
+    summary["ppm_pending_rows"] = sum(int(x.get("ppm_pending_rows") or 0) for x in monthly)
+    summary["ppm"] = (
+        summary["reject_qty"] / summary["denominator_qty"] * 1_000_000
+        if summary["denominator_qty"] > 0 and summary["ppm_pending_rows"] == 0 else None
+    )
+    summary["historical_records"] = len(aggregate_history)
+    summary["daily_records"] = len(aggregate_daily)
     return {
-        'summary': _dashboard_data(db, aggregate_daily, aggregate_history, resolved, supported),
+        'summary': summary,
         'rows': [_serialize_daily(x, context) for x in daily],
         'trend': _trend_data(daily, from_date, to_date),
         'part_pareto': _pareto_data(db, aggregate_daily, aggregate_history, resolved, 'product', context, products, phenomena),
         'phenomenon_pareto': _pareto_data(db, aggregate_daily, aggregate_history, resolved, 'phenomenon', context, products, phenomena),
-        'monthly_trend': monthly_trend(from_month=month_first, to_month=month_last, plant=plant,
-                                      product_id=product_id, phenomenon_id=phenomenon_id,
-                                      customer_id=customer_id, product_group=product_group, db=db, _=user),
+        'monthly_trend': monthly,
         'history': [_serialize_history(x, products, phenomena, resolved) for x in history],
     }
 
