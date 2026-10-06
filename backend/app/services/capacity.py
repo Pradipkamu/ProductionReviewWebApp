@@ -328,6 +328,17 @@ def machine_loading_summary(db: Session, month: date) -> dict:
         result.append(row)
 
     result.sort(key=lambda x: (x["machine_code"], x["machine_name"]))
+    by_area: dict[tuple[str, str], dict] = {}
+    for row in result:
+        key = (row["plant"] or "Unassigned", row["department"] or "Unassigned")
+        area = by_area.setdefault(key, {"plant": key[0], "department": key[1], "machine_count": 0, "allocated_machine_count": 0, "overloaded_machine_count": 0, "required_operator_equivalent": ZERO, "operator_hours": ZERO})
+        area["machine_count"] += 1
+        area["allocated_machine_count"] += 1 if row["allocation_count"] > 0 else 0
+        area["overloaded_machine_count"] += 1 if row["overload_percent"] > 0 else 0
+        area["required_operator_equivalent"] += Decimal(str(row["required_operator_equivalent"]))
+        area["operator_hours"] += Decimal(str(row["operator_hours"]))
+    area_summary = [{**area, "required_operator_equivalent": float(area["required_operator_equivalent"]), "operator_hours": float(area["operator_hours"])} for area in by_area.values()]
+    area_summary.sort(key=lambda x: (x["plant"], x["department"]))
     return {
         "month": month.isoformat(),
         "machines": result,
@@ -340,6 +351,7 @@ def machine_loading_summary(db: Session, month: date) -> dict:
             "unallocated_machine_count": sum(1 for x in result if x["allocation_count"] == 0),
             "loaded_machine_count": sum(1 for x in result if x["allocation_count"] > 0),
         },
+        "areas": area_summary,
     }
 
 
