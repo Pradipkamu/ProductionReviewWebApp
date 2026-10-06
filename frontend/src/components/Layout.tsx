@@ -21,6 +21,14 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
   const routeLocation=useLocation()
   useEffect(()=>setMenuOpen(false),[routeLocation.pathname])
   useEffect(()=>{
+    if(!menuOpen)return
+    const previous=document.body.style.overflow
+    document.body.style.overflow='hidden'
+    const onKey=(event:KeyboardEvent)=>{if(event.key==='Escape')setMenuOpen(false)}
+    window.addEventListener('keydown',onKey)
+    return()=>{document.body.style.overflow=previous;window.removeEventListener('keydown',onKey)}
+  },[menuOpen])
+  useEffect(()=>{
     const minutes=Math.max(5,Number(me?.session_idle_timeout_minutes||60))
     let timer:number
     const expire=async()=>{try{await logout()}finally{window.location.reload()}}
