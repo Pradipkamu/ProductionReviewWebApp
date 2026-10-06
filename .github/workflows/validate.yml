@@ -37,3 +37,17 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci && npm run build && npm audit --audit-level=moderate
         working-directory: frontend
+
+  package:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package exact validated source
+        run: git archive --format=zip --output=ProductionReviewWebApp-v0.5.8.zip HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ProductionReviewWebApp-v0.5.8-source
+          path: ProductionReviewWebApp-v0.5.8.zip
+          if-no-files-found: error
+          retention-days: 30
