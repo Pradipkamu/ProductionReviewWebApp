@@ -318,7 +318,8 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
 
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
-                       product_id: int | None = None, db: Session = Depends(get_db),
+                       product_id: int | None = None, target_oee: float = 0.85,
+                       recurring_event_threshold: int = 3, db: Session = Depends(get_db),
                        _: User = Depends(get_current_user)):
     if to_date < from_date:
         raise HTTPException(422, "to_date must be on or after from_date")
@@ -360,8 +361,10 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     machine_summary = []
     for mid, items in by_machine.items():
         metric = aggregate(items)
+        status = "ON TARGET" if metric["oee_reported"] >= target_oee else "BELOW TARGET"
         machine_summary.append({"machine_id": mid, "machine": machines[mid].code if mid in machines else str(mid),
-                                "entry_count": len(items), **metric})
+                                "entry_count": len(items), "status": status,
+                                "gap_to_target": max(0.0, target_oee - metric["oee_reported"]), **metric})
     machine_summary.sort(key=lambda x: x["oee_reported"])
 
     pareto = {}
@@ -374,9 +377,14 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
         item["qty_loss"] += float(loss.qty_loss)
         item["events"] += 1
     loss_pareto = sorted(pareto.values(), key=lambda x: (x["minutes"], x["events"]), reverse=True)
+    recurring_losses = [x for x in loss_pareto if x["events"] >= recurring_event_threshold]
     overall = aggregate(rows)
-    return {"from_date": from_date, "to_date": to_date, "entry_count": len(rows), "loss_event_count": len(losses),
-            "overall": overall, "trend": trend, "machines": machine_summary, "loss_pareto": loss_pareto}
+    below_target = [x for x in machine_summary if x["status"] == "BELOW TARGET"]
+    return {"from_date": from_date, "to_date": to_date, "target_oee": target_oee,
+            "entry_count": len(rows), "loss_event_count": len(losses),
+            "below_target_machine_count": len(below_target), "recurring_loss_count": len(recurring_losses),
+            "overall": overall, "trend": trend, "machines": machine_summary,
+            "loss_pareto": loss_pareto, "recurring_losses": recurring_losses}
 
 
 @router.get("/machine-summary")
