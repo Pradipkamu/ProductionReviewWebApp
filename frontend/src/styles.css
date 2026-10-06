@@ -246,3 +246,28 @@ button,input,select,textarea,.multi-select-trigger{touch-action:manipulation}
   .rank-row{grid-template-columns:88px minmax(100px,1fr) 56px;font-size:11px}
   .bar-row{grid-template-columns:68px minmax(100px,1fr) 52px}
 }
+
+
+/* v0.5.11 final mobile audit: imports, security, auth and safe-area handling */
+.mobile-menu-button{padding-top:max(9px,env(safe-area-inset-top))}
+.sidebar{padding-bottom:max(16px,env(safe-area-inset-bottom))}
+.import-preview{display:grid;gap:10px;min-width:0}
+.import-preview>input[type=file]{max-width:100%}
+.import-preview>div{min-width:0;overflow-x:auto}
+.import-preview table{width:max-content;min-width:100%}
+.import-preview pre{max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:700px){
+  .login-page{padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom))}
+  .login-card{padding:22px 16px;border-radius:14px}
+  .login-card h1{font-size:22px}
+  .login-card .brand-mark.lg{width:54px;height:54px}
+  .import-preview>button{width:100%}
+  .import-preview input[type=file]{min-height:46px;padding:8px}
+  .import-preview details{max-width:100%;overflow:hidden}
+  .access-matrix{overflow-x:auto}
+  .access-matrix table{width:max-content;min-width:640px}
+  .access-matrix th:first-child{position:sticky;left:0;z-index:2;background:#f4f7fb}
+  .access-matrix td input[type=checkbox]{min-width:22px;min-height:22px}
+  .panel form>button{width:100%}
+  details>summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+}
