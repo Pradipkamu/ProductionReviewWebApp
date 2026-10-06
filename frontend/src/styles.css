@@ -185,3 +185,64 @@ button,input,select,textarea,.multi-select-trigger{touch-action:manipulation}
 }
 @media(max-width:350px){.kpi-grid{grid-template-columns:1fr}}
 @media(hover:none){button:hover:not(:disabled){box-shadow:none}tr:hover td{background:inherit}}
+
+
+/* v0.5.10 page-by-page mobile optimization */
+@media(max-width:700px){
+  /* Dashboard / Daily review */
+  .daily-steps{gap:9px}.daily-step{padding:11px;gap:10px}.daily-step h3{font-size:14px}.daily-step p{font-size:11px}
+  .action-notice{padding:10px}.section-label{font-size:10px;margin-bottom:8px}
+
+  /* MIS / Schedule / Process */
+  .calendar-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.calendar-grid .day{padding:8px 6px;min-height:58px}
+  .route-flow{gap:9px;padding-bottom:12px;scroll-snap-type:x proximity}.route-step{scroll-snap-align:start;padding:12px}
+  .route-step .metric b{font-size:20px}.route-step .arrow{display:none}
+  .preview{overflow-wrap:anywhere}
+
+  /* Process actuals / Capacity / Machine master */
+  .allocation-footer,.capacity-master-grid,.machine-field-grid,.cost-breakdown{grid-template-columns:minmax(0,1fr)}
+  .allocation-footer{gap:8px}.capacity-master-grid button{width:100%}
+  .machine-master-layout{grid-template-columns:minmax(0,1fr);gap:12px}
+  .machine-form h3{margin-top:16px}
+  .cost-breakdown{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+  /* Quality / special quality / OEE */
+  .quality-entry-grid,.oee-entry-grid{grid-template-columns:minmax(0,1fr);gap:0}
+  .quality-entry-grid .span-2,.oee-entry-grid .span-2{grid-column:auto}
+  .ppm-quantity-matrix{max-width:100%;overflow-x:auto}
+  .ppm-quantity-matrix th,.ppm-quantity-matrix td{min-width:76px;padding:8px 6px}
+  .ppm-quantity-matrix th:first-child{position:sticky;left:0;box-shadow:3px 0 5px rgba(20,40,70,.08)}
+  .oee-scope .filters label{min-width:0}
+  .manual-rejection-panel .panel-title{gap:4px}
+
+  /* Vendor / actions */
+  .whywhy-grid{grid-template-columns:minmax(0,1fr);gap:10px}.whywhy-grid>div{padding:11px}
+  .whywhy-footer{gap:8px;margin:10px 0;padding:10px}
+  .attachment-box{padding-top:12px}
+
+  /* Reports / management reports / analytics */
+  .daily-action-cell{flex-basis:62px;min-height:58px}
+  .report-panel{overflow:hidden}.report-panel .svg-scroll{width:calc(100% + 2px)}
+  .advanced-grid{grid-template-columns:minmax(0,1fr)}
+  .rank-bars{gap:7px}.rank-row{grid-template-columns:minmax(90px,1fr) minmax(110px,1.5fr) 64px}
+  .bar-list{gap:8px}.bar-row{grid-template-columns:76px minmax(130px,1fr) 58px}
+  .funnel-step{padding:8px 0 12px}.funnel-arrow{display:none}
+
+  /* Masters / imports / diagnostics / governance / security */
+  .master-row{align-items:flex-start}.master-row>*{min-width:0;overflow-wrap:anywhere}
+  .upload{max-width:100%}.upload pre,.quality-import-result{max-height:50vh;font-size:11px;padding:10px}
+  .access-save{grid-template-columns:minmax(0,1fr);gap:8px}
+  .access-matrix{min-width:640px}
+
+  /* dense tables: keep data readable and make horizontal intent obvious */
+  .table-wrap{border-radius:8px;background:linear-gradient(90deg,#fff 96%,#eef2f7)}
+  .table-wrap table{width:max-content;min-width:100%}
+  .table-wrap th:first-child,.table-wrap td:first-child{max-width:180px}
+}
+@media(max-width:480px){
+  .calendar-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cost-breakdown{grid-template-columns:minmax(0,1fr)}
+  .daily-action-cell{flex-basis:58px}
+  .rank-row{grid-template-columns:88px minmax(100px,1fr) 56px;font-size:11px}
+  .bar-row{grid-template-columns:68px minmax(100px,1fr) 52px}
+}
