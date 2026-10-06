@@ -231,5 +231,9 @@ def test_shared_machine_capacity_blocks_overallocation_across_products():
     assert shared['allocated_load_percent'] == 100
     assert shared['available_load_percent'] == 0
     assert shared['allocation_count'] == 2
+    assert shared['required_operator_equivalent'] == 1
+    assert shared['operator_hours'] == 18.333333333333332
+    assert loading['required_operator_equivalent'] == 1
+    assert loading['operator_hours'] == 18.333333333333332
     assert shared['status'] == 'FULL'
     assert {x['product_code'] for x in shared['allocations']} == {'CAP-SH-A', 'CAP-SH-B'}
