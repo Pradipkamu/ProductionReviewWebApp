@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..models import (
     Customer, DailyMIS, Machine, MachineShiftProduction, Operation, Product,
     ProcessDailySummary, QualityPhenomenon, QualityRejectionDaily,
-    QualityRejectionImportBatch, QualityRejectionMonthlyHistory,
+    QualityRejectionImportBatch, QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction,
     RouteOperation, RouteVersion,
 )
 
@@ -647,3 +647,75 @@ def sha256_file(path: str | Path) -> str:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def import_historical_ppm_production_workbook(db: Session, path: str | Path) -> dict:
+    """Import Siddharth Machining + Silver Production month/product PPM denominators."""
+    wb = load_workbook(path, data_only=True, read_only=True)
+    sheet = "Historical_Production_Upload"
+    if sheet not in wb.sheetnames:
+        return {"created": 0, "updated": 0, "unchanged": 0,
+                "errors": [f"Sheet '{sheet}' is required"], "warnings": []}
+    ws = wb[sheet]
+    h = _headers(ws)
+    required = ["Month", "Product", "Siddharth_Machining_Production", "Silver_Production"]
+    missing = [name for name in required if _norm(name) not in h]
+    if missing:
+        return {"created": 0, "updated": 0, "unchanged": 0,
+                "errors": ["Missing columns: " + ", ".join(missing)], "warnings": []}
+
+    stats = {"created": 0, "updated": 0, "unchanged": 0, "errors": [], "warnings": []}
+    seen: dict[tuple[date, int], int] = {}
+    for row_no in range(2, ws.max_row + 1):
+        values = [_cell(ws, row_no, h, x) for x in required]
+        remark = _cell(ws, row_no, h, "Remark")
+        if all(v in (None, "") for v in values) and remark in (None, ""):
+            continue
+        month = _to_date(values[0])
+        if not month:
+            stats["errors"].append(f"Row {row_no}: invalid Month")
+            continue
+        month = month.replace(day=1)
+        product = _find_product(db, str(values[1] or ""))
+        if not product:
+            stats["errors"].append(f"Row {row_no}: Product '{values[1]}' is not in Product Master")
+            continue
+        try:
+            siddharth = Decimal(str(values[2]).replace(",", "").strip()) if values[2] not in (None, "") else Decimal("0")
+            silver = Decimal(str(values[3]).replace(",", "").strip()) if values[3] not in (None, "") else Decimal("0")
+        except (InvalidOperation, ValueError, AttributeError):
+            stats["errors"].append(f"Row {row_no}: Siddharth Machining and Silver Production must be numeric")
+            continue
+        if siddharth < 0 or silver < 0:
+            stats["errors"].append(f"Row {row_no}: production quantities cannot be negative")
+            continue
+        if siddharth == 0 and silver == 0:
+            stats["errors"].append(f"Row {row_no}: enter Siddharth Machining Production and/or Silver Production")
+            continue
+        key = (month, product.id)
+        if key in seen:
+            stats["errors"].append(f"Rows {seen[key]} and {row_no}: duplicate Product + Month. Keep one combined row.")
+            continue
+        seen[key] = row_no
+        existing = db.scalar(select(QualityHistoricalPpmProduction).where(
+            QualityHistoricalPpmProduction.month == month,
+            QualityHistoricalPpmProduction.product_id == product.id,
+        ))
+        desired_remark = str(remark).strip() if remark not in (None, "") else None
+        if not existing:
+            db.add(QualityHistoricalPpmProduction(
+                month=month, product_id=product.id,
+                siddharth_machining_qty=siddharth, silver_production_qty=silver,
+                remark=desired_remark,
+            ))
+            stats["created"] += 1
+        elif (Decimal(str(existing.siddharth_machining_qty or 0)) != siddharth or
+              Decimal(str(existing.silver_production_qty or 0)) != silver or
+              existing.remark != desired_remark):
+            existing.siddharth_machining_qty = siddharth
+            existing.silver_production_qty = silver
+            existing.remark = desired_remark
+            stats["updated"] += 1
+        else:
+            stats["unchanged"] += 1
+    return stats
