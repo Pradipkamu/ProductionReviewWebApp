@@ -316,6 +316,69 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
     }
 
 
+@router.get("/management-summary")
+def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
+                       product_id: int | None = None, db: Session = Depends(get_db),
+                       _: User = Depends(get_current_user)):
+    if to_date < from_date:
+        raise HTTPException(422, "to_date must be on or after from_date")
+    q = select(MachineShiftProduction).where(
+        MachineShiftProduction.production_date >= from_date,
+        MachineShiftProduction.production_date <= to_date,
+    )
+    lq = select(MachineLossEvent).where(
+        MachineLossEvent.loss_date >= from_date, MachineLossEvent.loss_date <= to_date,
+    )
+    if machine_id is not None:
+        q = q.where(MachineShiftProduction.machine_id == machine_id)
+        lq = lq.where(MachineLossEvent.machine_id == machine_id)
+    if product_id is not None:
+        q = q.where(MachineShiftProduction.product_id == product_id)
+        lq = lq.where(MachineLossEvent.product_id == product_id)
+    rows = db.scalars(q.order_by(MachineShiftProduction.production_date, MachineShiftProduction.id)).all()
+    losses = db.scalars(lq.order_by(MachineLossEvent.loss_date, MachineLossEvent.id)).all()
+    machines = {x.id: x for x in db.scalars(select(Machine)).all()}
+    categories = {x.id: x for x in db.scalars(select(LossCategory)).all()}
+
+    def aggregate(items):
+        if not items:
+            return calculate_oee(0, 0, 0, 0, 0, 0)
+        shift_duration = sum(float(x.shift_duration_min) for x in items)
+        planned_break = sum(float(x.planned_break_min) for x in items)
+        downtime = sum(float(x.downtime_min) for x in items)
+        total = sum(float(x.total_count) for x in items)
+        good = sum(float(x.good_count) for x in items)
+        weighted_cycle = sum(float(x.ideal_cycle_time_sec) * float(x.total_count) for x in items) / (total or 1)
+        return calculate_oee(shift_duration, planned_break, downtime, total, good, weighted_cycle)
+
+    by_day = {}
+    by_machine = {}
+    for row in rows:
+        by_day.setdefault(row.production_date, []).append(row)
+        by_machine.setdefault(row.machine_id, []).append(row)
+    trend = [{"date": day, **aggregate(items)} for day, items in sorted(by_day.items())]
+    machine_summary = []
+    for mid, items in by_machine.items():
+        metric = aggregate(items)
+        machine_summary.append({"machine_id": mid, "machine": machines[mid].code if mid in machines else str(mid),
+                                "entry_count": len(items), **metric})
+    machine_summary.sort(key=lambda x: x["oee_reported"])
+
+    pareto = {}
+    for loss in losses:
+        category = categories.get(loss.loss_category_id)
+        name = category.name if category else f"Loss #{loss.loss_category_id}"
+        item = pareto.setdefault(name, {"category": name, "component": category.oee_component.value if category else None,
+                                       "minutes": 0.0, "qty_loss": 0.0, "events": 0})
+        item["minutes"] += float(loss.duration_min)
+        item["qty_loss"] += float(loss.qty_loss)
+        item["events"] += 1
+    loss_pareto = sorted(pareto.values(), key=lambda x: (x["minutes"], x["events"]), reverse=True)
+    overall = aggregate(rows)
+    return {"from_date": from_date, "to_date": to_date, "entry_count": len(rows), "loss_event_count": len(losses),
+            "overall": overall, "trend": trend, "machines": machine_summary, "loss_pareto": loss_pareto}
+
+
 @router.get("/machine-summary")
 def machine_summary(machine_id: int, summary_date: date, shift: str | None = None,
                     product_id: int | None = None, route_operation_id: int | None = None,
