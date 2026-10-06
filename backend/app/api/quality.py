@@ -290,7 +290,8 @@ def _history_dispatch_resolution(
 
 def _historical_rows(db: Session, *, from_date: date, to_date: date, plant: str | None = None,
                      product_id: str | int | None = None, phenomenon_id: str | int | None = None,
-                     customer_id: str | int | None = None, product_group: str | None = None) -> list[QualityRejectionMonthlyHistory]:
+                     customer_id: str | int | None = None, product_group: str | None = None,
+                     include_detail: bool = False) -> list[QualityRejectionMonthlyHistory]:
     first = _month_start(from_date)
     last = _month_start(to_date)
     q = select(QualityRejectionMonthlyHistory).join(Product, Product.id == QualityRejectionMonthlyHistory.product_id).where(
@@ -304,8 +305,10 @@ def _historical_rows(db: Session, *, from_date: date, to_date: date, plant: str 
     groups = csv_strings(product_group)
     if plants:
         q = q.where(QualityRejectionMonthlyHistory.plant.in_(plants))
-    else:
-        # Avoid double-counting aggregate HMCL Total together with plant breakups such as Siddharth.
+    elif not include_detail:
+        # Aggregate calculations use only approved aggregate rows. Detail/history
+        # views may still retrieve non-aggregate phenomenon rows without allowing
+        # them to double-count management totals.
         q = q.where(QualityRejectionMonthlyHistory.include_in_aggregate.is_(True))
     if product_ids:
         q = q.where(QualityRejectionMonthlyHistory.product_id.in_(product_ids))
@@ -882,9 +885,10 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
                         shift=shift, customer_id=customer_id, product_group=product_group)
     history = _historical_rows(db, from_date=from_date, to_date=to_date, plant=plant,
                                product_id=product_id, phenomenon_id=phenomenon_id,
-                               customer_id=customer_id, product_group=product_group)
+                               customer_id=customer_id, product_group=product_group, include_detail=True)
     supported = not csv_ints(operation_id) and not csv_ints(machine_id) and not csv_strings(shift)
-    aggregate_history = _exclude_history_covered_by_daily(history, daily) if supported else []
+    aggregate_candidates = [x for x in history if x.include_in_aggregate]
+    aggregate_history = _exclude_history_covered_by_daily(aggregate_candidates, daily) if supported else []
     resolved = _history_dispatch_resolution(db, history, plant_filter=plant) if history else {}
     context = _daily_context(db, daily)
     products = _by_id(db, Product, {x.product_id for x in history})
@@ -917,7 +921,8 @@ def list_history(from_date: date, to_date: date, plant: str | None = None, produ
                  phenomenon_id: str | None = None, customer_id: str | None = None, product_group: str | None = None,
                  db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = _historical_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
-                            phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group)
+                            phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group,
+                            include_detail=True)
     dispatch_resolution = _history_dispatch_resolution(db, rows, plant_filter=plant) if rows else {}
     products = _by_id(db, Product, {x.product_id for x in rows})
     phenomena = _by_id(db, QualityPhenomenon, {x.phenomenon_id for x in rows})
@@ -953,10 +958,8 @@ def monthly_trend(from_month: date, to_month: date, plant: str | None = None, pr
 
     out=[]; m=first
     while m<=last:
-        if daily_by_month.get(m):
-            a=_aggregate_daily(daily_by_month[m]); source="DAILY_ROLLUP"
-        else:
-            rows=hist_by_month.get(m,[])
+        rows=hist_by_month.get(m,[])
+        if rows:
             reject=sum(_num(x.reject_qty) for x in rows)
             denoms={}
             pending=0
@@ -968,6 +971,10 @@ def monthly_trend(from_month: date, to_month: date, plant: str | None = None, pr
                 elif _num(x.reject_qty)>0: pending+=1
             denominator=sum(denoms.values()); ppm=reject/denominator*1_000_000 if denominator>0 and pending==0 else None
             a={"reject_qty":reject,"rework_qty":0,"scrap_qty":0,"denominator_qty":denominator,"ppm":ppm,"ppm_pending_rows":pending}; source="HISTORICAL"
+        elif daily_by_month.get(m):
+            a=_aggregate_daily(daily_by_month[m]); source="DAILY_ROLLUP"
+        else:
+            a={"reject_qty":0.0,"rework_qty":0.0,"scrap_qty":0.0,"denominator_qty":0.0,"ppm":None,"ppm_pending_rows":0}; source="NONE"
         out.append({"month":m,"label":m.strftime("%b-%Y"),"source":source,**a})
         m=(m.replace(day=28)+timedelta(days=4)).replace(day=1)
     return out
