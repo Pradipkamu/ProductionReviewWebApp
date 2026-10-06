@@ -80,6 +80,15 @@ def test_controlled_oee_capture_reconciliation_and_actions():
     assert summary["summary"]["captured_loss_min"] == 20.0
     assert summary["summary"]["unclassified_loss_min"] == 10.0
     assert {x["component"] for x in summary["losses"]} == {"AVAILABILITY", "QUALITY"}
+    management = client.get(f"/api/oee/management-summary?from_date={day}&to_date={day}&machine_id={machine_id}&product_id={product_id}", headers=headers)
+    assert management.status_code == 200, management.text
+    mgmt = management.json()
+    assert mgmt["entry_count"] == 1
+    assert len(mgmt["trend"]) == 1
+    assert mgmt["machines"][0]["machine"] == "OEE-M1"
+    assert mgmt["loss_pareto"][0]["category"] in {"Breakdown", "Rejection", mgmt["loss_pareto"][0]["category"]}
+    assert sum(x["events"] for x in mgmt["loss_pareto"]) == 2
+
     data_quality = client.get(f"/api/insights/data-quality?as_of={day}&product_id={product_id}", headers=headers).json()
     assert data_quality["counts"]["oee_downtime_unclassified"] == 1
 
