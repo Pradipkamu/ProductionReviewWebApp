@@ -1,2 +1,0 @@
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File "D:\Machine Shop MIS\Backup_Oracle_Review_To_Windows.ps1"

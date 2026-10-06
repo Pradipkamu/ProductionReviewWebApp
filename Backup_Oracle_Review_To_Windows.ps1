@@ -125,7 +125,56 @@ if ($expectedHash -ne $actualHash) {
 }
 
 Write-Host ''
-Write-Host 'Oracle database backup downloaded and verified successfully.' -ForegroundColor Green
-Write-Host "Backup:  $localBackup"
-Write-Host "Checksum: $localChecksum"
-Write-Host "SHA-256:  $actualHash"
+Write-Host 'Database backup downloaded and verified successfully.' -ForegroundColor Green
+Write-Host "Database: $localBackup"
+Write-Host "DB checksum: $localChecksum"
+Write-Host "DB SHA-256: $actualHash"
+
+Write-Host ''
+Write-Host "Creating verified attachments archive on $OracleHost ..." -ForegroundColor Cyan
+$attachmentScript = @'
+set -euo pipefail
+APP_PATH="__APP_PATH__"
+cd "$APP_PATH"
+mkdir -p database/backups database/attachments
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+archive="$APP_PATH/database/backups/attachments_${stamp}.tar.gz"
+checksum="${archive}.sha256"
+sudo tar -C "$APP_PATH/database" -czf "$archive" attachments
+sudo chown "$(id -u):$(id -g)" "$archive"
+test -s "$archive"
+sha256sum "$archive" | awk '{print $1}' > "$checksum"
+test -s "$checksum"
+printf 'ATTACHMENT_ARCHIVE=%s\nATTACHMENT_CHECKSUM=%s\n' "$archive" "$checksum"
+'@
+$attachmentScript = $attachmentScript.Replace('__APP_PATH__', $RemoteAppPath)
+$attachmentOutput = @(Invoke-NativeChecked -Program 'ssh.exe' -Arguments @(
+    '-T', '-i', $KeyPath, $sshTarget, 'tr -d ''\r'' | bash -s'
+) -InputText $attachmentScript)
+$attachmentOutput | ForEach-Object { Write-Host $_ }
+
+$remoteAttachment = ($attachmentOutput | Where-Object { $_ -match '^ATTACHMENT_ARCHIVE=/' } | Select-Object -Last 1) -replace '^ATTACHMENT_ARCHIVE=', ''
+$remoteAttachmentChecksum = ($attachmentOutput | Where-Object { $_ -match '^ATTACHMENT_CHECKSUM=/' } | Select-Object -Last 1) -replace '^ATTACHMENT_CHECKSUM=', ''
+if (-not $remoteAttachment -or -not $remoteAttachmentChecksum) {
+    throw 'The Oracle server did not return the created attachment archive paths.'
+}
+$remoteAttachment=$remoteAttachment.Trim()
+$remoteAttachmentChecksum=$remoteAttachmentChecksum.Trim()
+$localAttachment=Join-Path $LocalBackupDirectory $remoteAttachment.Split('/')[-1]
+$localAttachmentChecksum=Join-Path $LocalBackupDirectory $remoteAttachmentChecksum.Split('/')[-1]
+
+Write-Host "Downloading $($remoteAttachment.Split('/')[-1]) ..." -ForegroundColor Cyan
+Invoke-NativeChecked -Program 'scp.exe' -Arguments @('-i',$KeyPath,("{0}:{1}" -f $sshTarget,$remoteAttachment),$localAttachment)
+Invoke-NativeChecked -Program 'scp.exe' -Arguments @('-i',$KeyPath,("{0}:{1}" -f $sshTarget,$remoteAttachmentChecksum),$localAttachmentChecksum)
+
+if ((Get-Item -LiteralPath $localAttachment).Length -eq 0) { throw "Downloaded attachment archive is empty: $localAttachment" }
+$expectedAttachmentHash=((Get-Content -LiteralPath $localAttachmentChecksum -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+$actualAttachmentHash=(Get-FileHash -LiteralPath $localAttachment -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($expectedAttachmentHash -ne $actualAttachmentHash) { throw "SHA-256 verification failed for $localAttachment" }
+
+Write-Host ''
+Write-Host 'Oracle database + attachments backup completed successfully.' -ForegroundColor Green
+Write-Host "Database:    $localBackup"
+Write-Host "DB SHA-256: $actualHash"
+Write-Host "Attachments: $localAttachment"
+Write-Host "ATT SHA-256: $actualAttachmentHash"

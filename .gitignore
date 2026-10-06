@@ -37,3 +37,9 @@ outputs/
 
 # Local uploaded evidence is not application source.
 backend/uploads/
+
+# Local Windows MIS operational data
+Upload_data/
+database/oracle_backups/
+database/pre_restore_*/
+database_backups/
