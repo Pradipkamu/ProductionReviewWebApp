@@ -240,4 +240,6 @@ def test_shared_machine_capacity_blocks_overallocation_across_products():
     assert area['required_operator_equivalent'] >= 1
     assert area['operator_hours'] >= 18.333333333333332
     assert shared['status'] == 'FULL'
+    assert loading['near_capacity_machine_count'] >= 0
+    assert loading['underloaded_machine_count'] >= 0
     assert {x['product_code'] for x in shared['allocations']} == {'CAP-SH-A', 'CAP-SH-B'}
