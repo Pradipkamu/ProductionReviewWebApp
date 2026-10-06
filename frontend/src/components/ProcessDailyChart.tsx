@@ -33,7 +33,6 @@ export default function ProcessDailyChart({rows,stage}:{rows:DailyPoint[],stage:
     <div className="table-wrap"><table aria-label={`${stage} daily quantities`}><thead><tr><th>Quantity</th>{rows.map(r=><th key={r.date}>{dateLabel(r.date)}</th>)}</tr></thead><tbody>
       <tr><th>Plan</th>{rows.map(r=><td key={r.date}>{r.plan==null?'Pending':num(r.plan)}</td>)}</tr>
       <tr><th>Actual</th>{rows.map(r=><td key={r.date}>{r.actual==null?'Missing':num(r.actual)}</td>)}</tr>
-      <tr><th>Achievement %</th>{rows.map(r=><td key={r.date}>{r.plan!=null&&r.actual!=null&&r.plan>0?`${(r.actual/r.plan*100).toFixed(1)}%`:'—'}</td>)}</tr>
     </tbody></table></div>
   </>
 }
