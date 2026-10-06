@@ -323,10 +323,16 @@ def _historical_rows(db: Session, *, from_date: date, to_date: date, plant: str 
 
 def _exclude_history_covered_by_daily(history: list[QualityRejectionMonthlyHistory],
                                       daily: list[QualityRejectionDaily]) -> list[QualityRejectionMonthlyHistory]:
-    # Historical records are monthly. If daily-quality data exists for the same product/month,
-    # use the daily roll-up and suppress the monthly history for that product/month.
-    covered = {(_month_start(x.rejection_date), x.product_id) for x in daily}
-    return [x for x in history if (_month_start(x.month), x.product_id) not in covered]
+    # Historical monthly aggregates are authoritative for their product/month.
+    # A partial daily upload must not make the completed historical month disappear.
+    # Callers that combine both sources should instead exclude overlapping DAILY rows.
+    return history
+
+
+def _exclude_daily_covered_by_history(daily: list[QualityRejectionDaily],
+                                      history: list[QualityRejectionMonthlyHistory]) -> list[QualityRejectionDaily]:
+    covered = {(_month_start(x.month), x.product_id) for x in history}
+    return [x for x in daily if (_month_start(x.rejection_date), x.product_id) not in covered]
 
 
 def _aggregate_history(rows: list[QualityRejectionMonthlyHistory], dispatch_resolution: dict[int, tuple[float | None, str | None]] | None = None) -> dict:
@@ -747,6 +753,7 @@ def dashboard(from_date: date, to_date: date, plant: str | None = None, product_
         history = _historical_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
                                    phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group)
         history = _exclude_history_covered_by_daily(history, daily)
+        daily = _exclude_daily_covered_by_history(daily, history)
 
     dispatch_resolution = _history_dispatch_resolution(db, history, plant_filter=plant) if history else {}
     return _dashboard_data(db, daily, history, dispatch_resolution, history_supported)
@@ -786,6 +793,7 @@ def pareto(from_date: date, to_date: date, group_by: str = "phenomenon", plant: 
         history = _historical_rows(db, from_date=from_date, to_date=to_date, plant=plant, product_id=product_id,
                                    phenomenon_id=phenomenon_id, customer_id=customer_id, product_group=product_group)
         history = _exclude_history_covered_by_daily(history, daily)
+        daily = _exclude_daily_covered_by_history(daily, history)
 
     dispatch_resolution = _history_dispatch_resolution(db, history, plant_filter=plant) if history else {}
 
@@ -889,6 +897,7 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
     supported = not csv_ints(operation_id) and not csv_ints(machine_id) and not csv_strings(shift)
     aggregate_candidates = [x for x in history if x.include_in_aggregate]
     aggregate_history = _exclude_history_covered_by_daily(aggregate_candidates, daily) if supported else []
+    aggregate_daily = _exclude_daily_covered_by_history(daily, aggregate_history) if supported else daily
     resolved = _history_dispatch_resolution(db, history, plant_filter=plant) if history else {}
     context = _daily_context(db, daily)
     products = _by_id(db, Product, {x.product_id for x in history})
@@ -896,11 +905,11 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
     month_first = from_date.replace(day=1)
     month_last = to_date.replace(day=1)
     return {
-        'summary': _dashboard_data(db, daily, aggregate_history, resolved, supported),
+        'summary': _dashboard_data(db, aggregate_daily, aggregate_history, resolved, supported),
         'rows': [_serialize_daily(x, context) for x in daily],
         'trend': _trend_data(daily, from_date, to_date),
-        'part_pareto': _pareto_data(db, daily, aggregate_history, resolved, 'product', context, products, phenomena),
-        'phenomenon_pareto': _pareto_data(db, daily, aggregate_history, resolved, 'phenomenon', context, products, phenomena),
+        'part_pareto': _pareto_data(db, aggregate_daily, aggregate_history, resolved, 'product', context, products, phenomena),
+        'phenomenon_pareto': _pareto_data(db, aggregate_daily, aggregate_history, resolved, 'phenomenon', context, products, phenomena),
         'monthly_trend': monthly_trend(from_month=month_first, to_month=month_last, plant=plant,
                                       product_id=product_id, phenomenon_id=phenomenon_id,
                                       customer_id=customer_id, product_group=product_group, db=db, _=user),
