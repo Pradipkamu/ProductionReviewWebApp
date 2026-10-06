@@ -112,3 +112,76 @@ table tbody tr:last-child td{border-bottom:0}
 
 /* Process chart readability */
 .achievement-label{fill:#1f8f5f;font-size:11px;font-weight:800}
+
+
+/* v0.5.9 mobile-first responsive hardening */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{overflow-x:hidden}
+img,svg,canvas{max-width:100%}
+.content{min-width:0}
+.panel,.two-col>*,.advanced-grid>*,.master-grid>*{min-width:0}
+.table-wrap,.svg-scroll,.ppm-quantity-matrix,.daily-action-scroll,.route-flow{-webkit-overflow-scrolling:touch;overscroll-behavior-inline:contain}
+button,input,select,textarea,.multi-select-trigger{touch-action:manipulation}
+@media(max-width:1000px){
+  .content{max-width:none}
+  .sidebar{overflow-y:auto;overscroll-behavior:contain}
+  .sidebar nav a{min-height:44px;display:flex;align-items:center}
+  .filters,.report-filters,.scope-filters,.quality-filters,.form-row{align-items:stretch}
+  .filters>*,.filters label,.report-filters>*,.scope-filters>*,.quality-filters>*,.form-row>*{max-width:none!important}
+  .multi-select,.scope-filters .multi-select,.quality-filters .multi-select{max-width:none;min-width:0}
+  .table-wrap{margin-left:-4px;margin-right:-4px;padding:0 4px}
+}
+@media(max-width:700px){
+  body{font-size:14px}
+  .content{padding-top:66px;padding-bottom:28px}
+  .mobile-menu-button{min-height:44px;min-width:92px}
+  .page-header{margin-bottom:14px;padding-bottom:12px}
+  .page-header h1{font-size:22px;line-height:1.2}
+  .page-header p{font-size:12px;line-height:1.45}
+  .page-header>div,.page-header>div:last-child{min-width:0;width:100%}
+  .page-header>div:last-child>.button-row,.page-header>div:last-child>button{width:100%}
+  .panel{margin-bottom:14px;padding:13px}
+  .panel-title{align-items:flex-start;gap:8px;flex-direction:column}
+  .panel-title h2,.panel h2{font-size:16px}
+  .two-col,.two-col.wide-left,.advanced-grid,.master-grid{grid-template-columns:minmax(0,1fr);gap:14px}
+  .filters,.report-filters,.scope-filters,.quality-filters,.form-row{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+  .filters>*,.filters label,.report-filters>*,.scope-filters>*,.quality-filters>*,.form-row>*{width:100%;min-width:0!important;margin-bottom:0}
+  input,select,textarea,.multi-select-trigger{min-height:44px;font-size:16px}
+  button{min-height:44px}
+  button.small{min-height:38px}
+  .button-row,.export-row{display:grid;grid-template-columns:minmax(0,1fr);width:100%}
+  .button-row button,.export-row button{width:100%}
+  .multi-select-menu{position:fixed;left:10px;right:10px;top:auto;bottom:10px;width:auto;min-width:0;max-width:none;max-height:min(70vh,560px);z-index:90;border-radius:14px;padding:12px;box-shadow:0 18px 50px rgba(10,25,43,.30)}
+  .multi-select-options{max-height:min(48vh,380px)}
+  .multi-select-option{min-height:44px}
+  .multi-select-option input{min-height:20px;width:20px}
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .kpi{min-width:0;padding:11px}
+  .kpi span{font-size:10px;overflow-wrap:anywhere}
+  .kpi strong{font-size:19px;overflow-wrap:anywhere}
+  .table-wrap{width:calc(100% + 8px);overflow-x:auto}
+  table{font-size:12px}
+  th,td{padding:9px 8px}
+  .route-step{min-width:min(82vw,280px)}
+  .bar-row,.part-bar-row,.rank-row{grid-template-columns:minmax(110px,1fr) minmax(150px,2fr) 64px;gap:8px}
+  .bar-row>*:last-child,.part-bar-row>*:last-child{display:none}
+  .rank-row strong{text-align:right}
+  .funnel-step{grid-template-columns:1fr}
+  .report-scope{flex-wrap:wrap}
+  .report-tabs{display:flex;overflow-x:auto;flex-wrap:nowrap;padding-bottom:5px}
+  .report-tabs button{flex:0 0 auto;white-space:nowrap}
+  .daily-upload>button{margin:8px 0 0;width:100%}
+  .correction-controls{margin-bottom:12px}
+}
+@media(max-width:420px){
+  .content{padding-left:9px;padding-right:9px}
+  .panel{padding:11px}
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi strong{font-size:18px}
+  .brand{margin-bottom:8px}
+  .sidebar{width:min(88vw,300px);left:-100%}
+  .ppm-quantity-matrix th:first-child{min-width:108px}
+  .calendar-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:350px){.kpi-grid{grid-template-columns:1fr}}
+@media(hover:none){button:hover:not(:disabled){box-shadow:none}tr:hover td{background:inherit}}
