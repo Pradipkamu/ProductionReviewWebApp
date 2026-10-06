@@ -18,12 +18,12 @@ function CorrectionControls({role}:{role:string}){
 
 export default function Layout({ children, me }: { children: React.ReactNode, me:any }) {
   const [menuOpen,setMenuOpen]=useState(false)
-  const location=useLocation()
-  useEffect(()=>setMenuOpen(false),[location.pathname])
+  const routeLocation=useLocation()
+  useEffect(()=>setMenuOpen(false),[routeLocation.pathname])
   useEffect(()=>{
     const minutes=Math.max(5,Number(me?.session_idle_timeout_minutes||60))
     let timer:number
-    const expire=async()=>{try{await logout()}finally{location.reload()}}
+    const expire=async()=>{try{await logout()}finally{window.location.reload()}}
     const reset=()=>{window.clearTimeout(timer);timer=window.setTimeout(expire,minutes*60*1000)}
     const events=['mousedown','keydown','touchstart','scroll']
     events.forEach(event=>window.addEventListener(event,reset))
