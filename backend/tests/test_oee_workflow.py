@@ -88,6 +88,11 @@ def test_controlled_oee_capture_reconciliation_and_actions():
     assert mgmt["machines"][0]["machine"] == "OEE-M1"
     assert mgmt["loss_pareto"][0]["category"] in {"Breakdown", "Rejection", mgmt["loss_pareto"][0]["category"]}
     assert sum(x["events"] for x in mgmt["loss_pareto"]) == 2
+    assert mgmt["target_oee"] == 0.85
+    assert mgmt["below_target_machine_count"] == 1
+    assert mgmt["machines"][0]["status"] == "BELOW TARGET"
+    assert mgmt["machines"][0]["gap_to_target"] > 0
+    assert mgmt["recurring_loss_count"] == 0
 
     data_quality = client.get(f"/api/insights/data-quality?as_of={day}&product_id={product_id}", headers=headers).json()
     assert data_quality["counts"]["oee_downtime_unclassified"] == 1
