@@ -580,6 +580,19 @@ class QualityRejectionMonthlyHistory(Base, TimestampMixin):
     __table_args__ = (Index("ix_quality_history_month_product_phenomenon", "month", "product_id", "phenomenon_id"),)
 
 
+class QualityHistoricalPpmProduction(Base, TimestampMixin):
+    __tablename__ = "quality_historical_ppm_production"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month: Mapped[date] = mapped_column(Date, index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    siddharth_machining_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    silver_production_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    __table_args__ = (
+        UniqueConstraint("month", "product_id", name="uq_quality_historical_ppm_month_product"),
+    )
+
+
 class QualityActionLink(Base):
     __tablename__ = "quality_action_links"
     id: Mapped[int] = mapped_column(primary_key=True)
