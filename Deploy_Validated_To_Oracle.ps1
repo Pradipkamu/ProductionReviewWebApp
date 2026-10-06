@@ -37,12 +37,39 @@ function Invoke-NativeChecked {
     }
     $outputLines
 }
+function Invoke-NativeStreamingChecked {
+    param(
+        [Parameter(Mandatory)] [string]$Program,
+        [Parameter(Mandatory)] [string[]]$Arguments,
+        [string]$InputText
+    )
+    $resolvedProgram = (Get-Command $Program -ErrorAction Stop).Source
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $PSNativeCommandUseErrorActionPreference = $false
+        $LASTEXITCODE = $null
+        if ($PSBoundParameters.ContainsKey('InputText')) {
+            $InputText | & $resolvedProgram @Arguments 2>&1 | ForEach-Object { Write-Host $_.ToString() }
+        } else {
+            & $resolvedProgram @Arguments 2>&1 | ForEach-Object { Write-Host $_.ToString() }
+        }
+        $nativeExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    } finally {
+        $ErrorActionPreference = $savedPreference
+    }
+    if ($nativeExitCode -ne 0) {
+        throw "$Program failed with exit code $nativeExitCode."
+    }
+}
+
 Set-Location -LiteralPath $PSScriptRoot
 $logDir=Join-Path $PSScriptRoot 'deployment_logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $log=Join-Path $logDir ('deploy_'+(Get-Date -Format 'yyyyMMdd_HHmmss')+'.log')
 Start-Transcript -LiteralPath $log -Force | Out-Null
 try {
+    Write-Host '[1/9] Checking Windows repository and deployment prerequisites...' -ForegroundColor Cyan
     foreach($cmd in @('git.exe','ssh.exe')){if(-not(Get-Command $cmd -ErrorAction SilentlyContinue)){throw "$cmd is unavailable."}}
     if(-not(Test-Path -LiteralPath $KeyPath)){throw "SSH key not found: $KeyPath"}
     $status=(& git.exe status --porcelain)
@@ -55,10 +82,11 @@ try {
     $tested=(& git.exe rev-parse HEAD).Trim()
     $remoteMain=(& git.exe rev-parse origin/main).Trim()
     if($tested -ne $remoteMain){throw "Windows-tested HEAD $tested is not current origin/main $remoteMain. Update/test Windows first."}
-    Write-Host "Validated commit selected: $tested" -ForegroundColor Cyan
+    Write-Host "      Validated commit: $tested" -ForegroundColor Green
+    Write-Host '[2/9] Windows validation complete.' -ForegroundColor Green
     if($DryRun){Write-Host 'DRY RUN passed. No Oracle changes made.' -ForegroundColor Green; return}
 
-    Write-Host 'Creating verified Oracle database + attachment backup first...' -ForegroundColor Cyan
+    Write-Host '[3/9] Creating verified Oracle database + attachments backup...' -ForegroundColor Cyan
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Backup_Oracle_Review_To_Windows.ps1') -OracleHost $OracleHost -OracleUser $OracleUser -KeyPath $KeyPath -RemoteAppPath $RemoteAppPath
     if($LASTEXITCODE -ne 0){throw 'Oracle backup helper failed; deployment cancelled.'}
 
@@ -83,41 +111,56 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 21
 fi
 rollback_code() {
-  echo "Deployment failed; rolling application code back to $PREVIOUS" >&2
+  echo "[ROLLBACK] Deployment failed; rolling application code back to $PREVIOUS" >&2
   git checkout --detach "$PREVIOUS" || true
   docker compose build backend frontend || true
-  docker compose up -d backend frontend || true
+  docker compose up -d --force-recreate backend frontend || true
 }
 trap rollback_code ERR
+echo "[4/9] Checking out validated commit $TARGET"
 git checkout --detach "$TARGET"
+echo "[5/9] Building backend and frontend images (live Docker output follows)"
 docker compose build backend frontend
+BACKEND_IMAGE="$(docker image inspect productionreviewwebapp-backend:latest --format '{{.Id}}')"
+FRONTEND_IMAGE="$(docker image inspect productionreviewwebapp-frontend:latest --format '{{.Id}}')"
+echo "      Backend image:  $BACKEND_IMAGE"
+echo "      Frontend image: $FRONTEND_IMAGE"
+echo "[6/9] Checking database readiness"
 docker compose up -d db
 for n in $(seq 1 30); do
   docker compose exec -T db pg_isready -U pms -d pms >/dev/null && break
   [ "$n" -eq 30 ] && exit 30
   sleep 2
 done
+echo "[7/9] Applying database migrations"
 docker compose run --rm backend alembic upgrade head
-docker compose up -d backend frontend
+echo "[8/9] Recreating backend and frontend with the newly built images"
+docker compose up -d --force-recreate backend frontend
 docker compose exec -T db pg_isready -U pms -d pms
+RUNNING_BACKEND_IMAGE="$(docker inspect productionreviewwebapp-backend-1 --format '{{.Image}}')"
+RUNNING_FRONTEND_IMAGE="$(docker inspect productionreviewwebapp-frontend-1 --format '{{.Image}}')"
+echo "      Running backend image:  $RUNNING_BACKEND_IMAGE"
+echo "      Running frontend image: $RUNNING_FRONTEND_IMAGE"
+test "$RUNNING_BACKEND_IMAGE" = "$BACKEND_IMAGE"
+test "$RUNNING_FRONTEND_IMAGE" = "$FRONTEND_IMAGE"
 test "$(git rev-parse HEAD)" = "$TARGET"
+echo "[9/9] Running final deployment verification"
 trap - ERR
 printf 'DEPLOYED_COMMIT=%s\n' "$TARGET"
 '@
     $remote=$remote.Replace('__APP__',$RemoteAppPath).Replace('__TARGET__',$tested)
     try {
-        $out=@(Invoke-NativeChecked -Program 'ssh.exe' -Arguments @(
+        Invoke-NativeStreamingChecked -Program 'ssh.exe' -Arguments @(
             '-T','-i',$KeyPath,$target,"tr -d '\r' | bash -s"
-        ) -InputText $remote)
-        $out | ForEach-Object { Write-Host $_ }
+        ) -InputText $remote
     } catch {
         throw "Oracle deployment failed. Application-code rollback was attempted remotely. Database backup is preserved for guarded recovery. $($_.Exception.Message)"
     }
 
-    Write-Host "Checking public health endpoint: $HealthUrl" -ForegroundColor Cyan
+    Write-Host "      Checking public health endpoint: $HealthUrl" -ForegroundColor Cyan
     $health=Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 30
     if($health.StatusCode -ne 200){throw "Public health check returned HTTP $($health.StatusCode)."}
-    Write-Host "Oracle deployment verified at commit $tested" -ForegroundColor Green
+    Write-Host "DEPLOYMENT SUCCESSFUL - Oracle verified at commit $tested" -ForegroundColor Green
 } finally {
     Stop-Transcript | Out-Null
     Write-Host "Deployment log: $log"
