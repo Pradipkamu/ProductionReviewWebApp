@@ -267,9 +267,16 @@ def machine_loading_summary(db: Session, month: date) -> dict:
             "department": machine.department,
             "is_active": machine.is_active,
             "load_fraction": ZERO,
+            "operator_equivalent": ZERO,
+            "operator_hours": ZERO,
             "allocations": [],
         })
         row["load_fraction"] += load
+        operator_rate = Decimal(str(allocation.operators_per_machine_snapshot or 0))
+        cycle_seconds = Decimal(str(allocation.planning_cycle_time_sec or 0))
+        runtime_hours = allocated * cycle_seconds / Decimal(3600) if cycle_seconds > 0 else ZERO
+        row["operator_equivalent"] += load * operator_rate
+        row["operator_hours"] += runtime_hours * operator_rate
         if allocated > 0:
             row["allocations"].append({
                 "product_id": product.id,
@@ -296,6 +303,8 @@ def machine_loading_summary(db: Session, month: date) -> dict:
             "department": machine.department,
             "is_active": machine.is_active,
             "load_fraction": ZERO,
+            "operator_equivalent": ZERO,
+            "operator_hours": ZERO,
             "allocations": [],
         })
 
@@ -304,6 +313,8 @@ def machine_loading_summary(db: Session, month: date) -> dict:
         load_percent = row.pop("load_fraction") * Decimal(100)
         available_percent = max(ZERO, Decimal(100) - load_percent)
         overload_percent = max(ZERO, load_percent - Decimal(100))
+        row["required_operator_equivalent"] = float(row.pop("operator_equivalent"))
+        row["operator_hours"] = float(row["operator_hours"])
         row["allocated_load_percent"] = float(load_percent)
         row["available_load_percent"] = float(available_percent)
         row["overload_percent"] = float(overload_percent)
@@ -323,6 +334,12 @@ def machine_loading_summary(db: Session, month: date) -> dict:
         "machine_count": len(result),
         "allocated_machine_count": sum(1 for x in result if x["allocated_load_percent"] > 0),
         "overloaded_machine_count": sum(1 for x in result if x["overload_percent"] > 0),
+        "required_operator_equivalent": float(sum((Decimal(str(x["required_operator_equivalent"])) for x in result), ZERO)),
+        "operator_hours": float(sum((Decimal(str(x["operator_hours"])) for x in result), ZERO)),
+        "readiness": {
+            "unallocated_machine_count": sum(1 for x in result if x["allocation_count"] == 0),
+            "loaded_machine_count": sum(1 for x in result if x["allocation_count"] > 0),
+        },
     }
 
 
