@@ -417,6 +417,52 @@ def create_phenomenon(payload: PhenomenonCreate, db: Session = Depends(get_db), 
         raise HTTPException(400, str(exc)) from exc
 
 
+@router.get("/phenomena-template")
+def download_phenomenon_template(_: User = Depends(get_current_user)):
+    wb = XLWorkbook()
+    ws = wb.active
+    ws.title = "Phenomenon_Master"
+    instructions = wb.create_sheet("Instructions")
+    headers = ["Phenomenon Name", "Phenomenon Group", "Responsible Team", "Criticality", "Active"]
+    ws.append(headers)
+    samples = [
+        ["Porosity", "Casting Rejection", "Casting", "NORMAL", "Yes"],
+        ["Blow Hole", "Casting Rejection", "Casting", "NORMAL", "Yes"],
+    ]
+    for row in samples:
+        ws.append(row)
+    for cell in ws[1]:
+        cell.fill = PatternFill("solid", fgColor="1F4E78")
+        cell.font = Font(color="FFFFFF", bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = "A1:E501"
+    for column, width in zip(("A","B","C","D","E"), (38,24,24,16,12)):
+        ws.column_dimensions[column].width = width
+    criticality = DataValidation(type="list", formula1='"LOW,NORMAL,HIGH,CRITICAL"', allow_blank=False)
+    active = DataValidation(type="list", formula1='"Yes,No"', allow_blank=False)
+    ws.add_data_validation(criticality); criticality.add("D2:D501")
+    ws.add_data_validation(active); active.add("E2:E501")
+    instructions.append(["Phenomenon Master Upload"])
+    instructions.append(["Required", "Phenomenon Name. Names are matched case-insensitively after normalization."])
+    instructions.append(["Group", "Use groups such as Casting Rejection, Machining Rejection, Assembly Rejection or Supplier Defect."])
+    instructions.append(["Responsible Team", "Default team responsible for the phenomenon, for example Casting or Operation."])
+    instructions.append(["Criticality", "Select LOW, NORMAL, HIGH or CRITICAL."])
+    instructions.append(["Active", "Yes keeps the phenomenon available; No deactivates an existing phenomenon."])
+    instructions.append(["Import", "Upload on Quality / Rejection, review New/Updated/Unchanged/Rejected, then confirm."])
+    instructions.append(["Duplicates", "Duplicate phenomenon names in one workbook are rejected. Existing names are safely updated, not duplicated."])
+    instructions["A1"].font = Font(size=15, bold=True, color="1F4E78")
+    for row in range(2, 9):
+        instructions.cell(row, 1).font = Font(bold=True, color="1F4E78")
+        instructions.cell(row, 2).alignment = Alignment(wrap_text=True, vertical="top")
+    instructions.column_dimensions["A"].width = 20
+    instructions.column_dimensions["B"].width = 100
+    out = BytesIO()
+    wb.save(out); out.seek(0)
+    return StreamingResponse(out, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": 'attachment; filename="Phenomenon_Master_Upload.xlsx"'})
+
+
 @router.get("/template")
 def download_daily_template(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     products = db.execute(select(Product, Customer).outerjoin(Customer, Customer.id == Product.customer_id).where(Product.is_active.is_(True)).order_by(Product.sort_order, Product.name)).all()
