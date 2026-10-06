@@ -179,6 +179,72 @@ def upsert_phenomenon(db: Session, name: str, *, group: str | None = None, defau
     return row
 
 
+
+def import_phenomenon_master_workbook(db: Session, path) -> dict:
+    """Import approved rejection phenomena from the standard master workbook."""
+    wb = load_workbook(path, data_only=True, read_only=True)
+    if "Phenomenon_Master" not in wb.sheetnames:
+        return {"created": 0, "updated": 0, "unchanged": 0, "errors": ["Sheet 'Phenomenon_Master' is required"], "warnings": []}
+    ws = wb["Phenomenon_Master"]
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return {"created": 0, "updated": 0, "unchanged": 0, "errors": ["Phenomenon_Master is empty"], "warnings": []}
+    headers = {_norm(v).replace(" ", "_"): i for i, v in enumerate(rows[0]) if v not in (None, "")}
+    aliases = {
+        "name": ("phenomenon_name", "phenomenon"),
+        "group": ("phenomenon_group", "group"),
+        "team": ("responsible_team", "default_responsible_team"),
+        "criticality": ("criticality",),
+        "active": ("active", "is_active"),
+    }
+    def col(key):
+        for name in aliases[key]:
+            if name in headers:
+                return headers[name]
+        return None
+    name_col = col("name")
+    if name_col is None:
+        return {"created": 0, "updated": 0, "unchanged": 0, "errors": ["Phenomenon Name column is required"], "warnings": []}
+    group_col, team_col, criticality_col, active_col = col("group"), col("team"), col("criticality"), col("active")
+    created = updated = unchanged = 0
+    errors, warnings, seen = [], [], set()
+    allowed_criticality = {"LOW", "NORMAL", "HIGH", "CRITICAL"}
+    for excel_row, values in enumerate(rows[1:], 2):
+        name = str(values[name_col] or "").strip() if name_col < len(values) else ""
+        if not name:
+            if any(v not in (None, "") for v in values):
+                errors.append(f"Row {excel_row}: Phenomenon Name is required")
+            continue
+        normalized = _norm(name)
+        if normalized in seen:
+            errors.append(f"Row {excel_row}: duplicate Phenomenon Name '{name}' in workbook")
+            continue
+        seen.add(normalized)
+        group = str(values[group_col] or "").strip() if group_col is not None and group_col < len(values) else ""
+        team = str(values[team_col] or "").strip() if team_col is not None and team_col < len(values) else ""
+        criticality = str(values[criticality_col] or "NORMAL").strip().upper() if criticality_col is not None and criticality_col < len(values) else "NORMAL"
+        if criticality not in allowed_criticality:
+            errors.append(f"Row {excel_row}: Criticality must be LOW, NORMAL, HIGH or CRITICAL")
+            continue
+        active_text = str(values[active_col] or "Yes").strip().lower() if active_col is not None and active_col < len(values) else "yes"
+        if active_text not in {"yes", "no", "true", "false", "1", "0", "active", "inactive"}:
+            errors.append(f"Row {excel_row}: Active must be Yes or No")
+            continue
+        is_active = active_text in {"yes", "true", "1", "active"}
+        existing = db.scalar(select(QualityPhenomenon).where(QualityPhenomenon.normalized_name == normalized))
+        before = None if not existing else (existing.name, existing.phenomenon_group, existing.default_responsible_team, existing.criticality, existing.is_active)
+        row = upsert_phenomenon(db, name, group=group or None, default_team=team or None, criticality=criticality)
+        row.is_active = is_active
+        after = (row.name, row.phenomenon_group, row.default_responsible_team, row.criticality, row.is_active)
+        if existing is None:
+            created += 1
+        elif before != after:
+            updated += 1
+        else:
+            unchanged += 1
+    return {"created": created, "updated": updated, "unchanged": unchanged, "errors": errors, "warnings": warnings}
+
+
 def denominator_for_rejection(db: Session, *, on_date: date, shift: str, product: Product,
                               detection_ro: RouteOperation | None, machine: Machine | None) -> tuple[str, Decimal | None]:
     if detection_ro and machine:
