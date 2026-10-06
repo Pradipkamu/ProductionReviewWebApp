@@ -21,11 +21,11 @@ from ..models import (
 from ..services.excel_import import import_daily_production_workbook
 from ..services.historical_mis_import import import_historical_daily_mis
 from ..services.historical_price_import import import_historical_sales_prices
-from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook, import_phenomenon_master_workbook
+from ..services.quality_import import import_daily_rejection_workbook, import_historical_rejection_workbook, import_phenomenon_master_workbook, import_historical_ppm_production_workbook
 from ..services.special_quality_import import import_casting_defects_workbook, import_customer_rejections_workbook
 from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_workbook_file
 router=APIRouter(prefix='/import',tags=['import preview'])
-KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history','quality-phenomena','casting-daily','customer-quality-daily'}
+KINDS={'daily-production','process-design','stage-schedules','stage-daily','excel','historical-daily-mis','historical-sales-prices','quality-daily','quality-history','quality-phenomena','quality-historical-ppm-production','casting-daily','customer-quality-daily'}
 KIND_SCOPED_HASHES={'daily-production','process-design','stage-schedules','stage-daily'}
 
 
@@ -76,13 +76,14 @@ def run_import(db,path,kind,user,batch_id=None):
     if kind=='historical-sales-prices':return import_historical_sales_prices(db,path,user.id)
     if kind=='quality-daily':return import_daily_rejection_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
     if kind=='quality-phenomena':return import_phenomenon_master_workbook(db,path)
+    if kind=='quality-historical-ppm-production':return import_historical_ppm_production_workbook(db,path)
     if kind=='casting-daily':return import_casting_defects_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
     if kind=='customer-quality-daily':return import_customer_rejections_workbook(db,path,entered_by_id=user.id,batch_id=batch_id)
     return import_historical_rejection_workbook(db,path,batch_id=batch_id)
 
 
 def counts(stats,kind):
-    if kind in {'daily-production','quality-daily','quality-history','quality-phenomena','casting-daily','customer-quality-daily','process-design','stage-schedules','stage-daily'}:
+    if kind in {'daily-production','quality-daily','quality-history','quality-phenomena','quality-historical-ppm-production','casting-daily','customer-quality-daily','process-design','stage-schedules','stage-daily'}:
         return {'new':stats.get('created',stats.get('new',0)),'updated':stats.get('updated',0),'unchanged':stats.get('unchanged',0),'rejected':len(stats.get('errors',[]))}
     prefix='price_rows' if kind=='historical-sales-prices' else 'mis'
     return {'new':stats.get(prefix+'_created',0),'updated':stats.get(prefix+'_updated',0),'unchanged':stats.get(prefix+'_unchanged',0),'rejected':len(stats.get('errors',[]))}
