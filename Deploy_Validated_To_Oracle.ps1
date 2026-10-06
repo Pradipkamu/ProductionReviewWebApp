@@ -7,6 +7,36 @@ param(
     [switch]$DryRun
 )
 $ErrorActionPreference='Stop'
+
+function Invoke-NativeChecked {
+    param(
+        [Parameter(Mandatory)] [string]$Program,
+        [Parameter(Mandatory)] [string[]]$Arguments,
+        [string]$InputText
+    )
+    $resolvedProgram = (Get-Command $Program -ErrorAction Stop).Source
+    $savedPreference = $ErrorActionPreference
+    $nativeExitCode = $null
+    try {
+        $ErrorActionPreference = 'Continue'
+        $PSNativeCommandUseErrorActionPreference = $false
+        $LASTEXITCODE = $null
+        if ($PSBoundParameters.ContainsKey('InputText')) {
+            $nativeOutput = @($InputText | & $resolvedProgram @Arguments 2>&1)
+        } else {
+            $nativeOutput = @(& $resolvedProgram @Arguments 2>&1)
+        }
+        $nativeExitCode = if ($null -eq $LASTEXITCODE) { 0 } else { [int]$LASTEXITCODE }
+    } finally {
+        $ErrorActionPreference = $savedPreference
+    }
+    $outputLines = @($nativeOutput | ForEach-Object { $_.ToString() })
+    if ($nativeExitCode -ne 0) {
+        $outputLines | ForEach-Object { Write-Host $_ }
+        throw "$Program failed with exit code $nativeExitCode."
+    }
+    $outputLines
+}
 Set-Location -LiteralPath $PSScriptRoot
 $logDir=Join-Path $PSScriptRoot 'deployment_logs'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -75,10 +105,14 @@ trap - ERR
 printf 'DEPLOYED_COMMIT=%s\n' "$TARGET"
 '@
     $remote=$remote.Replace('__APP__',$RemoteAppPath).Replace('__TARGET__',$tested)
-    $out=@($remote | & ssh.exe -T -i $KeyPath $target "tr -d '\r' | bash -s" 2>&1)
-    $code=$LASTEXITCODE
-    $out | ForEach-Object { Write-Host $_ }
-    if($code -ne 0){throw "Oracle deployment failed with exit code $code. Application-code rollback was attempted. Database backup is preserved for guarded recovery."}
+    try {
+        $out=@(Invoke-NativeChecked -Program 'ssh.exe' -Arguments @(
+            '-T','-i',$KeyPath,$target,"tr -d '\r' | bash -s"
+        ) -InputText $remote)
+        $out | ForEach-Object { Write-Host $_ }
+    } catch {
+        throw "Oracle deployment failed. Application-code rollback was attempted remotely. Database backup is preserved for guarded recovery. $($_.Exception.Message)"
+    }
 
     Write-Host "Checking public health endpoint: $HealthUrl" -ForegroundColor Cyan
     $health=Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 30
