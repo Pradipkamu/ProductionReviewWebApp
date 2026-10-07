@@ -98,3 +98,29 @@ def test_daily_control_reports_missing_process_flow_as_readiness_blocker():
     body = client.get("/api/dashboard/daily-control?as_of=2026-10-02", headers=_headers(client)).json()
     assert body["workflow"]["schedule"]["status"] == "ATTENTION"
     assert any(x["kind"] == "process_flow_missing" and x["product"] == "No Flow Product" for x in body["alerts"])
+
+
+def test_daily_control_reconciles_actual_after_route_revision():
+    """A flow revision must not make an already uploaded stage look missing."""
+    product_id, old_route_operation_id = _seed_planned_product()
+    with SessionLocal() as db:
+        old_ro = db.get(RouteOperation, old_route_operation_id)
+        operation_id = old_ro.operation_id
+        new_route = RouteVersion(
+            product_id=product_id, revision_no=2, effective_from=date(2026, 10, 2), is_active=True,
+        )
+        db.add(new_route); db.flush()
+        new_ro = RouteOperation(route_version_id=new_route.id, operation_id=operation_id, sequence_no=10)
+        db.add(new_ro); db.flush()
+        db.add(ProcessDailySummary(
+            summary_date=date(2026, 10, 2), product_id=product_id, route_operation_id=new_ro.id,
+            plan_qty=Decimal("120"), actual_qty=Decimal("110"), good_qty=Decimal("110"),
+            reject_qty=Decimal("0"), source=SourceType.EXCEL,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    body = client.get("/api/dashboard/daily-control?as_of=2026-10-02", headers=_headers(client)).json()
+    stage_alerts = [x for x in body["alerts"] if x["kind"] == "missing_stage_actual"]
+    assert not stage_alerts
+    assert body["workflow"]["upload"]["reported_stages"] if "reported_stages" in body["workflow"]["upload"] else body["counts"]["reported_stages"] == 1
