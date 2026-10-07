@@ -135,8 +135,16 @@ def daily_control_summary(
     blocker_threshold = Decimal(str(blocker_threshold_pct)) / Decimal("100")
     month_start = as_of.replace(day=1)
 
-    # Month-to-date average compliance. Reported zero actuals are deliberately
-    # excluded from the average, per review rule; missing rows remain blockers.
+    # Month-to-date compliance uses working days only. A saved Actual = 0 is a
+    # real reported result and therefore keeps that day's plan in the denominator.
+    # OFF/non-working days are excluded entirely; missing records remain separate
+    # data blockers and are not silently converted to zero.
+    from .planning import working_days, product_plant
+    working_dates_by_product = {
+        p.id: set(working_days(db, month_start, as_of, product_plant(db, p.id)))
+        for p in products
+    }
+
     dispatch_plan_by_day: dict[tuple[date, int], Decimal] = {}
     for req in db.scalars(select(DailyRequirement).where(
         DailyRequirement.req_date >= month_start,
@@ -153,9 +161,11 @@ def daily_control_summary(
         DailyMIS.mis_date <= as_of,
         DailyMIS.product_id.in_(ids),
     )).all():
+        if row.mis_date not in working_dates_by_product.get(row.product_id, set()):
+            continue
         actual_qty = _d(row.actual_qty)
         plan_qty = dispatch_plan_by_day.get((row.mis_date, row.product_id), _d(row.plan_qty))
-        if actual_qty <= 0 or plan_qty <= 0:
+        if plan_qty <= 0:
             continue
         dispatch_totals[row.product_id]["plan"] += plan_qty
         dispatch_totals[row.product_id]["actual"] += actual_qty
@@ -196,9 +206,11 @@ def daily_control_summary(
             ProcessDailySummary.product_id.in_(ids),
             ProcessDailySummary.route_operation_id.in_(stage_route_ids),
         )).all():
+            if row.summary_date not in working_dates_by_product.get(row.product_id, set()):
+                continue
             actual_qty = _d(row.actual_qty)
             plan_qty = stage_req_by_day.get((row.summary_date, row.product_id, row.route_operation_id), _d(row.plan_qty))
-            if actual_qty <= 0 or plan_qty <= 0:
+            if plan_qty <= 0:
                 continue
             key = (row.product_id, row.route_operation_id)
             stage_totals[key]["plan"] += plan_qty
