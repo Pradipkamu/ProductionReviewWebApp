@@ -78,6 +78,36 @@ def daily_control_summary(
         ProcessDailySummary.product_id.in_(ids),
     )).all())
     stage_actual = {(r.product_id, r.route_operation_id): r for r in stage_rows}
+
+    # A process-flow revision can replace RouteOperation row IDs while keeping
+    # the same underlying Operation. Daily requirements may therefore still
+    # reference the prior route-operation ID even though the uploaded actual is
+    # correctly stored against the current flow. Reconcile those IDs by the
+    # stable Operation master before declaring an upload missing.
+    all_stage_route_ids = sorted(
+        {rid for _, rid in stage_plan}
+        | {int(r.route_operation_id) for r in stage_rows if r.route_operation_id is not None}
+    )
+    route_to_operation = {
+        int(rid): int(opid)
+        for rid, opid in db.execute(
+            select(RouteOperation.id, RouteOperation.operation_id)
+            .where(RouteOperation.id.in_(all_stage_route_ids or [-1]))
+        ).all()
+    }
+    stage_actual_by_operation: dict[tuple[int, int], ProcessDailySummary] = {}
+    for row in stage_rows:
+        operation_id = route_to_operation.get(int(row.route_operation_id))
+        if operation_id is not None:
+            stage_actual_by_operation[(row.product_id, operation_id)] = row
+
+    def selected_stage_actual(pid: int, route_operation_id: int):
+        exact = stage_actual.get((pid, route_operation_id))
+        if exact is not None:
+            return exact
+        operation_id = route_to_operation.get(route_operation_id)
+        return stage_actual_by_operation.get((pid, operation_id)) if operation_id is not None else None
+
     blocker_threshold = Decimal(str(blocker_threshold_pct)) / Decimal("100")
     month_start = as_of.replace(day=1)
 
@@ -179,7 +209,7 @@ def daily_control_summary(
             add("WARNING", "price_missing", "Effective sales price is missing; sales risk cannot be valued", pid, action="data-quality")
 
     for (pid, operation_id), plan in stage_plan.items():
-        row = stage_actual.get((pid, operation_id))
+        row = selected_stage_actual(pid, operation_id)
         stage_name = operations.get(operation_id, f"Stage #{operation_id}")
         if row is None:
             add("BLOCKER", "missing_stage_actual", f"{stage_name}: actual has not been uploaded", pid, plan=plan, action="upload")
@@ -200,7 +230,7 @@ def daily_control_summary(
             )
 
     for (pid, operation_id), avg_ratio in stage_average.items():
-        today_row = stage_actual.get((pid, operation_id))
+        today_row = selected_stage_actual(pid, operation_id)
         if today_row is None or _d(today_row.actual_qty) <= 0:
             continue
         if avg_ratio < blocker_threshold:
@@ -293,7 +323,8 @@ def daily_control_summary(
     has_plan = bool(customer_plan or stage_plan)
     schedule_status = "NO PLAN" if not has_plan else "ATTENTION" if any(x["kind"] in {"missing_stage_plan", "process_flow_missing"} for x in alerts) else "READY"
     expected = len(customer_plan) + len(stage_plan)
-    reported = len(set(customer_plan) & set(mis)) + len(set(stage_plan) & set(stage_actual))
+    reported_stage = sum(1 for pid, route_operation_id in stage_plan if selected_stage_actual(pid, route_operation_id) is not None)
+    reported = len(set(customer_plan) & set(mis)) + reported_stage
     upload_status = "NO PLAN" if expected == 0 else "COMPLETE" if reported == expected else "NOT STARTED" if reported == 0 else "PARTIAL"
     review_status = "BLOCKED" if blockers else "CRITICAL" if critical else "ATTENTION" if warnings else "CLEAR"
     return {
