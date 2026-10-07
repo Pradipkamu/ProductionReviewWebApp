@@ -932,10 +932,16 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
     summary["reject_qty"] = sum(_num(x.get("reject_qty")) for x in monthly)
     summary["denominator_qty"] = sum(_num(x.get("denominator_qty")) for x in monthly)
     summary["ppm_pending_rows"] = sum(int(x.get("ppm_pending_rows") or 0) for x in monthly)
+    # Scope-level PPM remains useful when some selected parts are still
+    # missing their individual denominator. Use every available denominator in
+    # the selected scope and expose ppm_pending_rows so the UI can label the
+    # result as partial. Individual product/month rows remain Pending when their
+    # own denominator is unavailable.
     summary["ppm"] = (
         summary["reject_qty"] / summary["denominator_qty"] * 1_000_000
-        if summary["denominator_qty"] > 0 and summary["ppm_pending_rows"] == 0 else None
+        if summary["denominator_qty"] > 0 else None
     )
+    summary["ppm_is_partial"] = bool(summary["ppm_pending_rows"] > 0 and summary["ppm"] is not None)
     summary["historical_records"] = len(aggregate_history)
     summary["daily_records"] = len(aggregate_daily)
     return {
