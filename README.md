@@ -1,95 +1,95 @@
-# ProductionReviewWebApp v0.5.7
+ssh -i "$HOME\.ssh\ssh-key-2026-10-05.key" ubuntu@92.4.90.35
 
-React + TypeScript · FastAPI · PostgreSQL · Docker Compose · Nginx
+**Next block**
+cd /home/ubuntu/ProductionReviewWebApp || exit 1
 
-This release continues the supplied v0.2.16 source with P0 database/security/governance controls and P1 review workflows. Source and business data remain separate.
+echo "======================================"
+echo "1. CURRENT PRODUCTION STATE"
+echo "======================================"
+git status --short
+OLD_COMMIT=$(git rev-parse HEAD)
+echo "Current commit: $OLD_COMMIT"
 
-## Existing installation
+echo
+echo "======================================"
+echo "2. CREATE ROLLBACK TAG"
+echo "======================================"
+ROLLBACK_TAG="pre_searchable_ui_$(date +%Y%m%d_%H%M%S)"
+git tag "$ROLLBACK_TAG" "$OLD_COMMIT"
+echo "Rollback tag: $ROLLBACK_TAG"
 
-Read [Safe update](docs/UPDATE_v0.3.0.md). Copy application files over the existing application folder while keeping `.env` and `database/` intact. Run `update_in_place_windows.bat` on Windows or `./update_in_place_linux.sh` on Linux. These scripts build first, stop application writers, verify a PostgreSQL backup, and then start the new backend/frontend against the same database mount. Never run `docker compose down -v`.
+echo
+echo "======================================"
+echo "3. FETCH GITHUB MAIN"
+echo "======================================"
+git fetch origin main
 
-## Fresh installation
+echo "Server : $(git rev-parse --short HEAD)"
+echo "GitHub : $(git rev-parse --short origin/main)"
 
-Use `start_windows.bat` or `./start_linux.sh`. A fresh installation generates persistent random application, PostgreSQL and initial administrator credentials in the private `.env` file. Read the generated `ADMIN_PASSWORD` locally, sign in as `admin`, and change it immediately. Existing installations retain their working credentials until an administrator performs an explicit rotation.
+echo
+echo "======================================"
+echo "4. VERIFY REQUIRED COMMIT"
+echo "======================================"
+git merge-base --is-ancestor e05f38b origin/main \
+  && echo "OK - e05f38b is included in origin/main" \
+  || { echo "STOP - e05f38b is not in origin/main"; exit 1; }
 
-Application: http://localhost:5173 · API: http://localhost:8000/docs
+echo
+echo "======================================"
+echo "5. UPDATE SERVER SOURCE"
+echo "======================================"
+git checkout --detach origin/main
+NEW_COMMIT=$(git rev-parse HEAD)
+echo "Now running source: $NEW_COMMIT"
 
-## Approved process flows
+echo
+echo "======================================"
+echo "6. RECORD OLD FRONTEND IMAGE"
+echo "======================================"
+OLD_IMAGE=$(sudo docker inspect productionreviewwebapp-frontend-1 \
+  --format '{{.Image}}' 2>/dev/null || true)
+echo "Old frontend image: $OLD_IMAGE"
 
-The corrected process design is implemented with 23 product definitions and 151 active stages. Use [Process flow setup](docs/RELEASE_v0.4.0.md) after the safe application update. The approved Excel template is included at `backend/templates/Production_Process_Upload_v0.4.0.xlsx` and available from Excel Import Preview. Definitions and stage allocations use their setup previews. Normal daily uploads use one **Daily Production Upload** preview and confirmation for customer plans/dispatch and stage actuals together. See [v0.4.1 daily workflow](docs/RELEASE_v0.4.1.md). Existing database facts remain intact.
+echo
+echo "======================================"
+echo "7. BUILD FRESH FRONTEND"
+echo "======================================"
+sudo docker compose build --no-cache frontend || exit 1
 
-## Release features
+echo
+echo "======================================"
+echo "8. FORCE RECREATE FRONTEND"
+echo "======================================"
+sudo docker compose up -d --force-recreate --no-deps frontend || exit 1
 
-- Alembic adoption of legacy databases and additive schema revisions; no startup `create_all()` for upgrades.
-- Strong secret validation, initial password change, password change/reset, token invalidation and API roles.
-- Administrator-managed page visibility by role, with Admin/account lockout protection and unchanged backend API enforcement.
-- Separate Casting Quality and Customer Quality modules with controlled phenomena, quantity validation, PPM trends and Pareto analysis.
-- Effective-dated Product Value Addition (₹/piece) history for future costing, with reason and actor evidence.
-- Month Close/Reopen, one-use correction authorization and before/after audit evidence.
-- Committed frontend lockfile, pinned direct dependencies and `npm ci` in Docker.
-- Data Quality / Management Exception dashboards, configurable thresholds, charts and detailed records.
-- Excel preview and confirmation, row errors, duplicate detection, and stale-preview rejection.
-- Compliance and PPM chart drill-down; machine production/loss drill-down with OEE charts.
-- In-app daily overdue reminders/escalation, effectiveness due checks and probable recurrence detection.
-- Append-only vendor receipt transactions, partial receipts, duplicate reference protection, pending quantity and aging.
+echo
+echo "======================================"
+echo "9. VERIFY NEW CONTAINER"
+echo "======================================"
+sudo docker compose ps frontend
 
-Historical schedules imported with zero or incorrect plans can now be explicitly corrected from their effective date with preview, reason and audit evidence. Original imported plans and actual dispatch quantities are preserved. See [May schedule correction](docs/RELEASE_v0.3.1.md).
+NEW_IMAGE=$(sudo docker inspect productionreviewwebapp-frontend-1 \
+  --format '{{.Image}}')
+echo "Old image: $OLD_IMAGE"
+echo "New image: $NEW_IMAGE"
 
-See [Release notes](docs/RELEASE_v0.3.0.md), [API roles](docs/SECURITY_AND_GOVERNANCE.md) and [roadmap](docs/ROADMAP_v0.2.16.md). AFMS/MQTT and Power BI reporting/star schema remain P2 and are not implemented.
+if [ "$OLD_IMAGE" = "$NEW_IMAGE" ]; then
+    echo "WARNING: frontend image ID did not change"
+else
+    echo "OK - frontend container is using a new image"
+fi
 
-## Development and tests
+echo
+echo "======================================"
+echo "10. PUBLIC HTTPS CHECK"
+echo "======================================"
+curl -k -I https://machineshop.duckdns.org/ || exit 1
 
-Backend: `pip install -r backend/requirements.txt -r backend/requirements-dev.txt`, then `cd backend && PYTHONPATH=.:tests python -m pytest -q`.
-Frontend: `cd frontend && npm ci && npm run build`. Use Node 22.12+.
-Migrations: `cd backend && python -m app.migrate` or `alembic upgrade head` with configured `DATABASE_URL`.
-
-Tests default to a disposable SQLite file. CI also uses isolated PostgreSQL test databases. Never direct tests at business data.
-
-## v0.4.3 — OCR feature reverted
-
-Shop Production Capture has been removed from the application. Existing daily Excel/MIS workflows remain. Capture schema and evidence are retained for safe updates from v0.4.2. OCR remains removed; controlled manual OEE capture resumes in v0.4.7. See [safe revert instructions](docs/RELEASE_v0.4.3.md).
-
-## v0.4.5 — Daily Production Control
-
-Built on the v0.4.4 parent `Disp_Done` schedule unification, the home page now guides the daily review through three steps: schedule readiness, one combined production upload, and early-warning action. Missing uploads remain distinct from reported zero production. Warnings cover missing process/stage plans, low dispatch or stage output, high PPM or missing denominator, overdue actions, and overdue vendor receipts. Each warning opens the relevant work page. The updater now starts and waits for PostgreSQL automatically before it creates its verified backup. See [release notes](docs/RELEASE_v0.4.5.md).
-
-## v0.4.6 — Controlled Daily Rejection Template
-
-The Quality page now creates a fresh Daily Rejection workbook from the current Product, Process, Machine and Phenomenon masters. Required master fields use reliable named-range dropdowns, Product-dependent Plant/Customer/Type fields are protected, and Preview independently rejects missing or invalid fixed data. Formula-filled unused rows are ignored. See [release notes](docs/RELEASE_v0.4.6.md).
-
-## v0.4.7 — Controlled OEE and Loss Actions
-
-Machine / OEE now uses one controlled record per date, shift, product, operation and machine. Effective master cycle time and mapped machines drive entry, duplicate rows are blocked, corrections require a reason, Availability losses reconcile separately to downtime, and both low OEE and individual losses can open standard Why-Why actions. Management reports now include machine-shift and loss-event detail with action status. The Data Quality dashboard flags duplicate entries, unclassified output/downtime and over-classified losses. Excel OEE import/helper work remains intentionally pending until the actual machine-shop forms are supplied. See [release notes](docs/RELEASE_v0.4.7.md) and [OEE workflow/audit](docs/OEE_WORKFLOW_AND_AUDIT_v0.4.7.md).
-
-## v0.4.8 — Restore Verification and System Diagnostics
-
-System Diagnostics now checks the loaded frontend/backend versions, database connection and schema revision, persistent imports/attachments/backups storage, disk capacity and latest backup status. The Windows and Linux restore-verification scripts restore a selected dump into a temporary isolated database, verify core tables, and remove the temporary database without modifying the live `pms` database. See [release notes](docs/RELEASE_v0.4.8.md).
-
-## v0.5.0 — Machine Capacity and Manpower Planning
-
-Capacity / Manpower Planning combines the monthly operation schedule with effective machine mapping, cycle time, operator requirement, plant calendar and machine capacity settings. It calculates available pieces, machine hours, capacity load, shortages and average/rounded operator needs; planners can auto-allocate or revise part-to-machine quantities without overwriting issued revisions. Cycle time, operator requirement, mapping and capacity changes retain effective-dated history and reasons. See [release notes](docs/RELEASE_v0.5.0.md).
-
-## v0.5.1 — Machine PM, Utilities and Costing Master
-
-The dedicated Machine Master captures fractional default manpower, last PM date/frequency, rated power, expected power load, compressed-air consumption and transparent labor/utility/maintenance/consumable/depreciation/overhead cost rates. It calculates hourly conversion cost, feeds part cycle-time cost estimates into Capacity / Manpower, and retains reasoned machine-master history. See [release notes](docs/RELEASE_v0.5.1.md).
-
-## v0.5.2 — Horizontal Monthly PPM Quantities
-
-The Quality / Rejection page now places a horizontal month matrix directly below the Monthly PPM graph. It contains only Rejection Qty and Dispatch Qty rows, keeps PPM values on the graph, preserves pending-denominator warnings, and follows the selected machine and other Quality filters. See [release notes](docs/RELEASE_v0.5.2.md).
-
-
-## v0.5.4 — Security & Governance Phase 1
-
-Server-side sessions, inactivity logout, login lockout, session revocation, security event audit, account unlock, stricter administration access and safer localhost-only database/backend bindings. Oracle HTTP remains supported until HTTPS is configured. See docs/SECURITY_GOVERNANCE.md.
-
-## v0.5.5 — Security & Governance Phase 2
-
-Workbook and Action attachment uploads now use centralized size/type/content validation and safe storage paths. Fresh installations generate strong database/bootstrap credentials; existing databases can be rotated safely with the supplied Windows/Linux scripts. Manual backups use verified PostgreSQL custom-format dumps with SHA-256 sidecars, restore tests record evidence, and System Diagnostics shows backup integrity, restore freshness, upload controls and secret/network warnings. See docs/SECURITY_PHASE2_v0.5.5.md.
-
-## v0.5.6 — Casting, Customer Quality and Value Addition
-
-Casting defects and customer rejections now have separate phenomenon masters, manual entry, controlled Excel preview/confirmation, quantity rules, PPM trends, Pareto analysis and detailed records. Casting PPM uses inspected quantity; Customer PPM uses dispatch/received quantity, so neither is mixed with internal machining PPM. Product Master adds current Value Addition in ₹/piece plus append-only effective-dated history, reason and user evidence. Administrators can configure both new pages in Security / Users → Page Visibility by Role. See [release notes](docs/RELEASE_v0.5.6.md).
-
-## v0.5.7 — Rejection Preview and Login Privacy Fix
-
-Daily Rejection preview now identifies duplicate business combinations with both Excel row numbers and asks the user to combine their quantities before confirmation. Preview exceptions no longer appear as a blank `[]` message. The sign-in page no longer exposes `admin` as a pre-filled username. See [release notes](docs/RELEASE_v0.5.7.md).
+echo
+echo "======================================"
+echo "DEPLOYMENT RESULT"
+echo "======================================"
+echo "Git commit : $(git rev-parse --short HEAD)"
+echo "Rollback   : $ROLLBACK_TAG"
+echo "Frontend   : $NEW_IMAGE"
