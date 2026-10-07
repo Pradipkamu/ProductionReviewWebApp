@@ -63,13 +63,37 @@ def daily_control_summary(
         DailyRequirement.revised_plan_qty > 0,
     )).all())
     customer_plan: dict[int, Decimal] = {}
-    stage_plan: dict[tuple[int, int], Decimal] = {}
+    raw_stage_requirements: list[DailyRequirement] = []
     for row in requirements:
         if row.route_operation_id is None:
             customer_plan[row.product_id] = max(customer_plan.get(row.product_id, Decimal("0")), _d(row.revised_plan_qty))
         else:
-            key = (row.product_id, row.route_operation_id)
-            stage_plan[key] = max(stage_plan.get(key, Decimal("0")), _d(row.revised_plan_qty))
+            raw_stage_requirements.append(row)
+
+    # DailyRequirement rows from an older flow revision can remain in history
+    # after a new flow becomes effective. Only the stages belonging to the
+    # effective active flow for the selected date are valid readiness rows.
+    from .process_flows import active_flow
+    active_stage_route_ids: dict[int, set[int]] = {}
+    for product in products:
+        flow = active_flow(db, product.id, as_of)
+        if not flow:
+            continue
+        active_stage_route_ids[product.id] = set(db.scalars(
+            select(ProcessFlowStage.route_operation_id).where(
+                ProcessFlowStage.flow_id == flow.id,
+                ProcessFlowStage.is_active.is_(True),
+                ProcessFlowStage.route_operation_id.is_not(None),
+            )
+        ).all())
+
+    stage_plan: dict[tuple[int, int], Decimal] = {}
+    for row in raw_stage_requirements:
+        active_ids = active_stage_route_ids.get(row.product_id)
+        if active_ids is not None and row.route_operation_id not in active_ids:
+            continue
+        key = (row.product_id, row.route_operation_id)
+        stage_plan[key] = max(stage_plan.get(key, Decimal("0")), _d(row.revised_plan_qty))
 
     mis_rows = list(db.scalars(select(DailyMIS).where(DailyMIS.mis_date == as_of, DailyMIS.product_id.in_(ids))).all())
     mis = {r.product_id: r for r in mis_rows}
