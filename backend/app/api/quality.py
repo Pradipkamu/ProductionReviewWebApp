@@ -1016,12 +1016,21 @@ def monthly_trend(from_month: date, to_month: date, plant: str | None = None, pr
                 qty = dispatch_resolution.get(x.id, (None, None))[0]
                 if qty is not None and qty>0: denoms[key]=max(denoms.get(key,0),qty)
                 elif _num(x.reject_qty)>0: pending+=1
-            denominator=sum(denoms.values()); ppm=reject/denominator*1_000_000 if denominator>0 and pending==0 else None
-            a={"reject_qty":reject,"rework_qty":0,"scrap_qty":0,"denominator_qty":denominator,"ppm":ppm,"ppm_pending_rows":pending}; source="HISTORICAL"
+            denominator=sum(denoms.values())
+            # Monthly scope follows the same rule as the KPI card: calculate
+            # from every available denominator and separately flag incomplete
+            # denominator coverage. A missing product denominator must not hide
+            # the PPM for the rest of the selected scope.
+            ppm=reject/denominator*1_000_000 if denominator>0 else None
+            a={"reject_qty":reject,"rework_qty":0,"scrap_qty":0,"denominator_qty":denominator,"ppm":ppm,"ppm_pending_rows":pending,"ppm_is_partial":bool(pending>0 and ppm is not None)}; source="HISTORICAL"
         elif daily_by_month.get(m):
-            a=_aggregate_daily(daily_by_month[m]); source="DAILY_ROLLUP"
+            a=_aggregate_daily(daily_by_month[m])
+            if a["denominator_qty"] > 0:
+                a["ppm"] = a["reject_qty"] / a["denominator_qty"] * 1_000_000
+            a["ppm_is_partial"] = bool(a["ppm_pending_rows"] > 0 and a["ppm"] is not None)
+            source="DAILY_ROLLUP"
         else:
-            a={"reject_qty":0.0,"rework_qty":0.0,"scrap_qty":0.0,"denominator_qty":0.0,"ppm":None,"ppm_pending_rows":0}; source="NONE"
+            a={"reject_qty":0.0,"rework_qty":0.0,"scrap_qty":0.0,"denominator_qty":0.0,"ppm":None,"ppm_pending_rows":0,"ppm_is_partial":False}; source="NONE"
         out.append({"month":m,"label":m.strftime("%b-%Y"),"source":source,**a})
         m=(m.replace(day=28)+timedelta(days=4)).replace(day=1)
     return out
