@@ -297,6 +297,69 @@ def _periodize(rows: list[dict], field_plan: str = "plan", field_actual: str = "
     return {"daily": daily, "weekly": weekly, "monthly": monthly}
 
 
+@router.get("/compliance-actions")
+def compliance_actions(
+    from_date: date,
+    to_date: date,
+    product_id: str | None = None,
+    plant: str | None = None,
+    product_group: str | None = None,
+    customer_id: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Action detail behind a compliance day/week/month count."""
+    products = _scoped_products(db, product_id, plant, product_group, customer_id)
+    product_ids = list(products)
+    if not product_ids:
+        return {"from_date": from_date.isoformat(), "to_date": to_date.isoformat(), "summary": {"total": 0, "open": 0, "in_progress": 0, "closed": 0, "overdue": 0}, "actions": []}
+
+    rows = db.execute(
+        select(Action, User)
+        .join(ActionContext, ActionContext.action_id == Action.id)
+        .outerjoin(User, User.id == Action.owner_id)
+        .where(
+            Action.reference_date >= from_date,
+            Action.reference_date <= to_date,
+            ActionContext.product_id.in_(product_ids),
+        )
+        .order_by(Action.reference_date.desc(), Action.id.desc())
+    ).all()
+
+    unique: dict[int, tuple[Action, User | None]] = {}
+    for action, owner in rows:
+        unique.setdefault(action.id, (action, owner))
+
+    today = date.today()
+    details = []
+    for action, owner in unique.values():
+        status = action.status.value if hasattr(action.status, "value") else str(action.status)
+        status_key = status.upper().replace(" ", "_")
+        closed = status_key == "CLOSED"
+        age_end = action.closed_at.date() if closed and getattr(action, "closed_at", None) else today
+        raised = action.reference_date
+        age_days = max(0, (age_end - raised).days)
+        overdue = bool(not closed and action.due_at and action.due_at.date() < today)
+        details.append({
+            "id": action.id, "action_no": action.action_no, "reference_date": raised.isoformat(),
+            "problem": action.problem_description, "owner": owner.full_name if owner and getattr(owner, "full_name", None) else (owner.username if owner else "Unassigned"),
+            "status": status, "age_days": age_days, "overdue": overdue,
+            "due_date": action.due_at.date().isoformat() if action.due_at else None,
+        })
+
+    return {
+        "from_date": from_date.isoformat(), "to_date": to_date.isoformat(),
+        "summary": {
+            "total": len(details),
+            "open": sum(1 for x in details if str(x["status"]).upper().replace(" ", "_") == "OPEN"),
+            "in_progress": sum(1 for x in details if str(x["status"]).upper().replace(" ", "_") in {"IN_PROGRESS", "INPROGRESS"}),
+            "closed": sum(1 for x in details if str(x["status"]).upper().replace(" ", "_") == "CLOSED"),
+            "overdue": sum(1 for x in details if x["overdue"]),
+        },
+        "actions": details,
+    }
+
+
 @router.get("/process-compliance")
 def process_compliance_report(
     as_of: date,
