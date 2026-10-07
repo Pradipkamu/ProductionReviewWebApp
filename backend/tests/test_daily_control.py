@@ -124,3 +124,41 @@ def test_daily_control_reconciles_actual_after_route_revision():
     stage_alerts = [x for x in body["alerts"] if x["kind"] == "missing_stage_actual"]
     assert not stage_alerts
     assert body["workflow"]["upload"]["reported_stages"] if "reported_stages" in body["workflow"]["upload"] else body["counts"]["reported_stages"] == 1
+
+
+def test_daily_control_ignores_superseded_flow_requirements():
+    product_id, old_route_operation_id = _seed_planned_product()
+    with SessionLocal() as db:
+        old_ro = db.get(RouteOperation, old_route_operation_id)
+        new_operation = Operation(code="CTRL-OP10-R2", name="Machining OP10", operation_type=OperationType.INTERNAL)
+        db.add(new_operation); db.flush()
+        new_route = RouteVersion(product_id=product_id, revision_no=2, effective_from=date(2026, 10, 2), is_active=True)
+        db.add(new_route); db.flush()
+        new_ro = RouteOperation(route_version_id=new_route.id, operation_id=new_operation.id, sequence_no=10)
+        db.add(new_ro); db.flush()
+        flow = ProcessFlowVersion(
+            product_id=product_id, route_version_id=new_route.id, effective_from=date(2026, 10, 2),
+            revision_no=2, definition_sha256="b" * 64, source_document="test-r2.xlsx", reason="Revision 2",
+        )
+        db.add(flow); db.flush()
+        db.add(ProcessFlowStage(
+            flow_id=flow.id, code="OP10", name="Machining OP10", route_operation_id=new_ro.id,
+            source_column="AB", role="INTERNAL", branch="MAIN", variant="", vendor_name="",
+            predecessors_json="[]", alias_of="", is_active=True, parent_dispatch=False, sequence_no=10,
+        ))
+        db.add(DailyRequirement(
+            req_date=date(2026, 10, 2), product_id=product_id, route_operation_id=new_ro.id,
+            baseline_plan_qty=Decimal("120"), revised_plan_qty=Decimal("120"),
+        ))
+        db.add(ProcessDailySummary(
+            summary_date=date(2026, 10, 2), product_id=product_id, route_operation_id=new_ro.id,
+            plan_qty=Decimal("120"), actual_qty=Decimal("0"), good_qty=Decimal("0"),
+            reject_qty=Decimal("0"), source=SourceType.EXCEL,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    body = client.get("/api/dashboard/daily-control?as_of=2026-10-02", headers=_headers(client)).json()
+    assert body["workflow"]["schedule"]["planned_stages"] == 1
+    assert body["counts"]["reported_stages"] == 1
+    assert not [x for x in body["alerts"] if x["kind"] == "missing_stage_actual"]
