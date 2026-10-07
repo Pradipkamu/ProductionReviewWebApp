@@ -32,6 +32,16 @@ export default function Reports(){
   const s=data?.summary
   const fmt=(v:number)=>metric==='sales'?money(v):metric==='tonnage'?`${num(v)} MT`:num(v)
   const metricName=metric==='sales'?'Sales value':metric==='tonnage'?'Finished weight / tonnage':'Quantity'
+  function toggleGroup(kind:'plant'|'productGroup'|'customerId',row:any){
+    setActionDetail(null)
+    if(kind==='plant') setScope(v=>({...v,plant:v.plant.length===1&&v.plant[0]===String(row.name)?[]:[String(row.name)],productId:[]}))
+    else if(kind==='productGroup') setScope(v=>({...v,productGroup:v.productGroup.length===1&&v.productGroup[0]===String(row.name)?[]:[String(row.name)],productId:[]}))
+    else {
+      const match=(options?.customers||[]).find((x:any)=>String(x.name||x.label)===String(row.name))
+      const id=String(match?.id??match?.value??'')
+      if(id)setScope(v=>({...v,customerId:v.customerId.length===1&&v.customerId[0]===id?[]:[id],productId:[]}))
+    }
+  }
   return <>
     <PageHeader title="Compliance Reports" subtitle="Daily, weekly and monthly compliance with Plant, Customer, Type / Product Group and Part filters." actions={<div className="report-filters"><select value={metric} onChange={e=>setMetric(e.target.value as Metric)}><option value="qty">Quantity</option><option value="sales">Sales ₹</option><option value="tonnage">Tonnage MT</option></select><input type="date" value={asOf} onChange={e=>setAsOf(e.target.value)}/></div>}/>
     <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
@@ -44,9 +54,9 @@ export default function Reports(){
     <section className="panel report-panel"><div className="panel-title"><div><h2>Weekly Compliance</h2><p>Rolling 8 weeks with Plan/Actual bars and Compliance % on the secondary right axis. Current week stops at the selected date.</p></div><span>{productName}</span></div><PlanActualComplianceChart onSelect={drill} rows={data?.weekly||[]} metric={metric}/></section>
     <section className="panel report-panel"><div className="panel-title"><div><h2>Monthly Compliance</h2><p>Rolling 12 months with Plan/Actual bars, Compliance % on the secondary right axis, and schedule revisions applied from their effective dates.</p></div><span>{productName}</span></div><PlanActualComplianceChart onSelect={drill} rows={data?.monthly||[]} metric={metric}/></section>
 
-    {scope.productId.length===0&&<><section className="panel report-panel"><div className="panel-title"><div><h2>Plant-wise Current Month Compliance</h2><p>Compare all manufacturing plants inside the selected customer/group scope.</p></div><span>100% target</span></div><NamedComplianceBars rows={data?.plants||[]} metric={metric}/></section>
-    <section className="panel report-panel"><div className="panel-title"><div><h2>Type / Product Group-wise Compliance</h2><p>Useful for cast iron / aluminium / other business group bifurcation.</p></div><span>Current month</span></div><NamedComplianceBars rows={data?.product_groups||[]} metric={metric}/></section>
-    <section className="panel report-panel"><div className="panel-title"><div><h2>Customer-wise Compliance</h2><p>Customer roll-up within the selected plant and product group.</p></div><span>Current month</span></div><NamedComplianceBars rows={data?.customers||[]} metric={metric}/></section></>}
+    {scope.productId.length===0&&<><section className="panel report-panel"><div className="panel-title"><div><h2>Plant-wise Current Month Compliance</h2><p>Compare all manufacturing plants inside the selected customer/group scope.</p></div><span>100% target</span></div><NamedComplianceBars rows={data?.plants||[]} metric={metric} onSelect={r=>toggleGroup('plant',r)} selectedName={scope.plant.length===1?scope.plant[0]:undefined}/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Type / Product Group-wise Compliance</h2><p>Useful for cast iron / aluminium / other business group bifurcation.</p></div><span>Current month</span></div><NamedComplianceBars rows={data?.product_groups||[]} metric={metric} onSelect={r=>toggleGroup('productGroup',r)} selectedName={scope.productGroup.length===1?scope.productGroup[0]:undefined}/></section>
+    <section className="panel report-panel"><div className="panel-title"><div><h2>Customer-wise Compliance</h2><p>Customer roll-up within the selected plant and product group.</p></div><span>Current month</span></div><NamedComplianceBars rows={data?.customers||[]} metric={metric} onSelect={r=>toggleGroup('customerId',r)} selectedName={(options?.customers||[]).find((x:any)=>String(x.id??x.value)===scope.customerId[0])?.name}/></section></>}
 
     <section className="panel report-panel"><div className="panel-title"><div><h2>Part-wise Current Month Compliance</h2><p>Plan vs Actual for each part inside the selected scope.</p></div><span>100% target marker</span></div><PartComplianceBars rows={data?.parts||[]} metric={metric}/><div className="table-wrap report-table"><table><thead><tr><th>Plant</th><th>Group</th><th>Customer</th><th>Part</th><th>Finish Wt.</th><th>Plan</th><th>Actual</th><th>Gap</th><th>Compliance</th></tr></thead><tbody>{(data?.parts||[]).map((r:any)=><tr key={r.product_id}><td>{r.plant||'—'}</td><td>{r.product_group||'—'}</td><td>{r.customer||'—'}</td><td><b>{r.product}</b></td><td>{r.finish_weight_kg==null?'—':`${num(r.finish_weight_kg)} kg`}</td><td>{fmt(r.plan)}</td><td>{fmt(r.actual)}</td><td className={r.gap<0?'neg':'pos'}>{fmt(r.gap)}</td><td className={(r.compliance??0)<.9?'neg':(r.compliance??0)>=1?'pos':''}>{pct(r.compliance)}</td></tr>)}</tbody></table></div></section>
 
