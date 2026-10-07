@@ -85,9 +85,9 @@ export function ComplianceLineChart({rows,height=245,onSelect}:{rows:Point[],hei
   </svg></div>
 }
 
-export function PartComplianceBars({rows,metric}:{rows:any[],metric:Metric}){
+export function PartComplianceBars({rows,metric,onSelect,selectedId}:{rows:any[],metric:Metric,onSelect?:(row:any)=>void,selectedId?:string}){
   if(!rows.length) return <div className="empty">No part-wise data for this period.</div>
-  return <div className="part-bars">{rows.map(r=>{const c=(r.compliance??0)*100;return <div className="part-bar-row" key={r.product_id}>
+  return <div className="part-bars">{rows.map(r=>{const c=(r.compliance??0)*100;return <div className={`part-bar-row ${selectedId===String(r.product_id)?'selected-filter':''}`} role={onSelect?'button':undefined} tabIndex={onSelect?0:undefined} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==='Enter')onSelect?.(r)}} style={{cursor:onSelect?'pointer':undefined}} key={r.product_id}>
     <div className="part-name"><b>{r.product}</b><small>{formatValue(r.actual,metric)} / {formatValue(r.plan,metric)}</small></div>
     <div className="part-track"><div className={`part-fill ${c>=100?'good':c>=90?'watch':'bad'}`} style={{width:`${Math.min(130,Math.max(0,c))/1.3}%`}}></div><i className="part-target"></i></div>
     <strong className={c<90?'neg':c>=100?'pos':''}>{r.compliance==null?'—':`${c.toFixed(1)}%`}</strong>
