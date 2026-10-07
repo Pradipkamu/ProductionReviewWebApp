@@ -95,9 +95,9 @@ export function PartComplianceBars({rows,metric}:{rows:any[],metric:Metric}){
   </div>})}</div>
 }
 
-export function NamedComplianceBars({rows,metric}:{rows:any[],metric:Metric}){
+export function NamedComplianceBars({rows,metric,onSelect,selectedName}:{rows:any[],metric:Metric,onSelect?:(row:any)=>void,selectedName?:string}){
   if(!rows.length) return <div className="empty">No grouped data for this period.</div>
-  return <div className="part-bars">{rows.map((r:any,i:number)=>{const c=(r.compliance??0)*100;return <div className="part-bar-row" key={`${r.name}-${i}`}>
+  return <div className="part-bars">{rows.map((r:any,i:number)=>{const c=(r.compliance??0)*100;return <div className={`part-bar-row ${selectedName===r.name?'selected':''}`} role={onSelect?'button':undefined} tabIndex={onSelect?0:undefined} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==='Enter')onSelect?.(r)}} style={{cursor:onSelect?'pointer':undefined}} key={`${r.name}-${i}`}>
     <div className="part-name"><b>{r.name}</b><small>{formatValue(r.actual,metric)} / {formatValue(r.plan,metric)}</small></div>
     <div className="part-track"><div className={`part-fill ${c>=100?'good':c>=90?'watch':'bad'}`} style={{width:`${Math.min(130,Math.max(0,c))/1.3}%`}}></div><i className="part-target"></i></div>
     <strong className={c<90?'neg':c>=100?'pos':''}>{r.compliance==null?'—':`${c.toFixed(1)}%`}</strong>
