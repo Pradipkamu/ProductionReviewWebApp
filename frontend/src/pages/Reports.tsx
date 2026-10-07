@@ -32,6 +32,10 @@ export default function Reports(){
   const s=data?.summary
   const fmt=(v:number)=>metric==='sales'?money(v):metric==='tonnage'?`${num(v)} MT`:num(v)
   const metricName=metric==='sales'?'Sales value':metric==='tonnage'?'Finished weight / tonnage':'Quantity'
+  const selectedPlant=scope.plant.length===1?scope.plant[0]:undefined
+  const selectedGroup=scope.productGroup.length===1?scope.productGroup[0]:undefined
+  const selectedCustomer=(options?.customers||[]).find((x:any)=>String(x.id??x.value)===scope.customerId[0])?.name
+  const selectedPart=scope.productId.length===1?products.find((x:any)=>String(x.id)===scope.productId[0])?.name:undefined
   function toggleGroup(kind:'plant'|'productGroup'|'customerId',row:any){
     setActionDetail(null)
     if(kind==='plant') setScope(v=>({...v,plant:v.plant.length===1&&v.plant[0]===String(row.name)?[]:[String(row.name)],productId:[]}))
@@ -45,7 +49,7 @@ export default function Reports(){
   return <>
     <PageHeader title="Compliance Reports" subtitle="Daily, weekly and monthly compliance with Plant, Customer, Type / Product Group and Part filters." actions={<div className="report-filters"><select value={metric} onChange={e=>setMetric(e.target.value as Metric)}><option value="qty">Quantity</option><option value="sales">Sales ₹</option><option value="tonnage">Tonnage MT</option></select><input type="date" value={asOf} onChange={e=>setAsOf(e.target.value)}/></div>}/>
     <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
-    {err&&<div className="error">{err}</div>}{busy&&<div className="notice">Refreshing compliance report…</div>}
+    {(selectedPlant||selectedGroup||selectedCustomer||selectedPart)&&<div className="filter-summary"><span className="filter-chip">Selected</span>{selectedPlant&&<button className="filter-chip removable" onClick={()=>setScope(v=>({...v,plant:[]}))}>Plant: {selectedPlant} ×</button>}{selectedGroup&&<button className="filter-chip removable" onClick={()=>setScope(v=>({...v,productGroup:[]}))}>Type: {selectedGroup} ×</button>}{selectedCustomer&&<button className="filter-chip removable" onClick={()=>setScope(v=>({...v,customerId:[]}))}>Customer: {selectedCustomer} ×</button>}{selectedPart&&<button className="filter-chip removable" onClick={()=>setScope(v=>({...v,productId:[]}))}>Part: {selectedPart} ×</button>}</div>}{err&&<div className="error">{err}</div>}{busy&&<div className="notice">Refreshing compliance report…</div>}
     {(data?.missing_weight_products||[]).length>0&&metric==='tonnage'&&<div className="warning-box"><b>Finish Weight missing:</b> {(data.missing_weight_products||[]).join(', ')}. Their tonnage is treated as zero until the master is completed.</div>}
     {s&&<><div className="report-scope"><b>{productName||'Selected Part'}</b><span>{s.period} • {metricName} compliance</span></div><div className="kpi-grid"><Kpi label="Plan to date" value={fmt(s.plan)}/><Kpi label="Actual to date" value={fmt(s.actual)} tone="good"/><Kpi label="Gap" value={fmt(s.gap)} tone={s.gap<0?'bad':'good'}/><Kpi label="Compliance" value={pct(s.compliance)} tone={(s.compliance??0)<.9?'bad':(s.compliance??0)<1?'warn':'good'}/><Kpi label="Actions Raised" value={num(s.actions_raised||0)} tone={(s.actions_raised||0)>0?'warn':undefined}/></div></>}
 
