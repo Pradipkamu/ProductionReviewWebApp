@@ -35,7 +35,7 @@ export default function Quality(){
   const [summary,setSummary]=useState<any>({}); const [rows,setRows]=useState<any[]>([]); const [trend,setTrend]=useState<any[]>([])
   const [monthlyTrend,setMonthlyTrend]=useState<any[]>([]); const [historyRows,setHistoryRows]=useState<any[]>([]); const [historyRange,setHistoryRange]=useState<any>({min_month:null,max_month:null,records:0})
   const [partPareto,setPartPareto]=useState<any[]>([]); const [phenPareto,setPhenPareto]=useState<any[]>([]); const [busy,setBusy]=useState(false); const [err,setErr]=useState('')
-  const [newPhen,setNewPhen]=useState('')
+  const [newPhen,setNewPhen]=useState(''); const [rejectionType,setRejectionType]=useState<string>('')
   const [showManual,setShowManual]=useState(false); const [manualOps,setManualOps]=useState<any[]>([]); const [manualSaving,setManualSaving]=useState(false); const [manualMsg,setManualMsg]=useState(''); const [actionMsg,setActionMsg]=useState('')
   const [manual,setManual]=useState<any>({rejection_date:iso(today),shift:'A',product_id:'',detection_route_operation_id:'',responsible_route_operation_id:'',machine_id:'',phenomenon_id:'',reject_qty:'',rework_qty:'0',scrap_qty:'0',remark:'',action_required:false})
 
@@ -128,6 +128,30 @@ export default function Quality(){
   const selectedProductNames=products.filter((x:any)=>productId.includes(String(x.id))).map((x:any)=>x.name)
   const selectedPhenomenonNames=phenomena.filter((x:any)=>phenomenonId.includes(String(x.id))).map((x:any)=>x.name)
   const hasGraphFilter=selectedProductNames.length>0||selectedPhenomenonNames.length>0
+  const phenomenonGroupById=useMemo(()=>new Map(phenomena.map((x:any)=>[String(x.id),String(x.group||x.phenomenon_group||'')])),[phenomena])
+  const rejectionTypeRows=useMemo(()=>{
+    const totals:any={"Casting Rejection":0,"Machining Rejection":0}
+    const historyCoverage=new Set<string>()
+    for(const r of historyRows){
+      const group=phenomenonGroupById.get(String(r.phenomenon_id))
+      if((group==="Casting Rejection"||group==="Machining Rejection")&&r.include_in_aggregate===false){
+        totals[group]+=Number(r.reject_qty||0)
+        historyCoverage.add(`${String(r.month||'').slice(0,7)}|${r.product_id}`)
+      }
+    }
+    for(const r of rows){
+      if(historyCoverage.has(`${String(r.date||'').slice(0,7)}|${r.product_id}`))continue
+      const group=phenomenonGroupById.get(String(r.phenomenon_id))
+      if(group==="Casting Rejection"||group==="Machining Rejection")totals[group]+=Number(r.reject_qty||0)
+    }
+    return [{name:"Casting Rejection",reject_qty:totals["Casting Rejection"]},{name:"Machining Rejection",reject_qty:totals["Machining Rejection"]}]
+  },[rows,historyRows,phenomenonGroupById])
+  const visiblePhenPareto=useMemo(()=>rejectionType?phenPareto.filter((r:any)=>{
+    const ph=phenomena.find((x:any)=>String(x.name).trim().toLowerCase()===String(r.name).trim().toLowerCase())
+    return ph&&String(ph.group||ph.phenomenon_group||'')===rejectionType
+  }):phenPareto,[phenPareto,phenomena,rejectionType])
+  function pickRejectionType(row:any){const name=String(row?.name||'');setRejectionType(rejectionType===name?'':name)}
+
 
   const ppm=(summary.ppm==null?'—':Math.round(summary.ppm).toLocaleString('en-IN'))
   const visibleHistory=historyRows.slice(0,500)
@@ -163,7 +187,8 @@ export default function Quality(){
     <section className="panel"><div className="panel-title"><h2>Monthly Rejection Qty Trend</h2><span>Historical + daily roll-up • labels ON</span></div><ValueTrendChart onSelect={drill} rows={monthlyTrend.map(x=>({...x,value:x.reject_qty||0}))} keyName="value" label="Reject Qty"/></section>
     <section className="panel ppm-trend-panel"><div className="panel-title"><h2>Monthly PPM Trend</h2><span>Historical + daily roll-up • PPM labels ON</span></div><ValueTrendChart onSelect={drill} rows={monthlyPpmRows} keyName="value" label="PPM"/>{monthlyTrend.length>0&&<div className="table-wrap ppm-quantity-matrix" aria-label="Monthly rejection and dispatch quantities"><table><thead><tr><th>Quantity</th>{monthlyTrend.map((r:any)=><th key={String(r.month)}>{r.label||String(r.month).slice(0,7)}</th>)}</tr></thead><tbody><tr className="ppm-rejection-row"><th>Rejection Qty</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{num(r.reject_qty||0)}</td>)}</tr><tr><th>Dispatch Qty</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{Number(r.denominator_qty||0)>0?num(r.denominator_qty):Number(r.reject_qty||0)>0?'Pending':'0'}</td>)}</tr></tbody></table></div>}{monthlyPpmPending>0&&<p className="muted">{monthlyPpmPending} month{monthlyPpmPending===1?'':'s'} not plotted because Dispatch/denominator Qty is still pending.</p>}<p className="muted">Dispatch Qty is the denominator used for the PPM plotted above. With process or machine filters, it can be the corresponding process/machine production quantity.</p></section>
     <section className="panel"><div className="panel-title"><h2>Daily PPM Trend</h2><span>Daily rejection uploads • labels ON</span></div>{dailyPpmRows.length>0?<ValueTrendChart onSelect={drill} rows={dailyPpmRows} keyName="value" label="PPM"/>:<p className="muted">No daily PPM is available for the selected date range and filters.</p>}{dailyPpmPending>0&&<p className="muted">{dailyPpmPending} day{dailyPpmPending===1?'':'s'} contain rejection data but cannot plot PPM because the denominator is pending.</p>}</section>
-    <div className="two-col"><section className="panel"><div className="panel-title"><h2>Phenomenon Pareto</h2><span>Click a bar to filter; click again to clear</span></div><RankedBars rows={phenPareto.slice(0,20)} valueKey="reject_qty" labelKey="name" valueLabel="Reject Qty" onSelect={pickPhenomenon} selectedName={selectedPhenomenonNames.length===1?selectedPhenomenonNames[0]:undefined}/></section><section className="panel"><div className="panel-title"><h2>Component Pareto</h2><span>Click a bar to filter; click again to clear</span></div><RankedBars rows={partPareto.slice(0,20)} valueKey="reject_qty" labelKey="name" valueLabel="Reject Qty" onSelect={pickProduct} selectedName={selectedProductNames.length===1?selectedProductNames[0]:undefined}/></section></div>
+    <section className="panel"><div className="panel-title"><h2>Rejection by Type</h2><span>Casting vs Machining • click to filter Phenomenon Pareto</span></div><RankedBars rows={rejectionTypeRows} valueKey="reject_qty" labelKey="name" valueLabel="Reject Qty" onSelect={pickRejectionType} selectedName={rejectionType||undefined}/></section>
+    <div className="two-col"><section className="panel"><div className="panel-title"><h2>Phenomenon Pareto</h2><span>{rejectionType?`${rejectionType} • click a phenomenon to filter`:'Click a bar to filter; click again to clear'}</span></div><RankedBars rows={visiblePhenPareto.slice(0,20)} valueKey="reject_qty" labelKey="name" valueLabel="Reject Qty" onSelect={pickPhenomenon} selectedName={selectedPhenomenonNames.length===1?selectedPhenomenonNames[0]:undefined}/></section><section className="panel"><div className="panel-title"><h2>Component Pareto</h2><span>Click a bar to filter; click again to clear</span></div><RankedBars rows={partPareto.slice(0,20)} valueKey="reject_qty" labelKey="name" valueLabel="Reject Qty" onSelect={pickProduct} selectedName={selectedProductNames.length===1?selectedProductNames[0]:undefined}/></section></div>
     
 
     <section className="panel"><div className="panel-title"><div><h2>Approved Phenomenon Master</h2><p>Maintain rejection phenomena individually or by controlled Excel upload.</p></div><button className="secondary" onClick={()=>downloadApi('/quality/phenomena-template','Phenomenon_Master_Upload.xlsx')}>Download Master Template</button></div><div className="two-col"><div><h3>Add One Phenomenon</h3><div className="form-row"><label>New Phenomenon<input value={newPhen} onChange={e=>setNewPhen(e.target.value)} placeholder="Add one approved phenomenon"/></label><button onClick={addPhenomenon}>Add to Master</button></div></div><div><h3>Excel Master Upload</h3><p>Preview New / Updated / Unchanged / Rejected rows before committing. Existing normalized names are updated rather than duplicated.</p><ImportPreview kind="quality-phenomena" onComplete={()=>loadMasters()}/></div></div><p className="muted">Daily rejection uploads reject unknown typed phenomena. Use groups such as Casting Rejection or Machining Rejection to keep Pareto analysis consistent.</p></section>
