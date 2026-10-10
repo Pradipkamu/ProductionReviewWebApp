@@ -269,9 +269,26 @@ def denominator_for_rejection(db: Session, *, on_date: date, shift: str, product
         if pd and pd.actual_qty is not None and Decimal(str(pd.actual_qty)) > 0:
             return "OPERATION_ACTUAL", Decimal(str(pd.actual_qty))
 
-    # Final rejection PPM uses only approved daily production:
-    # Siddharth Machining + Silver Production. ACK and broad Daily MIS Dispatch
-    # are intentionally excluded. Missing production never blocks rejection capture.
+    # Final rejection PPM rule: only plant 2070 uses Siddharth Machining +
+    # Silver Production. Every other plant uses its effective Disp_Done actual.
+    plant = str(product.plant or "").strip()
+    route = _route_for_date(db, product.id, on_date)
+    if plant != "2070":
+        if route:
+            dispatch_qty = db.scalar(
+                select(func.sum(ProcessDailySummary.actual_qty))
+                .join(RouteOperation, RouteOperation.id == ProcessDailySummary.route_operation_id)
+                .where(
+                    ProcessDailySummary.summary_date == on_date,
+                    ProcessDailySummary.product_id == product.id,
+                    RouteOperation.route_version_id == route.id,
+                    RouteOperation.is_dispatch.is_(True),
+                )
+            )
+            if dispatch_qty is not None and Decimal(str(dispatch_qty)) > 0:
+                return "DISP_DONE", Decimal(str(dispatch_qty))
+        return "DISP_DONE_PENDING", None
+
     if detection_ro is None or detection_ro.is_dispatch:
         rows = db.execute(
             select(ProcessDailySummary.actual_qty, Operation.name, Operation.code)
@@ -280,6 +297,7 @@ def denominator_for_rejection(db: Session, *, on_date: date, shift: str, product
             .where(
                 ProcessDailySummary.summary_date == on_date,
                 ProcessDailySummary.product_id == product.id,
+                RouteOperation.route_version_id == route.id if route else False,
             )
         ).all()
         siddharth = Decimal("0")
