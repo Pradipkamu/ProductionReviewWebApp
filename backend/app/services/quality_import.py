@@ -269,11 +269,34 @@ def denominator_for_rejection(db: Session, *, on_date: date, shift: str, product
         if pd and pd.actual_qty is not None and Decimal(str(pd.actual_qty)) > 0:
             return "OPERATION_ACTUAL", Decimal(str(pd.actual_qty))
 
-    # Dispatch Done is the authoritative denominator for final rejection.
+    # Final rejection PPM uses only approved daily production:
+    # Siddharth Machining + Silver Production. ACK and broad Daily MIS Dispatch
+    # are intentionally excluded. Missing production never blocks rejection capture.
     if detection_ro is None or detection_ro.is_dispatch:
-        mis = db.scalar(select(DailyMIS).where(DailyMIS.mis_date == on_date, DailyMIS.product_id == product.id))
-        if mis and mis.actual_qty is not None and Decimal(str(mis.actual_qty)) > 0:
-            return "DISP_DONE", Decimal(str(mis.actual_qty))
+        rows = db.execute(
+            select(ProcessDailySummary.actual_qty, Operation.name, Operation.code)
+            .join(RouteOperation, RouteOperation.id == ProcessDailySummary.route_operation_id)
+            .join(Operation, Operation.id == RouteOperation.operation_id)
+            .where(
+                ProcessDailySummary.summary_date == on_date,
+                ProcessDailySummary.product_id == product.id,
+            )
+        ).all()
+        siddharth = Decimal("0")
+        silver = Decimal("0")
+        found_siddharth = found_silver = False
+        for actual, name, code in rows:
+            label = _norm(f"{name or ''} {code or ''}")
+            qty = Decimal(str(actual or 0))
+            if "siddharth" in label and "machin" in label:
+                siddharth += qty
+                found_siddharth = True
+            elif "silver" in label and ("production" in label or "machin" in label):
+                silver += qty
+                found_silver = True
+        if found_siddharth and found_silver and siddharth + silver > 0:
+            return "SIDDHARTH_MACHINING_PLUS_SILVER", siddharth + silver
+        return "SIDDHARTH_SILVER_PENDING", None
 
     return "NOT_AVAILABLE", None
 
