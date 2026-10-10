@@ -10,10 +10,10 @@ from app.db import SessionLocal
 from app.enums import OperationType, SourceType
 from app.models import (
     Customer, DailyMIS, Operation, Product, QualityPhenomenon, QualityRejectionDaily,
-    RouteOperation, RouteVersion,
+    QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, RouteOperation, RouteVersion,
 )
-from app.services.quality_import import import_daily_rejection_workbook, upsert_phenomenon
-from app.api.quality import _daily_context, _serialize_daily
+from app.services.quality_import import import_daily_rejection_workbook, import_historical_ppm_production_workbook, upsert_phenomenon
+from app.api.quality import _daily_context, _serialize_daily, _history_dispatch_resolution
 from app.api.import_preview import preview_error_message
 
 
@@ -454,3 +454,50 @@ def test_historical_ppm_plant_filter_does_not_reuse_product_total_mis_for_split_
     assert summary['denominator_qty'] == 0.0
     assert summary['ppm'] is None
     assert summary['ppm_pending_rows'] == 1
+
+
+def test_historical_ppm_never_falls_back_to_company_dispatch_and_rejection_stays_available():
+    with SessionLocal() as db:
+        p, _, ph = _seed_quality_context(db)
+        row = QualityRejectionMonthlyHistory(
+            record_key='P0-NONBLOCKING', month=date(2026,9,1), source='TEST',
+            source_sheet='Quality', record_scope='AGGREGATE_TOTAL', include_in_aggregate=True,
+            product_id=p.id, phenomenon_id=ph.id, reject_qty=Decimal('25'),
+            denominator_source='DISP_DONE', dispatch_qty=Decimal('2000'), ppm=Decimal('12500'),
+        )
+        db.add(row); db.commit(); db.refresh(row)
+        resolved = _history_dispatch_resolution(db, [row])
+        assert row.reject_qty == Decimal('25')
+        assert resolved[row.id] == (None, 'SIDDHARTH_SILVER_PENDING')
+
+
+def test_historical_ppm_uses_only_siddharth_plus_silver():
+    with SessionLocal() as db:
+        p, _, ph = _seed_quality_context(db)
+        prod = QualityHistoricalPpmProduction(
+            month=date(2026,9,1), product_id=p.id,
+            siddharth_machining_qty=Decimal('1500'), silver_production_qty=Decimal('500'),
+        )
+        row = QualityRejectionMonthlyHistory(
+            record_key='P0-AUTHORITATIVE', month=date(2026,9,1), source='TEST',
+            source_sheet='Quality', record_scope='AGGREGATE_TOTAL', include_in_aggregate=True,
+            product_id=p.id, phenomenon_id=ph.id, reject_qty=Decimal('25'),
+            denominator_source='DISP_DONE', dispatch_qty=Decimal('9999'), ppm=None,
+        )
+        db.add_all([prod,row]); db.commit(); db.refresh(row)
+        resolved = _history_dispatch_resolution(db, [row])
+        assert resolved[row.id] == (2000.0, 'SIDDHARTH_MACHINING_PLUS_SILVER')
+
+
+def test_historical_ppm_production_requires_both_sources_but_allows_explicit_zero(tmp_path):
+    path = tmp_path / 'ppm_production.xlsx'
+    wb = Workbook(); ws = wb.active; ws.title = 'Historical_Production_Upload'
+    ws.append(['Month','Product','Siddharth_Machining_Production','Silver_Production','Remark'])
+    ws.append([date(2026,9,1),'K70 Cylinder block',1500,None,'missing Silver'])
+    ws.append([date(2026,10,1),'K70 Cylinder block',1500,0,'explicit zero is valid'])
+    wb.save(path)
+    with SessionLocal() as db:
+        _seed_quality_context(db)
+        stats = import_historical_ppm_production_workbook(db, path)
+        assert stats['created'] == 1
+        assert any('enter both Siddharth Machining Production and Silver Production' in e for e in stats['errors'])
