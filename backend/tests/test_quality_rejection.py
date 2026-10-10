@@ -111,6 +111,46 @@ def test_monthly_daily_ppm_uses_full_period_process_production_not_stored_reject
     assert row['ppm_pending_rows'] == 0
 
 
+def test_monthly_daily_ppm_ignores_process_rows_from_superseded_route_revision():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with SessionLocal() as db:
+        p, old_dispatch, ph = _seed_quality_context(db)
+        old_route = db.get(RouteVersion, old_dispatch.route_version_id)
+        # Keep the old revision open to reproduce legacy overlapping route data.
+        new_route = RouteVersion(product_id=p.id, revision_no=1, effective_from=date(2026,9,30), is_active=True)
+        db.add(new_route); db.flush()
+        for seq, name, qty in [(20, 'Siddharth Machining', Decimal('1500')), (30, 'Silver Production', Decimal('500'))]:
+            op = Operation(code=f'NEW_{name.upper().replace(" ", "_")}', name=name, operation_type=OperationType.INTERNAL)
+            db.add(op); db.flush()
+            ro = RouteOperation(route_version_id=new_route.id, operation_id=op.id, sequence_no=seq, standard_yield=Decimal('1'))
+            db.add(ro); db.flush()
+            db.add(ProcessDailySummary(summary_date=date(2026,9,30), product_id=p.id, route_operation_id=ro.id,
+                                       plan_qty=qty, actual_qty=qty, good_qty=qty, reject_qty=Decimal('0'),
+                                       opening_wip=Decimal('0'), closing_wip=Decimal('0'), source=SourceType.MANUAL))
+        # Superseded revision has duplicate production for the same date and labels.
+        for seq, name, qty in [(40, 'Siddharth Machining', Decimal('3100')), (50, 'Silver Production', Decimal('900'))]:
+            op = Operation(code=f'OLD_{name.upper().replace(" ", "_")}', name=name, operation_type=OperationType.INTERNAL)
+            db.add(op); db.flush()
+            ro = RouteOperation(route_version_id=old_route.id, operation_id=op.id, sequence_no=seq, standard_yield=Decimal('1'))
+            db.add(ro); db.flush()
+            db.add(ProcessDailySummary(summary_date=date(2026,9,30), product_id=p.id, route_operation_id=ro.id,
+                                       plan_qty=qty, actual_qty=qty, good_qty=qty, reject_qty=Decimal('0'),
+                                       opening_wip=Decimal('0'), closing_wip=Decimal('0'), source=SourceType.MANUAL))
+        db.add(QualityRejectionDaily(record_key='route-revision-ppm', rejection_date=date(2026,9,30), shift='A',
+                                     product_id=p.id, plant='2020', detection_route_operation_id=old_dispatch.id,
+                                     phenomenon_id=ph.id, reject_qty=Decimal('20'), denominator_source='DISP_DONE',
+                                     denominator_qty=Decimal('100'), ppm=Decimal('200000'), source=SourceType.MANUAL))
+        db.commit()
+
+    client = TestClient(app)
+    row = client.get('/api/quality/monthly-trend?from_month=2026-09-01&to_month=2026-09-01',
+                     headers=_headers_for_quality(client)).json()[0]
+    assert row['denominator_qty'] == 2000.0
+    assert row['ppm'] == 10000.0
+
+
 def test_daily_rejection_business_key_updates_instead_of_duplicate(tmp_path):
     path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15)
     with SessionLocal() as db:
