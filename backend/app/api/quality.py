@@ -272,21 +272,23 @@ def _history_dispatch_resolution(
     *,
     plant_filter: str | None = None,
 ) -> dict[int, tuple[float | None, str | None]]:
-    """Resolve the approved historical PPM production denominator.
+    """Resolve historical PPM denominator using the approved plant rule.
 
-    Rejection capture/history is independent of denominator availability. PPM is
-    calculated only when the Product + Month has an approved Siddharth Machining +
-    Silver Production record. ACK and broad Daily MIS Dispatch are never substituted.
+    Plant 2070 uses the dedicated Siddharth Machining + Silver Production upload.
+    Every other plant uses the historical rejection row's Dispatch Done quantity.
+    Missing denominator data never blocks rejection history; PPM stays Pending.
     """
     if not rows:
         return {}
 
-    eligible_keys = {
-        (_month_start(x.month), x.product_id)
-        for x in rows
-        if _is_dispatch_denominator(x.denominator_source)
-    }
-    historical_ppm_production: dict[tuple[date, int], float] = {}
+    products = _by_id(db, Product, {x.product_id for x in rows})
+    special_rows = [
+        x for x in rows
+        if str((x.plant or (products.get(x.product_id).plant if products.get(x.product_id) else "")) or "").strip() == "2070"
+        and _is_dispatch_denominator(x.denominator_source)
+    ]
+    eligible_keys = {(_month_start(x.month), x.product_id) for x in special_rows}
+    special_production: dict[tuple[date, int], float] = {}
     if eligible_keys:
         months = [m for m, _ in eligible_keys]
         product_ids = sorted({pid for _, pid in eligible_keys})
@@ -296,7 +298,7 @@ def _history_dispatch_resolution(
             QualityHistoricalPpmProduction.month <= max(months),
         )
         for prod in db.scalars(ppm_q).all():
-            historical_ppm_production[(_month_start(prod.month), prod.product_id)] = (
+            special_production[(_month_start(prod.month), prod.product_id)] = (
                 _num(prod.siddharth_machining_qty) + _num(prod.silver_production_qty)
             )
 
@@ -305,12 +307,16 @@ def _history_dispatch_resolution(
         if not _is_dispatch_denominator(x.denominator_source):
             resolved[x.id] = (None, None)
             continue
-        qty = historical_ppm_production.get((_month_start(x.month), x.product_id), 0.0)
-        resolved[x.id] = (
-            (qty, "SIDDHARTH_MACHINING_PLUS_SILVER")
-            if qty > 0
-            else (None, "SIDDHARTH_SILVER_PENDING")
-        )
+        plant = str((x.plant or (products.get(x.product_id).plant if products.get(x.product_id) else "")) or "").strip()
+        if plant == "2070":
+            qty = special_production.get((_month_start(x.month), x.product_id), 0.0)
+            resolved[x.id] = (
+                (qty, "SIDDHARTH_MACHINING_PLUS_SILVER")
+                if qty > 0 else (None, "SIDDHARTH_SILVER_PENDING")
+            )
+        else:
+            qty = _num(x.dispatch_qty) if x.dispatch_qty is not None else 0.0
+            resolved[x.id] = ((qty, "HISTORICAL_DISP_DONE") if qty > 0 else (None, "HISTORICAL_DISP_DONE_PENDING"))
     return resolved
 
 def _historical_rows(db: Session, *, from_date: date, to_date: date, plant: str | None = None,
