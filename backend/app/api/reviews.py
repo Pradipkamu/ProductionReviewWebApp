@@ -67,9 +67,34 @@ def get_active_review(review_date: date, db: Session = Depends(get_db), _: User 
 
 
 @router.get("")
-def list_reviews(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    rows = db.scalars(select(ReviewSession).order_by(ReviewSession.review_date.desc(), ReviewSession.id.desc()).limit(100)).all()
+def list_reviews(participant: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    stmt = select(ReviewSession)
+    if participant:
+        stmt = stmt.where(ReviewSession.participants.ilike(f"%{participant.strip()}%"))
+    rows = db.scalars(stmt.order_by(ReviewSession.review_date.desc(), ReviewSession.id.desc()).limit(200)).all()
     return [serialize_review(x) for x in rows]
+
+
+@router.get("/{review_id}")
+def get_review(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    row = db.get(ReviewSession, review_id)
+    if not row:
+        raise HTTPException(404, "Review session not found")
+    return serialize_review(row)
+
+
+@router.patch("/{review_id}/reopen")
+def reopen_review(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    row = db.get(ReviewSession, review_id)
+    if not row:
+        raise HTTPException(404, "Review session not found")
+    other = db.scalar(select(ReviewSession).where(ReviewSession.review_date == row.review_date, ReviewSession.ended_at.is_(None), ReviewSession.id != row.id).limit(1))
+    if other:
+        raise HTTPException(409, f"Review #{other.id} is already active for {row.review_date}")
+    row.ended_at = None
+    db.commit()
+    db.refresh(row)
+    return serialize_review(row)
 
 
 @router.post("")
