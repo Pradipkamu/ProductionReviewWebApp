@@ -212,8 +212,13 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
             ProcessDailySummary.product_id,
             Operation.name,
             ProcessDailySummary.actual_qty,
+            RouteVersion.id,
+            RouteVersion.revision_no,
+            RouteVersion.effective_from,
+            RouteVersion.effective_to,
         )
         .join(RouteOperation, RouteOperation.id == ProcessDailySummary.route_operation_id)
+        .join(RouteVersion, RouteVersion.id == RouteOperation.route_version_id)
         .join(Operation, Operation.id == RouteOperation.operation_id)
         .where(
             ProcessDailySummary.summary_date >= from_date,
@@ -222,9 +227,24 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
             func.lower(func.trim(Operation.name)).in_(tuple(labels)),
         )
     )
+    candidates = db.execute(q).all()
+    # Old route revisions deliberately remain in ProcessDailySummary for audit.
+    # When revisions overlap, use only the highest revision that is effective on
+    # each Product + Date, matching _route_for_date used during rejection capture.
+    effective_revision: dict[tuple[date, int], tuple[int, date, int]] = {}
+    for summary_date, product_id, _operation_name, _actual_qty, route_id, revision_no, effective_from, effective_to in candidates:
+        if effective_from <= summary_date and (effective_to is None or effective_to >= summary_date):
+            key = (summary_date, product_id)
+            rank = (revision_no, effective_from, route_id)
+            if key not in effective_revision or rank > effective_revision[key]:
+                effective_revision[key] = rank
+
     totals: dict[tuple[int, str], float] = defaultdict(float)
     found: set[tuple[int, str]] = set()
-    for _summary_date, product_id, operation_name, actual_qty in db.execute(q).all():
+    for summary_date, product_id, operation_name, actual_qty, route_id, revision_no, effective_from, effective_to in candidates:
+        rank = effective_revision.get((summary_date, product_id))
+        if rank is None or route_id != rank[2]:
+            continue
         kind = labels.get(_label_key(operation_name))
         if kind:
             totals[(product_id, kind)] += _num(actual_qty)
