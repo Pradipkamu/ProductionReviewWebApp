@@ -23,7 +23,7 @@ from ..enums import ActionStatus, Priority
 from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, Customer, DailyMIS, Machine, Operation, Product,
     QualityActionLink, QualityPhenomenon, QualityRejectionDaily, QualityRejectionImportBatch,
-    QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, ReviewActionLink, ReviewSession, RouteOperation, User,
+    QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, ProcessDailySummary, ReviewActionLink, ReviewSession, RouteOperation, User,
 )
 from ..services.filtering import csv_ints, csv_strings
 from ..services.quality_import import (
@@ -187,6 +187,55 @@ def _aggregate_daily(rows: list[QualityRejectionDaily]) -> dict:
     ppm = reject / denominator * 1_000_000 if denominator > 0 and pending == 0 else None
     return {"reject_qty": reject, "rework_qty": rework, "scrap_qty": scrap, "denominator_qty": denominator,
             "ppm": ppm, "ppm_pending_rows": pending}
+
+
+def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_date: date, to_date: date) -> dict:
+    """Return the approved period PPM denominator from process production.
+
+    Daily quality analytics must not reuse denominator_qty stored on individual
+    rejection records because those values reflect the rule that was active when
+    each rejection was captured.  The authoritative period denominator is the
+    Process Daily Summary actual for Siddharth Machining + Silver Production,
+    summed across the complete selected period (including production-only days).
+    """
+    product_ids = sorted({x.product_id for x in rows})
+    if not product_ids:
+        return {"denominator_qty": 0.0, "ppm_pending_rows": 0}
+
+    labels = {
+        "siddharth machining": "siddharth",
+        "silver production": "silver",
+    }
+    q = (
+        select(
+            ProcessDailySummary.summary_date,
+            ProcessDailySummary.product_id,
+            Operation.name,
+            ProcessDailySummary.actual_qty,
+        )
+        .join(RouteOperation, RouteOperation.id == ProcessDailySummary.route_operation_id)
+        .join(Operation, Operation.id == RouteOperation.operation_id)
+        .where(
+            ProcessDailySummary.summary_date >= from_date,
+            ProcessDailySummary.summary_date <= to_date,
+            ProcessDailySummary.product_id.in_(product_ids),
+            func.lower(func.trim(Operation.name)).in_(tuple(labels)),
+        )
+    )
+    totals: dict[tuple[int, str], float] = defaultdict(float)
+    found: set[tuple[int, str]] = set()
+    for _summary_date, product_id, operation_name, actual_qty in db.execute(q).all():
+        kind = labels.get(_label_key(operation_name))
+        if kind:
+            totals[(product_id, kind)] += _num(actual_qty)
+            found.add((product_id, kind))
+
+    denominator = sum(totals.values())
+    missing_products = sum(
+        1 for product_id in product_ids
+        if (product_id, "siddharth") not in found or (product_id, "silver") not in found
+    )
+    return {"denominator_qty": denominator, "ppm_pending_rows": missing_products}
 
 
 def _month_start(value: date) -> date:
@@ -963,9 +1012,16 @@ def monthly_trend(from_month: date, to_month: date, plant: str | None = None, pr
             ppm=reject/denominator*1_000_000 if denominator>0 else None
             a={"reject_qty":reject,"rework_qty":0,"scrap_qty":0,"denominator_qty":denominator,"ppm":ppm,"ppm_pending_rows":pending,"ppm_is_partial":bool(pending>0 and ppm is not None)}; source="HISTORICAL"
         elif daily_by_month.get(m):
-            a=_aggregate_daily(daily_by_month[m])
-            if a["denominator_qty"] > 0:
-                a["ppm"] = a["reject_qty"] / a["denominator_qty"] * 1_000_000
+            month_rows = daily_by_month[m]
+            a=_aggregate_daily(month_rows)
+            # Period PPM is authoritative from process production, not the
+            # legacy denominator saved on each rejection record.  Include every
+            # production day in the month even when that day has no rejection.
+            month_end=(m.replace(day=28)+timedelta(days=4)).replace(day=1)-timedelta(days=1)
+            production=_daily_ppm_production(db, month_rows, m, month_end)
+            a["denominator_qty"] = production["denominator_qty"]
+            a["ppm_pending_rows"] = production["ppm_pending_rows"]
+            a["ppm"] = a["reject_qty"] / a["denominator_qty"] * 1_000_000 if a["denominator_qty"] > 0 else None
             a["ppm_is_partial"] = bool(a["ppm_pending_rows"] > 0 and a["ppm"] is not None)
             source="DAILY_ROLLUP"
         else:
