@@ -102,6 +102,8 @@ def serialize_action(db: Session, a: Action) -> dict:
         "closed_at": a.closed_at,
         "closure_remark": a.closure_remark,
         "effectiveness_status": a.effectiveness_status,
+        "action_type": a.action_type,
+        "requires_whywhy": a.requires_whywhy,
         "age_days": max(0, (date.today() - a.reference_date).days),
         "overdue": bool(a.due_at and a.status != ActionStatus.CLOSED and a.due_at < datetime.utcnow()),
         "whywhy_completion_percent": _serialize_plan(plan)["completion_percent"],
@@ -183,8 +185,8 @@ def create_action(payload: ActionCreate, db: Session = Depends(get_db), user: Us
     db.add(a); db.flush()
     for c in payload.contexts:
         db.add(ActionContext(action_id=a.id, **c.model_dump()))
-    # Every new action gets one standard Why-Why plan record. It can be completed
-    # progressively after the quick action is raised from any module.
+    # Standard actions use Why-Why. Daily Review actions are created by the
+    # review API with requires_whywhy=False and bypass this route.
     db.add(ActionWhyWhy(action_id=a.id, containment_action=payload.action_description, updated_by_id=user.id))
     db.add(ActionHistory(action_id=a.id, changed_by_id=user.id, new_status=a.status, comment="Action created; standard Why-Why plan opened"))
 
@@ -351,7 +353,7 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
         if field in data:
             setattr(a, field, data[field])
     if payload.status is not None:
-        if payload.status == ActionStatus.CLOSED:
+        if payload.status == ActionStatus.CLOSED and a.requires_whywhy:
             plan = db.scalar(select(ActionWhyWhy).where(ActionWhyWhy.action_id == action_id))
             pdata = _serialize_plan(plan)
             if not pdata["can_close"]:

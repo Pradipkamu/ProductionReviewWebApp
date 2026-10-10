@@ -6,6 +6,7 @@ export const navItems:NavItem[] = [
   {key:'account',to:'/account',label:'Security / Users',required:true},
   {key:'governance',to:'/governance',label:'Month Close / Audit'},
   {key:'daily_review',to:'/',label:'Daily Review'},
+  {key:'daily_meeting',to:'/daily-meeting',label:'Daily Review Meeting'},
   {key:'mis',to:'/mis',label:'MIS'},
   {key:'schedule',to:'/schedule',label:'Schedule / Price / Calendar'},
   {key:'machine_master',to:'/machine-master',label:'Machine Master'},

@@ -8,6 +8,7 @@ import Schedule from './pages/Schedule'
 import Process from './pages/Process'
 import ProcessActuals from './pages/ProcessActuals'
 import Actions from './pages/Actions'
+import DailyMeeting from './pages/DailyMeeting'
 import OEE from './pages/OEE'
 import Vendor from './pages/Vendor'
 import Analytics from './pages/Analytics'
@@ -49,7 +50,7 @@ export default function App(){
   if(me.must_change_password) return <div className="login-page"><PasswordForm required/></div>
   const page=(pageKey:string,element:React.ReactNode)=><PageGate me={me} pageKey={pageKey}>{element}</PageGate>
   return <Layout me={me}><Routes>
-    <Route path="/" element={page('daily_review',<Dashboard/>)}/><Route path="/mis" element={page('mis',<MIS/>)}/><Route path="/schedule" element={page('schedule',<Schedule/>)}/>
+    <Route path="/" element={page('daily_review',<Dashboard/>)}/><Route path="/daily-meeting" element={page('daily_meeting',<DailyMeeting/>)}/><Route path="/mis" element={page('mis',<MIS/>)}/><Route path="/schedule" element={page('schedule',<Schedule/>)}/>
     <Route path="/process" element={page('process',<Process/>)}/><Route path="/process-actuals" element={page('process_actuals',<ProcessActuals/>)}/><Route path="/capacity" element={page('capacity',<CapacityPlanning/>)}/><Route path="/machine-master" element={page('machine_master',<MachineMaster/>)}/><Route path="/quality" element={page('quality',<Quality/>)}/><Route path="/casting-quality" element={page('casting_quality',<CastingQuality/>)}/><Route path="/customer-quality" element={page('customer_quality',<CustomerQuality/>)}/><Route path="/reports" element={page('reports',<Reports/>)}/><Route path="/management-reports" element={page('management_reports',<AdvancedReports/>)}/><Route path="/actions" element={page('actions',<Actions/>)}/><Route path="/vendor" element={page('vendor',<Vendor/>)}/><Route path="/oee" element={page('oee',<OEE/>)}/><Route path="/analytics" element={page('analytics',<Analytics/>)}/>
     <Route path="/insights" element={page('insights',<Insights/>)}/><Route path="/diagnostics" element={page('diagnostics',<Diagnostics/>)}/><Route path="/account" element={page('account',<Security/>)}/><Route path="/governance" element={page('governance',<Governance/>)}/><Route path="/masters" element={page('masters',<Masters/>)}/><Route path="/import" element={page('import',<ImportExcel/>)}/><Route path="*" element={<Navigate to={firstVisiblePath(me)} replace/>}/>
   </Routes></Layout>

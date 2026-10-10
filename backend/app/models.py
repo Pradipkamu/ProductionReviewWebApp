@@ -713,6 +713,8 @@ class Action(Base, TimestampMixin):
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     closure_remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     effectiveness_status: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    action_type: Mapped[str] = mapped_column(String(40), default="WHY_WHY", server_default="WHY_WHY", index=True)
+    requires_whywhy: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1", nullable=False)
     contexts: Mapped[list[ActionContext]] = relationship(back_populates="action", cascade="all, delete-orphan")
     history: Mapped[list[ActionHistory]] = relationship(back_populates="action", cascade="all, delete-orphan")
 
@@ -791,6 +793,19 @@ class ReviewSession(Base, TimestampMixin):
     participants: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     total_sales_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), nullable=True)
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class ReviewPoint(Base, TimestampMixin):
+    __tablename__ = "review_points"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_session_id: Mapped[int] = mapped_column(ForeignKey("review_sessions.id", ondelete="CASCADE"), index=True)
+    sequence_no: Mapped[int] = mapped_column(Integer)
+    category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    discussion_point: Mapped[str] = mapped_column(Text)
+    action_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    action_id: Mapped[Optional[int]] = mapped_column(ForeignKey("actions.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (UniqueConstraint("review_session_id", "sequence_no", name="uq_review_point_sequence"),)
 
 
 class ReviewActionLink(Base):
