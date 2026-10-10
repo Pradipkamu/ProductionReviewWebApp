@@ -10,6 +10,7 @@ export const navItems:NavItem[] = [
   {key:'mis',to:'/mis',label:'MIS'},
   {key:'schedule',to:'/schedule',label:'Schedule / Price / Calendar'},
   {key:'machine_master',to:'/machine-master',label:'Machine Master'},
+  {key:'product_master',to:'/product-master',label:'Product Update'},
   {key:'capacity',to:'/capacity',label:'Capacity / Manpower'},
   {key:'process',to:'/process',label:'Process Monitor'},
   {key:'process_actuals',to:'/process-actuals',label:'Process Actuals / Edit'},
