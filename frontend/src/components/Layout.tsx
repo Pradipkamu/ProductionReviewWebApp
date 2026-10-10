@@ -5,7 +5,7 @@ import { canViewPage, navItems } from '../pageAccess'
 
 const groups=[
   {label:'Review',keys:['daily_review','daily_meeting','insights','actions']},
-  {label:'Planning & Production',keys:['mis','schedule','capacity','machine_master','process','process_actuals','vendor']},
+  {label:'Planning & Production',keys:['mis','schedule','capacity','machine_master','product_master','process','process_actuals','vendor']},
   {label:'Quality & OEE',keys:['quality','casting_quality','customer_quality','oee']},
   {label:'Reports',keys:['reports','management_reports','analytics']},
   {label:'Administration',keys:['masters','import','diagnostics','governance','account']},
