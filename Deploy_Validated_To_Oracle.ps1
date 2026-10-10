@@ -113,14 +113,14 @@ fi
 rollback_code() {
   echo "[ROLLBACK] Deployment failed; rolling application code back to $PREVIOUS" >&2
   git checkout --detach "$PREVIOUS" || true
-  docker compose build backend frontend || true
+  docker compose build --no-cache backend frontend || true
   docker compose up -d --force-recreate backend frontend || true
 }
 trap rollback_code ERR
 echo "[4/9] Checking out validated commit $TARGET"
 git checkout --detach "$TARGET"
 echo "[5/9] Building backend and frontend images (live Docker output follows)"
-docker compose build backend frontend
+docker compose build --no-cache backend frontend
 BACKEND_IMAGE="$(docker image inspect productionreviewwebapp-backend:latest --format '{{.Id}}')"
 FRONTEND_IMAGE="$(docker image inspect productionreviewwebapp-frontend:latest --format '{{.Id}}')"
 echo "      Backend image:  $BACKEND_IMAGE"
