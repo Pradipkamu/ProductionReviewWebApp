@@ -34,11 +34,21 @@ class ReviewPointCreate(BaseModel):
     priority: Priority = Priority.MEDIUM
 
 
-def serialize_review(row: ReviewSession) -> dict:
-    return {"id": row.id, "review_date": row.review_date, "started_at": row.started_at,
-            "ended_at": row.ended_at, "participants": row.participants,
-            "total_sales_gap": float(row.total_sales_gap) if row.total_sales_gap is not None else None,
-            "comments": row.comments}
+def serialize_review(row: ReviewSession, db: Session | None = None) -> dict:
+    result = {"id": row.id, "review_date": row.review_date, "started_at": row.started_at,
+              "ended_at": row.ended_at, "participants": row.participants,
+              "total_sales_gap": float(row.total_sales_gap) if row.total_sales_gap is not None else None,
+              "comments": row.comments}
+    if db is not None:
+        action_ids = select(ReviewPoint.action_id).where(
+            ReviewPoint.review_session_id == row.id,
+            ReviewPoint.action_id.is_not(None),
+        )
+        result["action_count"] = db.scalar(select(func.count(Action.id)).where(Action.id.in_(action_ids))) or 0
+        result["closed_action_count"] = db.scalar(select(func.count(Action.id)).where(
+            Action.id.in_(action_ids), Action.status == ActionStatus.CLOSED
+        )) or 0
+    return result
 
 
 def action_data(db: Session, a: Action | None) -> dict | None:
@@ -72,7 +82,7 @@ def list_reviews(participant: str | None = None, db: Session = Depends(get_db), 
     if participant:
         stmt = stmt.where(ReviewSession.participants.ilike(f"%{participant.strip()}%"))
     rows = db.scalars(stmt.order_by(ReviewSession.review_date.desc(), ReviewSession.id.desc()).limit(200)).all()
-    return [serialize_review(x) for x in rows]
+    return [serialize_review(x, db) for x in rows]
 
 
 @router.get("/{review_id}")
