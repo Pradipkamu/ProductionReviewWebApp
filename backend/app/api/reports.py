@@ -14,7 +14,7 @@ from ..db import get_db
 from ..models import (
     Action, ActionContext, Customer, DailyMIS, DailyRequirement, LossCategory,
     Machine, MachineLossEvent, MachineShiftProduction, Operation, ProcessDailySummary,
-    Product, RouteOperation, RouteVersion, SalesPriceHistory, ScheduleRevision,
+    Product, ProductValueAdditionHistory, RouteOperation, RouteVersion, SalesPriceHistory, ScheduleRevision,
     User, Vendor, VendorMovement,
 )
 from ..enums import ActionStatus
@@ -152,6 +152,28 @@ def compliance_report(
     revised: dict[tuple[date, int], Decimal] = {(r.req_date, r.product_id): _value(r.revised_plan_qty) for r in req_rows}
 
     missing_weight = set()
+    missing_value_addition = set()
+    va_rows = db.scalars(
+        select(ProductValueAdditionHistory)
+        .where(ProductValueAdditionHistory.product_id.in_(product_ids), ProductValueAdditionHistory.effective_from <= as_of)
+        .order_by(ProductValueAdditionHistory.product_id, ProductValueAdditionHistory.effective_from)
+    ).all()
+    va_history: dict[int, list[ProductValueAdditionHistory]] = defaultdict(list)
+    for va in va_rows:
+        va_history[va.product_id].append(va)
+
+    def value_addition_for(pid: int, on_date: date) -> Decimal | None:
+        applicable = [x for x in va_history.get(pid, []) if x.effective_from <= on_date]
+        if applicable:
+            return _value(applicable[-1].value_addition_per_piece)
+        # Legacy/current masters may have a value before history was introduced.
+        # Use the snapshot only when no revision history exists at all.
+        product = products[pid][0]
+        if not va_history.get(pid) and product.value_addition_per_piece is not None:
+            return _value(product.value_addition_per_piece)
+        return None
+
+    value_addition_daily: list[dict] = []
     normalized: list[dict] = []
     for r in mis_rows:
         p, c = products[r.product_id]
@@ -159,6 +181,13 @@ def compliance_report(
         actual_qty = _value(r.actual_qty)
         price = _value(r.sales_price)
         weight = _value(p.finish_weight_kg)
+        va_rate = value_addition_for(r.product_id, r.mis_date)
+        if va_rate is None:
+            missing_value_addition.add(p.name)
+            va_value = ZERO
+        else:
+            va_value = actual_qty * va_rate
+        value_addition_daily.append({"date": r.mis_date, "product_id": r.product_id, "dispatch_qty": actual_qty, "value_addition": va_value})
         if metric == "sales":
             plan, actual = plan_qty * price, actual_qty * price
         elif metric == "tonnage":
@@ -225,6 +254,19 @@ def compliance_report(
         })
     parts.sort(key=lambda x: (x["compliance"] if x["compliance"] is not None else -1, x["product"]))
 
+    va_monthly_bucket: dict[date, dict[str, Decimal]] = defaultdict(lambda: {"dispatch_qty": ZERO, "value_addition": ZERO})
+    for r in value_addition_daily:
+        bucket = va_monthly_bucket[_month_start(r["date"])]
+        bucket["dispatch_qty"] += r["dispatch_qty"]
+        bucket["value_addition"] += r["value_addition"]
+    value_addition_monthly = [{
+        "label": month.strftime("%b %Y"),
+        "start": month.isoformat(),
+        "dispatch_qty": float(vals["dispatch_qty"]),
+        "value_addition": float(vals["value_addition"]),
+    } for month, vals in sorted(va_monthly_bucket.items())]
+    current_va = sum((r["value_addition"] for r in value_addition_daily if r["date"] >= current_month), ZERO)
+
     summary_plan = sum((r["plan"] for r in daily_source), ZERO)
     summary_actual = sum((r["actual"] for r in daily_source), ZERO)
     summary_comp = summary_actual / summary_plan if summary_plan > 0 else None
@@ -238,12 +280,15 @@ def compliance_report(
             "plan": float(summary_plan), "actual": float(summary_actual), "gap": float(summary_actual - summary_plan),
             "compliance": float(summary_comp) if summary_comp is not None else None,
             "actions_raised": int(sum(action_counts.values())),
+            "value_addition": float(current_va),
         },
         "daily": daily, "weekly": weekly, "monthly": monthly, "parts": parts,
         "plants": _comparison(daily_source, "plant", "name"),
         "product_groups": _comparison(daily_source, "product_group", "name"),
         "customers": _comparison(daily_source, "customer", "name"),
         "missing_weight_products": sorted(missing_weight),
+        "missing_value_addition_products": sorted(missing_value_addition),
+        "value_addition_monthly": value_addition_monthly,
     }
 
 
