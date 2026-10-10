@@ -228,27 +228,27 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
         )
     )
     candidates = db.execute(q).all()
-    # Old route revisions deliberately remain in ProcessDailySummary for audit.
-    # When revisions overlap, use only the highest revision that is effective on
-    # each Product + Date, matching _route_for_date used during rejection capture.
-    effective_revision: dict[tuple[date, int], tuple[int, date, int]] = {}
-    for summary_date, product_id, _operation_name, _actual_qty, route_id, revision_no, effective_from, effective_to in candidates:
-        if effective_from <= summary_date and (effective_to is None or effective_to >= summary_date):
-            key = (summary_date, product_id)
-            rank = (revision_no, effective_from, route_id)
-            if key not in effective_revision or rank > effective_revision[key]:
-                effective_revision[key] = rank
+    # Process revisions are retained for audit and historical uploads can leave
+    # overlapping rows for the same logical operation.  Those rows represent
+    # alternative versions of one day's production, not additive production.
+    # Keep one value per Product + Date + approved operation.  Prefer the largest
+    # actual quantity: this preserves the populated production row when another
+    # revision contains zero/partial carry-over data and prevents double counting.
+    daily_actual: dict[tuple[date, int, str], float] = {}
+    for summary_date, product_id, operation_name, actual_qty, _route_id, _revision_no, _effective_from, _effective_to in candidates:
+        kind = labels.get(_label_key(operation_name))
+        if not kind:
+            continue
+        key = (summary_date, product_id, kind)
+        qty = _num(actual_qty)
+        if key not in daily_actual or qty > daily_actual[key]:
+            daily_actual[key] = qty
 
     totals: dict[tuple[int, str], float] = defaultdict(float)
     found: set[tuple[int, str]] = set()
-    for summary_date, product_id, operation_name, actual_qty, route_id, revision_no, effective_from, effective_to in candidates:
-        rank = effective_revision.get((summary_date, product_id))
-        if rank is None or route_id != rank[2]:
-            continue
-        kind = labels.get(_label_key(operation_name))
-        if kind:
-            totals[(product_id, kind)] += _num(actual_qty)
-            found.add((product_id, kind))
+    for (_summary_date, product_id, kind), qty in daily_actual.items():
+        totals[(product_id, kind)] += qty
+        found.add((product_id, kind))
 
     denominator = sum(totals.values())
     missing_products = sum(
