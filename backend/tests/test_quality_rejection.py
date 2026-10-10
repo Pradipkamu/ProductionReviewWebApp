@@ -70,6 +70,47 @@ def test_daily_rejection_uses_dispatch_done_denominator(tmp_path):
         assert row.action_required is True
 
 
+def test_monthly_daily_ppm_uses_full_period_process_production_not_stored_rejection_denominator():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with SessionLocal() as db:
+        p, ro, ph = _seed_quality_context(db)
+        _seed_daily_ppm_production(db, p, date(2026,9,29))
+        # Simulate an old rejection row carrying a legacy per-record denominator.
+        db.add(QualityRejectionDaily(
+            record_key='period-ppm-regression', rejection_date=date(2026,9,29), shift='A',
+            product_id=p.id, plant='2020', detection_route_operation_id=ro.id,
+            phenomenon_id=ph.id, reject_qty=Decimal('20'), denominator_source='DISP_DONE',
+            denominator_qty=Decimal('100'), ppm=Decimal('200000'), source=SourceType.MANUAL,
+        ))
+        routes = db.execute(
+            select(RouteOperation, Operation)
+            .join(Operation, Operation.id == RouteOperation.operation_id)
+            .join(RouteVersion, RouteVersion.id == RouteOperation.route_version_id)
+            .where(RouteVersion.product_id == p.id, Operation.name.in_(['Siddharth Machining','Silver Production']))
+        ).all()
+        for route_op, operation in routes:
+            qty = Decimal('1000') if operation.name == 'Siddharth Machining' else Decimal('500')
+            db.add(ProcessDailySummary(
+                summary_date=date(2026,9,30), product_id=p.id, route_operation_id=route_op.id,
+                plan_qty=qty, actual_qty=qty, good_qty=qty, reject_qty=Decimal('0'),
+                opening_wip=Decimal('0'), closing_wip=Decimal('0'), source=SourceType.MANUAL,
+            ))
+        db.commit()
+
+    client = TestClient(app)
+    row = client.get(
+        '/api/quality/monthly-trend?from_month=2026-09-01&to_month=2026-09-01',
+        headers=_headers_for_quality(client),
+    ).json()[0]
+    # 29-Sep: 1500 + 500; 30-Sep: 1000 + 500 = 3500.  The legacy 100 is ignored.
+    assert row['reject_qty'] == 20.0
+    assert row['denominator_qty'] == 3500.0
+    assert round(row['ppm'], 3) == round(20 / 3500 * 1_000_000, 3)
+    assert row['ppm_pending_rows'] == 0
+
+
 def test_daily_rejection_business_key_updates_instead_of_duplicate(tmp_path):
     path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15)
     with SessionLocal() as db:
