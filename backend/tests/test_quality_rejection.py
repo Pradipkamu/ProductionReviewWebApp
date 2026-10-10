@@ -10,7 +10,7 @@ from app.db import SessionLocal
 from app.enums import OperationType, SourceType
 from app.models import (
     Customer, DailyMIS, Operation, Product, QualityPhenomenon, QualityRejectionDaily,
-    QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, RouteOperation, RouteVersion,
+    QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, ProcessDailySummary, RouteOperation, RouteVersion,
 )
 from app.services.quality_import import import_daily_rejection_workbook, import_historical_ppm_production_workbook, upsert_phenomenon
 from app.api.quality import _daily_context, _serialize_daily, _history_dispatch_resolution
@@ -35,6 +35,19 @@ def _seed_quality_context(db):
     return p,ro,ph
 
 
+def _seed_daily_ppm_production(db, product, on_date=date(2026,9,30)):
+    route = db.scalar(select(RouteVersion).where(RouteVersion.product_id == product.id))
+    for seq, name, qty in [(20, 'Siddharth Machining', Decimal('1500')), (30, 'Silver Production', Decimal('500'))]:
+        op = Operation(code=name.upper().replace(' ', '_'), name=name, operation_type=OperationType.MACHINING)
+        db.add(op); db.flush()
+        ro = RouteOperation(route_version_id=route.id, operation_id=op.id, sequence_no=seq, standard_yield=Decimal('1'))
+        db.add(ro); db.flush()
+        db.add(ProcessDailySummary(summary_date=on_date, product_id=product.id, route_operation_id=ro.id,
+                                   plan_qty=qty, actual_qty=qty, good_qty=qty, reject_qty=Decimal('0'),
+                                   opening_wip=Decimal('0'), closing_wip=Decimal('0'), source=SourceType.MANUAL))
+    db.commit()
+
+
 def _make_daily_xlsx(path:Path,reject=15):
     wb=Workbook();ws=wb.active;ws.title='Daily_Rejection_Data'
     ws.append(['Date','Shift','Product','Plant','Customer','Type','Detection Process','Responsible Process','Machine','Phenomenon','Reject Qty','Rework Qty','Scrap Qty','Remark','Raise Action'])
@@ -45,12 +58,13 @@ def _make_daily_xlsx(path:Path,reject=15):
 def test_daily_rejection_uses_dispatch_done_denominator(tmp_path):
     path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15)
     with SessionLocal() as db:
-        _seed_quality_context(db)
+        p, _, _ = _seed_quality_context(db)
+        _seed_daily_ppm_production(db, p)
         stats=import_daily_rejection_workbook(db,path)
         db.commit()
         assert stats['created']==1
         row=db.scalar(select(QualityRejectionDaily))
-        assert row.denominator_source=='DISP_DONE'
+        assert row.denominator_source=='SIDDHARTH_MACHINING_PLUS_SILVER'
         assert row.denominator_qty==Decimal('2000')
         assert row.ppm==Decimal('7500.000')
         assert row.action_required is True
@@ -59,7 +73,8 @@ def test_daily_rejection_uses_dispatch_done_denominator(tmp_path):
 def test_daily_rejection_business_key_updates_instead_of_duplicate(tmp_path):
     path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15)
     with SessionLocal() as db:
-        _seed_quality_context(db)
+        p, _, _ = _seed_quality_context(db)
+        _seed_daily_ppm_production(db, p)
         first=import_daily_rejection_workbook(db,path);db.commit()
         assert first['created']==1
         _make_daily_xlsx(path,18)
@@ -478,3 +493,18 @@ def test_historical_ppm_production_requires_both_sources_but_allows_explicit_zer
         stats = import_historical_ppm_production_workbook(db, path)
         assert stats['created'] == 1
         assert any('enter both Siddharth Machining Production and Silver Production' in e for e in stats['errors'])
+
+
+def test_daily_rejection_saves_when_siddharth_or_silver_is_missing(tmp_path):
+    path=tmp_path/'daily_quality_pending.xlsx'; _make_daily_xlsx(path,15)
+    with SessionLocal() as db:
+        _seed_quality_context(db)
+        stats=import_daily_rejection_workbook(db,path)
+        db.commit()
+        row=db.scalar(select(QualityRejectionDaily))
+        assert stats['created'] == 1
+        assert stats['ppm_pending'] == 1
+        assert row.reject_qty == Decimal('15')
+        assert row.denominator_source == 'SIDDHARTH_SILVER_PENDING'
+        assert row.denominator_qty is None
+        assert row.ppm is None
