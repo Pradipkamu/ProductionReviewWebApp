@@ -190,53 +190,51 @@ def _aggregate_daily(rows: list[QualityRejectionDaily]) -> dict:
 
 
 def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_date: date, to_date: date) -> dict:
-    """Return the approved period PPM denominator from process production.
+    """Return period PPM denominator using the approved plant rule.
 
-    Daily quality analytics must not reuse denominator_qty stored on individual
-    rejection records because those values reflect the rule that was active when
-    each rejection was captured.  The authoritative period denominator is the
-    Process Daily Summary actual for Siddharth Machining + Silver Production,
-    summed across the complete selected period (including production-only days).
+    Plant 2070: Siddharth Machining + Silver Production.
+    Every other plant: effective route Disp_Done / dispatch operation actual.
+    Rejection capture remains independent when production is unavailable.
     """
     product_ids = sorted({x.product_id for x in rows})
     if not product_ids:
         return {"denominator_qty": 0.0, "ppm_pending_rows": 0}
 
-    labels = {
-        "siddharth machining": "siddharth",
-        "silver production": "silver",
-    }
+    products = _by_id(db, Product, set(product_ids))
+    special_ids = {pid for pid in product_ids if str((products.get(pid).plant if products.get(pid) else "") or "").strip() == "2070"}
+    dispatch_ids = set(product_ids) - special_ids
     q = (
         select(
             ProcessDailySummary.summary_date,
             ProcessDailySummary.product_id,
             Operation.name,
             ProcessDailySummary.actual_qty,
-            RouteVersion.id,
-            RouteVersion.revision_no,
-            RouteVersion.effective_from,
-            RouteVersion.effective_to,
+            RouteOperation.is_dispatch,
         )
         .join(RouteOperation, RouteOperation.id == ProcessDailySummary.route_operation_id)
-        .join(RouteVersion, RouteVersion.id == RouteOperation.route_version_id)
         .join(Operation, Operation.id == RouteOperation.operation_id)
         .where(
             ProcessDailySummary.summary_date >= from_date,
             ProcessDailySummary.summary_date <= to_date,
             ProcessDailySummary.product_id.in_(product_ids),
-            func.lower(func.trim(Operation.name)).in_(tuple(labels)),
         )
     )
     candidates = db.execute(q).all()
-    # Process revisions are retained for audit and historical uploads can leave
-    # overlapping rows for the same logical operation.  Those rows represent
-    # alternative versions of one day's production, not additive production.
-    # Keep one value per Product + Date + approved operation.  Prefer the largest
-    # actual quantity: this preserves the populated production row when another
-    # revision contains zero/partial carry-over data and prevents double counting.
+
+    # Route revisions remain for audit. For the same Product + Date + logical
+    # denominator operation, retain one production value rather than adding
+    # overlapping revision rows. A populated row wins over zero/partial carry-over.
     daily_actual: dict[tuple[date, int, str], float] = {}
-    for summary_date, product_id, operation_name, actual_qty, _route_id, _revision_no, _effective_from, _effective_to in candidates:
-        kind = labels.get(_label_key(operation_name))
+    for summary_date, product_id, operation_name, actual_qty, is_dispatch in candidates:
+        label = _label_key(operation_name)
+        kind = None
+        if product_id in special_ids:
+            if label == "siddharth machining":
+                kind = "siddharth"
+            elif label == "silver production":
+                kind = "silver"
+        elif product_id in dispatch_ids and is_dispatch:
+            kind = "dispatch"
         if not kind:
             continue
         key = (summary_date, product_id, kind)
@@ -251,11 +249,12 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
         found.add((product_id, kind))
 
     denominator = sum(totals.values())
-    missing_products = sum(
-        1 for product_id in product_ids
-        if (product_id, "siddharth") not in found or (product_id, "silver") not in found
-    )
-    return {"denominator_qty": denominator, "ppm_pending_rows": missing_products}
+    missing = 0
+    for product_id in product_ids:
+        required = ("siddharth", "silver") if product_id in special_ids else ("dispatch",)
+        if any((product_id, kind) not in found for kind in required):
+            missing += 1
+    return {"denominator_qty": denominator, "ppm_pending_rows": missing}
 
 
 def _month_start(value: date) -> date:
