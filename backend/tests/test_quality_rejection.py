@@ -38,7 +38,7 @@ def _seed_quality_context(db):
 def _seed_daily_ppm_production(db, product, on_date=date(2026,9,30)):
     route = db.scalar(select(RouteVersion).where(RouteVersion.product_id == product.id))
     for seq, name, qty in [(20, 'Siddharth Machining', Decimal('1500')), (30, 'Silver Production', Decimal('500'))]:
-        op = Operation(code=name.upper().replace(' ', '_'), name=name, operation_type=OperationType.MACHINING)
+        op = Operation(code=name.upper().replace(' ', '_'), name=name, operation_type=OperationType.INTERNAL)
         db.add(op); db.flush()
         ro = RouteOperation(route_version_id=route.id, operation_id=op.id, sequence_no=seq, standard_yield=Decimal('1'))
         db.add(ro); db.flush()
