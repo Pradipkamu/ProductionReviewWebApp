@@ -203,7 +203,10 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
     buf=BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=10*mm,bottomMargin=10*mm)
     styles=getSampleStyleSheet(); story=[Paragraph("Daily Review - Minutes of Meeting",styles["Title"]),
       Paragraph(f"<b>MOM:</b> {mom_no} &nbsp;&nbsp; <b>Date:</b> {review.review_date} &nbsp;&nbsp; <b>Participants:</b> {review.participants or '-'}",styles["BodyText"]),Spacer(1,5*mm)]
-    data=[["Sr.","Category","Discussion / MOM Point","Action Required","Owner","Target","Priority","Status","Closure Remark"]]+_mom_rows(db,review)
+    raw_data=[["Sr.","Category","Discussion / MOM Point","Action Required","Owner","Target","Priority","Status","Closure Remark"]]+_mom_rows(db,review)
+    cell_style=styles["BodyText"].clone("MOMCell"); cell_style.fontSize=7; cell_style.leading=9
+    head_style=styles["BodyText"].clone("MOMHead"); head_style.fontSize=7; head_style.leading=9; head_style.textColor=colors.white; head_style.fontName="Helvetica-Bold"
+    data=[[Paragraph(str(v or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"), head_style if ri==0 else cell_style) for v in row] for ri,row in enumerate(raw_data)]
     table=Table(data,colWidths=[9*mm,20*mm,48*mm,48*mm,28*mm,22*mm,18*mm,22*mm,52*mm],repeatRows=1)
     table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#1f4e78")),("TEXTCOLOR",(0,0),(-1,0),colors.white),
       ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8),("VALIGN",(0,0),(-1,-1),"TOP"),
@@ -228,6 +231,11 @@ def download_mom_xlsx(review_id: int, db: Session = Depends(get_db), _: User = D
         cell.font=Font(bold=True,color="FFFFFF"); cell.fill=PatternFill("solid",fgColor="1F4E78"); cell.alignment=Alignment(wrap_text=True)
     widths=[8,20,40,40,25,15,14,16,45]
     for i,w in enumerate(widths,1): ws.column_dimensions[chr(64+i)].width=w
+    for row in ws.iter_rows(min_row=6, max_row=ws.max_row, min_col=1, max_col=9):
+        for cell in row:
+            cell.alignment=Alignment(wrap_text=True, vertical="top")
+    for row_idx in range(7, ws.max_row + 1):
+        ws.row_dimensions[row_idx].height=45
     ws.freeze_panes="A7"; ws.auto_filter.ref=f"A6:I{ws.max_row}"
     out=BytesIO(); wb.save(out)
     return Response(out.getvalue(),media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
