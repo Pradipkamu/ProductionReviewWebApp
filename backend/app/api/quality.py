@@ -302,6 +302,31 @@ def _history_dispatch_resolution(
                 _num(prod.siddharth_machining_qty) + _num(prod.silver_production_qty)
             )
 
+    # Historical Daily MIS actual is the stored Dispatch Done history.  Build a
+    # Product + Month fallback only for non-2070 plants; 2070 must never use MIS
+    # dispatch for PPM because its approved denominator is Siddharth + Silver.
+    non2070_keys = {
+        (_month_start(x.month), x.product_id)
+        for x in rows
+        if str((x.plant or (products.get(x.product_id).plant if products.get(x.product_id) else "")) or "").strip() != "2070"
+        and _is_dispatch_denominator(x.denominator_source)
+        and (x.dispatch_qty is None or _num(x.dispatch_qty) <= 0)
+    }
+    historical_dispatch: dict[tuple[date, int], float] = {}
+    if non2070_keys:
+        months = [m for m, _ in non2070_keys]
+        product_ids = sorted({pid for _, pid in non2070_keys})
+        mis_rows = db.execute(
+            select(DailyMIS.mis_date, DailyMIS.product_id, DailyMIS.actual_qty).where(
+                DailyMIS.product_id.in_(product_ids),
+                DailyMIS.mis_date >= min(months),
+                DailyMIS.mis_date < (max(months).replace(day=28) + timedelta(days=4)).replace(day=1),
+            )
+        ).all()
+        for mis_date, product_id, actual_qty in mis_rows:
+            key = (_month_start(mis_date), product_id)
+            historical_dispatch[key] = historical_dispatch.get(key, 0.0) + _num(actual_qty)
+
     resolved: dict[int, tuple[float | None, str | None]] = {}
     for x in rows:
         if not _is_dispatch_denominator(x.denominator_source):
@@ -316,7 +341,11 @@ def _history_dispatch_resolution(
             )
         else:
             qty = _num(x.dispatch_qty) if x.dispatch_qty is not None else 0.0
-            resolved[x.id] = ((qty, "HISTORICAL_DISP_DONE") if qty > 0 else (None, "HISTORICAL_DISP_DONE_PENDING"))
+            source = "HISTORICAL_DISP_DONE"
+            if qty <= 0:
+                qty = historical_dispatch.get((_month_start(x.month), x.product_id), 0.0)
+                source = "HISTORICAL_MIS_DISP_DONE"
+            resolved[x.id] = ((qty, source) if qty > 0 else (None, "HISTORICAL_DISP_DONE_PENDING"))
     return resolved
 
 def _historical_rows(db: Session, *, from_date: date, to_date: date, plant: str | None = None,
