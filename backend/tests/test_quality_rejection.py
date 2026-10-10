@@ -308,76 +308,53 @@ def test_zero_rejection_without_denominator_does_not_block_month_ppm():
     assert trend['ppm'] == 10000.0
 
 
-def test_historical_rejection_auto_uses_historical_mis_dispatch_qty():
+def test_historical_rejection_does_not_use_company_mis_as_ppm_fallback():
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.models import QualityRejectionMonthlyHistory
 
     with SessionLocal() as db:
         p, _, ph = _seed_quality_context(db)
-        # Matching historical MIS for June; monthly Actual = 1,000 + 1,500 = 2,500.
-        db.add(DailyMIS(mis_date=date(2026,6,10), product_id=p.id, plan_qty=Decimal('1100'), actual_qty=Decimal('1000'),
-                        sales_price=Decimal('1'), plan_sales=Decimal('1100'), actual_sales=Decimal('1000'), source=SourceType.EXCEL))
-        db.add(DailyMIS(mis_date=date(2026,6,20), product_id=p.id, plan_qty=Decimal('1600'), actual_qty=Decimal('1500'),
-                        sales_price=Decimal('1'), plan_sales=Decimal('1600'), actual_sales=Decimal('1500'), source=SourceType.EXCEL))
+        db.add(DailyMIS(mis_date=date(2026,6,10), product_id=p.id, plan_qty=Decimal('1100'), actual_qty=Decimal('2500'),
+                        sales_price=Decimal('1'), plan_sales=Decimal('1100'), actual_sales=Decimal('2500'), source=SourceType.EXCEL))
         db.add(QualityRejectionMonthlyHistory(
-            record_key='HMCL|Total|2026-06|MIS AUTO',
+            record_key='HMCL|Total|2026-06|NO MIS FALLBACK',
             month=date(2026,6,1), source='HMCL', source_sheet='Total', record_scope='AGGREGATE_TOTAL',
-            include_in_aggregate=True, product_id=p.id, plant=None, detection_operation='Disp_Done',
-            responsible_team='Operation', phenomenon_id=ph.id, reject_qty=Decimal('25'),
+            include_in_aggregate=True, product_id=p.id, phenomenon_id=ph.id, reject_qty=Decimal('25'),
             denominator_source='DISP_DONE', dispatch_qty=None, ppm=None,
         ))
         db.commit()
 
     client = TestClient(app)
-    login = client.post('/api/auth/login', json={'username':'admin','password':'ChangeMe123!'})
-    assert login.status_code == 200
-    h={'Authorization': f"Bearer {login.json()['access_token']}"}
-
-    hist = client.get('/api/quality/history?from_date=2026-06-01&to_date=2026-06-30', headers=h)
-    assert hist.status_code == 200, hist.text
-    row = hist.json()[0]
-    assert row['dispatch_qty'] == 2500.0
-    assert row['dispatch_qty_source'] == 'MIS_HISTORY'
-    assert row['ppm'] == 10000.0
-
-    dash = client.get('/api/quality/dashboard?from_date=2026-06-01&to_date=2026-06-30', headers=h)
-    assert dash.status_code == 200, dash.text
-    j = dash.json()
-    assert j['denominator_qty'] == 2500.0
-    assert j['ppm'] == 10000.0
+    h = _headers_for_quality(client)
+    row = client.get('/api/quality/history?from_date=2026-06-01&to_date=2026-06-30', headers=h).json()[0]
+    assert row['reject_qty'] == 25.0
+    assert row['dispatch_qty'] is None
+    assert row['dispatch_qty_source'] == 'SIDDHARTH_SILVER_PENDING'
+    assert row['ppm'] is None
 
 
-def test_historical_rejection_import_persists_mis_dispatch_fallback(tmp_path):
-    from openpyxl import Workbook
-    from app.services.quality_import import import_historical_rejection_workbook
-    from app.models import QualityRejectionMonthlyHistory
-
-    path = tmp_path / 'historical_mis_denominator.xlsx'
-    wb = Workbook()
-    ws = wb.active
-    ws.title = 'Historical_Rejection_Import'
-    ws.append([
-        'Record_Key','Month','WebApp_Product','Phenomenon_WebApp','Reject_Qty',
-        'Source','Source_Sheet','Record_Scope','Include_In_Overall_Aggregate',
-        'Detection_Operation','Responsible_Team','Denominator_Source'
-    ])
-    ws.append(['HMCL|Total|2026-06|AUTO', date(2026,6,1), 'K70 Cylinder block', 'BORE O/S', 20,
+def test_historical_rejection_import_saves_without_ppm_denominator(tmp_path):
+    path = tmp_path / 'historical_pending_denominator.xlsx'
+    wb = Workbook(); ws = wb.active; ws.title = 'Historical_Rejection_Import'
+    ws.append(['Record_Key','Month','WebApp_Product','Phenomenon_WebApp','Reject_Qty',
+               'Source','Source_Sheet','Record_Scope','Include_In_Overall_Aggregate',
+               'Detection_Operation','Responsible_Team','Denominator_Source'])
+    ws.append(['HMCL|Total|2026-06|PENDING', date(2026,6,1), 'K70 Cylinder block', 'BORE O/S', 20,
                'HMCL', 'Total', 'AGGREGATE_TOTAL', 'Yes', 'Disp_Done', 'Operation', 'DISP_DONE'])
     wb.save(path)
 
+    from app.services.quality_import import import_historical_rejection_workbook
     with SessionLocal() as db:
-        p, _, _ = _seed_quality_context(db)
-        db.add(DailyMIS(mis_date=date(2026,6,15), product_id=p.id, plan_qty=Decimal('2100'), actual_qty=Decimal('2000'),
-                        sales_price=Decimal('1'), plan_sales=Decimal('2100'), actual_sales=Decimal('2000'), source=SourceType.EXCEL))
-        db.commit()
+        _seed_quality_context(db)
         stats = import_historical_rejection_workbook(db, path)
         db.commit()
-        assert stats['dispatch_from_mis'] == 1
-        row = db.scalar(select(QualityRejectionMonthlyHistory).where(QualityRejectionMonthlyHistory.record_key=='HMCL|Total|2026-06|AUTO'))
-        assert row.dispatch_qty == Decimal('2000')
-        assert row.ppm == Decimal('10000.000')
-
+        row = db.scalar(select(QualityRejectionMonthlyHistory).where(
+            QualityRejectionMonthlyHistory.record_key == 'HMCL|Total|2026-06|PENDING'))
+        assert stats['created'] == 1
+        assert stats['ppm_pending'] == 1
+        assert row.reject_qty == Decimal('20')
+        assert row.dispatch_qty is None
+        assert row.ppm is None
 
 def test_historical_ppm_plant_filter_uses_plant_scoped_dispatch_qty():
     from fastapi.testclient import TestClient
