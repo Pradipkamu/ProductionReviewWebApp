@@ -93,3 +93,12 @@ echo "======================================"
 echo "Git commit : $(git rev-parse --short HEAD)"
 echo "Rollback   : $ROLLBACK_TAG"
 echo "Frontend   : $NEW_IMAGE"
+
+
+
+
+**BACK UP FROM ORACLE**
+cd "D:\Machine Shop MIS"
+
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File ".\Backup_Oracle_Review_To_Windows.ps1"
