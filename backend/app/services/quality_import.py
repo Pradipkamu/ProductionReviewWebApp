@@ -680,17 +680,19 @@ def import_historical_ppm_production_workbook(db: Session, path: str | Path) -> 
         if not product:
             stats["errors"].append(f"Row {row_no}: Product '{values[1]}' is not in Product Master")
             continue
+        if values[2] in (None, "") or values[3] in (None, ""):
+            stats["errors"].append(
+                f"Row {row_no}: enter both Siddharth Machining Production and Silver Production; use explicit 0 when there was no production"
+            )
+            continue
         try:
-            siddharth = Decimal(str(values[2]).replace(",", "").strip()) if values[2] not in (None, "") else Decimal("0")
-            silver = Decimal(str(values[3]).replace(",", "").strip()) if values[3] not in (None, "") else Decimal("0")
+            siddharth = Decimal(str(values[2]).replace(",", "").strip())
+            silver = Decimal(str(values[3]).replace(",", "").strip())
         except (InvalidOperation, ValueError, AttributeError):
             stats["errors"].append(f"Row {row_no}: Siddharth Machining and Silver Production must be numeric")
             continue
         if siddharth < 0 or silver < 0:
             stats["errors"].append(f"Row {row_no}: production quantities cannot be negative")
-            continue
-        if siddharth == 0 and silver == 0:
-            stats["errors"].append(f"Row {row_no}: enter Siddharth Machining Production and/or Silver Production")
             continue
         key = (month, product.id)
         if key in seen:
