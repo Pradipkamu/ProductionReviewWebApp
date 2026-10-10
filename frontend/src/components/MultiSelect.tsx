@@ -2,17 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 export type MultiSelectOption={value:string,label:string}
 
-export function MultiSelect({value,onChange,options,placeholder='All',searchable=true,className=''}:{
+export function MultiSelect({value,onChange,options,placeholder='All',searchable=true,singleSelect=false,className=''}:{
   value:string[],
   onChange:(next:string[])=>void,
   options:MultiSelectOption[],
   placeholder?:string,
   searchable?:boolean,
+  singleSelect?:boolean,
   className?:string,
 }){
   const [open,setOpen]=useState(false)
   const [search,setSearch]=useState('')
-  const singleSelect=className.split(/\s+/).includes('manual-search-select')
   function closeMenu(){setOpen(false);setSearch('')}
   const ref=useRef<HTMLDivElement>(null)
   useEffect(()=>{
