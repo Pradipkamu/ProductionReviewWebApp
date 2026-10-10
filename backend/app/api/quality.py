@@ -204,107 +204,46 @@ def _history_dispatch_resolution(
     *,
     plant_filter: str | None = None,
 ) -> dict[int, tuple[float | None, str | None]]:
-    """Resolve historical Dispatch Done denominator without breaking filter scope.
+    """Resolve the approved historical PPM production denominator.
 
-    An unfiltered product/month uses matching Historical Daily MIS as the current
-    authoritative dispatch total. A plant-filtered report uses explicit plant/product
-    Dispatch_Qty because Daily MIS has no independent historical plant split. When
-    one Product + Month exists under multiple historical plants and only a subset is
-    selected, a product-total MIS denominator must not be reused for that numerator.
+    Rejection capture/history is independent of denominator availability. PPM is
+    calculated only when the Product + Month has an approved Siddharth Machining +
+    Silver Production record. ACK and broad Daily MIS Dispatch are never substituted.
     """
     if not rows:
         return {}
 
-    selected_plants = set(csv_strings(plant_filter))
-    # Dispatch Done is a denominator, not part of the rejection numerator.
-    # Resolve it for defect-detail rows too so each historical phenomenon can show
-    # PPM from the same product/month Historical Daily MIS dispatch total. The
-    # include_in_aggregate flag continues to control rejection aggregation only.
-    eligible_keys: set[tuple[date, int]] = set()
-    for x in rows:
-        if _is_dispatch_denominator(x.denominator_source):
-            eligible_keys.add((_month_start(x.month), x.product_id))
-
-    monthly: dict[tuple[date, int], float] = defaultdict(float)
+    eligible_keys = {
+        (_month_start(x.month), x.product_id)
+        for x in rows
+        if _is_dispatch_denominator(x.denominator_source)
+    }
     historical_ppm_production: dict[tuple[date, int], float] = {}
-    all_plants_by_key: dict[tuple[date, int], set[str]] = defaultdict(set)
     if eligible_keys:
         months = [m for m, _ in eligible_keys]
         product_ids = sorted({pid for _, pid in eligible_keys})
-        start = min(months)
-        last = max(months)
-        next_month = (last.replace(day=28) + timedelta(days=4)).replace(day=1)
-
-        mis_q = select(DailyMIS).where(
-            DailyMIS.product_id.in_(product_ids),
-            DailyMIS.mis_date >= start,
-            DailyMIS.mis_date < next_month,
-        )
-        for mis in db.scalars(mis_q).all():
-            monthly[(_month_start(mis.mis_date), mis.product_id)] += _num(mis.actual_qty)
-
         ppm_q = select(QualityHistoricalPpmProduction).where(
             QualityHistoricalPpmProduction.product_id.in_(product_ids),
-            QualityHistoricalPpmProduction.month >= start,
-            QualityHistoricalPpmProduction.month <= last,
+            QualityHistoricalPpmProduction.month >= min(months),
+            QualityHistoricalPpmProduction.month <= max(months),
         )
         for prod in db.scalars(ppm_q).all():
             historical_ppm_production[(_month_start(prod.month), prod.product_id)] = (
                 _num(prod.siddharth_machining_qty) + _num(prod.silver_production_qty)
             )
 
-        if selected_plants:
-            plant_q = select(
-                QualityRejectionMonthlyHistory.month,
-                QualityRejectionMonthlyHistory.product_id,
-                QualityRejectionMonthlyHistory.plant,
-            ).where(
-                QualityRejectionMonthlyHistory.product_id.in_(product_ids),
-                QualityRejectionMonthlyHistory.month >= start,
-                QualityRejectionMonthlyHistory.month <= last,
-            )
-            for month, product_id, plant in db.execute(plant_q).all():
-                if plant not in (None, ""):
-                    all_plants_by_key[(_month_start(month), product_id)].add(str(plant).strip())
-
     resolved: dict[int, tuple[float | None, str | None]] = {}
     for x in rows:
-        key = (_month_start(x.month), x.product_id)
-        eligible = _is_dispatch_denominator(x.denominator_source)
-        stored_qty = _num(x.dispatch_qty) if x.dispatch_qty is not None else 0.0
-        mis_qty = monthly.get(key, 0.0)
-        ppm_production_qty = historical_ppm_production.get(key, 0.0)
-
-        # The approved historical quality denominator is Siddharth Machining +
-        # Silver Production. It takes precedence over broad Daily MIS Dispatch.
-        if eligible and ppm_production_qty > 0:
-            resolved[x.id] = (ppm_production_qty, "SIDDHARTH_MACHINING_PLUS_SILVER")
-            continue
-
-        # A plant filter is scope-safe only when it covers every historical plant for
-        # this Product + Month. Otherwise Daily MIS is too broad because it has no
-        # separate plant dimension.
-        known_plants = all_plants_by_key.get(key, set())
-        plant_scope_restricted = bool(selected_plants and known_plants and not known_plants.issubset(selected_plants))
-
-        # Explicit plant-scoped Dispatch_Qty must win over Daily MIS. Historical
-        # imports from older app versions may have persisted the MIS fallback into
-        # dispatch_qty; if that value exactly equals product-total MIS while the
-        # plant scope is restricted, treat it as unsafe rather than as explicit.
-        stored_looks_like_mis = bool(stored_qty > 0 and mis_qty > 0 and abs(stored_qty - mis_qty) < 0.0005)
-        unsafe_stored = plant_scope_restricted and stored_looks_like_mis
-        if selected_plants and stored_qty > 0 and not unsafe_stored:
-            resolved[x.id] = (stored_qty, "UPLOADED")
-        elif eligible and mis_qty > 0 and not plant_scope_restricted:
-            resolved[x.id] = (mis_qty, "MIS_HISTORY")
-        elif stored_qty > 0 and not unsafe_stored:
-            resolved[x.id] = (stored_qty, "UPLOADED")
-        elif plant_scope_restricted:
-            resolved[x.id] = (None, "PLANT_SCOPE_UNAVAILABLE")
-        else:
+        if not _is_dispatch_denominator(x.denominator_source):
             resolved[x.id] = (None, None)
+            continue
+        qty = historical_ppm_production.get((_month_start(x.month), x.product_id), 0.0)
+        resolved[x.id] = (
+            (qty, "SIDDHARTH_MACHINING_PLUS_SILVER")
+            if qty > 0
+            else (None, "SIDDHARTH_SILVER_PENDING")
+        )
     return resolved
-
 
 def _historical_rows(db: Session, *, from_date: date, to_date: date, plant: str | None = None,
                      product_id: str | int | None = None, phenomenon_id: str | int | None = None,
