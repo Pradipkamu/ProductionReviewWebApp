@@ -551,7 +551,6 @@ def import_historical_rejection_workbook(db: Session, path: str | Path, *, batch
 
     ws = wb["Historical_Rejection_Import"]
     h = _headers(ws)
-    mis_dispatch_cache: dict[tuple[int, date], Decimal] = {}
     for r in range(2, ws.max_row + 1):
         record_key = _cell(ws, r, h, "Record_Key")
         if record_key in (None, ""):
@@ -585,21 +584,13 @@ def import_historical_rejection_workbook(db: Session, path: str | Path, *, batch
             dispatch_qty = dispatch_map.get(dkey)
         dispatch_dec = _dec(dispatch_qty) if dispatch_qty not in (None, "") else None
 
-        # When the historical rejection denominator is Dispatch Done and the row is an
-        # aggregate/product-total record, use the matching Historical Daily MIS Actual Qty
-        # automatically. This removes the need for a second manual Dispatch Qty upload.
-        scope_key = record_scope.upper()
-        if (dispatch_dec is None or dispatch_dec <= 0) and include and scope_key in {"PRODUCT_TOTAL", "AGGREGATE_TOTAL", "TOTAL", ""} and _is_dispatch_denominator(denominator_source):
-            mis_qty = _historical_mis_month_actual(db, product.id, month, mis_dispatch_cache)
-            if mis_qty is not None and mis_qty > 0:
-                dispatch_dec = mis_qty
-                stats["dispatch_from_mis"] += 1
+        # Rejection import never depends on production denominator availability.
+        # Approved PPM is resolved at report time from Siddharth Machining + Silver Production.
+        # Legacy Dispatch_Qty is retained only as source/audit data and is not a PPM fallback.
 
         reject_qty = _dec(_cell(ws, r, h, "Reject_Qty"))
         ppm = None
-        if dispatch_dec is not None and dispatch_dec > 0:
-            ppm = (reject_qty / dispatch_dec * Decimal("1000000")).quantize(Decimal("0.001"))
-        else:
+        if _is_dispatch_denominator(denominator_source):
             stats["ppm_pending"] += 1
         row = db.scalar(select(QualityRejectionMonthlyHistory).where(QualityRejectionMonthlyHistory.record_key == str(record_key)))
         desired = (
