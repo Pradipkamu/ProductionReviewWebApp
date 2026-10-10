@@ -58,6 +58,7 @@ def action_data(db: Session, a: Action | None) -> dict | None:
     return {"id": a.id, "action_no": a.action_no, "description": a.action_description,
             "owner_id": a.owner_id, "owner": owner.full_name if owner else None,
             "due_at": a.due_at, "priority": a.priority.value, "status": a.status.value,
+            "closure_remark": a.closure_remark, "closed_at": a.closed_at,
             "age_days": max(0, (date.today() - a.reference_date).days),
             "overdue_days": max(0, (date.today() - a.due_at.date()).days) if a.due_at and a.status != ActionStatus.CLOSED else 0,
             "requires_whywhy": a.requires_whywhy}
@@ -189,7 +190,8 @@ def _mom_rows(db: Session, review: ReviewSession):
         a=db.get(Action,p.action_id) if p.action_id else None; ad=action_data(db,a)
         rows.append([p.sequence_no,p.category or "",p.discussion_point,(ad or {}).get("description",""),
                      (ad or {}).get("owner",""), str((ad or {}).get("due_at","") or "")[:10],
-                     (ad or {}).get("priority",""),(ad or {}).get("status","")])
+                     (ad or {}).get("priority",""),(ad or {}).get("status",""),
+                     (ad or {}).get("closure_remark","") if (ad or {}).get("status") == "CLOSED" else ""])
     return rows
 
 
@@ -201,8 +203,8 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
     buf=BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=10*mm,bottomMargin=10*mm)
     styles=getSampleStyleSheet(); story=[Paragraph("Daily Review - Minutes of Meeting",styles["Title"]),
       Paragraph(f"<b>MOM:</b> {mom_no} &nbsp;&nbsp; <b>Date:</b> {review.review_date} &nbsp;&nbsp; <b>Participants:</b> {review.participants or '-'}",styles["BodyText"]),Spacer(1,5*mm)]
-    data=[["Sr.","Category","Discussion / MOM Point","Action Required","Owner","Target","Priority","Status"]]+_mom_rows(db,review)
-    table=Table(data,colWidths=[10*mm,25*mm,65*mm,65*mm,35*mm,25*mm,22*mm,25*mm],repeatRows=1)
+    data=[["Sr.","Category","Discussion / MOM Point","Action Required","Owner","Target","Priority","Status","Closure Remark"]]+_mom_rows(db,review)
+    table=Table(data,colWidths=[9*mm,20*mm,48*mm,48*mm,28*mm,22*mm,18*mm,22*mm,52*mm],repeatRows=1)
     table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#1f4e78")),("TEXTCOLOR",(0,0),(-1,0),colors.white),
       ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8),("VALIGN",(0,0),(-1,-1),"TOP"),
       ("GRID",(0,0),(-1,-1),0.4,colors.grey),("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f4f7fa")])]))
@@ -220,13 +222,13 @@ def download_mom_xlsx(review_id: int, db: Session = Depends(get_db), _: User = D
     wb=Workbook(); ws=wb.active; ws.title="MOM"
     ws.append(["Daily Review - Minutes of Meeting"]); ws.append(["MOM No",mom_no]); ws.append(["Date",review.review_date.isoformat()])
     ws.append(["Participants",review.participants or ""]); ws.append([])
-    headers=["Sr.","Category","Discussion / MOM Point","Action Required","Owner","Target Date","Priority","Status"]; ws.append(headers)
+    headers=["Sr.","Category","Discussion / MOM Point","Action Required","Owner","Target Date","Priority","Status","Closure Remark"]; ws.append(headers)
     for row in _mom_rows(db,review): ws.append(row)
     for cell in ws[6]:
         cell.font=Font(bold=True,color="FFFFFF"); cell.fill=PatternFill("solid",fgColor="1F4E78"); cell.alignment=Alignment(wrap_text=True)
-    widths=[8,20,45,45,25,15,14,16]
+    widths=[8,20,40,40,25,15,14,16,45]
     for i,w in enumerate(widths,1): ws.column_dimensions[chr(64+i)].width=w
-    ws.freeze_panes="A7"; ws.auto_filter.ref=f"A6:H{ws.max_row}"
+    ws.freeze_panes="A7"; ws.auto_filter.ref=f"A6:I{ws.max_row}"
     out=BytesIO(); wb.save(out)
     return Response(out.getvalue(),media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition":f'attachment; filename="{mom_no}.xlsx"'})
