@@ -3,9 +3,9 @@ import { useState } from 'react'
 import { PageHeader } from '../components/UI'
 import ImportPreview from '../components/ImportPreview'
 export default function ImportExcel(){
- const [error,setError]=useState('');
+ const [error,setError]=useState(''); const [search,setSearch]=useState(''); const [showAdvanced,setShowAdvanced]=useState(false);
  async function template(){try{await downloadApi('/flows/template','Production_Process_Upload_v0.4.0.xlsx')}catch(e:any){setError(e.message)}}
- return <><PageHeader title="Excel Import Preview" subtitle="Preview checks all data in a transaction that is rolled back. Confirmation rechecks for changes and commits the workbook together."/><section className="panel"><h2>Process upload template</h2><p>Set up Flow Definition and Stage Schedules first. For normal daily use, choose Daily Production Upload once: the exported workbook must contain Daily_Actuals and Historical_Daily_MIS_Import. Admin or Planning can confirm customer plans and stage actuals together.</p><button onClick={template}>Download approved process template</button>{error&&<p className="error">{error}</p>}</section>{[
+ return <><PageHeader title="Excel Import Preview" subtitle="Preview checks all data in a transaction that is rolled back. Confirmation rechecks for changes and commits the workbook together."/><section className="panel"><h2>Process upload template</h2><p>Set up Flow Definition and Stage Schedules first. For normal daily use, choose Daily Production Upload once: the exported workbook must contain Daily_Actuals and Historical_Daily_MIS_Import. Admin or Planning can confirm customer plans and stage actuals together.</p><button onClick={template}>Download approved process template</button>{error&&<p className="error">{error}</p>}</section><section className="panel"><label>Find import type<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search daily, history, quality, flow..."/></label><label className="inline-check"><input type="checkbox" checked={showAdvanced} onChange={e=>setShowAdvanced(e.target.checked)}/> Show all advanced and historical import types</label><p className="muted">Daily Production Upload is recommended for regular production reporting. Additional import types are available when necessary.</p></section>{[
   ['daily-production','Daily Production Upload','One Preview and Confirm updates customer daily plans, dispatch and process/vendor actuals together. Use the values-only export containing both daily tabs.'],
   ['process-design','Flow Definition','Approved corrected mapping; creates a new effective-dated flow revision'],
   ['stage-schedules','Stage Schedules','Independent monthly allocations split over plant working days; reason and reference required'],
@@ -17,5 +17,5 @@ export default function ImportExcel(){
   ['quality-history','Historical Rejection','Monthly history with matching MIS dispatch denominator'],
   ['casting-daily','Casting Defects','Incoming casting defects with inspected-quantity PPM'],
   ['customer-quality-daily','Customer Rejection','Customer rejection with dispatch/received-quantity PPM']
- ].map(([kind,title,note])=><section className="panel" key={kind}><h2>{title}</h2><p>{note}</p><ImportPreview kind={kind}/></section>)}</>
+ ].filter(([kind,title,note])=>(showAdvanced||search.trim()||['daily-production','quality-daily'].includes(kind))&&(!search.trim()||`${kind} ${title} ${note}`.toLowerCase().includes(search.toLowerCase()))).map(([kind,title,note])=><section className="panel" key={kind}><h2>{title}</h2><p>{note}</p><ImportPreview kind={kind}/></section>)}</>
 }
