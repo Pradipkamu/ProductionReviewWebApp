@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, clearToken, setToken } from '../api'
-import { Kpi, PageHeader } from '../components/UI'\nimport { formatIST } from '../time'
+import { Kpi, PageHeader } from '../components/UI'
+import { formatIST } from '../time'
 
 function stamp(v:any){
  if(!v)return '—'
