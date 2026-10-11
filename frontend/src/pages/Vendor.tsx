@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { dateIST } from '../time'\nimport { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader, num } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
-function today(){return new Date().toISOString().slice(0,10)}
+function today(){return dateIST()}
 export default function Vendor(){
  const [receiptRows,setReceiptRows]=useState<any[]>([]); const [receiptTitle,setReceiptTitle]=useState('');
  const [rows,setRows]=useState<any[]>([]); const [only,setOnly]=useState(true); const [products,setProducts]=useState<any[]>([]); const [vendors,setVendors]=useState<any[]>([]); const [ops,setOps]=useState<any[]>([])
