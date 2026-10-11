@@ -23,6 +23,7 @@ PAGE_CATALOG = (
     {"key": "reports", "label": "Compliance Reports", "path": "/reports"},
     {"key": "management_reports", "label": "Management Reports", "path": "/management-reports"},
     {"key": "actions", "label": "Actions", "path": "/actions"},
+    {"key": "admin_action_review", "label": "User-wise Action Review", "path": "/admin-action-review"},
     {"key": "vendor", "label": "Vendor WIP", "path": "/vendor"},
     {"key": "oee", "label": "Machine / OEE", "path": "/oee"},
     {"key": "analytics", "label": "Analytics", "path": "/analytics"},
@@ -34,6 +35,7 @@ PAGE_KEYS = tuple(page["key"] for page in PAGE_CATALOG)
 REQUIRED_PAGE_KEYS = frozenset(page["key"] for page in PAGE_CATALOG if page.get("required"))
 
 DEFAULT_ROLE_RESTRICTIONS = {
+    "admin_action_review": {UserRole.ADMIN},
     "diagnostics": {UserRole.ADMIN, UserRole.MANAGEMENT},
     "governance": {UserRole.ADMIN, UserRole.MANAGEMENT},
     "import": {UserRole.ADMIN, UserRole.PLANNING, UserRole.QUALITY, UserRole.PRODUCTION},
