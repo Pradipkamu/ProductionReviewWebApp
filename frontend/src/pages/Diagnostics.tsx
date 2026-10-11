@@ -1,4 +1,5 @@
-import { formatIST } from '../time'\nimport { useEffect, useState } from 'react'
+import { formatIST } from '../time'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Kpi, PageHeader, Status } from '../components/UI'
 
