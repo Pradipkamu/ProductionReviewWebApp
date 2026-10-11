@@ -58,6 +58,19 @@ export default function CapacityPlanning(){
  {allocationOverCapacity&&<div className="warning-box">Allocation exceeds the remaining capacity of at least one machine. Reduce the quantity before saving.</div>}
  {allocationOverSchedule&&<div className="warning-box">Allocated quantity cannot exceed the monthly operation schedule.</div>}
  {!allocationOverCapacity&&!allocationOverSchedule&&allocated<Number(operation.schedule_qty)&&<div className="warning-box">Capacity shortage / unallocated schedule: {num(Number(operation.schedule_qty)-allocated)}. You can save this partial allocation as the approved monthly loading gap.</div>}
+ <div className="panel" style={{marginTop:12}}>
+ <strong>Pre-save allocation check</strong>
+ <div className="form-row compact">
+ <span>Schedule: {num(operation.schedule_qty)}</span>
+ <span>Allocated: {num(allocated)}</span>
+ <span>Unallocated: {num(Math.max(0,Number(operation.schedule_qty)-allocated))}</span>
+ <span>Operator equivalent: {liveOperators}</span>
+ <span>Estimated run cost: {money(liveRunCost)}</span>
+ </div>
+ {allocationOverCapacity&&<div className="warning-box">Allocation exceeds available machine capacity. Reduce loading before saving.</div>}
+ {allocationOverSchedule&&<div className="warning-box">Total allocation exceeds the schedule. Reduce loading before saving.</div>}
+ {!allocationOverCapacity&&!allocationOverSchedule&&allocated>0&&<div className="notice">Allocation passes capacity and schedule upper-bound checks. Confirm all machine assignments and the reason before saving.</div>}
+ </div>
  <div className="allocation-footer"><span>Allocated <b>{num(allocated)}</b> / Schedule <b>{num(operation.schedule_qty)}</b> • Gap <b className={Math.abs(allocated-Number(operation.schedule_qty))<0.001?'pos':'neg'}>{num(Number(operation.schedule_qty)-allocated)}</b></span><label>Allocation reason<input value={reason} onChange={e=>setReason(e.target.value)}/></label><button disabled={busy||allocationOverCapacity||allocationOverSchedule||allocated<=0||!operation.machines.length} onClick={saveAllocation}>Save allocation revision</button></div></section>
 
  <section className="panel"><div className="panel-title"><div><h2>Machine / part capacity master setup</h2><p>Save each effective-dated master separately. Old values remain in history.</p></div></div>
