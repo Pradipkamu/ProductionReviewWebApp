@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { formatIST } from '../time'\nimport { useEffect, useState } from 'react'
 import { api } from '../api'
 import { Kpi, PageHeader, Status } from '../components/UI'
 
 const bytes = (value?: number) => value == null ? '—' : `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`
-const stamp = (value?: string) => value ? new Date(value).toLocaleString('en-IN') : '—'
+const stamp = (value?: string) => formatIST(value)
 
 export default function Diagnostics(){
   const [data,setData]=useState<any>(null); const [error,setError]=useState(''); const [busy,setBusy]=useState(false)
