@@ -1,10 +1,10 @@
-import { Link } from 'react-router-dom'
+import { dateIST } from '../time'\nimport { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { Kpi, PageHeader, num, pct } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
-function today(){return new Date().toISOString().slice(0,10)}
+function today(){return dateIST()}
 const emptyEntry={shift_duration_min:480,planned_break_min:45,downtime_min:0,total_count:0,good_count:0,reject_count:0,ideal_cycle_time_sec:0,remarks:''}
 const emptyLoss={loss_category_id:'',duration_min:0,qty_loss:0,remark:''}
 
