@@ -214,6 +214,7 @@ def pending_actions_by_user(
         for action in owned:
             item = serialize_action(db, action)
             item["days_overdue"] = max(0, (today - ist_date(action.due_at)).days) if action.due_at else 0
+            item["days_until_due"] = (ist_date(action.due_at) - today).days if action.due_at else None
             recent = last_followup.get(action.id)
             item["last_followup_at"] = recent
             item["followup_age_days"] = max(0, (today - ist_date(recent)).days) if recent else None
