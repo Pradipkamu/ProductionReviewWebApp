@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { formatIST } from '../time'\nimport { useEffect, useState } from 'react'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { PageHeader, num } from '../components/UI'
@@ -123,7 +123,7 @@ export default function ProcessActuals(){
               <td>{r.good_qty==null?'—':num(r.good_qty)}</td>
               <td>{r.reject_qty==null?'—':num(r.reject_qty)}</td>
               <td><span className={`status ${r.status==='MISSING'?'bad':'good'}`}>{r.status}</span></td>
-              <td>{r.source||'—'}<br/><small>{r.updated_at?String(r.updated_at).replace('T',' ').slice(0,16):'—'}</small></td>
+              <td>{r.source||'—'}<br/><small>{r.updated_at?formatIST(r.updated_at):'—'}</small></td>
               <td><div className="form-row compact"><button className="small" onClick={()=>edit(r)}>{r.status==='MISSING'?'Enter':'Edit'}</button>{r.id&&<button className="small secondary" onClick={()=>showHistory(r)}>History</button>}</div></td>
             </tr>)}
             {!data?.rows?.length&&<tr><td colSpan={11} className="muted">{missingOnly?'No missing process actuals for this date and filter.':'No process stages are available for this date and filter.'}</td></tr>}
@@ -144,7 +144,7 @@ export default function ProcessActuals(){
       <div className="form-row"><button onClick={save} disabled={busy}>Save Process Actual</button>{selected.id&&<button className="secondary" onClick={()=>showHistory(selected)} disabled={busy}>Refresh History</button>}</div>
 
       {history.length>0&&<div className="table-wrap"><table><thead><tr><th>Changed</th><th>By</th><th>Type</th><th>Actual Old → New</th><th>Reject Old → New</th><th>Good Old → New</th><th>Reason</th></tr></thead><tbody>
-        {history.map((h:any)=><tr key={h.id}><td>{String(h.changed_at||'').replace('T',' ').slice(0,16)}</td><td>{h.changed_by||'—'}</td><td>{h.change_type}</td><td>{h.old_actual_qty==null?'—':num(h.old_actual_qty)} → {num(h.new_actual_qty)}</td><td>{h.old_reject_qty==null?'—':num(h.old_reject_qty)} → {num(h.new_reject_qty)}</td><td>{h.old_good_qty==null?'—':num(h.old_good_qty)} → {num(h.new_good_qty)}</td><td>{h.reason}</td></tr>)}
+        {history.map((h:any)=><tr key={h.id}><td>{formatIST(h.changed_at)}</td><td>{h.changed_by||'—'}</td><td>{h.change_type}</td><td>{h.old_actual_qty==null?'—':num(h.old_actual_qty)} → {num(h.new_actual_qty)}</td><td>{h.old_reject_qty==null?'—':num(h.old_reject_qty)} → {num(h.new_reject_qty)}</td><td>{h.old_good_qty==null?'—':num(h.old_good_qty)} → {num(h.new_good_qty)}</td><td>{h.reason}</td></tr>)}
       </tbody></table></div>}
     </section>}
   </>
