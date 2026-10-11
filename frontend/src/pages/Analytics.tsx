@@ -1,8 +1,9 @@
+import { monthIST } from '../time'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { Kpi, PageHeader, money, num, pct } from '../components/UI'
-function month(){return new Date().toISOString().slice(0,7)+'-01'}
+function month(){return monthIST()+'-01'}
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 export default function Analytics(){
  const [m,setM]=useState(month());const [rows,setRows]=useState<any[]>([]);const [acts,setActs]=useState<any>(null);const [scope,setScope]=useState<ScopeValues>(emptyScope);const [options,setOptions]=useState<any>({});const [products,setProducts]=useState<any[]>([])

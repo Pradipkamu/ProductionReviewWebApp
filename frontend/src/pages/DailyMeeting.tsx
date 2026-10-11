@@ -1,9 +1,10 @@
+import { dateIST, istLocalToUTC } from '../time'
 import { useEffect, useState } from 'react'
 import { api, downloadApi } from '../api'
 import { MultiSelect } from '../components/MultiSelect'
 import { PageHeader, Status } from '../components/UI'
 
-const today=()=>new Date().toISOString().slice(0,10)
+const today=()=>dateIST()
 
 export default function DailyMeeting(){
  const [date,setDate]=useState(today()); const [review,setReview]=useState<any>(null); const [mom,setMom]=useState<any>(null)
@@ -18,7 +19,7 @@ export default function DailyMeeting(){
  async function start(){try{setErr('');const r:any=await api('/reviews',{method:'POST',body:JSON.stringify({review_date:date,participants:participants||null,comments:comments||null})});setReview(r);await load(r);setMessage(r.existing?'Existing meeting resumed.':'Daily Review meeting started.')}catch(e:any){setErr(e.message)}}
  async function openMeeting(m:any){try{setDate(m.review_date);setReview(m);setParticipants(m.participants||'');setComments(m.comments||'');await load(m);setMessage(`Opened meeting #${m.id}.`)}catch(e:any){setErr(e.message)}}
  async function reopen(){if(!review)return;if(!confirm('Reopen this closed meeting to add more MOM points?'))return;try{const r:any=await api(`/reviews/${review.id}/reopen`,{method:'PATCH',body:JSON.stringify({})});setReview(r);await load(r);await loadHistory();setMessage('Meeting reopened. Add the missing points, then close it again.')}catch(e:any){setErr(e.message)}}
- async function addPoint(e:React.FormEvent){e.preventDefault();if(!review)return;try{setErr('');await api(`/reviews/${review.id}/points`,{method:'POST',body:JSON.stringify({...form,owner_id:form.owner_id?Number(form.owner_id):null,due_at:form.due_at?new Date(form.due_at).toISOString():null})});setForm((f:any)=>({...f,discussion_point:'',action_description:''}));await load(review);setMessage('MOM point added.')}catch(e:any){setErr(e.message)}}
+ async function addPoint(e:React.FormEvent){e.preventDefault();if(!review)return;try{setErr('');await api(`/reviews/${review.id}/points`,{method:'POST',body:JSON.stringify({...form,owner_id:form.owner_id?Number(form.owner_id):null,due_at:form.due_at?istLocalToUTC(form.due_at):null})});setForm((f:any)=>({...f,discussion_point:'',action_description:''}));await load(review);setMessage('MOM point added.')}catch(e:any){setErr(e.message)}}
  async function updateAction(a:any,status:string){const comment=prompt('Follow-up / closure remark');if(comment===null)return;try{await api(`/actions/${a.id}`,{method:'PATCH',body:JSON.stringify({status,comment:comment||`Status changed to ${status}`,closure_remark:status==='CLOSED'?(comment||'Closed'):null})});await load(review)}catch(e:any){setErr(e.message)}}
  async function escalate(a:any){if(!confirm(`Escalate ${a.action_no} to Why-Why analysis?`))return;try{await api(`/reviews/actions/${a.id}/escalate-whywhy`,{method:'POST'});await load(review);setMessage(`${a.action_no} escalated to Why-Why.`)}catch(e:any){setErr(e.message)}}
  async function close(){if(!review)return;try{const r:any=await api(`/reviews/${review.id}/close`,{method:'PATCH',body:JSON.stringify({comments:comments||null})});if(r.discarded){setReview(null);setMom(null);setParticipants('');setComments('');await loadHistory();setMessage('Meeting closed. No discussion points were recorded, so the empty meeting was not saved.');return}setReview(r);await load(r);await loadHistory();setMessage('Meeting closed. It remains available below for reopening or download.')}catch(e:any){setErr(e.message)}}

@@ -1,9 +1,10 @@
+import { dateIST } from '../time'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
-function today(){return new Date().toISOString().slice(0,10)}
+function today(){return dateIST()}
 export default function Masters(){
  const [products,setProducts]=useState<any[]>([]); const [ops,setOps]=useState<any[]>([]); const [machines,setMachines]=useState<any[]>([]); const [vendors,setVendors]=useState<any[]>([]); const [users,setUsers]=useState<any[]>([])
  const [pid,setPid]=useState(''); const [route,setRoute]=useState<any[]>([]); const [draft,setDraft]=useState<any[]>([]); const [effective,setEffective]=useState(today());

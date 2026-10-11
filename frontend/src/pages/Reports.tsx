@@ -1,3 +1,4 @@
+import { dateIST } from '../time'
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
@@ -5,7 +6,7 @@ import { NamedComplianceBars, PartComplianceBars, PlanActualComplianceChart, Val
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { Kpi, PageHeader, money, num, pct } from '../components/UI'
 
-function today(){return new Date().toISOString().slice(0,10)}
+function today(){return dateIST()}
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 type Metric='qty'|'sales'|'tonnage'
 

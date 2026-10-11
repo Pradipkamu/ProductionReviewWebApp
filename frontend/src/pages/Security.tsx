@@ -1,18 +1,9 @@
 import { useEffect, useState } from 'react'
 import { api, clearToken, setToken } from '../api'
 import { Kpi, PageHeader } from '../components/UI'
+import { formatIST } from '../time'
 
-function stamp(v:any){
- if(!v)return '—'
- const raw=String(v)
- // Backend timestamps without an offset are stored as UTC. Normalize them before formatting.
- const parsed=new Date(/[zZ]|[+-]\d\d:\d\d$/.test(raw)?raw:`${raw}Z`)
- if(Number.isNaN(parsed.getTime()))return raw.replace('T',' ').slice(0,16)
- return new Intl.DateTimeFormat('en-IN',{
-  timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit',
-  hour:'2-digit',minute:'2-digit',hour12:false
- }).format(parsed).replace(',','')+' IST'
-}
+const stamp = (v:any) => formatIST(v)
 
 export function PasswordForm({required=false}:{required?:boolean}) {
  const [current,setCurrent]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState('')
