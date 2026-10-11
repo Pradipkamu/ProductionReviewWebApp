@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user, record_security_event
 from ..config import get_settings
 from ..db import get_db
-from ..enums import ActionStatus
+from ..enums import ActionStatus, UserRole
 from ..models import (
     Action, ActionAttachment, ActionContext, ActionHistory, ActionWhyWhy,
     Product, RouteOperation, Operation, Machine, ReviewActionLink, ReviewSession, User,
@@ -163,6 +163,76 @@ def list_actions(
         ids = set(db.scalars(ctx_q.distinct()).all())
         actions = [a for a in actions if a.id in ids]
     return [serialize_action(db, a) for a in actions]
+
+
+@router.get("/my-pending")
+def my_pending_actions(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    rows = db.scalars(
+        select(Action)
+        .where(Action.owner_id == user.id, Action.status != ActionStatus.CLOSED)
+        .order_by(Action.due_at, Action.priority.desc(), Action.reference_date)
+    ).all()
+    return [serialize_action(db, row) for row in rows]
+
+
+@router.get("/admin/pending-by-user")
+def pending_actions_by_user(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(403, "Admin access required")
+
+    users = db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name, User.username)).all()
+    actions = db.scalars(
+        select(Action)
+        .where(Action.status != ActionStatus.CLOSED)
+        .order_by(Action.owner_id, Action.due_at, Action.priority.desc(), Action.reference_date)
+    ).all()
+
+    grouped: dict[int | None, list[Action]] = {}
+    for action in actions:
+        grouped.setdefault(action.owner_id, []).append(action)
+
+    today = date.today()
+    result = []
+    for owner in users:
+        owned = grouped.pop(owner.id, [])
+        if not owned:
+            continue
+        serialized = [serialize_action(db, action) for action in owned]
+        due_today = sum(1 for action in owned if action.due_at and action.due_at.date() == today)
+        overdue = sum(1 for item in serialized if item["overdue"])
+        result.append({
+            "user_id": owner.id,
+            "username": owner.username,
+            "full_name": owner.full_name,
+            "role": owner.role.value,
+            "open_count": len(owned),
+            "overdue_count": overdue,
+            "due_today_count": due_today,
+            "oldest_age_days": max((item["age_days"] for item in serialized), default=0),
+            "actions": serialized,
+        })
+
+    unassigned = grouped.pop(None, [])
+    if unassigned:
+        serialized = [serialize_action(db, action) for action in unassigned]
+        result.append({
+            "user_id": None,
+            "username": None,
+            "full_name": "Unassigned",
+            "role": None,
+            "open_count": len(unassigned),
+            "overdue_count": sum(1 for item in serialized if item["overdue"]),
+            "due_today_count": sum(1 for action in unassigned if action.due_at and action.due_at.date() == today),
+            "oldest_age_days": max((item["age_days"] for item in serialized), default=0),
+            "actions": serialized,
+        })
+    return result
 
 
 @router.post("")
