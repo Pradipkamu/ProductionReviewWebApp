@@ -1,3 +1,4 @@
+from ..time_utils import UTCTimestamp
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/oee", tags=["oee"])
 
 class OEEActionCreate(BaseModel):
     owner_id: int | None = None
-    due_at: datetime | None = None
+    due_at: UTCTimestamp | None = None
     priority: Priority = Priority.HIGH
     action_description: str = "Contain the loss, complete standard Why-Why analysis and implement corrective action"
     target_oee: Decimal = Field(default=Decimal("0.85"), ge=0, le=1)

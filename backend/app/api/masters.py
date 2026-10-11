@@ -1,3 +1,4 @@
+from ..time_utils import ist_today
 from datetime import date, timedelta
 from decimal import Decimal
 import json
@@ -103,7 +104,7 @@ def add_product_value_addition_revision(product_id: int, payload: ProductValueAd
     product = db.get(Product, product_id)
     if not product:
         raise HTTPException(404, "Product not found")
-    if payload.effective_from > date.today():
+    if payload.effective_from > ist_today():
         raise HTTPException(422, "Value-addition revisions cannot be future-dated")
     if db.scalar(select(ProductValueAdditionHistory.id).where(
         ProductValueAdditionHistory.product_id == product_id,
@@ -115,7 +116,7 @@ def add_product_value_addition_revision(product_id: int, payload: ProductValueAd
     db.add(row); db.flush()
     current = db.scalar(select(ProductValueAdditionHistory).where(
         ProductValueAdditionHistory.product_id == product_id,
-        ProductValueAdditionHistory.effective_from <= date.today(),
+        ProductValueAdditionHistory.effective_from <= ist_today(),
     ).order_by(ProductValueAdditionHistory.effective_from.desc(), ProductValueAdditionHistory.id.desc()).limit(1))
     product.value_addition_per_piece = current.value_addition_per_piece if current else None
     db.commit(); db.refresh(row)
@@ -201,8 +202,8 @@ def _machine_payload(row: Machine):
     fields["next_pm_date"] = due
     fields["pm_status"] = (
         "Not configured" if due is None else
-        "Overdue" if due < date.today() else
-        "Due soon" if due <= date.today() + timedelta(days=30) else
+        "Overdue" if due < ist_today() else
+        "Due soon" if due <= ist_today() + timedelta(days=30) else
         "Current"
     )
     fields["cost"] = machine_cost(row)

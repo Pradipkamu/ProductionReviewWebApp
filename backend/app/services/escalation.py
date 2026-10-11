@@ -1,3 +1,4 @@
+from ..time_utils import ist_today, ist_date
 from datetime import date, datetime
 from sqlalchemy import select, text
 from ..models import Action, ActionWhyWhy, ActionReminder
@@ -6,14 +7,14 @@ from ..enums import ActionStatus
 def refresh_reminders(db):
     if db.bind.dialect.name == 'postgresql':
         db.execute(text('SELECT pg_advisory_xact_lock(2162001)'))
-    today = date.today()
+    today = ist_today()
     actions = db.scalars(select(Action)).all()
     plans = {p.action_id:p for p in db.scalars(select(ActionWhyWhy))}
     existing = {(r.action_id,r.kind) for r in db.scalars(select(ActionReminder).where(ActionReminder.reminder_date==today))}
     for action in actions:
         alerts=[]
-        if action.status != ActionStatus.CLOSED and action.due_at and action.due_at.date()<today:
-            age=(today-action.due_at.date()).days
+        if action.status != ActionStatus.CLOSED and action.due_at and ist_date(action.due_at)<today:
+            age=(today-ist_date(action.due_at)).days
             alerts.append(('OVERDUE','ADMIN' if age>=14 else 'MANAGEMENT' if age>=7 else 'OWNER',f'{action.action_no} overdue by {age} days'))
         plan=plans.get(action.id)
         if plan and plan.effectiveness_check_date and plan.effectiveness_check_date<today and not plan.effectiveness_result:

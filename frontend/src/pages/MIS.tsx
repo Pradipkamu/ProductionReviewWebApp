@@ -1,9 +1,9 @@
+import { daysAgoIST } from '../time'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { PageHeader, money, num, pct } from '../components/UI'
-function isoLocal(d:Date){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
-function lastCompletedDay(){const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d)}
+const lastCompletedDay = daysAgoIST
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 export default function MIS(){
   const [d,setD]=useState(lastCompletedDay()); const [rows,setRows]=useState<any[]>([]); const [msg,setMsg]=useState('')

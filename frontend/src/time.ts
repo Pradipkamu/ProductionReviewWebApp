@@ -3,7 +3,7 @@ const IST_TIME_ZONE = 'Asia/Kolkata'
 function parseBackendTimestamp(value: unknown): Date | null {
   if (!value) return null
   const raw = String(value)
-  const normalized = /[zZ]|[+-]\d\d:\d\d$/.test(raw) ? raw : `${raw}Z`
+  const normalized = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw}Z`
   const parsed = new Date(normalized)
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
@@ -32,4 +32,14 @@ export function istLocalToUTC(value: string): string | null {
   if (!m) return null
   const [,y,mo,d,h,mi,s='00']=m
   return new Date(Date.UTC(+y,+mo-1,+d,+h,+mi,+s)-330*60*1000).toISOString()
+}
+
+// Day offsets use a fixed 24-hour day: India does not observe daylight saving.
+export function daysAgoIST(days = 1): string {
+  return dateIST(new Date(Date.now() - days * 86400000))
+}
+
+export function timestampDateIST(value: unknown): string {
+  const parsed = parseBackendTimestamp(value)
+  return parsed ? dateIST(parsed) : ''
 }

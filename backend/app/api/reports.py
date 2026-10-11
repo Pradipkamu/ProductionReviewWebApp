@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ..time_utils import ist_today, ist_date
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -375,21 +376,21 @@ def compliance_actions(
     for action, owner in rows:
         unique.setdefault(action.id, (action, owner))
 
-    today = date.today()
+    today = ist_today()
     details = []
     for action, owner in unique.values():
         status = action.status.value if hasattr(action.status, "value") else str(action.status)
         status_key = status.upper().replace(" ", "_")
         closed = status_key == "CLOSED"
-        age_end = action.closed_at.date() if closed and getattr(action, "closed_at", None) else today
+        age_end = ist_date(action.closed_at) if closed and getattr(action, "closed_at", None) else today
         raised = action.reference_date
         age_days = max(0, (age_end - raised).days)
-        overdue = bool(not closed and action.due_at and action.due_at.date() < today)
+        overdue = bool(not closed and action.due_at and ist_date(action.due_at) < today)
         details.append({
             "id": action.id, "action_no": action.action_no, "reference_date": raised.isoformat(),
             "problem": action.problem_description, "owner": owner.full_name if owner and getattr(owner, "full_name", None) else (owner.username if owner else "Unassigned"),
             "status": status, "age_days": age_days, "overdue": overdue,
-            "due_date": action.due_at.date().isoformat() if action.due_at else None,
+            "due_date": ist_date(action.due_at).isoformat() if action.due_at else None,
         })
 
     return {
@@ -752,7 +753,7 @@ def oee_trends_report(
     ).all()
     for mid, action in action_rows:
         action_by_machine[mid].add(action.id)
-        if action.due_at and action.due_at.date() < as_of:
+        if action.due_at and ist_date(action.due_at) < as_of:
             overdue_by_machine[mid].add(action.id)
     for mid, rs in by_machine.items():
         machine = db.get(Machine, mid); a = _aggregate_oee_rows(rs)
@@ -909,7 +910,7 @@ def action_performance_report(
     for a in actions:
         month = _month_start(a.reference_date); mb = monthly_b[month]; mb["raised"] += 1
         is_closed = a.status == ActionStatus.CLOSED
-        is_overdue = bool(a.due_at and not is_closed and a.due_at.date() < as_of)
+        is_overdue = bool(a.due_at and not is_closed and ist_date(a.due_at) < as_of)
         closed += int(is_closed); open_count += int(not is_closed); overdue += int(is_overdue)
         if is_closed:
             mb["closed"] += 1
@@ -919,7 +920,7 @@ def action_performance_report(
             mb["overdue"] += 1
         owner = users.get(a.owner_id).full_name if a.owner_id in users else "Unassigned"
         ob = owner_b[owner]
-        age = max(0, ((a.closed_at.date() if a.closed_at else as_of) - a.reference_date).days)
+        age = max(0, ((ist_date(a.closed_at) if a.closed_at else as_of) - a.reference_date).days)
         ob["age_sum"] += age; ob["max_age"] = max(ob["max_age"], age)
         if is_closed: ob["closed"] += 1
         else: ob["open"] += 1

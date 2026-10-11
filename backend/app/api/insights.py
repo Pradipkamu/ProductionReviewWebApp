@@ -1,3 +1,4 @@
+from ..time_utils import ist_today, ist_date, ist_day_start_utc
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -201,14 +202,14 @@ def drilldown(kind:str,from_date:date,to_date:date,product_id:str|None=None,plan
 @router.get('/escalation')
 def escalation(db:Session=Depends(get_db),user:User=Depends(get_current_user)):
     refresh_reminders(db)
-    today=date.today();actions=db.scalars(select(Action)).all();plans={p.action_id:p for p in db.scalars(select(ActionWhyWhy))}
+    today=ist_today();actions=db.scalars(select(Action)).all();plans={p.action_id:p for p in db.scalars(select(ActionWhyWhy))}
     groups=defaultdict(list)
     for a in actions:groups[(a.problem_category or '', ' '.join(a.problem_description.lower().split()))].append(a)
     rows=[]
     for a in actions:
         peers=[x for x in groups[(a.problem_category or '', ' '.join(a.problem_description.lower().split()))] if x.id!=a.id]
         recurrence=any(x.closed_at and a.raised_at>x.closed_at for x in peers)
-        age=max(0,(today-a.due_at.date()).days) if a.due_at and a.status!=ActionStatus.CLOSED else 0
+        age=max(0,(today-ist_date(a.due_at)).days) if a.due_at and a.status!=ActionStatus.CLOSED else 0
         plan=plans.get(a.id)
         if age or peers or (plan and plan.effectiveness_check_date and plan.effectiveness_check_date<today and not plan.effectiveness_result):
             rows.append(dict(id=a.id,action_no=a.action_no,problem=a.problem_description,owner_id=a.owner_id,status=a.status.value,
@@ -253,9 +254,9 @@ def exceptions(as_of:date,product_id:str|None=None,plant:str|None=None,customer_
         if r.product_id in ids or r.product_id is None:add('major_loss',f'Machine #{r.machine_id}, loss #{r.loss_category_id}',r.product_id,float(r.duration_min),r.id)
     for r in db.scalars(select(VendorMovement).where(VendorMovement.product_id.in_(ids),VendorMovement.expected_return_date<as_of)):
         if r.outward_qty>r.receipt_qty:add('overdue_vendor_wip',f'Expected {r.expected_return_date}',r.product_id,float(r.outward_qty-r.receipt_qty),r.id)
-    for a in db.scalars(select(Action).where(Action.status!=ActionStatus.CLOSED,Action.due_at<datetime.combine(as_of,datetime.min.time()))):
+    for a in db.scalars(select(Action).where(Action.status!=ActionStatus.CLOSED,Action.due_at<ist_day_start_utc(as_of))):
         contexts=db.scalars(select(ActionContext.product_id).where(ActionContext.action_id==a.id)).all()
-        if set(contexts)&set(ids) or (not any([product_id,plant,customer_id,product_group]) and not contexts):add('overdue_action',a.action_no,None,(as_of-a.due_at.date()).days,a.id)
+        if set(contexts)&set(ids) or (not any([product_id,plant,customer_id,product_group]) and not contexts):add('overdue_action',a.action_no,None,(as_of-ist_date(a.due_at)).days,a.id)
     for r in db.scalars(select(DailyRequirement).where(DailyRequirement.req_date.between(as_of,as_of+timedelta(days=7)),DailyRequirement.product_id.in_(ids),DailyRequirement.route_operation_id.is_(None))):
         routes=db.scalars(select(RouteVersion).where(RouteVersion.product_id==r.product_id,RouteVersion.is_active.is_(True))).all()
         if r.revised_plan_qty>0 and not routes:add('schedule_risk',f'Plan {r.revised_plan_qty} on {r.req_date} has no route',r.product_id,float(r.revised_plan_qty),r.id)

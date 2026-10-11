@@ -1,3 +1,4 @@
+import { daysAgoIST, formatIST } from '../time'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
@@ -5,8 +6,7 @@ import ImportPreview from '../components/ImportPreview'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { Kpi, PageHeader, Status, money, num, pct } from '../components/UI'
 
-function isoLocal(d:Date){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
-function lastCompletedDay(){const d=new Date();d.setDate(d.getDate()-1);return isoLocal(d)}
+const lastCompletedDay = daysAgoIST
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 
 export default function Dashboard(){
@@ -90,7 +90,7 @@ export default function Dashboard(){
     {activeReview&&<div className="notice action-notice"><span>Review session #{activeReview} is active. Actions raised for {asOf} are automatically linked to this review and remain trackable after the review is closed.</span><button className="small" onClick={()=>raiseAction()}>Raise action</button></div>}
     <section className="panel"><div className="panel-title"><div><h2>My Pending Actions</h2><p>Open Daily MOM and action points assigned to your login.</p></div><button className="secondary small" onClick={()=>navigate('/actions')}>Open Actions</button></div>
       {myActions.length===0?<div className="empty">No pending action is assigned to you.</div>:<div className="table-wrap"><table><thead><tr><th>Action</th><th>Point / Action</th><th>Target</th><th>Age</th><th>Priority</th><th>Status</th><th>Review</th></tr></thead><tbody>
-        {myActions.slice(0,10).map((a:any)=><tr key={a.id} className={a.overdue?'row-overdue':''}><td><b>{a.action_no}</b><br/><small>{a.reference_date}</small></td><td><b>{a.problem_description}</b><br/><small>{a.action_description}</small></td><td>{a.due_at?String(a.due_at).slice(0,10):'—'}{a.overdue&&<><br/><small>Overdue</small></>}</td><td>{a.age_days}d</td><td><Status value={a.priority}/></td><td><Status value={a.status}/></td><td><button className="secondary small" onClick={()=>navigate(`/actions?action_id=${a.id}`)}>Open Review</button></td></tr>)}
+        {myActions.slice(0,10).map((a:any)=><tr key={a.id} className={a.overdue?'row-overdue':''}><td><b>{a.action_no}</b><br/><small>{a.reference_date}</small></td><td><b>{a.problem_description}</b><br/><small>{a.action_description}</small></td><td>{formatIST(a.due_at)}{a.overdue&&<><br/><small>Overdue</small></>}</td><td>{a.age_days}d</td><td><Status value={a.priority}/></td><td><Status value={a.status}/></td><td><button className="secondary small" onClick={()=>navigate(`/actions?action_id=${a.id}`)}>Open Review</button></td></tr>)}
       </tbody></table>{myActions.length>10&&<div className="data-note">Showing 10 of {myActions.length} pending actions. Open Actions for the full list.</div>}</div>}
     </section>
     <section className="panel daily-control"><div className="panel-title"><div><h2>Today in three steps</h2><p>Missing uploads are kept separate from reported zero production.</p></div><span>Next 7 days: {control?.upcoming?.planned_days||0} planned days • {control?.upcoming?.planned_products||0} products</span></div>

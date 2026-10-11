@@ -1,3 +1,4 @@
+from ..time_utils import ist_today, ist_date
 from datetime import date, datetime
 from pathlib import Path
 import re
@@ -104,7 +105,7 @@ def serialize_action(db: Session, a: Action) -> dict:
         "effectiveness_status": a.effectiveness_status,
         "action_type": a.action_type,
         "requires_whywhy": a.requires_whywhy,
-        "age_days": max(0, (date.today() - a.reference_date).days),
+        "age_days": max(0, (ist_today() - a.reference_date).days),
         "overdue": bool(a.due_at and a.status != ActionStatus.CLOSED and a.due_at < datetime.utcnow()),
         "whywhy_completion_percent": _serialize_plan(plan)["completion_percent"],
         "whywhy_can_close": _serialize_plan(plan)["can_close"],
@@ -197,14 +198,14 @@ def pending_actions_by_user(
     for action in actions:
         grouped.setdefault(action.owner_id, []).append(action)
 
-    today = date.today()
+    today = ist_today()
     result = []
     for owner in users:
         owned = grouped.pop(owner.id, [])
         if not owned:
             continue
         serialized = [serialize_action(db, action) for action in owned]
-        due_today = sum(1 for action in owned if action.due_at and action.due_at.date() == today)
+        due_today = sum(1 for action in owned if action.due_at and ist_date(action.due_at) == today)
         overdue = sum(1 for item in serialized if item["overdue"])
         result.append({
             "user_id": owner.id,
@@ -228,7 +229,7 @@ def pending_actions_by_user(
             "role": None,
             "open_count": len(unassigned),
             "overdue_count": sum(1 for item in serialized if item["overdue"]),
-            "due_today_count": sum(1 for action in unassigned if action.due_at and action.due_at.date() == today),
+            "due_today_count": sum(1 for action in unassigned if action.due_at and ist_date(action.due_at) == today),
             "oldest_age_days": max((item["age_days"] for item in serialized), default=0),
             "actions": serialized,
         })

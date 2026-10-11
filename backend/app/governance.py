@@ -1,3 +1,4 @@
+from .time_utils import ist_today
 """Transaction-level month protection and append-only business change evidence."""
 import json
 from datetime import date, datetime
@@ -81,7 +82,7 @@ def protect_months(db, flush_context, instances):
                 db.info['reason'] = grant.reason
         before = snapshot(obj, True) if obj not in db.new else None
         after = snapshot(obj) if obj not in db.deleted else None
-        if obj in db.dirty and periods and min(periods) < date.today().replace(day=1) and not db.info.get('reason'):
+        if obj in db.dirty and periods and min(periods) < ist_today().replace(day=1) and not db.info.get('reason'):
             reason = getattr(obj, 'reason', None)
             if not reason or not str(reason).strip():
                 raise HTTPException(422, 'Historical corrections require X-Change-Reason')

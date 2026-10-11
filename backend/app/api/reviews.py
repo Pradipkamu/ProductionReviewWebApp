@@ -1,3 +1,4 @@
+from ..time_utils import ist_today, ist_date, UTCTimestamp, format_ist
 from datetime import date, datetime
 from io import BytesIO
 import re
@@ -30,7 +31,7 @@ class ReviewPointCreate(BaseModel):
     action_required: bool = False
     action_description: str | None = None
     owner_id: int | None = None
-    due_at: datetime | None = None
+    due_at: UTCTimestamp | None = None
     priority: Priority = Priority.MEDIUM
 
 
@@ -59,8 +60,8 @@ def action_data(db: Session, a: Action | None) -> dict | None:
             "owner_id": a.owner_id, "owner": owner.full_name if owner else None,
             "due_at": a.due_at, "priority": a.priority.value, "status": a.status.value,
             "closure_remark": a.closure_remark, "closed_at": a.closed_at,
-            "age_days": max(0, (date.today() - a.reference_date).days),
-            "overdue_days": max(0, (date.today() - a.due_at.date()).days) if a.due_at and a.status != ActionStatus.CLOSED else 0,
+            "age_days": max(0, (ist_today() - a.reference_date).days),
+            "overdue_days": max(0, (ist_today() - ist_date(a.due_at)).days) if a.due_at and a.status != ActionStatus.CLOSED else 0,
             "requires_whywhy": a.requires_whywhy}
 
 
@@ -201,7 +202,7 @@ def _mom_rows(db: Session, review: ReviewSession):
     for p in points:
         a=db.get(Action,p.action_id) if p.action_id else None; ad=action_data(db,a)
         rows.append([p.sequence_no,p.category or "",p.discussion_point,(ad or {}).get("description",""),
-                     (ad or {}).get("owner",""), str((ad or {}).get("due_at","") or "")[:10],
+                     (ad or {}).get("owner",""), format_ist((ad or {}).get("due_at")),
                      (ad or {}).get("priority",""),(ad or {}).get("status",""),
                      (ad or {}).get("closure_remark","") if (ad or {}).get("status") == "CLOSED" else ""])
     return rows

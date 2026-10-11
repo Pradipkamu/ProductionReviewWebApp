@@ -1,4 +1,5 @@
 from __future__ import annotations
+from .time_utils import UTCTimestamp
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -180,7 +181,7 @@ class ActionCreate(BaseModel):
     problem_description: str
     action_description: str
     owner_id: Optional[int] = None
-    due_at: Optional[datetime] = None
+    due_at: Optional[UTCTimestamp] = None
     priority: Priority = Priority.MEDIUM
     kpi_type: Optional[str] = None
     kpi_value_when_raised: Optional[Decimal] = None
@@ -192,7 +193,7 @@ class ActionUpdate(BaseModel):
     status: Optional[ActionStatus] = None
     action_description: Optional[str] = None
     owner_id: Optional[int] = None
-    due_at: Optional[datetime] = None
+    due_at: Optional[UTCTimestamp] = None
     priority: Optional[Priority] = None
     comment: Optional[str] = None
     closure_remark: Optional[str] = None
@@ -260,8 +261,8 @@ class LossEventCreate(BaseModel):
     route_operation_id: Optional[int] = None
     machine_id: int
     loss_category_id: int
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
+    start_time: Optional[UTCTimestamp] = None
+    end_time: Optional[UTCTimestamp] = None
     duration_min: Decimal = Field(gt=0)
     qty_loss: Decimal = Field(default=Decimal("0"), ge=0)
     remark: Optional[str] = None
