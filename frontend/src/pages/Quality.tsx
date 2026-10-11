@@ -1,3 +1,4 @@
+import { dateIST, daysAgoIST } from '../time'
 import ImportPreview from '../components/ImportPreview'
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
@@ -26,8 +27,8 @@ function downloadCsv(name:string,rows:any[]){
 export default function Quality(){
   const navigate=useNavigate()
   function drill(r:any){const month=r.month;const first=month||r.date||r.rejection_date||fromDate;const last=month?monthEnd(month):first;const q=new URLSearchParams({kind:'ppm',from_date:first,to_date:last});if(productId.length)q.set('product_id',productId.join(','));if(plant.length)q.set('plant',plant.join(','));if(phenomenonId.length)q.set('phenomenon_id',phenomenonId.join(','));if(machineId.length)q.set('machine_id',machineId.join(','));if(operationId.length)q.set('operation_id',operationId.join(','));if(shift.length)q.set('shift',shift.join(','));navigate(`/insights?${q}`)}
-  const today=new Date(); const weekAgo=new Date(today); weekAgo.setDate(today.getDate()-7)
-  const [fromDate,setFromDate]=useState(iso(weekAgo)); const [toDate,setToDate]=useState(iso(today))
+  const today=dateIST(); const weekAgo=daysAgoIST(7)
+  const [fromDate,setFromDate]=useState(weekAgo); const [toDate,setToDate]=useState(today)
   const [plant,setPlant]=useState<string[]>([]); const [productId,setProductId]=useState<string[]>([]); const [phenomenonId,setPhenomenonId]=useState<string[]>([])
   const [operationId,setOperationId]=useState<string[]>([]); const [machineId,setMachineId]=useState<string[]>([]); const [shift,setShift]=useState<string[]>([])
   const [products,setProducts]=useState<any[]>([]); const [filters,setFilters]=useState<any>({plants:[]}); const [phenomena,setPhenomena]=useState<any[]>([])
@@ -37,7 +38,7 @@ export default function Quality(){
   const [partPareto,setPartPareto]=useState<any[]>([]); const [phenPareto,setPhenPareto]=useState<any[]>([]); const [busy,setBusy]=useState(false); const [err,setErr]=useState('')
   const [newPhen,setNewPhen]=useState(''); const [rejectionType,setRejectionType]=useState<string>('')
   const [showManual,setShowManual]=useState(false); const [manualOps,setManualOps]=useState<any[]>([]); const [manualSaving,setManualSaving]=useState(false); const [manualMsg,setManualMsg]=useState(''); const [actionMsg,setActionMsg]=useState('')
-  const [manual,setManual]=useState<any>({rejection_date:iso(today),shift:'A',product_id:'',detection_route_operation_id:'',responsible_route_operation_id:'',machine_id:'',phenomenon_id:'',reject_qty:'',rework_qty:'0',scrap_qty:'0',remark:'',action_required:false})
+  const [manual,setManual]=useState<any>({rejection_date:today,shift:'A',product_id:'',detection_route_operation_id:'',responsible_route_operation_id:'',machine_id:'',phenomenon_id:'',reject_qty:'',rework_qty:'0',scrap_qty:'0',remark:'',action_required:false})
 
   const qs=useMemo(()=>{const p=new URLSearchParams({from_date:fromDate,to_date:toDate});if(plant.length)p.set('plant',plant.join(','));if(productId.length)p.set('product_id',productId.join(','));if(phenomenonId.length)p.set('phenomenon_id',phenomenonId.join(','));if(operationId.length)p.set('operation_id',operationId.join(','));if(machineId.length)p.set('machine_id',machineId.join(','));if(shift.length)p.set('shift',shift.join(','));return p.toString()},[fromDate,toDate,plant,productId,phenomenonId,operationId,machineId,shift])
 

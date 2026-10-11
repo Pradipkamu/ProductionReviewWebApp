@@ -1,3 +1,4 @@
+from ..time_utils import ist_today
 from datetime import date
 from decimal import Decimal
 import uuid
@@ -17,8 +18,8 @@ router = APIRouter(prefix="/vendor", tags=["vendor"])
 
 def _serialize(vm: VendorMovement, product: Product, op: Operation, vendor: Vendor) -> dict:
     pending = float(vm.outward_qty - vm.receipt_qty)
-    age = (date.today() - vm.outward_date).days if pending > 0 else 0
-    overdue = bool(pending > 0 and vm.expected_return_date and vm.expected_return_date < date.today())
+    age = (ist_today() - vm.outward_date).days if pending > 0 else 0
+    overdue = bool(pending > 0 and vm.expected_return_date and vm.expected_return_date < ist_today())
     return {
         "id": vm.id,
         "product_id": vm.product_id,

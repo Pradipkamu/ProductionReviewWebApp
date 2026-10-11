@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone\nfrom zoneinfo import ZoneInfo
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from html import escape
 from io import BytesIO
 

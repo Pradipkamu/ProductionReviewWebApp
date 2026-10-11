@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ..time_utils import UTCTimestamp
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -41,7 +42,7 @@ class PhenomenonCreate(BaseModel):
 
 class QualityActionCreate(BaseModel):
     owner_id: int | None = None
-    due_at: datetime | None = None
+    due_at: UTCTimestamp | None = None
     priority: Priority = Priority.HIGH
     action_description: str = "Investigate using standard Why-Why and implement corrective action"
 

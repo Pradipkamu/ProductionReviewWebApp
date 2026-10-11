@@ -1,4 +1,5 @@
 from __future__ import annotations
+from ..time_utils import ist_date, ist_day_start_utc
 
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
@@ -321,7 +322,7 @@ def daily_control_summary(
     overdue_actions = list(db.scalars(select(Action).where(
         Action.status != ActionStatus.CLOSED,
         Action.due_at.is_not(None),
-        Action.due_at < datetime.combine(as_of, time.min),
+        Action.due_at < ist_day_start_utc(as_of),
     )).all())
     for action_row in overdue_actions:
         context_ids = set(db.scalars(select(ActionContext.product_id).where(
@@ -329,7 +330,7 @@ def daily_control_summary(
             ActionContext.product_id.in_(ids),
         )).all())
         if context_ids:
-            days = (as_of - action_row.due_at.date()).days
+            days = (as_of - ist_date(action_row.due_at)).days
             add("WARNING", "overdue_action", f"{action_row.action_no} is overdue by {days} day(s)", next(iter(context_ids)), days, action="actions")
 
     vendor_rows = list(db.scalars(select(VendorMovement).where(
@@ -530,7 +531,7 @@ def daily_review_summary(
         Action.due_at.is_not(None),
         Action.due_at < now,
     )) or 0
-    day_start = datetime.combine(as_of, time.min)
+    day_start = ist_day_start_utc(as_of)
     day_end = day_start + timedelta(days=1)
     closed_today = db.scalar(action_base.where(
         Action.status == ActionStatus.CLOSED,

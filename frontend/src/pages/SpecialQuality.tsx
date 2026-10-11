@@ -1,3 +1,4 @@
+import { dateIST, daysAgoIST } from '../time'
 import { useEffect, useMemo, useState } from 'react'
 import { api, downloadApi } from '../api'
 import { RankedBars, ValueTrendChart } from '../components/Charts'
@@ -6,9 +7,8 @@ import { Kpi, num, PageHeader } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
 type Mode='casting'|'customer'
-const iso=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-const today=()=>iso(new Date())
-const monthAgo=()=>{const d=new Date();d.setDate(d.getDate()-30);return iso(d)}
+const today = dateIST
+const monthAgo = () => daysAgoIST(30)
 
 function SpecialQuality({mode}:{mode:Mode}){
  const casting=mode==='casting', base=casting?'/casting-quality':'/customer-quality'

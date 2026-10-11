@@ -1,13 +1,12 @@
+import { daysAgoIST } from '../time'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import ProcessFlowMonitor from '../components/ProcessFlowMonitor'
 import { ScopeFilters, ScopeValues } from '../components/ScopeFilters'
 import { PageHeader, num } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
-function isoLocal(d:Date){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${day}`}
-function lastCompletedDay(){const d=new Date();d.setDate(d.getDate()-1);return d}
-function defaultFrom(){const d=lastCompletedDay();d.setDate(1);return isoLocal(d)}
-function defaultTo(){return isoLocal(lastCompletedDay())}
+function defaultFrom(){return daysAgoIST().slice(0,7)+'-01'}
+function defaultTo(){return daysAgoIST()}
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 export default function Process(){
  const [products,setProducts]=useState<any[]>([]); const [options,setOptions]=useState<any>({}); const [scope,setScope]=useState<ScopeValues>(emptyScope); const [pid,setPid]=useState(''); const [fromD,setFromD]=useState(defaultFrom()); const [toD,setToD]=useState(defaultTo()); const [flow,setFlow]=useState<any>(null); const [data,setData]=useState<any>(null); const [msg,setMsg]=useState('')
