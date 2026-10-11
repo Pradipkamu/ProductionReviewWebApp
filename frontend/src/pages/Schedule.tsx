@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { formatIST, dateIST, monthIST } from '../time'\nimport { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues } from '../components/ScopeFilters'
 import { PageHeader, num } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
-function monthNow(){return new Date().toISOString().slice(0,7)+'-01'}
-function today(){return new Date().toISOString().slice(0,10)}
+function monthNow(){return monthIST()+'-01'}
+function today(){return dateIST()}
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 
 export default function Schedule(){
@@ -92,6 +92,6 @@ export default function Schedule(){
  <div className="button-row"><button className="secondary" onClick={()=>bulk('SUNDAYS_OFF')}>Set Sundays off</button><button className="secondary" onClick={()=>bulk('SET_OFF')}>Mark range off</button><button className="secondary" onClick={()=>bulk('SET_WORKING')}>Mark range working</button></div>
  <div className="calendar-grid">{calendar.map(r=><button key={r.date} className={`day ${r.working?'working':'off'}`} title={`${r.holiday||''} ${r.reason||''}`} onClick={()=>editDay(r)}><b>{r.date.slice(-2)}</b><span>{r.working?'Working':'Off'}</span>{r.holiday&&<small>{r.holiday}</small>}</button>)}</div></section>
 
- <section className="panel"><div className="panel-title"><h2>Calendar change history</h2><span>Latest 100 changes in the selected month / Plant.</span></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Old</th><th>New</th><th>Holiday</th><th>Reason</th><th>Changed at</th></tr></thead><tbody>{calHistory.map((r:any)=><tr key={r.id}><td>{r.date}</td><td>{r.old_working==null?'Default':r.old_working?'Working':'Off'}</td><td>{r.new_working?'Working':'Off'}</td><td>{r.new_holiday||'—'}</td><td>{r.new_reason||'—'}</td><td>{String(r.changed_at).replace('T',' ').slice(0,19)}</td></tr>)}</tbody></table></div></section>
+ <section className="panel"><div className="panel-title"><h2>Calendar change history</h2><span>Latest 100 changes in the selected month / Plant.</span></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Old</th><th>New</th><th>Holiday</th><th>Reason</th><th>Changed at</th></tr></thead><tbody>{calHistory.map((r:any)=><tr key={r.id}><td>{r.date}</td><td>{r.old_working==null?'Default':r.old_working?'Working':'Off'}</td><td>{r.new_working?'Working':'Off'}</td><td>{r.new_holiday||'—'}</td><td>{r.new_reason||'—'}</td><td>{formatIST(r.changed_at,true)}</td></tr>)}</tbody></table></div></section>
  </>
 }
