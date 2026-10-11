@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone\nfrom zoneinfo import ZoneInfo
 from html import escape
 from io import BytesIO
 
@@ -40,8 +40,9 @@ def _fmt_date(value) -> str:
 def _fmt_dt(value) -> str:
     if not value:
         return "-"
-    if hasattr(value, "strftime"):
-        return value.strftime("%d-%b-%Y %H:%M")
+    if isinstance(value, datetime):
+        source = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+        return source.astimezone(ZoneInfo("Asia/Kolkata")).strftime("%d-%b-%Y %H:%M IST")
     return _safe(value)
 
 
@@ -122,7 +123,7 @@ def build_action_plan_pdf(
         canvas.setFont("Helvetica", 6.5)
         canvas.setFillColor(colors.HexColor("#56616a"))
         canvas.drawString(MARGIN, 4.8 * mm, "Production Review Manager - Controlled Why-Why Action Plan")
-        canvas.drawCentredString(PAGE[0] / 2, 4.8 * mm, f"Generated {datetime.now().strftime('%d-%b-%Y %H:%M')}")
+        canvas.drawCentredString(PAGE[0] / 2, 4.8 * mm, f"Generated {datetime.now(timezone.utc).astimezone(ZoneInfo('Asia/Kolkata')).strftime('%d-%b-%Y %H:%M IST')}")
         canvas.drawRightString(PAGE[0] - MARGIN, 4.8 * mm, f"Page {doc.page}")
         canvas.restoreState()
 
