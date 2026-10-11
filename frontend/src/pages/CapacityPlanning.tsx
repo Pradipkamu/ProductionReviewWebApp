@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { monthIST } from '../time'\nimport { dateIST } from '../time'\nimport { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { Kpi, PageHeader, Status, money, num } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
-const monthNow=()=>new Date().toISOString().slice(0,7)+'-01'
-const today=()=>new Date().toISOString().slice(0,10)
+const monthNow=()=>monthIST()+'-01'
+const today=()=>dateIST()
 
 export default function CapacityPlanning(){
  const [params]=useSearchParams()
