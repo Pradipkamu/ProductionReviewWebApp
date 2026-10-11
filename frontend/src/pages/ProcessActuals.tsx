@@ -15,9 +15,9 @@ export default function ProcessActuals(){
   const linkedDate=searchParams.get('actual_date')
   const linkedProduct=searchParams.get('product_id')
   const linkedStage=searchParams.get('route_operation_id')
-  const [actualDate,setActualDate]=useState(linkedDate&&/^\\d{4}-\\d{2}-\\d{2}$/.test(linkedDate)?linkedDate:lastCompletedDay())
+  const [actualDate,setActualDate]=useState(linkedDate&&/^\d{4}-\d{2}-\d{2}$/.test(linkedDate)?linkedDate:lastCompletedDay())
   const [missingOnly,setMissingOnly]=useState(!linkedProduct)
-  const [scope,setScope]=useState<ScopeValues>(linkedProduct&&/^\\d+$/.test(linkedProduct)?{...emptyScope,productId:[linkedProduct]}:emptyScope)
+  const [scope,setScope]=useState<ScopeValues>(linkedProduct&&/^\d+$/.test(linkedProduct)?{...emptyScope,productId:[linkedProduct]}:emptyScope)
   const [linkedOpened,setLinkedOpened]=useState(false)
   const [options,setOptions]=useState<any>({})
   const [products,setProducts]=useState<any[]>([])
@@ -48,7 +48,7 @@ export default function ProcessActuals(){
   useEffect(()=>{load()},[actualDate,missingOnly,scope.plant,scope.productGroup,scope.customerId,scope.productId])
 
   useEffect(()=>{
-    if(linkedOpened||!linkedStage||!/^\\d+$/.test(linkedStage)||busy||!data?.rows?.length)return
+    if(linkedOpened||!linkedStage||!/^\d+$/.test(linkedStage)||busy||!data?.rows?.length)return
     const found=data.rows.find((r:any)=>String(r.route_operation_id)===linkedStage &&
       (!linkedProduct||String(r.product_id)===linkedProduct))
     if(found){edit(found);setLinkedOpened(true)}
