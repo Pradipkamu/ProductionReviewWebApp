@@ -1,4 +1,5 @@
-import { formatIST, monthIST } from '../time'\nimport { useEffect, useState } from 'react'
+import { formatIST, monthIST } from '../time'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { PageHeader } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
