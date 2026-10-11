@@ -195,6 +195,32 @@ def pending_actions_by_user(
         .order_by(Action.owner_id, Action.due_at, Action.priority.desc(), Action.reference_date)
     ).all()
 
+    # One history query for all pending actions, excluding creation and file uploads.
+    history_rows = db.scalars(
+        select(ActionHistory)
+        .where(ActionHistory.action_id.in_([a.id for a in actions]))
+        .order_by(ActionHistory.changed_at.desc(), ActionHistory.id.desc())
+    ).all() if actions else []
+    last_followup: dict[int, datetime] = {}
+    for record in history_rows:
+        comment = (record.comment or "").strip().lower()
+        if comment.startswith("action created") or comment.startswith("attachment added:"):
+            continue
+        if record.changed_at and record.action_id not in last_followup:
+            last_followup[record.action_id] = record.changed_at
+
+    def enrich(owned: list[Action]) -> list[dict]:
+        result_rows = []
+        for action in owned:
+            item = serialize_action(db, action)
+            item["days_overdue"] = max(0, (today - ist_date(action.due_at)).days) if action.due_at else 0
+            item["days_until_due"] = (ist_date(action.due_at) - today).days if action.due_at else None
+            recent = last_followup.get(action.id)
+            item["last_followup_at"] = recent
+            item["followup_age_days"] = max(0, (today - ist_date(recent)).days) if recent else None
+            result_rows.append(item)
+        return result_rows
+
     grouped: dict[int | None, list[Action]] = {}
     for action in actions:
         grouped.setdefault(action.owner_id, []).append(action)
@@ -205,7 +231,7 @@ def pending_actions_by_user(
         owned = grouped.pop(owner.id, [])
         if not owned:
             continue
-        serialized = [serialize_action(db, action) for action in owned]
+        serialized = enrich(owned)
         due_today = sum(1 for action in owned if action.due_at and ist_date(action.due_at) == today)
         overdue = sum(1 for item in serialized if item["overdue"])
         result.append({
@@ -222,7 +248,7 @@ def pending_actions_by_user(
 
     unassigned = grouped.pop(None, [])
     if unassigned:
-        serialized = [serialize_action(db, action) for action in unassigned]
+        serialized = enrich(unassigned)
         result.append({
             "user_id": None,
             "username": None,
