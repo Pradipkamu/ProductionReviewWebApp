@@ -20,6 +20,7 @@ from ..models import (
 from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
 from ..services.action_pdf import build_action_plan_pdf
+from ..services.action_evidence import build_evidence_pdf, EvidenceError
 from ..services.file_security import (
     UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
 )
@@ -284,7 +285,7 @@ def get_action_plan(action_id: int, db: Session = Depends(get_db), _: User = Dep
 
 
 @router.get("/{action_id}/pdf")
-def download_action_plan_pdf(action_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def download_action_plan_pdf(action_id: int, evidence: bool = False, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     a = db.get(Action, action_id)
     if not a:
         raise HTTPException(404, "Action not found")
@@ -300,8 +301,14 @@ def download_action_plan_pdf(action_id: int, db: Session = Depends(get_db), _: U
         updated_by_name=updated_by.full_name if updated_by else None,
         attachments=_attachments(db, action_id),
     )
+    if evidence:
+        rows = db.scalars(select(ActionAttachment).where(ActionAttachment.action_id == action_id).order_by(ActionAttachment.created_at, ActionAttachment.id)).all()
+        try:
+            pdf = build_evidence_pdf(pdf, rows, settings.attachments_dir)
+        except EvidenceError as exc:
+            raise HTTPException(422, str(exc)) from exc
     safe_action_no = re.sub(r"[^A-Za-z0-9._-]+", "_", a.action_no).strip("._") or f"action_{a.id}"
-    filename = f"{safe_action_no}_WhyWhy_ActionPlan.pdf"
+    filename = f"{safe_action_no}_WhyWhy_ActionPlan{'_With_Evidence' if evidence else ''} .pdf".replace(" .pdf", ".pdf")
     return Response(
         content=pdf,
         media_type="application/pdf",
