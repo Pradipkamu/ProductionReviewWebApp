@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { dateIST } from '../time'\nimport { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
@@ -10,7 +10,7 @@ function Records({rows}:{rows:any[]}){
  return <div className="table-wrap"><table><thead><tr>{keys.map(k=><th key={k}>{k.replaceAll('_',' ')}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={r.id||i}>{keys.map(k=><td key={k}>{typeof r[k]==='object'?JSON.stringify(r[k]):String(r[k]??'—')}</td>)}</tr>)}</tbody></table></div>
 }
 export default function Insights(){
- const [params]=useSearchParams(),[mode,setMode]=useState(params.get('kind')||'exceptions'),[from,setFrom]=useState(params.get('from_date')||new Date().toISOString().slice(0,10)),[to,setTo]=useState(params.get('to_date')||new Date().toISOString().slice(0,10))
+ const [params]=useSearchParams(),[mode,setMode]=useState(params.get('kind')||'exceptions'),[from,setFrom]=useState(params.get('from_date')||dateIST()),[to,setTo]=useState(params.get('to_date')||dateIST())
  const [scope,setScope]=useState<ScopeValues>({plant:params.get('plant')?.split(',')||[],productGroup:params.get('product_group')?.split(',')||[],customerId:params.get('customer_id')?.split(',')||[],productId:params.get('product_id')?.split(',')||[]})
  const [options,setOptions]=useState<any>({}),[products,setProducts]=useState<any[]>([]),[data,setData]=useState<any>(null),[error,setError]=useState(''),[target,setTarget]=useState({compliance:'0.9',ppm:'1000',oee:'0.85',loss:'60'})
  useEffect(()=>{Promise.all([api('/masters/filter-options'),api('/masters/products')]).then(([o,p])=>{setOptions(o);setProducts(p)}).catch(e=>setError(e.message))},[])
