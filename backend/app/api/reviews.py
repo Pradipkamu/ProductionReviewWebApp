@@ -124,9 +124,21 @@ def start_review(payload: ReviewStart, db: Session = Depends(get_db), _: User = 
 def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     row = db.get(ReviewSession, review_id)
     if not row: raise HTTPException(404, "Review session not found")
+
+    point_count = db.scalar(
+        select(func.count(ReviewPoint.id)).where(ReviewPoint.review_session_id == review_id)
+    ) or 0
+    if point_count == 0:
+        db.delete(row)
+        db.commit()
+        return {"id": review_id, "discarded": True, "message": "Meeting closed with no discussion points and was not saved."}
+
     if row.ended_at is None: row.ended_at = datetime.utcnow()
     if payload.comments is not None: row.comments = payload.comments
-    db.commit(); db.refresh(row); return serialize_review(row)
+    db.commit(); db.refresh(row)
+    result = serialize_review(row)
+    result["discarded"] = False
+    return result
 
 
 @router.post("/{review_id}/points")
