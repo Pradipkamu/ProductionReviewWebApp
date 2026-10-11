@@ -1,4 +1,5 @@
-import { dateIST } from '../time'\nimport { useEffect, useMemo, useState } from 'react'
+import { dateIST } from '../time'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
@@ -8,7 +9,8 @@ import { MultiSelect } from '../components/MultiSelect'
 
 function today(){return dateIST()}
 function csvCell(v:any){const s=String(v??'');return `"${s.replaceAll('"','""')}"`}
-function downloadCsv(name:string, rows:any[]){if(!rows.length)return;const keys=Object.keys(rows[0]);const csv=[keys.map(csvCell).join(','),...rows.map(r=>keys.map(k=>csvCell(r[k])).join(','))].join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)}
+function downloadCsv(name:string, rows:any[]){if(!rows.length)return;const keys=Object.keys(rows[0]);const csv=[keys.map(csvCell).join(','),...rows.map(r=>keys.map(k=>csvCell(r[k])).join(','))].join('\r
+');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)}
 
 type Tab='process'|'vendor'|'oee'|'actions'|'schedule'|'forecast'
 
