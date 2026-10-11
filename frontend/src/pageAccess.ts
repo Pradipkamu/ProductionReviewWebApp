@@ -20,6 +20,7 @@ export const navItems:NavItem[] = [
   {key:'reports',to:'/reports',label:'Compliance Reports'},
   {key:'management_reports',to:'/management-reports',label:'Management Reports'},
   {key:'actions',to:'/actions',label:'Actions'},
+  {key:'admin_action_review',to:'/admin-action-review',label:'User-wise Action Review'},
   {key:'vendor',to:'/vendor',label:'Vendor WIP'},
   {key:'oee',to:'/oee',label:'Machine / OEE'},
   {key:'analytics',to:'/analytics',label:'Analytics'},
@@ -28,6 +29,7 @@ export const navItems:NavItem[] = [
 ]
 
 const legacyRestrictions:Record<string,string[]> = {
+  admin_action_review:['ADMIN'],
   diagnostics:['ADMIN','MANAGEMENT'],
   governance:['ADMIN','MANAGEMENT'],
   import:['ADMIN','PLANNING','QUALITY','PRODUCTION'],
