@@ -308,7 +308,8 @@ def download_action_plan_pdf(action_id: int, evidence: bool = False, db: Session
         except EvidenceError as exc:
             raise HTTPException(422, str(exc)) from exc
     safe_action_no = re.sub(r"[^A-Za-z0-9._-]+", "_", a.action_no).strip("._") or f"action_{a.id}"
-    filename = f"{safe_action_no}_WhyWhy_ActionPlan{'_With_Evidence' if evidence else ''} .pdf".replace(" .pdf", ".pdf")
+    suffix = "_With_Evidence" if evidence else ""
+    filename = f"{safe_action_no}_WhyWhy_ActionPlan{suffix}.pdf"
     return Response(
         content=pdf,
         media_type="application/pdf",
