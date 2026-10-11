@@ -59,7 +59,7 @@ def _image_pdf(path: Path, title: str, caption: str) -> bytes:
 def _convert_pptx(path: Path, work: Path) -> Path:
     # Keep conversion files and LibreOffice configuration isolated per request.
     output = work / "converted"
-    output.mkdir()
+    output.mkdir(exist_ok=True)
     profile = (work / "lo_profile").as_uri()
     command = [
         "libreoffice", f"-env:UserInstallation={profile}",
@@ -135,7 +135,6 @@ def build_evidence_pdf(base_pdf: bytes, attachments: list, storage_dir: str) -> 
                     total_pages += pages
                 finally:
                     (work / "converted" / f"{slide.stem}.pdf").unlink(missing_ok=True)
-                    (work / "converted").rmdir() if (work / "converted").exists() and not list((work / "converted").iterdir()) else None
                 continue
             else:
                 reader = _read_pdf(source)
