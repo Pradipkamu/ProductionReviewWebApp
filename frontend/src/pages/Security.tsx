@@ -101,8 +101,9 @@ export default function Security(){
 
   <section className="panel">
    <div className="panel-title"><div><h2>Active / Recent Sessions</h2><p>{me?.role==='ADMIN'?'Administrator view of user sessions.':'Your current and recent sessions.'}</p></div><button className="small secondary" onClick={load}>Refresh</button></div>
-   <div className="table-wrap"><table><thead><tr><th>User</th><th>Created</th><th>Last Seen</th><th>Expires</th><th>IP</th><th>Client</th><th>Status</th><th></th></tr></thead><tbody>
-    {sessions.map(s=><tr key={s.id}><td>{s.username||me?.username}{s.is_current&&<><br/><small>Current session</small></>}</td><td>{stamp(s.created_at)}</td><td>{stamp(s.last_seen_at)}</td><td>{stamp(s.expires_at)}</td><td>{s.ip_address||'—'}</td><td><small>{s.user_agent||'—'}</small></td><td><span className={`status ${s.revoked_at?'bad':'good'}`}>{s.revoked_at?'REVOKED':'ACTIVE'}</span></td><td>{!s.revoked_at&&<button className="small danger" onClick={()=>revoke(s)}>Revoke</button>}</td></tr>)}
+   <p className="data-note">Showing the 50 most recent sessions. Older session records remain in the database.</p>
+   <div className="table-wrap" style={{maxHeight:'520px',overflowY:'auto'}}><table><thead><tr><th>User</th><th>Created</th><th>Last Seen</th><th>Expires</th><th>IP</th><th>Client</th><th>Status</th><th></th></tr></thead><tbody>
+    {sessions.slice(0,50).map(s=><tr key={s.id}><td>{s.username||me?.username}{s.is_current&&<><br/><small>Current session</small></>}</td><td>{stamp(s.created_at)}</td><td>{stamp(s.last_seen_at)}</td><td>{stamp(s.expires_at)}</td><td>{s.ip_address||'—'}</td><td><small>{s.user_agent||'—'}</small></td><td><span className={`status ${s.revoked_at?'bad':'good'}`}>{s.revoked_at?'REVOKED':'ACTIVE'}</span></td><td>{!s.revoked_at&&<button className="small danger" onClick={()=>revoke(s)}>Revoke</button>}</td></tr>)}
     {!sessions.length&&<tr><td colSpan={8} className="muted">No sessions found.</td></tr>}
    </tbody></table></div>
   </section>
