@@ -1,12 +1,14 @@
 import { formatIST, dateIST } from '../time'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
+import { useNavigate } from 'react-router-dom'
 import { MultiSelect } from '../components/MultiSelect'
 import { PageHeader } from '../components/UI'
 
 const today=()=>dateIST()
 
 export default function ProductMaster(){
+ const navigate=useNavigate()
  const [products,setProducts]=useState<any[]>([]); const [customers,setCustomers]=useState<any[]>([])
  const [plant,setPlant]=useState(''); const [group,setGroup]=useState(''); const [customer,setCustomer]=useState(''); const [search,setSearch]=useState('')
  const [editing,setEditing]=useState<any>(null); const [historyProduct,setHistoryProduct]=useState<any>(null); const [history,setHistory]=useState<any[]>([])
@@ -19,7 +21,7 @@ export default function ProductMaster(){
  async function saveAttributes(e:React.FormEvent){e.preventDefault();if(!editing)return;try{await api(`/masters/products/${editing.id}`,{method:'PATCH',body:JSON.stringify({plant:editing.plant||null,product_group:editing.product_group||null,finish_weight_kg:editing.finish_weight_kg===''?null:Number(editing.finish_weight_kg)})});setEditing(null);await refresh();setMessage('Product attributes updated.')}catch(e:any){setErr(e.message)}}
  async function reviseValue(p:any){const raw=prompt(`Value addition for ${p.name} (₹/piece)`,p.value_addition_per_piece==null?'':String(p.value_addition_per_piece));if(raw===null)return;const value=Number(raw);if(!Number.isFinite(value)||value<0){alert('Enter a non-negative value');return}const effective_from=prompt('Effective from (YYYY-MM-DD)',today());if(!effective_from)return;const reason=prompt('Reason for value-addition revision');if(!reason?.trim())return;try{await api(`/masters/products/${p.id}/value-addition-revisions`,{method:'POST',body:JSON.stringify({effective_from,value_addition_per_piece:value,reason:reason.trim()})});await refresh();if(historyProduct?.id===p.id)await showHistory(p);setMessage('Part-wise value addition revised with history.')}catch(e:any){setErr(e.message)}}
  async function showHistory(p:any){try{setHistoryProduct(p);setHistory(await api(`/masters/products/${p.id}/value-addition-history`))}catch(e:any){setErr(e.message)}}
- return <><PageHeader title="Product Update" subtitle="Maintain product reporting attributes and part-wise value addition with effective-date history."/>
+ return <><PageHeader title="Product Update" subtitle="Maintain product reporting attributes and part-wise value addition with effective-date history." actions={<div className="button-row"><button className="secondary" onClick={()=>navigate("/masters")}>Process route masters</button><button className="secondary" onClick={()=>navigate("/machine-master")}>Machine master</button></div>}/>
  {err&&<div className="error">{err}</div>}{message&&<div className="notice">{message}</div>}
  <section className="panel"><div className="panel-title"><h2>Filters</h2><span>{visible.length} of {products.length} products</span></div><div className="form-row">
  <label>Search<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Part code, name or customer"/></label>
