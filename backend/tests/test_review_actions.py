@@ -57,6 +57,13 @@ def test_review_sync_close_and_action_link():
         assert len(links) == 1
         assert links[0].review_session_id == rid
 
+    # A meeting with a recorded discussion point must be retained on closure.
+    point = client.post(f'/api/reviews/{rid}/points', headers=h, json={
+        'category': 'Production', 'discussion_point': 'Review recovery of daily production shortfall',
+        'action_required': False,
+    })
+    assert point.status_code == 200, point.text
+
     close = client.patch(f'/api/reviews/{rid}/close', headers=h, json={'comments':'Closed after assigning actions'})
     assert close.status_code == 200, close.text
     assert close.json()['ended_at'] is not None
@@ -68,3 +75,20 @@ def test_review_sync_close_and_action_link():
     # Closing again is safe/idempotent.
     close_again = client.patch(f'/api/reviews/{rid}/close', headers=h, json={'comments':'Closed'})
     assert close_again.status_code == 200
+
+
+def test_empty_meeting_is_discarded_on_close():
+    client = TestClient(app)
+    h = auth_headers(client)
+    created = client.post('/api/reviews', headers=h, json={
+        'review_date': '2026-09-30', 'participants': 'Production',
+        'comments': 'No topics raised',
+    })
+    assert created.status_code == 200, created.text
+    rid = created.json()['id']
+    closed = client.patch(f'/api/reviews/{rid}/close', headers=h, json={'comments': 'Nothing to discuss'})
+    assert closed.status_code == 200, closed.text
+    assert closed.json()['discarded'] is True
+    with SessionLocal() as db:
+        from app.models import ReviewSession
+        assert db.get(ReviewSession, rid) is None
