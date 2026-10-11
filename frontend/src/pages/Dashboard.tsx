@@ -88,6 +88,12 @@ export default function Dashboard(){
     {err && <div className="error">{err}</div>}
     {message && <div className="notice">{message}</div>}
     {activeReview&&<div className="notice action-notice"><span>Review session #{activeReview} is active. Actions raised for {asOf} are automatically linked to this review and remain trackable after the review is closed.</span><button className="small" onClick={()=>raiseAction()}>Raise action</button></div>}
+    <div className="kpi-grid">
+      <Kpi label="Critical alerts" value={alerts.filter((a:any)=>String(a.severity).toUpperCase()==='CRITICAL').length} tone={alerts.some((a:any)=>String(a.severity).toUpperCase()==='CRITICAL')?'bad':'good'} sub="Selected date and scope"/>
+      <Kpi label="All alerts" value={alerts.length} tone={alerts.length?'warn':'good'}/>
+      <Kpi label="My overdue actions" value={myActions.filter((a:any)=>a.overdue).length} tone={myActions.some((a:any)=>a.overdue)?'bad':'good'}/>
+      <Kpi label="Unfinished uploads" value={Math.max(0,Number(workflow.upload?.expected_rows||0)-Number(workflow.upload?.reported_rows||0))} tone={Number(workflow.upload?.expected_rows||0)>Number(workflow.upload?.reported_rows||0)?'warn':'good'} sub="Expected minus reported rows"/>
+    </div>
     <section className="panel"><div className="panel-title"><div><h2>My Pending Actions</h2><p>Open Daily MOM and action points assigned to your login.</p></div><button className="secondary small" onClick={()=>navigate('/actions')}>Open Actions</button></div>
       {myActions.length===0?<div className="empty">No pending action is assigned to you.</div>:<div className="table-wrap"><table><thead><tr><th>Action</th><th>Point / Action</th><th>Target</th><th>Age</th><th>Priority</th><th>Status</th><th>Review</th></tr></thead><tbody>
         {myActions.slice(0,10).map((a:any)=><tr key={a.id} className={a.overdue?'row-overdue':''}><td><b>{a.action_no}</b><br/><small>{a.reference_date}</small></td><td><b>{a.problem_description}</b><br/><small>{a.action_description}</small></td><td>{formatIST(a.due_at)}{a.overdue&&<><br/><small>Overdue</small></>}</td><td>{a.age_days}d</td><td><Status value={a.priority}/></td><td><Status value={a.status}/></td><td><button className="secondary small" onClick={()=>navigate(`/actions?action_id=${a.id}`)}>Open Review</button></td></tr>)}
