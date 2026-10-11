@@ -23,10 +23,11 @@ export default function Diagnostics(){
       </div>
 
       <section className="panel"><div className="panel-title"><div><h2>Backup & Restore Readiness</h2><p>Backups are now checked for freshness and SHA-256 integrity. Restore verification is recorded only after an isolated test restore succeeds.</p></div></div>
+        <p className="data-note">A valid backup checksum confirms file integrity; only isolated restore verification confirms that a backup has been successfully restored in a test database. Neither implies a production restore has been performed.</p>
         <div className="table-wrap"><table><thead><tr><th>Check</th><th>Status</th><th>Version / File</th><th>Details</th></tr></thead><tbody>
           <tr><td>Database connection</td><td><Status value={data.database.status}/></td><td>{data.database.schema_version||'—'}</td><td>{data.database.detail||`${data.database.latency_ms} ms response`}</td></tr>
-          <tr><td>Latest backup</td><td><Status value={data.backup.status}/></td><td>{data.backup.file_name||'—'}</td><td>{data.backup.detail}{data.backup.modified_at?` • ${stamp(data.backup.modified_at)} • ${(data.backup.size_bytes/1024/1024).toFixed(1)} MB • ${data.backup.format||''}`:''}{data.backup.count!=null?` • ${data.backup.count} backup(s)`:''}</td></tr>
-          <tr><td>Isolated restore verification</td><td><Status value={data.restore_verification.status}/></td><td>{data.restore_verification.backup_file||'—'}</td><td>{data.restore_verification.detail}{data.restore_verification.verified_at?` • ${stamp(data.restore_verification.verified_at)} • schema ${data.restore_verification.schema_version||'—'}`:''}</td></tr>
+          <tr><td>Latest backup</td><td><Status value={data.backup.status}/></td><td>{data.backup.file_name||'—'}</td><td>{data.backup.detail}{data.backup.modified_at?` • ${stamp(data.backup.modified_at)} • ${(data.backup.size_bytes/1024/1024).toFixed(1)} MB • ${data.backup.format||''} • Age ${data.backup.age_hours??'—'}h • SHA-256 ${data.backup.checksum_valid?'verified':'not verified'}`:''}{data.backup.count!=null?` • ${data.backup.count} backup(s)`:''}</td></tr>
+          <tr><td>Isolated restore verification</td><td><Status value={data.restore_verification.status}/></td><td>{data.restore_verification.backup_file||'—'}</td><td>{data.restore_verification.detail}{data.restore_verification.verified_at?` • ${stamp(data.restore_verification.verified_at)} • schema ${data.restore_verification.schema_version||'—'} • Age ${data.restore_verification.age_days??'—'} days`:''}</td></tr>
         </tbody></table></div>
       </section>
 

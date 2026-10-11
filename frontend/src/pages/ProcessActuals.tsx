@@ -1,6 +1,7 @@
 import { daysAgoIST } from '../time'
 import { formatIST } from '../time'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { PageHeader, num } from '../components/UI'
@@ -10,9 +11,14 @@ const lastCompletedDay = daysAgoIST
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 
 export default function ProcessActuals(){
-  const [actualDate,setActualDate]=useState(lastCompletedDay())
-  const [missingOnly,setMissingOnly]=useState(true)
-  const [scope,setScope]=useState<ScopeValues>(emptyScope)
+  const [searchParams]=useSearchParams()
+  const linkedDate=searchParams.get('actual_date')
+  const linkedProduct=searchParams.get('product_id')
+  const linkedStage=searchParams.get('route_operation_id')
+  const [actualDate,setActualDate]=useState(linkedDate&&/^\d{4}-\d{2}-\d{2}$/.test(linkedDate)?linkedDate:lastCompletedDay())
+  const [missingOnly,setMissingOnly]=useState(!linkedProduct)
+  const [scope,setScope]=useState<ScopeValues>(linkedProduct&&/^\d+$/.test(linkedProduct)?{...emptyScope,productId:[linkedProduct]}:emptyScope)
+  const [linkedOpened,setLinkedOpened]=useState(false)
   const [options,setOptions]=useState<any>({})
   const [products,setProducts]=useState<any[]>([])
   const [data,setData]=useState<any>({counts:{rows:0,missing:0,entered:0},rows:[],products_without_route:[]})
@@ -40,6 +46,13 @@ export default function ProcessActuals(){
     finally{setBusy(false)}
   }
   useEffect(()=>{load()},[actualDate,missingOnly,scope.plant,scope.productGroup,scope.customerId,scope.productId])
+
+  useEffect(()=>{
+    if(linkedOpened||!linkedStage||!/^\d+$/.test(linkedStage)||busy||!data?.rows?.length)return
+    const found=data.rows.find((r:any)=>String(r.route_operation_id)===linkedStage &&
+      (!linkedProduct||String(r.product_id)===linkedProduct))
+    if(found){edit(found);setLinkedOpened(true)}
+  },[data,linkedStage,linkedProduct,linkedOpened,busy])
 
   function edit(row:any){
     setSelected(row)
@@ -88,6 +101,7 @@ export default function ProcessActuals(){
 
   return <>
     <PageHeader title="Process Actuals / Historical Edit" subtitle="Find missing process actuals or correct entered quantities. Zero is treated as a valid entered value; only an absent record is Missing." actions={<label>Date<input type="date" value={actualDate} onChange={e=>setActualDate(e.target.value)}/></label>}/>
+    {linkedProduct&&<div className="notice">Opened from Process Monitor. Product and date were preselected; use the form below to enter a reason for the correction.</div>}
     <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
     <section className="panel">
       <div className="panel-title">
