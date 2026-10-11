@@ -232,13 +232,14 @@ def test_shared_machine_capacity_blocks_overallocation_across_products():
     assert shared['available_load_percent'] == 0
     assert shared['allocation_count'] == 2
     assert shared['required_operator_equivalent'] == 1
-    assert shared['operator_hours'] == 18.333333333333332
+    # 960 approved pieces at 60 sec/pc and one operator = 16 operator-hours.
+    assert shared['operator_hours'] == 16.0
     assert loading['required_operator_equivalent'] == 1
-    assert loading['operator_hours'] == 18.333333333333332
+    assert loading['operator_hours'] == 16.0
     area = next(x for x in loading['areas'] if x['plant'] == 'Unassigned' and x['department'] == 'Unassigned')
     assert area['machine_count'] >= 1
     assert area['required_operator_equivalent'] >= 1
-    assert area['operator_hours'] >= 18.333333333333332
+    assert area['operator_hours'] >= 16.0
     assert shared['status'] == 'FULL'
     assert loading['near_capacity_machine_count'] >= 0
     assert loading['underloaded_machine_count'] >= 0
