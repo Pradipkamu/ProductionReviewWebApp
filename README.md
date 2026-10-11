@@ -102,3 +102,36 @@ cd "D:\Machine Shop MIS"
 
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File ".\Backup_Oracle_Review_To_Windows.ps1"
+
+
+
+
+*** ALL TABLE Name ***
+
+docker compose exec -T db psql -U pms -d pms -c "\dt"
+
+
+** User Id Change ****
+
+cd /home/ubuntu/ProductionReviewWebApp
+
+docker compose exec -T db psql -U pms -d pms -c \
+"SELECT id, username, full_name, role, is_active FROM users WHERE lower(username) LIKE '%wassim%' OR lower(full_name) LIKE '%wassim%';"
+
+
+
+docker compose exec -T db psql -v ON_ERROR_STOP=1 -U pms -d pms <<'SQL'
+BEGIN;
+
+UPDATE users
+SET username = 'vasim',
+    full_name = 'Vasim Sayyad'
+WHERE id = 11
+  AND username = 'wassim';
+
+COMMIT;
+
+SELECT id, username, full_name, role, is_active
+FROM users
+WHERE id = 11;
+SQL
