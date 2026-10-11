@@ -13,6 +13,7 @@ export default function Dashboard(){
   const navigate=useNavigate()
   const [asOf,setAsOf]=useState(lastCompletedDay()); const [data,setData]=useState<any>(null); const [control,setControl]=useState<any>(null); const [err,setErr]=useState(''); const [message,setMessage]=useState('')
   const [activeReview,setActiveReview]=useState<string|null>(null)
+  const [myActions,setMyActions]=useState<any[]>([])
   const [blockerThreshold,setBlockerThreshold]=useState<number>(()=>{const n=Number(localStorage.getItem('dailyBlockerThresholdPct')||80);return n>=1&&n<=100?n:80})
   const [scope,setScope]=useState<ScopeValues>(emptyScope); const [options,setOptions]=useState<any>({}); const [products,setProducts]=useState<any[]>([]); const [role,setRole]=useState('')
   useEffect(()=>{Promise.all([api('/masters/filter-options'),api('/masters/products'),api('/auth/me')]).then(([o,p,m]:any)=>{setOptions(o);setProducts(p);setRole(m.role)})},[])
@@ -21,8 +22,8 @@ export default function Dashboard(){
       const q=appendScope(new URLSearchParams({as_of:asOf}),scope)
       const controlQ=new URLSearchParams(q)
       controlQ.set('blocker_threshold_pct',String(blockerThreshold))
-      const [summary,dailyControl]=await Promise.all([api(`/dashboard/summary?${q}`),api(`/dashboard/daily-control?${controlQ}`)])
-      setData(summary);setControl(dailyControl);setErr('')
+      const [summary,dailyControl,pending]=await Promise.all([api(`/dashboard/summary?${q}`),api(`/dashboard/daily-control?${controlQ}`),api('/actions/my-pending')])
+      setData(summary);setControl(dailyControl);setMyActions(pending);setErr('')
     }catch(e:any){setErr(e.message)}
   }
   async function syncReview(){
@@ -87,6 +88,11 @@ export default function Dashboard(){
     {err && <div className="error">{err}</div>}
     {message && <div className="notice">{message}</div>}
     {activeReview&&<div className="notice action-notice"><span>Review session #{activeReview} is active. Actions raised for {asOf} are automatically linked to this review and remain trackable after the review is closed.</span><button className="small" onClick={()=>raiseAction()}>Raise action</button></div>}
+    <section className="panel"><div className="panel-title"><div><h2>My Pending Actions</h2><p>Open Daily MOM and action points assigned to your login.</p></div><button className="secondary small" onClick={()=>navigate('/actions')}>Open Actions</button></div>
+      {myActions.length===0?<div className="empty">No pending action is assigned to you.</div>:<div className="table-wrap"><table><thead><tr><th>Action</th><th>Point / Action</th><th>Target</th><th>Age</th><th>Priority</th><th>Status</th></tr></thead><tbody>
+        {myActions.slice(0,10).map((a:any)=><tr key={a.id} className={a.overdue?'row-overdue':''}><td><b>{a.action_no}</b><br/><small>{a.reference_date}</small></td><td><b>{a.problem_description}</b><br/><small>{a.action_description}</small></td><td>{a.due_at?String(a.due_at).slice(0,10):'—'}{a.overdue&&<><br/><small>Overdue</small></>}</td><td>{a.age_days}d</td><td><Status value={a.priority}/></td><td><Status value={a.status}/></td></tr>)}
+      </tbody></table>{myActions.length>10&&<div className="data-note">Showing 10 of {myActions.length} pending actions. Open Actions for the full list.</div>}</div>}
+    </section>
     <section className="panel daily-control"><div className="panel-title"><div><h2>Today in three steps</h2><p>Missing uploads are kept separate from reported zero production.</p></div><span>Next 7 days: {control?.upcoming?.planned_days||0} planned days • {control?.upcoming?.planned_products||0} products</span></div>
       <div className="daily-steps">
         <article className="daily-step"><div className="step-number">1</div><div><small>CHECK</small><h3>Schedule readiness</h3><Status value={workflow.schedule?.status||'LOADING'}/><p>{workflow.schedule?.planned_products||0} customer plans • {workflow.schedule?.planned_stages||0} stage plans</p><button className="secondary small" onClick={()=>navigate('/schedule')}>Open schedules</button></div></article>
