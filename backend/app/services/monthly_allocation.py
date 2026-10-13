@@ -87,7 +87,7 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
             })
 
     # Single-machine operations are assigned first, then constrained operations.
-    operations.sort(key=lambda o: (o["eligible_count"] or 100000, o["product_id"], o["route_operation_id"]))
+    operations.sort(key=lambda o: (0 if o["key"] in saved and f"{o['key'][0]}:{o['key'][1]}" not in overridden else 1, o["eligible_count"] or 100000, o["product_id"], o["route_operation_id"]))
     capacity_used = defaultdict(lambda: ZERO)
     result = []
     alerts = []
