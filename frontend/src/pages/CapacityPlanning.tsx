@@ -18,14 +18,35 @@ export default function CapacityPlanning(){
  const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('');const [reason,setReason]=useState('Monthly machine allocation approved')
  const [setup,setSetup]=useState<any>({machine_id:'',effective_from:today(),priority:1,ideal_cycle_time_sec:'',standard_cycle_time_sec:'',pieces_per_cycle:1,operators_per_machine:'',shifts_per_day:3,shift_minutes:480,planned_break_minutes:30,planning_efficiency_percent:85,reason:'Approved capacity master revision'})
  useEffect(()=>{Promise.all([api('/masters/products'),api('/masters/machines')]).then(([p,m]:any)=>{setProducts(p);setMachines(m);const requested=params.get('product_id');if(requested&&p.some((x:any)=>String(x.id)===requested))setPid(requested);else if(p[0])setPid(String(p[0].id));if(m[0])setSetup((x:any)=>({...x,machine_id:String(m[0].id)}))})},[])
- async function load(){if(!pid)return;setBusy(true);setMsg('');try{const p:any=await api(`/capacity/plan?product_id=${pid}&month=${month}`);setPlan(p);const next=p.operations.some((x:any)=>String(x.route_operation_id)===opId)?opId:String(p.operations[0]?.route_operation_id||'');setOpId(next)}catch(e:any){setMsg(e.message)}finally{setBusy(false)}}
+ async function load(){if(!pid)return;setBusy(true);setMsg('');try{const p:any=await api(`/capacity/plan?product_id=${pid}&month=${month}`);setPlan(p);setOpId('')}catch(e:any){setMsg(e.message)}finally{setBusy(false)}}
  useEffect(()=>{load()},[pid,month])
  async function loadMachineLoading(){try{setMachineLoading(await api(`/capacity/machine-loading?month=${month}`))}catch(e:any){setMsg(e.message)}}
  useEffect(()=>{loadMachineLoading()},[month])
  async function loadMonthly(){setMonthlyBusy(true);try{setMonthly(await api('/capacity/monthly-preview',{method:'POST',body:JSON.stringify({month,strategy:monthlyStrategy,overrides:monthlyOverrides})}));setMonthlyDirty(false)}catch(e:any){setMsg(e.message)}finally{setMonthlyBusy(false)}}
  async function approveMonthly(){if(!monthly)return;setMonthlyBusy(true);try{const result:any=await api('/capacity/monthly-approve',{method:'POST',body:JSON.stringify({month,strategy:monthlyStrategy,preview_token:monthly.preview_token,reason:monthlyReason,overrides:monthlyOverrides})});setMsg(`Approved ${result.approved} operation allocations. ${result.skipped_saved} existing allocations preserved. ${result.shortages} unresolved shortages.`);await loadMonthly();await loadMachineLoading();await load()}catch(e:any){setMsg(e.message)}finally{setMonthlyBusy(false)}}
  useEffect(()=>{setMonthly(null);setMonthlyOverrides({});setMonthlyDirty(false)},[month,monthlyStrategy])
- const operation=useMemo(()=>plan?.operations?.find((x:any)=>String(x.route_operation_id)===opId),[plan,opId])
+ const visibleOperations=useMemo(()=>{
+  const candidates:any[]=plan?.operations||[]
+  const best=new Map<string,any>()
+  const monthEnd=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).toISOString().slice(0,10)
+  for(const candidate of candidates){
+   // Match the same logical operation across route revisions, while keeping
+   // distinct process sequence numbers separate.
+   const key=`${candidate.sequence_no}:${candidate.operation_id}`
+   if(candidate.route_effective_from&&candidate.route_effective_from>monthEnd)continue
+   const previous=best.get(key)
+   if(!previous||Number(candidate.route_revision_no||0)>Number(previous.route_revision_no||0)||
+      (Number(candidate.route_revision_no||0)===Number(previous.route_revision_no||0)&&
+       Number(candidate.route_operation_id)>Number(previous.route_operation_id)))best.set(key,candidate)
+  }
+  return [...best.values()].sort((a:any,b:any)=>a.sequence_no-b.sequence_no||a.operation.localeCompare(b.operation))
+ },[plan,month])
+ const operation=useMemo(()=>visibleOperations.find((x:any)=>String(x.route_operation_id)===opId),[visibleOperations,opId])
+ useEffect(()=>{
+  if(visibleOperations.length&&!visibleOperations.some((x:any)=>String(x.route_operation_id)===opId))
+   setOpId(String(visibleOperations[0].route_operation_id))
+ },[visibleOperations,opId])
+
  useEffect(()=>{if(!operation)return;const x:Record<string,string>={};operation.machines.forEach((m:any)=>x[String(m.machine_id)]=String(m.allocation_qty));setAlloc(x);loadHistory()},[operation?.route_operation_id,operation?.allocation_revision,setup.machine_id])
  async function loadHistory(){if(!opId)return;const q=`route_operation_id=${opId}${setup.machine_id?`&machine_id=${setup.machine_id}`:''}`;const [h,a]:any=await Promise.all([api(`/capacity/master-history?${q}`),api(`/capacity/allocations/history?product_id=${pid}&route_operation_id=${opId}&month=${month}`)]);setHistory(h);setAllocationHistory(a)}
  function autoAllocate(){if(!operation)return;let remaining=Math.round(Number(operation.schedule_qty));const x:Record<string,string>={};const usable=[...operation.machines].filter((m:any)=>m.complete&&Number(m.available_capacity_qty||0)>0).sort((a:any,b:any)=>a.priority-b.priority||a.machine_code.localeCompare(b.machine_code));operation.machines.forEach((m:any)=>x[String(m.machine_id)]='0');usable.forEach((m:any)=>{if(remaining<=0)return;const q=Math.min(remaining,Math.floor(Number(m.available_capacity_qty||0)));x[String(m.machine_id)]=String(q);remaining-=q});setAlloc(x)}
@@ -80,7 +101,7 @@ export default function CapacityPlanning(){
  const shortage=operation?Math.max(0,Number(operation.schedule_qty)-Number(operation.total_available_capacity_qty??operation.total_capacity_qty)):0
  return <><PageHeader title="Machine Capacity & Manpower" subtitle="Monthly part loading from the operation schedule, effective cycle time, machine calendar and operator requirement." actions={<button className="secondary" onClick={load} disabled={busy}>{busy?'Calculating…':'Recalculate'}</button>}/>
  {msg&&<div className={msg.toLowerCase().includes('saved')?'notice':'warning-box'}>{msg}</div>}
- <section className="panel capacity-scope"><div className="form-row"><label>Month<input type="date" value={month} onChange={e=>setMonth(e.target.value)}/></label><label>Product / Part<MultiSelect singleSelect value={pid?[pid]:[]} onChange={v=>setPid(v.at(-1)||'')} placeholder="Select Product" options={products.map(p=>({value:String(p.id),label:p.name}))}/></label><label>Operation<MultiSelect singleSelect value={opId?[opId]:[]} onChange={v=>setOpId(v.at(-1)||'')} placeholder="Select Operation" options={(plan?.operations||[]).map((o:any)=>({value:String(o.route_operation_id),label:`${o.sequence_no}. ${o.operation}`}))}/></label></div><p className="muted">Plant calendar: {plan?.plant||'—'} • Working days: {plan?.working_days??'—'} • Operation demand comes from Daily Requirements generated by the monthly schedule.</p></section>
+ <section className="panel capacity-scope"><div className="form-row"><label>Month<input type="date" value={month} onChange={e=>setMonth(e.target.value)}/></label><label>Product / Part<MultiSelect singleSelect value={pid?[pid]:[]} onChange={v=>setPid(v.at(-1)||'')} placeholder="Select Product" options={products.map(p=>({value:String(p.id),label:p.name}))}/></label><label>Operation<MultiSelect singleSelect value={opId?[opId]:[]} onChange={v=>setOpId(v.at(-1)||'')} placeholder="Select Operation" options={visibleOperations.map((o:any)=>({value:String(o.route_operation_id),label:`${o.sequence_no}. ${o.operation}`}))}/></label></div><p className="muted">Plant calendar: {plan?.plant||'—'} • Working days: {plan?.working_days??'—'} • Operation demand comes from Daily Requirements generated by the monthly schedule.</p></section>
  <section className="panel"><div className="panel-title"><div><h2>Machine / part capacity master setup</h2><p>One save checks all four master groups. Only changed values create new effective-dated revisions; unchanged history is preserved.</p></div></div>
  <div className="capacity-master-grid"><label>Machine<MultiSelect singleSelect value={setup.machine_id?[String(setup.machine_id)]:[]} onChange={v=>setSetup({...setup,machine_id:v.at(-1)||''})} placeholder="Select Machine" options={machines.map(m=>({value:String(m.id),label:`${m.code} — ${m.name}`}))}/></label><label>Effective from<input type="date" value={setup.effective_from} onChange={e=>setSetup({...setup,effective_from:e.target.value})}/></label><label>Mapping priority<input type="number" min="1" value={setup.priority} onChange={e=>setSetup({...setup,priority:e.target.value})}/></label>
  <label>Ideal cycle sec/pc<input type="number" step="0.001" value={setup.ideal_cycle_time_sec} onChange={e=>setSetup({...setup,ideal_cycle_time_sec:e.target.value})}/></label><label>Standard cycle sec/pc<input type="number" step="0.001" value={setup.standard_cycle_time_sec} onChange={e=>setSetup({...setup,standard_cycle_time_sec:e.target.value})}/></label><label>Pieces per cycle<input type="number" min="1" value={setup.pieces_per_cycle} onChange={e=>setSetup({...setup,pieces_per_cycle:e.target.value})}/></label>
