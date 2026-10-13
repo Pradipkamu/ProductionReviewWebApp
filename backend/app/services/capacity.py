@@ -437,7 +437,11 @@ def capacity_plan(db: Session, product_id: int, month: date) -> dict:
         allocated_total = sum((Decimal(str(x["allocation_qty"])) for x in machine_rows), ZERO)
         total_capacity = sum((Decimal(str(x["capacity_qty"])) for x in machine_rows), ZERO)
         total_available_capacity = sum((Decimal(str(x["available_capacity_qty"])) for x in machine_rows), ZERO)
+        route_version = db.get(RouteVersion, route_operation.route_version_id)
         operation_rows.append({
+            "route_revision_no": route_version.revision_no if route_version else 0,
+            "route_effective_from": route_version.effective_from.isoformat() if route_version else None,
+            "route_is_active": bool(route_version.is_active) if route_version else False,
             "route_operation_id": route_operation.id, "operation_id": operation.id,
             "sequence_no": route_operation.sequence_no, "operation": operation.name,
             "schedule_qty": float(schedule_qty), "allocation_revision": revision,

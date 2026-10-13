@@ -34,6 +34,35 @@ class MonthlyApproval(BaseModel):
 
 router = APIRouter(prefix="/capacity", tags=["capacity"])
 
+from ..services.machine_setup import CompleteMachineSetup, complete_setup, GROUPS, _current
+
+
+@router.get("/complete-setup")
+def read_complete_setup(route_operation_id: int, machine_id: int, effective_from: date,
+                        db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    result = {}
+    for name, model, keys, fields in GROUPS:
+        filters = {field: (route_operation_id if field == "route_operation_id" else machine_id)
+                   for field in keys}
+        row = _current(db, model, filters, effective_from)
+        result[name] = {
+            "id": row.id,
+            "effective_from": row.effective_from,
+            **{field: getattr(row, field) for field in fields},
+        } if row else None
+    return result
+
+
+@router.post("/complete-setup")
+def save_complete_setup(payload: CompleteMachineSetup, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    db.info["reason"] = payload.reason
+    result = complete_setup(db, payload, user.id)
+    db.commit()
+    return result
+
+
+
 @router.get("/monthly-preview")
 def preview_all_machines(month: date, strategy: Literal["priority", "cost"] = "priority",
                          db: Session = Depends(get_db), _: User = Depends(get_current_user)):
