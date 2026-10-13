@@ -66,6 +66,7 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
             raise HTTPException(422, "Override quantities must be finite non-negative values")
     saved = _saved_rows(db, month)
     operations = []
+    seen_override_keys = set()
     for product_id in _candidate_operations(db, month):
         product_plan = capacity_plan(db, product_id, month)
         for operation in product_plan["operations"]:
@@ -96,7 +97,9 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
     alerts = []
     for op in operations:
         key = op.pop("key")
-        override = overridden.get(f"{key[0]}:{key[1]}")
+        override_key = f"{key[0]}:{key[1]}"
+        seen_override_keys.add(override_key)
+        override = overridden.get(override_key)
         manual_saved = saved.get(key)
         source = "MANUAL_OVERRIDE" if override is not None else "SAVED" if manual_saved else "AUTO"
         allocated = defaultdict(lambda: ZERO)
@@ -163,6 +166,10 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
         op.pop("machines")
         result.append(op)
 
+    unknown_overrides = set(overridden) - seen_override_keys
+    if unknown_overrides:
+        raise HTTPException(422, f"Overrides reference unscheduled operations: {sorted(unknown_overrides)}")
+
     machines = []
     for machine in db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.code)).all():
         load = capacity_used[machine.id]
@@ -199,8 +206,8 @@ def approve_month(db: Session, month: date, user_id: int, *, strategy: str,
     preview = monthly_preview(db, month, strategy=strategy, overrides=overrides)
     if preview["preview_token"] != preview_token:
         raise HTTPException(409, "Monthly plan changed. Refresh the preview before approval")
-    if any(x["kind"] in ("OVERLOAD", "OVER_SCHEDULE") for x in preview["alerts"]):
-        raise HTTPException(422, "Cannot approve overloaded or over-scheduled machines")
+    if any(x["kind"] in ("OVERLOAD", "OVER_SCHEDULE", "STALE_SCHEDULE") for x in preview["alerts"]):
+        raise HTTPException(422, "Cannot approve overloaded, over-scheduled or stale saved allocations; revise affected allocations first")
     from ..schemas import MachineAllocationCreate
     results = []
     for op in preview["operations"]:
