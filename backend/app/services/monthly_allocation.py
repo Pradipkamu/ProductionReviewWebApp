@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import DailyRequirement, Machine, MachineMonthlyAllocation
-from .capacity import capacity_plan, save_allocation
+from .capacity import capacity_plan, save_allocation, effective_machine_setting
 
 D = lambda value: Decimal(str(value or 0))
 ZERO = Decimal("0")
@@ -61,6 +61,9 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
         raise HTTPException(422, "Strategy must be priority or cost")
     month = month.replace(day=1)
     overridden = overrides or {}
+    for key, allocations in overridden.items():
+        if not isinstance(allocations, dict) or any(D(q) < ZERO or not D(q).is_finite() for q in allocations.values()):
+            raise HTTPException(422, "Override quantities must be finite non-negative values")
     saved = _saved_rows(db, month)
     operations = []
     for product_id in _candidate_operations(db, month):
@@ -95,6 +98,9 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
         key = op.pop("key")
         override = overridden.get(f"{key[0]}:{key[1]}")
         manual_saved = saved.get(key)
+        if override is not None and op["saved_revision"] and op["stale"]:
+            # Explicit override can reconcile a stale schedule.
+            pass
         source = "MANUAL_OVERRIDE" if override is not None else "SAVED" if manual_saved else "AUTO"
         allocated = defaultdict(lambda: ZERO)
         if override is not None:
@@ -162,12 +168,14 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
         hours = sum(D(line["machine_hours"]) for line in lines)
         operator_hours = sum(D(line["operator_hours"]) for line in lines)
         # Shift-wise forecast is an even-load planning estimate, not a duty roster.
-        shifts = 3
+        setting = effective_machine_setting(db, machine.id, month)
+        shifts = max(1, int(setting.shifts_per_day)) if setting else 1
         shift_hours = float(operator_hours / shifts)
         machines.append({
             "machine_id": machine.id, "machine_code": machine.code,
             "load_percent": float(load * 100), "machine_hours": float(hours),
             "operator_hours": float(operator_hours), "estimated_cost": float(sum(D(x["estimated_run_cost"]) for x in lines)),
+            "shifts_per_day": shifts,
             "shift_operator_hours_estimate": [shift_hours] * shifts,
         })
     data = {"month": month.isoformat(), "strategy": strategy, "operations": result,
