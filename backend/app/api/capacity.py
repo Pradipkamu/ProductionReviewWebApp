@@ -1,4 +1,6 @@
 from datetime import date
+from typing import Literal
+from pydantic import BaseModel, Field
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,7 +16,46 @@ from ..models import (
 from ..schemas import MachineAllocationCreate, MachineCapacitySettingCreate, OperatorRequirementCreate
 from ..services.capacity import capacity_plan, close_previous_revision, machine_loading_summary, save_allocation
 
+from ..services.monthly_allocation import monthly_preview, approve_month
+
+class MonthlyPreviewRequest(BaseModel):
+    month: date
+    strategy: Literal["priority", "cost"] = "priority"
+    overrides: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+
+class MonthlyApproval(BaseModel):
+    month: date
+    strategy: Literal["priority", "cost"] = "priority"
+    preview_token: str = Field(min_length=64, max_length=64)
+    reason: str = Field(min_length=3, max_length=250)
+    overrides: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+
 router = APIRouter(prefix="/capacity", tags=["capacity"])
+
+@router.get("/monthly-preview")
+def preview_all_machines(month: date, strategy: Literal["priority", "cost"] = "priority",
+                         db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    return monthly_preview(db, month, strategy=strategy)
+
+
+@router.post("/monthly-preview")
+def preview_with_overrides(payload: MonthlyPreviewRequest, db: Session = Depends(get_db),
+                           _: User = Depends(get_current_user)):
+    return monthly_preview(db, payload.month, strategy=payload.strategy, overrides=payload.overrides)
+
+
+@router.post("/monthly-approve")
+def approve_all_machines(payload: MonthlyApproval, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    db.info["reason"] = payload.reason
+    return approve_month(db, payload.month, user.id, strategy=payload.strategy,
+                         preview_token=payload.preview_token, reason=payload.reason,
+                         overrides=payload.overrides)
+
+
+
 
 
 @router.get("/plan")
