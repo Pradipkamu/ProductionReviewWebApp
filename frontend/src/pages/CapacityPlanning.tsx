@@ -27,20 +27,18 @@ export default function CapacityPlanning(){
  useEffect(()=>{setMonthly(null);setMonthlyOverrides({});setMonthlyDirty(false)},[month,monthlyStrategy])
  const visibleOperations=useMemo(()=>{
   const candidates:any[]=String(plan?.product_id||'')===pid?(plan?.operations||[]):[]
-  const best=new Map<string,any>()
   const monthEnd=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10)
-  for(const candidate of candidates){
-   // Match the same logical operation across route revisions, while keeping
-   // distinct process sequence numbers separate.
-   const key=`${candidate.sequence_no}:${String(candidate.operation||"").trim().toLowerCase()}`
-   if(candidate.route_effective_from&&candidate.route_effective_from>monthEnd)continue
-   const previous=best.get(key)
-   if(!previous||Number(candidate.route_revision_no||0)>Number(previous.route_revision_no||0)||
-      (Number(candidate.route_revision_no||0)===Number(previous.route_revision_no||0)&&
-       Number(candidate.route_operation_id)>Number(previous.route_operation_id)))best.set(key,candidate)
-  }
-  return [...best.values()].sort((a:any,b:any)=>a.sequence_no-b.sequence_no||a.operation.localeCompare(b.operation))
- },[plan,month])
+  // Choose one process-route revision for the whole dropdown. Deduplicating
+  // individual operation names across revisions wrongly mixes old/new flows.
+  const applicable=candidates.filter((o:any)=>!o.route_effective_from||o.route_effective_from<=monthEnd)
+  const current=applicable.filter((o:any)=>o.route_is_active)
+  const selectionPool=current.length?current:applicable
+  const revision=Math.max(0,...selectionPool.map((o:any)=>Number(o.route_revision_no||0)))
+  const selected=selectionPool.filter((o:any)=>Number(o.route_revision_no||0)===revision)
+  const unique=new Map<number,any>()
+  for(const candidate of selected)unique.set(Number(candidate.route_operation_id),candidate)
+  return [...unique.values()].sort((a:any,b:any)=>a.sequence_no-b.sequence_no||a.operation.localeCompare(b.operation))
+ },[plan,month,pid])
  const operation=useMemo(()=>visibleOperations.find((x:any)=>String(x.route_operation_id)===opId),[visibleOperations,opId])
  useEffect(()=>{
   if(visibleOperations.length&&!visibleOperations.some((x:any)=>String(x.route_operation_id)===opId))
