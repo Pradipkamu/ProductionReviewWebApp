@@ -63,3 +63,20 @@ def test_monthly_preview_reserves_machine_and_bulk_approval_detects_schedule_cha
     second = client.get(url, headers=auth).json()
     assert all(o["source"] == "SAVED" for o in second["operations"])
     assert second["preview_token"] != approval["preview_token"]
+
+    # Changed demand must never silently approve an obsolete saved allocation.
+    with SessionLocal() as db:
+        row = db.scalar(select(DailyRequirement).where(DailyRequirement.product_id == p2))
+        row.revised_plan_qty = 700
+        db.commit()
+    outdated = client.get(url, headers=auth).json()
+    assert any(a["kind"] == "STALE_SCHEDULE" for a in outdated["alerts"])
+    blocked = client.post("/api/capacity/monthly-approve", headers=auth, json={
+        **approval, "preview_token": outdated["preview_token"]
+    })
+    assert blocked.status_code == 422, blocked.text
+
+    ghost = client.post("/api/capacity/monthly-preview", headers=auth, json={
+        "month": "2026-02-01", "overrides": {"999999:999999": {str(machine): 1}}
+    })
+    assert ghost.status_code == 422, ghost.text
