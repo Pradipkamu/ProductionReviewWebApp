@@ -98,9 +98,6 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
         key = op.pop("key")
         override = overridden.get(f"{key[0]}:{key[1]}")
         manual_saved = saved.get(key)
-        if override is not None and op["saved_revision"] and op["stale"]:
-            # Explicit override can reconcile a stale schedule.
-            pass
         source = "MANUAL_OVERRIDE" if override is not None else "SAVED" if manual_saved else "AUTO"
         allocated = defaultdict(lambda: ZERO)
         if override is not None:
@@ -108,6 +105,9 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
             if set(override) - valid_ids:
                 raise HTTPException(422, f"Override has unmapped machine for {key}")
             allocated.update({int(i): D(q) for i, q in override.items()})
+            if any(D(q) > 0 and (not m["complete"] or D(m["capacity_qty"]) <= 0)
+                   for m in op["machines"] for i, q in override.items() if str(m["machine_id"]) == str(i)):
+                raise HTTPException(422, f"Override uses machine with incomplete master for {key}")
         elif manual_saved:
             allocated.update({r.machine_id: D(r.allocated_qty) for r in manual_saved})
         else:
@@ -153,6 +153,10 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
             alerts.append({"product": op["product"], "operation": op["operation"], "kind": "SHORTAGE" if op["machines"] else "UNMAPPED", "quantity": float(gap)})
         if gap < 0:
             alerts.append({"product": op["product"], "operation": op["operation"], "kind": "OVER_SCHEDULE", "quantity": float(-gap)})
+        if op["eligible_count"] == 0:
+            alerts.append({"product": op["product"], "operation": op["operation"], "kind": "MISSING_CAPACITY_MASTER", "quantity": float(D(op["schedule_qty"]))})
+        if strategy == "cost" and any(not m.get("cost_complete") for m in op["machines"] if m["complete"]):
+            alerts.append({"product": op["product"], "operation": op["operation"], "kind": "MISSING_COST_MASTER", "quantity": 0})
         if op["stale"]:
             alerts.append({"product": op["product"], "operation": op["operation"], "kind": "STALE_SCHEDULE", "quantity": float(D(op["schedule_qty"]) - D(op["saved_schedule_qty"]))})
         op.update(source=source, allocated_qty=float(total), gap=float(gap), allocations=lines)
