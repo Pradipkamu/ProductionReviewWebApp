@@ -12,6 +12,7 @@ const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[
 export default function Schedule(){
  const [products,setProducts]=useState<any[]>([]); const [options,setOptions]=useState<any>({}); const [scope,setScope]=useState<ScopeValues>(emptyScope); const [pid,setPid]=useState(''); const [month,setMonth]=useState(monthNow()); const [rows,setRows]=useState<any[]>([]); const [calendar,setCalendar]=useState<any[]>([])
  const [eff,setEff]=useState(today()); const [target,setTarget]=useState(''); const [reason,setReason]=useState('Customer schedule revision'); const [preview,setPreview]=useState<any>(null); const [msg,setMsg]=useState('')
+ const [capacityRefreshNeeded,setCapacityRefreshNeeded]=useState(false)
  const [correctImported,setCorrectImported]=useState(false); const [busy,setBusy]=useState(false)
  const [prices,setPrices]=useState<any[]>([]); const [priceEff,setPriceEff]=useState(today()); const [newPrice,setNewPrice]=useState(''); const [priceReason,setPriceReason]=useState('Customer price revision'); const [priceMsg,setPriceMsg]=useState('')
  const [calHistory,setCalHistory]=useState<any[]>([]); const [rangeStart,setRangeStart]=useState(today()); const [rangeEnd,setRangeEnd]=useState(today()); const [holiday,setHoliday]=useState(''); const [calReason,setCalReason]=useState('Plant calendar update')
@@ -46,10 +47,10 @@ export default function Schedule(){
  }
  async function apply(){
    setBusy(true);setMsg('')
-   try{const r:any=await api('/schedules',{method:'POST',body:JSON.stringify({product_id:Number(pid),month,effective_from:eff,monthly_target_qty:Number(target),reason,correct_imported_plans:correctImported})}); setMsg(`Revision R${r.revision_no} applied to ${r.applied_days} days from ${eff} using ${r.source||'schedule'}; ${r.corrected_imported_days} imported daily plans corrected.`);setPreview(null);await load()}
+   try{const r:any=await api('/schedules',{method:'POST',body:JSON.stringify({product_id:Number(pid),month,effective_from:eff,monthly_target_qty:Number(target),reason,correct_imported_plans:correctImported})}); setMsg(`Revision R${r.revision_no} applied to ${r.applied_days} days from ${eff} using ${r.source||'schedule'}; ${r.corrected_imported_days} imported daily plans corrected. Review monthly machine allocation before approval.`);setCapacityRefreshNeeded(true);setPreview(null);await load()}
    catch(e){setMsg(e instanceof Error?e.message:String(e))}finally{setBusy(false)}
  }
- async function recalcAll(){const from=prompt('Recalculate future requirements from date',eff)||eff; const r:any=await api(`/schedules/recalculate-month?month=${month}&from_date=${from}`,{method:'POST'});setMsg(`${r.products_recalculated} products recalculated from ${from}. Disp_Done Stage Schedule is used as the customer schedule for products with an explicit process flow.`);load()}
+ async function recalcAll(){const from=prompt('Recalculate future requirements from date',eff)||eff; const r:any=await api(`/schedules/recalculate-month?month=${month}&from_date=${from}`,{method:'POST'});setMsg(`${r.products_recalculated} products recalculated from ${from}. Review refreshed machine loading for the month.`);setCapacityRefreshNeeded(true);load()}
 
  async function applyPrice(){
    if(!pid||!newPrice)return
@@ -77,6 +78,7 @@ export default function Schedule(){
  const currentPrice=prices.find((x:any)=>x.effective_from<=today()&&(!x.effective_to||x.effective_to>=today()))
  const latestSchedule=rows.length?rows[rows.length-1]:null
  return <><PageHeader title="Schedule, Price & Working Calendar" subtitle="Disp_Done Stage Schedule is the customer monthly schedule; revisions, prices and Plant calendars remain effective-dated with audit history." actions={<button className="secondary" onClick={recalcAll}>Recalculate month</button>}/>
+ {capacityRefreshNeeded&&<div className="warning-box">Monthly schedule changed. Saved machine allocations may be stale. <a href="/capacity">Open Machine Capacity &amp; Manpower to regenerate the all-product allocation preview.</a></div>}
  <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
  <div className="filter-summary"><span className="filter-chip">Calendar Plant: {calendarPlant}</span>{selected?.product_group&&<span className="filter-chip">Group: {selected.product_group}</span>}{currentPrice&&<span className="filter-chip">Current Price: ₹{num(currentPrice.price)}</span>}{latestSchedule&&<span className="filter-chip">Current Schedule: {num(latestSchedule.target)}</span>}</div>
 
