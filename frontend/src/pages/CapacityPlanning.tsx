@@ -18,7 +18,7 @@ export default function CapacityPlanning(){
  const [busy,setBusy]=useState(false);const [msg,setMsg]=useState('');const [reason,setReason]=useState('Monthly machine allocation approved')
  const [setup,setSetup]=useState<any>({machine_id:'',effective_from:today(),priority:1,ideal_cycle_time_sec:'',standard_cycle_time_sec:'',pieces_per_cycle:1,operators_per_machine:'',shifts_per_day:3,shift_minutes:480,planned_break_minutes:30,planning_efficiency_percent:85,reason:'Approved capacity master revision'})
  useEffect(()=>{Promise.all([api('/masters/products'),api('/masters/machines')]).then(([p,m]:any)=>{setProducts(p);setMachines(m);const requested=params.get('product_id');if(requested&&p.some((x:any)=>String(x.id)===requested))setPid(requested);else if(p[0])setPid(String(p[0].id));if(m[0])setSetup((x:any)=>({...x,machine_id:String(m[0].id)}))})},[])
- async function load(){if(!pid){setPlan(null);setOpId('');return}setBusy(true);setMsg('');setPlan(null);setOpId('');try{const requestedProduct=pid;const p:any=await api(`/capacity/plan?product_id=${requestedProduct}&month=${month}`);if(String(p.product_id)===requestedProduct)setPlan(p)}catch(e:any){setMsg(e.message)}finally{setBusy(false)}}
+ async function load(){if(!pid){setPlan(null);setOpId('');return}setBusy(true);setMsg('');try{const requestedProduct=pid;const p:any=await api(`/capacity/plan?product_id=${requestedProduct}&month=${month}`);if(String(p.product_id)===requestedProduct)setPlan(p)}catch(e:any){setMsg(e.message)}finally{setBusy(false)}}
  useEffect(()=>{load()},[pid,month])
  async function loadMachineLoading(){try{setMachineLoading(await api(`/capacity/machine-loading?month=${month}`))}catch(e:any){setMsg(e.message)}}
  useEffect(()=>{loadMachineLoading()},[month])
