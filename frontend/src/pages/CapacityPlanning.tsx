@@ -28,11 +28,11 @@ export default function CapacityPlanning(){
  const visibleOperations=useMemo(()=>{
   const candidates:any[]=plan?.operations||[]
   const best=new Map<string,any>()
-  const monthEnd=new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).toISOString().slice(0,10)
+  const monthEnd=new Date(Date.UTC(Number(month.slice(0,4)),Number(month.slice(5,7)),0)).toISOString().slice(0,10)
   for(const candidate of candidates){
    // Match the same logical operation across route revisions, while keeping
    // distinct process sequence numbers separate.
-   const key=`${candidate.sequence_no}:${candidate.operation_id}`
+   const key=`${candidate.sequence_no}:${String(candidate.operation||"").trim().toLowerCase()}`
    if(candidate.route_effective_from&&candidate.route_effective_from>monthEnd)continue
    const previous=best.get(key)
    if(!previous||Number(candidate.route_revision_no||0)>Number(previous.route_revision_no||0)||
