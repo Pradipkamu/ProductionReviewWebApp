@@ -79,13 +79,21 @@ def monthly_preview(db: Session, month: date, *, strategy: str = "priority",
                 eligible_count = 0
             else:
                 eligible_count = sum(1 for m in mappings if m["complete"] and D(m["capacity_qty"]) > 0)
+            saved_master_stale = any(
+                not any(m["machine_id"] == saved_row.machine_id
+                        and abs(D(m["capacity_qty"]) - D(saved_row.capacity_qty_snapshot)) < Decimal("0.001")
+                        and abs(D(m["planning_cycle_time_sec"]) - D(saved_row.planning_cycle_time_sec)) < Decimal("0.001")
+                        and abs(D(m["operators_per_machine"]) - D(saved_row.operators_per_machine_snapshot)) < Decimal("0.001")
+                        for m in mappings)
+                for saved_row in saved.get(key, [])
+            )
             operations.append({
                 "product_id": product_id, "product": product_plan["product"],
                 "plant": product_plan["plant"], "route_operation_id": operation["route_operation_id"],
                 "operation": operation["operation"], "schedule_qty": float(demand),
                 "saved_revision": operation["allocation_revision"],
                 "saved_schedule_qty": float(saved[key][0].schedule_qty_snapshot) if saved.get(key) else None,
-                "stale": bool(saved.get(key) and D(saved[key][0].schedule_qty_snapshot) != demand),
+                "stale": bool(saved.get(key) and D(saved[key][0].schedule_qty_snapshot) != demand) or saved_master_stale,
                 "machines": mappings, "eligible_count": eligible_count,
                 "key": key,
             })
