@@ -18,6 +18,12 @@ from ..services.capacity import capacity_plan, close_previous_revision, machine_
 
 from ..services.monthly_allocation import monthly_preview, approve_month
 
+class MonthlyPreviewRequest(BaseModel):
+    month: date
+    strategy: Literal["priority", "cost"] = "priority"
+    overrides: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+
 class MonthlyApproval(BaseModel):
     month: date
     strategy: Literal["priority", "cost"] = "priority"
@@ -32,6 +38,12 @@ router = APIRouter(prefix="/capacity", tags=["capacity"])
 def preview_all_machines(month: date, strategy: Literal["priority", "cost"] = "priority",
                          db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return monthly_preview(db, month, strategy=strategy)
+
+
+@router.post("/monthly-preview")
+def preview_with_overrides(payload: MonthlyPreviewRequest, db: Session = Depends(get_db),
+                           _: User = Depends(get_current_user)):
+    return monthly_preview(db, payload.month, strategy=payload.strategy, overrides=payload.overrides)
 
 
 @router.post("/monthly-approve")
