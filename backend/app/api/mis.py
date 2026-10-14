@@ -2,16 +2,69 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
 from ..models import DailyMIS, DailyRequirement, MISChangeLog, Product, User
+from ..enums import SourceType
+from ..services.pricing import price_for_date
 from ..services.filtering import csv_ints, csv_strings
 from ..schemas import MISEdit
 
 router = APIRouter(prefix="/mis", tags=["mis"])
+
+
+class MissingDayDispatch(BaseModel):
+    mis_date: date
+    product_id: int
+    actual_qty: Decimal = Field(gt=0)
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/dispatch-on-off-day", status_code=201)
+def create_missing_day_dispatch(payload: MissingDayDispatch,
+                                db: Session = Depends(get_db),
+                                user: User = Depends(get_current_user)):
+    """Capture actual dispatch where no Daily MIS row exists; never create plan."""
+    product = db.get(Product, payload.product_id)
+    if product is None:
+        raise HTTPException(404, "Product not found")
+    exists = db.scalar(select(DailyMIS).where(
+        DailyMIS.mis_date == payload.mis_date,
+        DailyMIS.product_id == payload.product_id,
+    ))
+    if exists:
+        raise HTTPException(409, "Daily MIS row exists. Use Edit actual to revise it.")
+    requirement = db.scalar(select(DailyRequirement).where(
+        DailyRequirement.req_date == payload.mis_date,
+        DailyRequirement.product_id == payload.product_id,
+        DailyRequirement.route_operation_id.is_(None),
+    ))
+    if requirement and Decimal(str(requirement.revised_plan_qty or 0)) != 0:
+        raise HTTPException(409, "This date has a scheduled requirement. Use the regular MIS workflow.")
+    price = price_for_date(db, payload.product_id, payload.mis_date)
+    row = DailyMIS(
+        mis_date=payload.mis_date, product_id=payload.product_id,
+        plan_qty=Decimal("0"), actual_qty=payload.actual_qty,
+        sales_price=price, plan_sales=Decimal("0"),
+        actual_sales=payload.actual_qty * price,
+        source=SourceType.MANUAL,
+        remark=f"Unscheduled dispatch: {payload.reason.strip()}",
+    )
+    db.info["reason"] = payload.reason.strip()
+    db.add(row)
+    db.flush()
+    db.add(MISChangeLog(
+        mis_id=row.id, field_name="actual_qty", old_value="0",
+        new_value=str(payload.actual_qty), reason=payload.reason.strip(),
+        changed_by_id=user.id,
+    ))
+    db.commit()
+    return {"id": row.id, "actual_qty": float(row.actual_qty),
+            "actual_sales": float(row.actual_sales), "price_missing": price == 0}
 
 
 @router.get("")
