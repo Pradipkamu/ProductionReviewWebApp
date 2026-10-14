@@ -533,7 +533,7 @@ def process_funnel_report(
     from ..models import ProcessFlowStage
 
     flow = active_flow(db, product_id, report_date)
-    route = db.scalar(
+    route = db.get(RouteVersion, flow.route_version_id) if flow else db.scalar(
         select(RouteVersion)
         .where(
             RouteVersion.product_id == product_id,
