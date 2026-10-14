@@ -529,7 +529,11 @@ def process_funnel_report(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    route = db.scalar(
+    from ..services.process_flows import active_flow
+    from ..models import ProcessFlowStage
+
+    flow = active_flow(db, product_id, report_date)
+    route = db.get(RouteVersion, flow.route_version_id) if flow else db.scalar(
         select(RouteVersion)
         .where(
             RouteVersion.product_id == product_id,
@@ -550,15 +554,40 @@ def process_funnel_report(
         .where(RouteOperation.route_version_id == route.id, RouteOperation.is_enabled.is_(True))
         .order_by(RouteOperation.sequence_no)
     ).all()
+    # The Process Actuals screen follows the effective Process Flow. Restrict
+    # this chart to those same stages, not a disconnected route revision.
+    if flow:
+        stage_ids = db.scalars(select(ProcessFlowStage.route_operation_id).where(
+            ProcessFlowStage.flow_id == flow.id,
+            ProcessFlowStage.is_active.is_(True),
+            ProcessFlowStage.route_operation_id.is_not(None),
+        )).all()
+        allowed = set(stage_ids)
+        ops = [(ro, op, vendor) for ro, op, vendor in ops if ro.id in allowed]
+
+    route_ids = [ro.id for ro, _, _ in ops]
+    actual_date = report_date
+    if route_ids:
+        # Reports are often opened today before today's process actuals are
+        # entered. Show the most recent day with actuals in this month instead
+        # of silently rendering every stage as zero.
+        latest = db.scalar(select(func.max(ProcessDailySummary.summary_date)).where(
+            ProcessDailySummary.product_id == product_id,
+            ProcessDailySummary.route_operation_id.in_(route_ids),
+            ProcessDailySummary.summary_date >= max(report_date.replace(day=1), route.effective_from),
+            ProcessDailySummary.summary_date <= report_date,
+        ))
+        if latest is not None:
+            actual_date = latest
     rows = []
     for ro, op, vendor in ops:
         req = db.scalar(select(DailyRequirement).where(
-            DailyRequirement.req_date == report_date,
+            DailyRequirement.req_date == actual_date,
             DailyRequirement.product_id == product_id,
             DailyRequirement.route_operation_id == ro.id,
         ))
         summary = db.scalar(select(ProcessDailySummary).where(
-            ProcessDailySummary.summary_date == report_date,
+            ProcessDailySummary.summary_date == actual_date,
             ProcessDailySummary.product_id == product_id,
             ProcessDailySummary.route_operation_id == ro.id,
         ))
@@ -579,7 +608,9 @@ def process_funnel_report(
         row["inferred_between_process_wip"] = float(inferred)
         row["display_wip"] = row["closing_wip"] if row["closing_wip"] > 0 else float(inferred)
     return {
-        "date": report_date.isoformat(), "product_id": product_id, "product": product.name,
+        "date": report_date.isoformat(), "actual_date": actual_date.isoformat(),
+        "has_actuals": any(r["actual"] != 0 for r in rows),
+        "product_id": product_id, "product": product.name,
         "route_revision": route.revision_no, "operations": rows,
     }
 

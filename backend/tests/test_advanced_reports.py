@@ -69,3 +69,19 @@ def test_advanced_reports_endpoints():
     assert o['summary']['oee'] > 0
     loss=client.get(f'/api/reports/loss-pareto?as_of=2026-09-29&machine_id={mid}',headers=h).json()
     assert loss['summary']['loss_minutes'] == 40.0
+
+
+def test_funnel_shows_latest_available_process_actuals_when_report_day_is_empty():
+    pid, _, _ = seed_core()
+    client = TestClient(app)
+    headers = auth_headers(client)
+    response = client.get(
+        f"/api/reports/process-funnel?report_date=2026-09-29&product_id={pid}",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["date"] == "2026-09-29"
+    assert data["actual_date"] == "2026-09-28"
+    assert data["has_actuals"] is True
+    assert [x["actual"] for x in data["operations"]] == [80.0, 70.0]
