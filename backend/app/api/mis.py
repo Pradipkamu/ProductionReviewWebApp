@@ -11,6 +11,7 @@ from ..db import get_db
 from ..models import DailyMIS, DailyRequirement, MISChangeLog, Product, User
 from ..enums import SourceType
 from ..services.pricing import price_for_date
+from ..services.planning import is_working_day
 from ..services.filtering import csv_ints, csv_strings
 from ..schemas import MISEdit
 
@@ -24,6 +25,16 @@ class MissingDayDispatch(BaseModel):
     reason: str = Field(min_length=3, max_length=500)
 
 
+@router.get("/off-day-products")
+def off_day_products(mis_date: date, db: Session = Depends(get_db),
+                     _: User = Depends(get_current_user)):
+    """Return product IDs whose own plant is OFF on this date."""
+    products = db.scalars(select(Product)).all()
+    plants = {p.plant or "" for p in products}
+    off_plants = {plant for plant in plants if not is_working_day(db, mis_date, plant or None)}
+    return {"off_product_ids": [p.id for p in products if (p.plant or "") in off_plants]}
+
+
 @router.post("/dispatch-on-off-day", status_code=201)
 def create_missing_day_dispatch(payload: MissingDayDispatch,
                                 db: Session = Depends(get_db),
@@ -32,6 +43,8 @@ def create_missing_day_dispatch(payload: MissingDayDispatch,
     product = db.get(Product, payload.product_id)
     if product is None:
         raise HTTPException(404, "Product not found")
+    if is_working_day(db, payload.mis_date, product.plant):
+        raise HTTPException(409, "This product plant is working on the selected date; holiday dispatch is only available on OFF days.")
     exists = db.scalar(select(DailyMIS).where(
         DailyMIS.mis_date == payload.mis_date,
         DailyMIS.product_id == payload.product_id,
