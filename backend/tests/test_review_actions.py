@@ -1,5 +1,8 @@
 from datetime import date, datetime, timedelta
+from io import BytesIO
 from uuid import uuid4
+
+from openpyxl import load_workbook
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -160,6 +163,12 @@ def test_review_history_carries_only_earlier_meeting_actions_and_counts_all_link
     linked_action_ids = {x["id"] for x in response.json()["linked_actions"]}
     assert current_action_id in linked_action_ids
     assert future_id not in linked_action_ids
+
+    export = client.get(f"/api/reviews/{current_id}/xlsx", headers=h)
+    assert export.status_code == 200, export.text
+    workbook = load_workbook(BytesIO(export.content), read_only=True)
+    exported_rows = list(workbook["MOM"].iter_rows(min_row=7, values_only=True))
+    assert any(row[1] == "Linked Action" and "MOM-CURRENT" in str(row[4]) for row in exported_rows)
     carried_ids = {x["id"] for x in response.json()["previous_pending_actions"]}
     assert old_id in carried_ids
     assert legacy_id in carried_ids
