@@ -305,6 +305,7 @@ def meeting_mom(review_id: int, db: Session = Depends(get_db), _: User = Depends
 def _mom_rows(db: Session, review: ReviewSession):
     points = db.scalars(select(ReviewPoint).where(ReviewPoint.review_session_id == review.id).order_by(ReviewPoint.sequence_no)).all()
     rows=[]
+    point_action_ids = {p.action_id for p in points if p.action_id}
     for p in points:
         a=db.get(Action,p.action_id) if p.action_id else None; ad=action_data(db,a)
         product = db.get(Product, p.product_id) if p.product_id else None
@@ -313,6 +314,30 @@ def _mom_rows(db: Session, review: ReviewSession):
                      format_ist((ad or {}).get("due_at")),(ad or {}).get("priority",""),
                      (ad or {}).get("status",""),
                      (ad or {}).get("closure_remark","") if (ad or {}).get("status") == "CLOSED" else ""])
+
+    # Include actions linked through other pages (Dashboard, Quality, OEE,
+    # Actions) so the exported MOM contains the same complete action register
+    # as the on-screen meeting page.
+    linked_action_ids = set(db.scalars(
+        select(ReviewActionLink.action_id).where(ReviewActionLink.review_session_id == review.id)
+    ).all()) - point_action_ids
+    linked_actions = db.scalars(
+        select(Action).where(Action.id.in_(linked_action_ids or {-1}))
+        .order_by(Action.due_at, Action.priority.desc(), Action.reference_date)
+    ).all()
+    for action in linked_actions:
+        owner = db.get(User, action.owner_id) if action.owner_id else None
+        product_names = db.scalars(
+            select(Product.name).join(ActionContext, ActionContext.product_id == Product.id)
+            .where(ActionContext.action_id == action.id).distinct().order_by(Product.name)
+        ).all()
+        rows.append([
+            "", "Linked Action", ", ".join(product_names),
+            action.problem_description, action.action_description,
+            owner.full_name if owner else "Unassigned",
+            format_ist(action.due_at), action.priority.value, action.status.value,
+            action.closure_remark or "",
+        ])
     return rows
 
 
