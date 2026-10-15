@@ -523,7 +523,10 @@ export default function DailyMeeting() {
 
     {mom && <div className="kpi-grid">
       <Kpi label="Discussion points" value={num(mom.points?.length || 0)} />
-      <Kpi label="Today's open actions" value={num((mom.points || []).filter((p: any) => p.action && p.action.status !== 'CLOSED').length)} />
+      <Kpi label="Today's open actions" value={num(
+        (mom.points || []).filter((p: any) => p.action && p.action.status !== 'CLOSED').length
+        + (mom.linked_actions || []).filter((a: any) => a.status !== 'CLOSED').length
+      )} />
       <Kpi label="Previous pending actions" value={num(mom.previous_pending_actions?.length || 0)} />
       <Kpi label="Overdue previous actions" value={num((mom.previous_pending_actions || []).filter((a: any) => a.overdue_days > 0).length)} tone={(mom.previous_pending_actions || []).some((a: any) => a.overdue_days > 0) ? 'bad' : 'good'} />
     </div>}
@@ -541,6 +544,28 @@ export default function DailyMeeting() {
           <td>{p.action && <><select value={p.action.status} disabled={Boolean(review?.ended_at)} onChange={e => updateAction(p.action, e.target.value)}>
             <option>OPEN</option><option>IN_PROGRESS</option><option>BLOCKED</option><option>CLOSED</option>
           </select>{!p.action.requires_whywhy && <button className="secondary small" type="button" disabled={Boolean(review?.ended_at)} onClick={() => escalate(p.action)}>Escalate to Why-Why</button>}</>}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </section>}
+
+    {mom?.linked_actions?.length > 0 && <section className="panel">
+      <div className="panel-title">
+        <div><h2>Other Actions Linked to This Meeting</h2><p>Actions raised from Dashboard, Quality, OEE or the Actions page. These are linked to this MOM but are not typed discussion points.</p></div>
+        <span>{mom.linked_actions.length} action(s)</span>
+      </div>
+      <div className="table-wrap"><table>
+        <thead><tr><th>Action No.</th><th>Problem / Action</th><th>Product context</th><th>Owner</th><th>Priority</th><th>Target</th><th>Status</th><th>Update</th></tr></thead>
+        <tbody>{mom.linked_actions.map((a: any) => <tr key={a.id}>
+          <td><b>{a.action_no}</b></td>
+          <td>{a.description}</td>
+          <td>{(a.products || []).join(', ') || '—'}</td>
+          <td>{a.owner || 'Unassigned'}</td>
+          <td><Status value={a.priority} /></td>
+          <td>{formatIST(a.due_at)}</td>
+          <td><Status value={a.status} /></td>
+          <td><select value={a.status} disabled={Boolean(review?.ended_at)} onChange={e => updateAction(a, e.target.value)}>
+            <option>OPEN</option><option>IN_PROGRESS</option><option>BLOCKED</option><option>CLOSED</option>
+          </select>{!a.requires_whywhy && <button className="secondary small" type="button" disabled={Boolean(review?.ended_at)} onClick={() => escalate(a)}>Escalate to Why-Why</button>}</td>
         </tr>)}</tbody>
       </table></div>
     </section>}
