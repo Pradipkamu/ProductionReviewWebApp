@@ -244,10 +244,21 @@ def meeting_mom(review_id: int, db: Session = Depends(get_db), _: User = Depends
     review = db.get(ReviewSession, review_id)
     if not review: raise HTTPException(404, "Review session not found")
     points = db.scalars(select(ReviewPoint).where(ReviewPoint.review_session_id == review.id).order_by(ReviewPoint.sequence_no)).all()
-    current_action_ids = set(db.scalars(
+    point_action_ids = {p.action_id for p in points if p.action_id}
+    linked_action_ids = set(db.scalars(
         select(ReviewActionLink.action_id).where(ReviewActionLink.review_session_id == review.id)
     ).all())
-    current_action_ids.update(p.action_id for p in points if p.action_id)
+    current_action_ids = linked_action_ids | point_action_ids
+
+    # Actions raised from Dashboard, OEE, Quality or the Actions page may be
+    # linked to the active meeting without having a typed ReviewPoint. Keep
+    # them visible as a separate register and avoid duplicating point actions.
+    other_linked_ids = linked_action_ids - point_action_ids
+    other_linked_rows = db.scalars(
+        select(Action).where(Action.id.in_(other_linked_ids or {-1}))
+        .order_by(Action.due_at, Action.priority.desc(), Action.reference_date)
+    ).all()
+    other_linked_actions = [action_data(db, action) for action in other_linked_rows]
 
     linked_pending = db.scalars(
         select(Action).join(ReviewActionLink, ReviewActionLink.action_id == Action.id)
@@ -286,7 +297,9 @@ def meeting_mom(review_id: int, db: Session = Depends(get_db), _: User = Depends
         for a in sorted(pending_rows.values(), key=lambda x: (x.due_at is None, x.due_at or datetime.max, x.reference_date))
     ]
     return {"meeting": serialize_review(review, db), "mom_no": f"MOM-{review.review_date.isoformat()}-{review.id:03d}",
-            "points": [point_data(db, p) for p in points], "previous_pending_actions": pending}
+            "points": [point_data(db, p) for p in points],
+            "linked_actions": other_linked_actions,
+            "previous_pending_actions": pending}
 
 
 def _mom_rows(db: Session, review: ReviewSession):
