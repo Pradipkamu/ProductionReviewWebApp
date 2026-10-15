@@ -18,25 +18,6 @@ const fmtNum = (value: any) => value == null ? '—' : num(Number(value))
 const fmtMoney = (value: any) => value == null ? '—' : money(Number(value))
 const fmtPct = (value: any) => value == null ? '—' : pct(Number(value))
 
-function categoryForAlert(kind: string, detail: string) {
-  const value = `${kind} ${detail}`.toLowerCase()
-  if (value.includes('quality') || value.includes('ppm') || value.includes('reject')) return 'Quality'
-  if (value.includes('vendor') || value.includes('wip')) return 'Vendor'
-  if (value.includes('oee') || value.includes('machine') || value.includes('loss')) return 'Maintenance'
-  if (value.includes('stage') || value.includes('process')) return 'Process'
-  if (value.includes('delivery') || value.includes('dispatch')) return 'Delivery'
-  if (value.includes('action') || value.includes('overdue')) return 'Actions'
-  if (value.includes('schedule') || value.includes('plan')) return 'Planning'
-  return 'Production'
-}
-
-function priorityForSeverity(severity: string) {
-  const value = severity.toUpperCase()
-  if (value === 'CRITICAL' || value === 'BLOCKER') return 'CRITICAL'
-  if (value === 'WARNING') return 'HIGH'
-  return 'MEDIUM'
-}
-
 export default function DailyMeeting() {
   const [date, setDate] = useState(today())
   const [review, setReview] = useState<any>(null)
@@ -278,28 +259,36 @@ export default function DailyMeeting() {
     }
   }
 
-  function addExceptionToMom(row: any) {
-    const category = categoryForAlert(row.kind || '', row.detail || '')
+  function addRejectionToMom(row: any) {
     const productId = row.product_id ? String(row.product_id) : ''
     const productName = row.product || productOptions.find(p => String(p.id) === productId)?.name || ''
-    const detail = String(row.detail || row.summary || 'Management attention required')
-    const severity = String(row.severity || 'WARNING')
+    const defect = row.phenomenon || row.detail || 'Critical rejection'
+    const rejectQty = Number(row.reject_qty || 0)
+    const ppmText = row.ppm == null ? 'PPM denominator pending' : `${num(Number(row.ppm))} PPM`
+    const context = [
+      productName,
+      defect,
+      `Rejected quantity: ${num(rejectQty)}`,
+      ppmText,
+      row.shift ? `Shift: ${row.shift}` : '',
+      row.detection_process ? `Detection process: ${row.detection_process}` : '',
+      row.responsible_team ? `Responsible team: ${row.responsible_team}` : '',
+      row.detail || '',
+    ].filter(Boolean).join(' | ')
     setForm((f: any) => ({
       ...f,
-      category,
-      discussion_point: productName ? `${productName}: ${detail}` : detail,
+      category: 'Quality',
+      discussion_point: context,
       action_required: true,
-      action_description: productName
-        ? `Investigate and resolve the ${category.toLowerCase()} issue for ${productName}; report the corrective action and result.`
-        : `Investigate and resolve: ${detail}; report the corrective action and result.`,
+      action_description: `Contain the ${defect} rejection, investigate the cause for ${productName || 'the affected product'}, and report corrective action with verification.`,
       owner_id: '',
       due_at: '',
-      priority: priorityForSeverity(severity),
+      priority: 'CRITICAL',
       product_id: productId,
     }))
     document.getElementById('add-mom-point')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     if (!review || review.ended_at) {
-      setMessage('Start or reopen the meeting before adding this exception to the MOM.')
+      setMessage('Start or reopen the meeting before adding this rejection to the MOM.')
     }
   }
 
@@ -374,31 +363,57 @@ export default function DailyMeeting() {
   const vendorPending = vendorRows.reduce((sum: number, x: any) => sum + Number(x.pending || 0), 0)
   const vendorOverdue = vendorRows.reduce((sum: number, x: any) => sum + Number(x.overdue_count || 0), 0)
 
-  const exceptionRows: any[] = []
-  const seen = new Set<string>()
+  const rejectionExceptionRows: any[] = []
+  const rejectionKeys = new Set<string>()
+  const addRejectionException = (row: any, key: string) => {
+    if (!rejectionKeys.has(key)) {
+      rejectionKeys.add(key)
+      rejectionExceptionRows.push(row)
+    }
+  }
+
+  // Criticality is maintained in the Quality Phenomenon Master. Any non-zero
+  // rejection tagged CRITICAL is surfaced even when its individual PPM is below
+  // the numeric critical threshold.
+  for (const row of snapshot.quality?.rows || []) {
+    if (String(row.criticality || '').toUpperCase() !== 'CRITICAL' || Number(row.reject_qty || 0) <= 0) continue
+    addRejectionException({
+      ...row,
+      severity: 'CRITICAL',
+      detail: `Critical phenomenon: ${row.phenomenon || 'Unspecified defect'}`,
+    }, `phenomenon:${row.id}`)
+  }
+
+  // Keep the established Daily Review rule: >= 5,000 PPM is CRITICAL.
+  // A missing denominator is shown separately as a PPM data blocker.
   for (const alert of snapshot.control?.alerts || []) {
-    const key = `${alert.kind || ''}|${alert.product_id || ''}|${alert.detail || ''}`
-    if (!seen.has(key)) {
-      seen.add(key)
-      exceptionRows.push(alert)
+    if (alert.kind === 'high_daily_ppm' && alert.severity === 'CRITICAL') {
+      const productRows = (snapshot.quality?.rows || []).filter((x: any) => x.product_id === alert.product_id)
+      addRejectionException({
+        product_id: alert.product_id,
+        product: alert.product || productRows[0]?.product,
+        severity: 'CRITICAL',
+        reject_qty: productRows.reduce((sum: number, x: any) => sum + Number(x.reject_qty || 0), 0),
+        ppm: alert.value,
+        detail: alert.detail,
+        phenomenon: 'Product-level daily PPM',
+      }, `ppm:${alert.product_id}`)
+    } else if (alert.kind === 'ppm_denominator_pending') {
+      addRejectionException({
+        product_id: alert.product_id,
+        product: alert.product,
+        severity: 'BLOCKER',
+        reject_qty: Number(alert.value || 0),
+        ppm: null,
+        detail: alert.detail,
+        phenomenon: 'PPM denominator missing',
+      }, `pending:${alert.product_id}`)
     }
   }
-  for (const row of summary?.exceptions || []) {
-    const severity = row.status === 'CRITICAL' ? 'CRITICAL' : row.status === 'NO PLAN' ? 'BLOCKER' : 'WARNING'
-    const achievement = row.achievement == null ? 'not available' : `${(Number(row.achievement) * 100).toFixed(1)}% MTD achievement`
-    const detail = `${row.status}: ${achievement}; Plan ${num(row.plan_qty)}, Actual ${num(row.actual_qty)}`
-    const key = `mtd_dispatch_performance|${row.product_id}|${detail}`
-    if (!seen.has(key)) {
-      seen.add(key)
-      exceptionRows.push({
-        kind: 'mtd_dispatch_performance',
-        severity,
-        product_id: row.product_id,
-        product: row.product,
-        detail,
-      })
-    }
-  }
+  rejectionExceptionRows.sort((a, b) => {
+    const rank = (x: string) => x === 'BLOCKER' ? 0 : x === 'CRITICAL' ? 1 : 2
+    return rank(a.severity) - rank(b.severity) || String(a.product || '').localeCompare(String(b.product || ''))
+  })
 
   return <>
     <PageHeader
@@ -450,6 +465,7 @@ export default function DailyMeeting() {
         <Kpi label="MTD Sales Gap" value={fmtMoney(k.sales_gap)} tone={Number(k.sales_gap || 0) < 0 ? 'bad' : 'good'} />
         <Kpi label="Rejection Qty (quality scope)" value={fmtNum(quality.reject_qty)} tone={Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
         <Kpi label="PPM (quality scope)" value={qualityPpmValue} tone={quality.ppm_pending_rows > 0 || (quality.ppm == null && Number(quality.reject_qty || 0) > 0) ? 'warn' : 'good'} />
+        <Kpi label="Critical Rejection Alerts" value={fmtNum(rejectionExceptionRows.filter(x => x.severity === 'CRITICAL').length)} tone={rejectionExceptionRows.some(x => x.severity === 'CRITICAL') ? 'bad' : 'good'} />
         <Kpi label="Daily OEE" value={Number(snapshot.oee?.entry_count || 0) ? pct(oee.overall?.oee_reported) : '—'} tone={Number(oee.overall?.oee_reported || 0) < .85 && Number(snapshot.oee?.entry_count || 0) ? 'warn' : 'good'} />
         <Kpi label="OEE Loss Events" value={fmtNum(snapshot.oee?.loss_event_count)} />
         <Kpi label="Vendor WIP Pending" value={num(vendorPending)} tone={vendorPending > 0 ? 'warn' : 'good'} />
@@ -465,29 +481,31 @@ export default function DailyMeeting() {
     <section className="panel">
       <div className="panel-title">
         <div>
-          <h2>Exceptions requiring management attention</h2>
-          <p>Daily-control blockers and warnings are combined with month-to-date dispatch exceptions. Add a relevant item directly to today's MOM.</p>
+          <h2>Critical Rejection Exceptions</h2>
+          <p>Selected-date, plant-scoped quality items. Criticality comes from the Quality Phenomenon Master; product-level rejection at or above 5,000 PPM is also critical. Missing PPM denominators are shown as blockers.</p>
         </div>
-        <span>{exceptionRows.length} exception(s)</span>
+        <span>{rejectionExceptionRows.length} item(s)</span>
       </div>
-      {exceptionRows.length === 0
-        ? <div className="empty">{snapshotBusy ? 'Loading exceptions…' : 'No exceptions were returned for this date and plant scope.'}</div>
+      {rejectionExceptionRows.length === 0
+        ? <div className="empty">{snapshotBusy ? 'Checking rejection data…' : 'No critical rejection or PPM data-blocker was found for this date and plant scope.'}</div>
         : <div className="table-wrap"><table>
-          <thead><tr><th>Severity</th><th>Category</th><th>Product</th><th>Exception / Gap</th><th>Next step</th></tr></thead>
+          <thead><tr><th>Severity</th><th>Product</th><th>Defect / Rejection trigger</th><th>Reject Qty</th><th>PPM</th><th>Detection / Details</th><th>MOM</th></tr></thead>
           <tbody>
-            {exceptionRows.map((row: any, i: number) => (
-              <tr key={`${row.kind || 'exception'}-${row.product_id || 0}-${i}`}>
-                <td><Status value={row.severity || 'WARNING'} /></td>
-                <td>{categoryForAlert(row.kind || '', row.detail || '')}</td>
+            {rejectionExceptionRows.map((row: any, i: number) => (
+              <tr key={`${row.id || row.kind || 'rejection'}-${row.product_id || 0}-${i}`}>
+                <td><Status value={row.severity} /></td>
                 <td>{row.product || '—'}</td>
-                <td>{row.detail}</td>
-                <td><button className="small" type="button" disabled={!review || Boolean(review.ended_at)} onClick={() => addExceptionToMom(row)}>Add to MOM</button></td>
+                <td>{row.phenomenon || 'Rejection'}</td>
+                <td>{fmtNum(row.reject_qty)}</td>
+                <td>{row.ppm == null ? <Status value="PPM PENDING" /> : `${fmtNum(row.ppm)} PPM`}</td>
+                <td>{[row.detection_process, row.responsible_team, row.shift, row.detail].filter(Boolean).join(' • ') || '—'}</td>
+                <td><button className="small" type="button" disabled={!review || Boolean(review.ended_at)} onClick={() => addRejectionToMom(row)}>Add to MOM</button></td>
               </tr>
             ))}
           </tbody>
         </table></div>
       }
-      {(!review || review.ended_at) && <div className="data-note">Start or reopen a meeting to add an exception to its MOM.</div>}
+      {(!review || review.ended_at) && <div className="data-note">Start or reopen a meeting to add a rejection exception to the MOM.</div>}
     </section>
 
     {review && !review.ended_at && <section className="panel" id="add-mom-point">

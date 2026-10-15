@@ -125,6 +125,7 @@ def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
         "phenomenon_id": row.phenomenon_id,
         "phenomenon": ph.name if ph else None,
         "phenomenon_group": ph.phenomenon_group if ph else None,
+        "criticality": ph.criticality if ph else "NORMAL",
         "reject_qty": _num(row.reject_qty),
         "rework_qty": _num(row.rework_qty),
         "scrap_qty": _num(row.scrap_qty),

@@ -628,3 +628,39 @@ def test_rejected_qty_kpi_respects_exact_daily_date_range_not_whole_month_trend(
     # The monthly chart remains a full-month aggregation; it must not replace
     # the date-filtered KPI total.
     assert first.json()['monthly_trend'][0]['reject_qty'] == 20.0
+
+
+
+def test_quality_report_pack_exposes_phenomenon_criticality_for_review_exceptions():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with SessionLocal() as db:
+        product, route_op, phenomenon = _seed_quality_context(db)
+        phenomenon.criticality = "CRITICAL"
+        db.add(QualityRejectionDaily(
+            record_key="critical-phenomenon-review",
+            rejection_date=date(2026, 9, 30),
+            shift="A",
+            product_id=product.id,
+            plant="2020",
+            detection_route_operation_id=route_op.id,
+            phenomenon_id=phenomenon.id,
+            reject_qty=Decimal("2"),
+            denominator_qty=Decimal("2000"),
+            denominator_source="SIDDHARTH_MACHINING_PLUS_SILVER",
+            ppm=Decimal("1000"),
+            source=SourceType.MANUAL,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/quality/report-pack?from_date=2026-09-30&to_date=2026-09-30&plant=2020",
+        headers=_headers_for_quality(client),
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()["rows"]
+    assert len(rows) == 1
+    assert rows[0]["criticality"] == "CRITICAL"
+    assert rows[0]["phenomenon"] == "BORE O/S"
