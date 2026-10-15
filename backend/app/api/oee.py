@@ -18,6 +18,7 @@ from ..models import (
 )
 from ..schemas import LossEventCreate, MachineEntryCreate
 from ..services.oee import calculate_oee
+from ..services.filtering import csv_strings
 
 router = APIRouter(prefix="/oee", tags=["oee"])
 
@@ -319,9 +320,9 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
 
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
-                       product_id: int | None = None, target_oee: float = 0.85,
-                       recurring_event_threshold: int = 3, db: Session = Depends(get_db),
-                       _: User = Depends(get_current_user)):
+                       product_id: int | None = None, plant: str | None = None,
+                       target_oee: float = 0.85, recurring_event_threshold: int = 3,
+                       db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     if to_date < from_date:
         raise HTTPException(422, "to_date must be on or after from_date")
     q = select(MachineShiftProduction).where(
@@ -334,6 +335,10 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     if machine_id is not None:
         q = q.where(MachineShiftProduction.machine_id == machine_id)
         lq = lq.where(MachineLossEvent.machine_id == machine_id)
+    plants = csv_strings(plant)
+    if plants:
+        q = q.join(Machine, Machine.id == MachineShiftProduction.machine_id).where(Machine.plant.in_(plants))
+        lq = lq.join(Machine, Machine.id == MachineLossEvent.machine_id).where(Machine.plant.in_(plants))
     if product_id is not None:
         q = q.where(MachineShiftProduction.product_id == product_id)
         lq = lq.where(MachineLossEvent.product_id == product_id)
