@@ -157,6 +157,9 @@ def test_review_history_carries_only_earlier_meeting_actions_and_counts_all_link
 
     response = client.get(f"/api/reviews/{current_id}/mom", headers=h)
     assert response.status_code == 200, response.text
+    linked_action_ids = {x["id"] for x in response.json()["linked_actions"]}
+    assert current_action_id in linked_action_ids
+    assert future_id not in linked_action_ids
     carried_ids = {x["id"] for x in response.json()["previous_pending_actions"]}
     assert old_id in carried_ids
     assert legacy_id in carried_ids
