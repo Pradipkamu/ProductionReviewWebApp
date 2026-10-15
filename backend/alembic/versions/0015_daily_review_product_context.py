@@ -8,15 +8,18 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("review_points", sa.Column("product_id", sa.Integer(), nullable=True))
-    op.create_foreign_key(
-        "fk_review_points_product_id_products",
-        "review_points", "products", ["product_id"], ["id"], ondelete="SET NULL",
-    )
-    op.create_index("ix_review_points_product_id", "review_points", ["product_id"])
+    # Batch mode supports both PostgreSQL and SQLite migration tests.
+    with op.batch_alter_table("review_points") as batch_op:
+        batch_op.add_column(sa.Column("product_id", sa.Integer(), nullable=True))
+        batch_op.create_foreign_key(
+            "fk_review_points_product_id_products",
+            "products", ["product_id"], ["id"], ondelete="SET NULL",
+        )
+        batch_op.create_index("ix_review_points_product_id", ["product_id"])
 
 
 def downgrade():
-    op.drop_index("ix_review_points_product_id", table_name="review_points")
-    op.drop_constraint("fk_review_points_product_id_products", "review_points", type_="foreignkey")
-    op.drop_column("review_points", "product_id")
+    with op.batch_alter_table("review_points") as batch_op:
+        batch_op.drop_index("ix_review_points_product_id")
+        batch_op.drop_constraint("fk_review_points_product_id_products", type_="foreignkey")
+        batch_op.drop_column("product_id")
