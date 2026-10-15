@@ -969,17 +969,19 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
                             product_id=product_id, phenomenon_id=phenomenon_id,
                             customer_id=customer_id, product_group=product_group, db=db, _=user)
     summary = _dashboard_data(db, aggregate_daily, aggregate_history, resolved, supported)
-    # KPI cards and monthly charts must use one authoritative aggregation path.
-    # This prevents a partial daily upload from making the cards disagree with
-    # an existing historical monthly aggregate displayed in the chart.
-    summary["reject_qty"] = sum(_num(x.get("reject_qty")) for x in monthly)
-    summary["denominator_qty"] = sum(_num(x.get("denominator_qty")) for x in monthly)
-    summary["ppm_pending_rows"] = sum(int(x.get("ppm_pending_rows") or 0) for x in monthly)
-    # Scope-level PPM remains useful when some selected parts are still
-    # missing their individual denominator. Use every available denominator in
-    # the selected scope and expose ppm_pending_rows so the UI can label the
-    # result as partial. Individual product/month rows remain Pending when their
-    # own denominator is unavailable.
+    # KPI totals must respect the exact selected date range. The monthly trend
+    # intentionally aggregates whole months and must never overwrite date-scoped
+    # KPI totals (otherwise changing dates within a month leaves the card fixed).
+    daily_production = _daily_ppm_production(db, aggregate_daily, from_date, to_date)
+    historical_aggregate = _aggregate_history(aggregate_history, resolved)
+    summary["denominator_qty"] = (
+        daily_production["denominator_qty"] + historical_aggregate["denominator_qty"]
+    )
+    summary["ppm_pending_rows"] = (
+        daily_production["ppm_pending_rows"] + historical_aggregate["ppm_pending_rows"]
+    )
+    # Keep a useful scope-level PPM when at least one selected product has a
+    # denominator; separately flag any selected rows still pending.
     summary["ppm"] = (
         summary["reject_qty"] / summary["denominator_qty"] * 1_000_000
         if summary["denominator_qty"] > 0 else None
@@ -987,6 +989,12 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
     summary["ppm_is_partial"] = bool(summary["ppm_pending_rows"] > 0 and summary["ppm"] is not None)
     summary["historical_records"] = len(aggregate_history)
     summary["daily_records"] = len(aggregate_daily)
+    if aggregate_history:
+        month_end = (to_date.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        partial_month_selected = from_date.day != 1 or to_date != month_end
+        if partial_month_selected:
+            note = "Historical rejection uploads are stored monthly, not by day; the full historical month is included when the selected date range overlaps it. Daily rejection records use the exact selected dates."
+            summary["history_note"] = f"{summary['history_note']} {note}" if summary.get("history_note") else note
     return {
         'summary': summary,
         'rows': [_serialize_daily(x, context) for x in daily],
