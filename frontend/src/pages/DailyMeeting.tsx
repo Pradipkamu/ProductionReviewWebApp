@@ -439,8 +439,8 @@ export default function DailyMeeting() {
         <Kpi label="MTD Qty Gap" value={num(k.qty_gap)} tone={Number(k.qty_gap || 0) < 0 ? 'bad' : 'good'} />
         <Kpi label="MTD Sales Achievement" value={pct(k.achievement)} tone={Number(k.achievement || 0) < .9 ? 'bad' : 'good'} />
         <Kpi label="MTD Sales Gap" value={money(k.sales_gap)} tone={Number(k.sales_gap || 0) < 0 ? 'bad' : 'good'} />
-        <Kpi label="Daily Rejection Qty" value={num(quality.reject_qty)} tone={Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
-        <Kpi label="Daily PPM" value={quality.ppm == null ? (Number(quality.reject_qty || 0) > 0 ? 'Pending' : '—') : num(quality.ppm)} tone={quality.ppm == null && Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
+        <Kpi label="Rejection Qty (quality scope)" value={num(quality.reject_qty)} tone={Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
+        <Kpi label="PPM (quality scope)" value={quality.ppm == null ? (Number(quality.reject_qty || 0) > 0 ? 'Pending' : '—') : num(quality.ppm)} tone={quality.ppm == null && Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
         <Kpi label="Daily OEE" value={Number(snapshot.oee?.entry_count || 0) ? pct(oee.overall?.oee_reported) : '—'} tone={Number(oee.overall?.oee_reported || 0) < .85 && Number(snapshot.oee?.entry_count || 0) ? 'warn' : 'good'} />
         <Kpi label="OEE Loss Events" value={num(snapshot.oee?.loss_event_count)} />
         <Kpi label="Vendor WIP Pending" value={num(vendorPending)} tone={vendorPending > 0 ? 'warn' : 'good'} />
@@ -538,10 +538,10 @@ export default function DailyMeeting() {
     {mom?.previous_pending_actions?.length > 0 && <section className="panel">
       <div className="panel-title"><div><h2>Previous Pending Actions</h2><p>Only actions linked to earlier meetings (plus legacy daily-review actions) are carried forward.</p></div></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Action</th><th>Owner</th><th>Priority</th><th>Target</th><th>Age</th><th>Last Follow-up</th><th>Status</th><th>Update</th></tr></thead>
+        <thead><tr><th>Action</th><th>Product context</th><th>Owner</th><th>Priority</th><th>Target</th><th>Age</th><th>Last Follow-up</th><th>Status</th><th>Update</th></tr></thead>
         <tbody>{mom.previous_pending_actions.map((a: any) => <tr key={a.id} className={a.overdue_days ? 'row-overdue' : ''}>
           <td><b>{a.action_no}</b><br /><small>{a.description}</small></td>
-          <td>{a.owner || 'Unassigned'}</td><td><Status value={a.priority} /></td>
+          <td>{(a.products || []).join(', ') || '—'}</td><td>{a.owner || 'Unassigned'}</td><td><Status value={a.priority} /></td>
           <td>{formatIST(a.due_at)}{a.overdue_days > 0 && <><br /><small>{a.overdue_days}d overdue</small></>}</td>
           <td>{a.age_days}d</td>
           <td>{a.last_followup_at ? <>{formatIST(a.last_followup_at)}<br /><small>{a.last_followup_comment}</small></> : 'No recorded update'}</td>
