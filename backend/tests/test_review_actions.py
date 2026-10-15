@@ -168,7 +168,7 @@ def test_review_history_carries_only_earlier_meeting_actions_and_counts_all_link
     assert export.status_code == 200, export.text
     workbook = load_workbook(BytesIO(export.content), read_only=True)
     exported_rows = list(workbook["MOM"].iter_rows(min_row=7, values_only=True))
-    assert any(row[1] == "Linked Action" and "MOM-CURRENT" in str(row[4]) for row in exported_rows)
+    assert any(row[1] == "Linked Action" and row[3] == "Test management issue" for row in exported_rows)
     carried_ids = {x["id"] for x in response.json()["previous_pending_actions"]}
     assert old_id in carried_ids
     assert legacy_id in carried_ids
