@@ -14,6 +14,9 @@ type Snapshot = {
 
 const today = () => dateIST()
 const emptySnapshot: Snapshot = { summary: null, control: null, quality: null, oee: null, vendor: null }
+const fmtNum = (value: any) => value == null ? '—' : num(Number(value))
+const fmtMoney = (value: any) => value == null ? '—' : money(Number(value))
+const fmtPct = (value: any) => value == null ? '—' : pct(Number(value))
 
 function categoryForAlert(kind: string, detail: string) {
   const value = `${kind} ${detail}`.toLowerCase()
@@ -69,12 +72,14 @@ export default function DailyMeeting() {
   const productOptions = products.filter(p => !plants.length || plants.includes(String(p.plant || '')))
   const plantOptions = (filterOptions?.plants || []).map((x: string) => ({ value: String(x), label: String(x) }))
 
-  async function load(r: any) {
+  async function load(r: any, expectedLookup?: number) {
     if (!r) {
       setMom(null)
       return
     }
-    setMom(await api(`/reviews/${r.id}/mom`))
+    const next = await api(`/reviews/${r.id}/mom`)
+    if (expectedLookup !== undefined && expectedLookup !== activeLookup.current) return
+    setMom(next)
   }
 
   async function loadHistory() {
@@ -95,7 +100,7 @@ export default function DailyMeeting() {
         setReview(r)
         setParticipants(r.participants || '')
         setComments(r.comments || '')
-        await load(r)
+        await load(r, request)
       } else {
         setReview(null)
         setMom(null)
@@ -212,6 +217,7 @@ export default function DailyMeeting() {
 
   async function openMeeting(m: any) {
     activeLookup.current += 1
+    const request = activeLookup.current
     if (date !== m.review_date) {
       skipNextDateLookup.current = true
       setDate(m.review_date)
@@ -220,7 +226,7 @@ export default function DailyMeeting() {
     setParticipants(m.participants || '')
     setComments(m.comments || '')
     try {
-      await load(m)
+      await load(m, request)
       setMessage(`Opened meeting #${m.id}.`)
     } catch (e: any) {
       setErr(e.message)
@@ -434,19 +440,19 @@ export default function DailyMeeting() {
       </div>
       {snapshotWarnings.length > 0 && <div className="data-note">Some sources could not be loaded: {snapshotWarnings.join(' • ')}</div>}
       <div className="kpi-grid">
-        <Kpi label="MTD Production Plan" value={num(k.plan_qty)} />
-        <Kpi label="MTD Production Actual" value={num(k.actual_qty)} tone="good" />
-        <Kpi label="MTD Qty Gap" value={num(k.qty_gap)} tone={Number(k.qty_gap || 0) < 0 ? 'bad' : 'good'} />
-        <Kpi label="MTD Sales Achievement" value={pct(k.achievement)} tone={Number(k.achievement || 0) < .9 ? 'bad' : 'good'} />
-        <Kpi label="MTD Sales Gap" value={money(k.sales_gap)} tone={Number(k.sales_gap || 0) < 0 ? 'bad' : 'good'} />
-        <Kpi label="Rejection Qty (quality scope)" value={num(quality.reject_qty)} tone={Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
-        <Kpi label="PPM (quality scope)" value={quality.ppm == null ? (Number(quality.reject_qty || 0) > 0 ? 'Pending' : '—') : num(quality.ppm)} tone={quality.ppm == null && Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
+        <Kpi label="MTD Production Plan" value={fmtNum(k.plan_qty)} />
+        <Kpi label="MTD Production Actual" value={fmtNum(k.actual_qty)} tone="good" />
+        <Kpi label="MTD Qty Gap" value={fmtNum(k.qty_gap)} tone={Number(k.qty_gap || 0) < 0 ? 'bad' : 'good'} />
+        <Kpi label="MTD Sales Achievement" value={fmtPct(k.achievement)} tone={Number(k.achievement || 0) < .9 ? 'bad' : 'good'} />
+        <Kpi label="MTD Sales Gap" value={fmtMoney(k.sales_gap)} tone={Number(k.sales_gap || 0) < 0 ? 'bad' : 'good'} />
+        <Kpi label="Rejection Qty (quality scope)" value={fmtNum(quality.reject_qty)} tone={Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
+        <Kpi label="PPM (quality scope)" value={quality.ppm == null ? (Number(quality.reject_qty || 0) > 0 ? 'Pending' : '—') : fmtNum(quality.ppm)} tone={quality.ppm == null && Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
         <Kpi label="Daily OEE" value={Number(snapshot.oee?.entry_count || 0) ? pct(oee.overall?.oee_reported) : '—'} tone={Number(oee.overall?.oee_reported || 0) < .85 && Number(snapshot.oee?.entry_count || 0) ? 'warn' : 'good'} />
-        <Kpi label="OEE Loss Events" value={num(snapshot.oee?.loss_event_count)} />
+        <Kpi label="OEE Loss Events" value={fmtNum(snapshot.oee?.loss_event_count)} />
         <Kpi label="Vendor WIP Pending" value={num(vendorPending)} tone={vendorPending > 0 ? 'warn' : 'good'} />
         <Kpi label="Vendor Overdue Lots" value={num(vendorOverdue)} tone={vendorOverdue > 0 ? 'bad' : 'good'} />
-        <Kpi label="Open Actions (scope)" value={num(k.open_actions)} />
-        <Kpi label="Overdue Actions (scope)" value={num(k.overdue_actions)} tone={Number(k.overdue_actions || 0) > 0 ? 'bad' : 'good'} />
+        <Kpi label="Open Actions (scope)" value={fmtNum(k.open_actions)} />
+        <Kpi label="Overdue Actions (scope)" value={fmtNum(k.overdue_actions)} tone={Number(k.overdue_actions || 0) > 0 ? 'bad' : 'good'} />
       </div>
       {quality.history_note && <div className="data-note">{quality.history_note}</div>}
       {!summary && !snapshotBusy && <div className="empty">Production and sales snapshot is unavailable. Check the source status above.</div>}
