@@ -1,7 +1,7 @@
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0015_daily_review_product_context"
+revision = "0015_mom_product_ctx"
 down_revision = "0014_daily_review_mom"
 branch_labels = None
 depends_on = None
