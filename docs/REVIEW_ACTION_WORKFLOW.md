@@ -32,3 +32,12 @@ If a Daily Review session is active for the same action date, the new action is 
 - Meeting participants and remarks can be saved while the meeting is open. Closed meetings remain selectable from history and are no longer replaced by the active-meeting lookup for the selected date.
 - MOM action counts include actions linked through either a MOM point or the action-link workflow. An empty meeting is retained if an action was linked through the Actions page.
 - Quality history is stored monthly in some cases. When selected dates overlap a monthly historical rejection upload, the snapshot displays the source note explaining that the full month is included.
+
+## Daily Review rejection panel
+
+- The general "Exceptions requiring management attention" panel is intentionally not shown on the Daily MOM page.
+- The review page retains the production/sales/quality/OEE/vendor KPI snapshot.
+- A dedicated "Critical Rejection Exceptions" panel shows selected-date daily rejection rows whose Quality Phenomenon Master criticality is CRITICAL.
+- It also shows product-level daily PPM alerts at or above 5,000 PPM, matching the existing Daily Review control rule.
+- Rejection records with a missing PPM denominator are shown separately as BLOCKER / PPM PENDING, not as confirmed high-PPM results.
+- The panel respects the selected date and plant scope, and can prefill a Quality MOM point with product, phenomenon, rejection quantity, PPM and process context.
