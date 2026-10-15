@@ -589,3 +589,42 @@ def test_daily_rejection_saves_when_siddharth_or_silver_is_missing(tmp_path):
         assert row.denominator_source == 'SIDDHARTH_SILVER_PENDING'
         assert row.denominator_qty is None
         assert row.ppm is None
+
+
+def test_rejected_qty_kpi_respects_exact_daily_date_range_not_whole_month_trend():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with SessionLocal() as db:
+        product, route_op, phenomenon = _seed_quality_context(db)
+        db.add_all([
+            QualityRejectionDaily(
+                record_key='date-kpi-20260929', rejection_date=date(2026, 9, 29), shift='A',
+                product_id=product.id, plant='2020', detection_route_operation_id=route_op.id,
+                phenomenon_id=phenomenon.id, reject_qty=Decimal('7'), source=SourceType.MANUAL,
+            ),
+            QualityRejectionDaily(
+                record_key='date-kpi-20260930', rejection_date=date(2026, 9, 30), shift='A',
+                product_id=product.id, plant='2020', detection_route_operation_id=route_op.id,
+                phenomenon_id=phenomenon.id, reject_qty=Decimal('13'), source=SourceType.MANUAL,
+            ),
+        ])
+        db.commit()
+
+    client = TestClient(app)
+    headers = _headers_for_quality(client)
+    first = client.get(
+        '/api/quality/report-pack?from_date=2026-09-29&to_date=2026-09-29',
+        headers=headers,
+    )
+    second = client.get(
+        '/api/quality/report-pack?from_date=2026-09-30&to_date=2026-09-30',
+        headers=headers,
+    )
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()['summary']['reject_qty'] == 7.0
+    assert second.json()['summary']['reject_qty'] == 13.0
+    # The monthly chart remains a full-month aggregation; it must not replace
+    # the date-filtered KPI total.
+    assert first.json()['monthly_trend'][0]['reject_qty'] == 20.0
