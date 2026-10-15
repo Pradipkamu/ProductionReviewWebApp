@@ -25,7 +25,7 @@ def _seed_oee_scope() -> tuple[int, int, int, int, int]:
         db.add(customer); db.flush()
         product = Product(code="OEE-P", name="OEE Product", customer_id=customer.id)
         operation = Operation(code="OEE-OP", name="OEE Machining", operation_type=OperationType.INTERNAL)
-        machine = Machine(code="OEE-M1", name="OEE Machine")
+        machine = Machine(code="OEE-M1", name="OEE Machine", plant="Plant OEE")
         db.add_all([product, operation, machine]); db.flush()
         version = RouteVersion(product_id=product.id, revision_no=0, effective_from=today - timedelta(days=1))
         db.add(version); db.flush()
@@ -93,6 +93,19 @@ def test_controlled_oee_capture_reconciliation_and_actions():
     assert mgmt["machines"][0]["status"] == "BELOW TARGET"
     assert mgmt["machines"][0]["gap_to_target"] > 0
     assert mgmt["recurring_loss_count"] == 0
+
+    plant_scoped = client.get(
+        f"/api/oee/management-summary?from_date={day}&to_date={day}&plant=Plant%20OEE",
+        headers=headers,
+    )
+    assert plant_scoped.status_code == 200, plant_scoped.text
+    assert plant_scoped.json()["entry_count"] == 1
+    other_plant = client.get(
+        f"/api/oee/management-summary?from_date={day}&to_date={day}&plant=Other%20Plant",
+        headers=headers,
+    )
+    assert other_plant.status_code == 200, other_plant.text
+    assert other_plant.json()["entry_count"] == 0
 
     data_quality = client.get(f"/api/insights/data-quality?as_of={day}&product_id={product_id}", headers=headers).json()
     assert data_quality["counts"]["oee_downtime_unclassified"] == 1

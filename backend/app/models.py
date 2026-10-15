@@ -802,6 +802,7 @@ class ReviewPoint(Base, TimestampMixin):
     sequence_no: Mapped[int] = mapped_column(Integer)
     category: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     discussion_point: Mapped[str] = mapped_column(Text)
+    product_id: Mapped[Optional[int]] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     action_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     action_id: Mapped[Optional[int]] = mapped_column(ForeignKey("actions.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
