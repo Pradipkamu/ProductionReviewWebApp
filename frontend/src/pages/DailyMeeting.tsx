@@ -366,6 +366,9 @@ export default function DailyMeeting() {
   const summary = snapshot.summary
   const k = summary?.kpis || {}
   const quality = snapshot.quality?.summary || {}
+  const qualityPpmValue = quality.ppm == null
+    ? (Number(quality.reject_qty || 0) > 0 ? 'Pending' : '—')
+    : `${fmtNum(quality.ppm)}${quality.ppm_is_partial ? ' (partial)' : ''}`
   const oee = snapshot.oee || {}
   const vendorRows = snapshot.vendor?.vendors || []
   const vendorPending = vendorRows.reduce((sum: number, x: any) => sum + Number(x.pending || 0), 0)
@@ -446,7 +449,7 @@ export default function DailyMeeting() {
         <Kpi label="MTD Sales Achievement" value={fmtPct(k.achievement)} tone={Number(k.achievement || 0) < .9 ? 'bad' : 'good'} />
         <Kpi label="MTD Sales Gap" value={fmtMoney(k.sales_gap)} tone={Number(k.sales_gap || 0) < 0 ? 'bad' : 'good'} />
         <Kpi label="Rejection Qty (quality scope)" value={fmtNum(quality.reject_qty)} tone={Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
-        <Kpi label="PPM (quality scope)" value={quality.ppm == null ? (Number(quality.reject_qty || 0) > 0 ? 'Pending' : '—') : fmtNum(quality.ppm)} tone={quality.ppm == null && Number(quality.reject_qty || 0) > 0 ? 'warn' : 'good'} />
+        <Kpi label="PPM (quality scope)" value={qualityPpmValue} tone={quality.ppm_pending_rows > 0 || (quality.ppm == null && Number(quality.reject_qty || 0) > 0) ? 'warn' : 'good'} />
         <Kpi label="Daily OEE" value={Number(snapshot.oee?.entry_count || 0) ? pct(oee.overall?.oee_reported) : '—'} tone={Number(oee.overall?.oee_reported || 0) < .85 && Number(snapshot.oee?.entry_count || 0) ? 'warn' : 'good'} />
         <Kpi label="OEE Loss Events" value={fmtNum(snapshot.oee?.loss_event_count)} />
         <Kpi label="Vendor WIP Pending" value={num(vendorPending)} tone={vendorPending > 0 ? 'warn' : 'good'} />
@@ -454,6 +457,7 @@ export default function DailyMeeting() {
         <Kpi label="Open Actions (scope)" value={fmtNum(k.open_actions)} />
         <Kpi label="Overdue Actions (scope)" value={fmtNum(k.overdue_actions)} tone={Number(k.overdue_actions || 0) > 0 ? 'bad' : 'good'} />
       </div>
+      {Number(quality.ppm_pending_rows || 0) > 0 && <div className="data-note">PPM denominator is missing for {quality.ppm_pending_rows} record(s); the displayed PPM may be partial or pending.</div>}
       {quality.history_note && <div className="data-note">{quality.history_note}</div>}
       {!summary && !snapshotBusy && <div className="empty">Production and sales snapshot is unavailable. Check the source status above.</div>}
     </section>
