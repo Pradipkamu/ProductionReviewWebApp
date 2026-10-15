@@ -8,8 +8,9 @@ from app.enums import OperationType, SourceType
 from app.main import app
 from app.models import (
     DailyMIS, DailyRequirement, Operation, ProcessDailySummary, ProcessFlowStage,
-    ProcessFlowVersion, Product, RouteOperation, RouteVersion,
+    ProcessFlowVersion, Product, QualityRejectionDaily, RouteOperation, RouteVersion,
 )
+from app.services.quality_import import upsert_phenomenon
 
 
 def _headers(client: TestClient) -> dict[str, str]:
@@ -162,3 +163,43 @@ def test_daily_control_ignores_superseded_flow_requirements():
     assert body["workflow"]["schedule"]["planned_stages"] == 1
     assert body["counts"]["reported_stages"] == 1
     assert not [x for x in body["alerts"] if x["kind"] == "missing_stage_actual"]
+
+
+
+def test_daily_control_marks_rejection_at_or_above_5000_ppm_as_critical():
+    on_date = date(2026, 10, 2)
+    with SessionLocal() as db:
+        product = Product(
+            code="CTRL-CRIT-REJ",
+            name="Critical Rejection Control Product",
+            plant="Plant 1",
+            product_group="Machining",
+        )
+        db.add(product); db.flush()
+        phenomenon = upsert_phenomenon(db, "Critical Daily Control Defect", criticality="NORMAL")
+        db.add(QualityRejectionDaily(
+            record_key="CTRL-CRIT-REJ-20261002",
+            rejection_date=on_date,
+            shift="A",
+            product_id=product.id,
+            plant="Plant 1",
+            phenomenon_id=phenomenon.id,
+            reject_qty=Decimal("15"),
+            denominator_source="SIDDHARTH_MACHINING_PLUS_SILVER",
+            denominator_qty=Decimal("2000"),
+            ppm=Decimal("7500"),
+            source=SourceType.MANUAL,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    response = client.get(
+        f"/api/dashboard/daily-control?as_of={on_date.isoformat()}&plant=Plant%201",
+        headers=_headers(client),
+    )
+    assert response.status_code == 200, response.text
+    alerts = response.json()["alerts"]
+    critical = next(x for x in alerts if x["kind"] == "high_daily_ppm")
+    assert critical["severity"] == "CRITICAL"
+    assert critical["product"] == "Critical Rejection Control Product"
+    assert critical["value"] == 7500.0
