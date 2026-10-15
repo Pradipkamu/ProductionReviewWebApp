@@ -413,7 +413,7 @@ export default function DailyMeeting() {
       <div className="form-row">
         <label>Meeting date<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
         <label>Plant scope<MultiSelect value={plants} onChange={setPlants} options={plantOptions} placeholder="All Plants" /></label>
-        <label>Participants<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Names / departments" disabled={!review || Boolean(review.ended_at)} /></label>
+        <label>Participants<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Names / departments" disabled={Boolean(review?.ended_at)} /></label>
         <label>Meeting remarks<input value={comments} onChange={e => setComments(e.target.value)} placeholder="Key meeting notes" disabled={!review || Boolean(review.ended_at)} /></label>
         {!review
           ? <button onClick={start}>Start Meeting</button>
