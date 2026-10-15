@@ -68,8 +68,13 @@ def action_data(db: Session, a: Action | None, followup: dict | None = None) -> 
     if not a:
         return None
     owner = db.get(User, a.owner_id) if a.owner_id else None
+    product_names = db.scalars(
+        select(Product.name).join(ActionContext, ActionContext.product_id == Product.id)
+        .where(ActionContext.action_id == a.id).distinct().order_by(Product.name)
+    ).all()
     return {"id": a.id, "action_no": a.action_no, "description": a.action_description,
             "owner_id": a.owner_id, "owner": owner.full_name if owner else None,
+            "products": product_names,
             "due_at": a.due_at, "priority": a.priority.value, "status": a.status.value,
             "closure_remark": a.closure_remark, "closed_at": a.closed_at,
             "age_days": max(0, (ist_today() - a.reference_date).days),
