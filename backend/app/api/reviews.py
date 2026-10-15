@@ -91,7 +91,7 @@ def point_data(db: Session, p: ReviewPoint) -> dict:
 def get_active_review(review_date: date, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     row = db.scalar(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None))
                     .order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc()).limit(1))
-    return serialize_review(row) if row else None
+    return serialize_review(row, db) if row else None
 
 
 @router.get("")
@@ -138,7 +138,7 @@ def reopen_review(review_id: int, db: Session = Depends(get_db), _: User = Depen
     row.ended_at = None
     db.commit()
     db.refresh(row)
-    return serialize_review(row)
+    return serialize_review(row, db)
 
 
 @router.post("")
@@ -146,11 +146,11 @@ def start_review(payload: ReviewStart, db: Session = Depends(get_db), _: User = 
     existing = db.scalar(select(ReviewSession).where(ReviewSession.review_date == payload.review_date, ReviewSession.ended_at.is_(None))
                          .order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc()).limit(1))
     if existing:
-        result = serialize_review(existing); result["existing"] = True; return result
+        result = serialize_review(existing, db); result["existing"] = True; return result
     row = ReviewSession(review_date=payload.review_date, started_at=datetime.utcnow(),
                         participants=payload.participants, comments=payload.comments)
     db.add(row); db.commit(); db.refresh(row)
-    result = serialize_review(row); result["existing"] = False; return result
+    result = serialize_review(row, db); result["existing"] = False; return result
 
 
 @router.patch("/{review_id}/close")
@@ -172,7 +172,7 @@ def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get
     if row.ended_at is None: row.ended_at = datetime.utcnow()
     if payload.comments is not None: row.comments = payload.comments
     db.commit(); db.refresh(row)
-    result = serialize_review(row)
+    result = serialize_review(row, db)
     result["discarded"] = False
     return result
 
