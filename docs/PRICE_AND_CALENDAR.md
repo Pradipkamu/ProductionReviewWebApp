@@ -16,3 +16,9 @@ The calendar screen supports:
 - change history / audit trail.
 
 After a calendar change, use **Recalculate month** when revised schedule requirements should be redistributed using the changed working days.
+
+
+## Machine shop working calendar default
+
+The machine shop does not assume Sunday (or any other weekday) is automatically off.
+Every date is treated as a working day unless that date is explicitly marked as non-working in the plant Working Calendar. Use the calendar to select weekly offs, Sundays, Saturdays, shutdowns and public holidays for each plant. Planning calculations and the Daily Review Production Review Date use the same plant calendar.
