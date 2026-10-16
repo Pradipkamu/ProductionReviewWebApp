@@ -30,9 +30,9 @@ def is_working_day(db: Session, d: date, plant: str | None = None) -> bool:
     row = db.scalar(select(WorkingCalendar).where(WorkingCalendar.work_date == d, WorkingCalendar.plant == plant))
     if row is not None:
         return bool(row.is_working_day)
-    # Default only when no calendar row exists. This is intentionally conservative:
-    # Sunday off; Mon-Sat working. Plant calendar can override any date.
-    return d.weekday() != 6
+    # No weekly off-day is assumed in the machine shop. All dates are working
+    # unless the plant calendar explicitly marks that date as non-working.
+    return True
 
 
 def working_days(db: Session, start: date, end: date, plant: str | None = None) -> list[date]:

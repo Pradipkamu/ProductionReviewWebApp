@@ -18,6 +18,12 @@ const fmtNum = (value: any) => value == null ? '—' : num(Number(value))
 const fmtMoney = (value: any) => value == null ? '—' : money(Number(value))
 const fmtPct = (value: any) => value == null ? '—' : pct(Number(value))
 
+function shiftIsoDate(value: string, days: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  const shifted = new Date(Date.UTC(year, month - 1, day + days))
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`
+}
+
 function categoryForAlert(kind: string, detail: string) {
   const value = `${kind} ${detail}`.toLowerCase()
   if (value.includes('quality') || value.includes('ppm') || value.includes('reject')) return 'Quality'
@@ -38,6 +44,11 @@ function priorityForSeverity(severity: string) {
 
 export default function DailyMeeting() {
   const [date, setDate] = useState(today())
+  const [productionReviewDate, setProductionReviewDate] = useState('')
+  const [productionReviewDateNote, setProductionReviewDateNote] = useState('')
+  const [productionReviewDateLoading, setProductionReviewDateLoading] = useState(false)
+  const [productionReviewDateResolvedKey, setProductionReviewDateResolvedKey] = useState('')
+  const [calendarRefresh, setCalendarRefresh] = useState(0)
   const [review, setReview] = useState<any>(null)
   const [mom, setMom] = useState<any>(null)
   const [users, setUsers] = useState<any[]>([])
@@ -67,6 +78,11 @@ export default function DailyMeeting() {
   const activeLookup = useRef(0)
   const snapshotLookup = useRef(0)
   const skipNextDateLookup = useRef(false)
+  const productionReviewDateManual = useRef(false)
+  const calendarLookup = useRef(0)
+  const calendarCache = useRef(new Map<string, Map<string, boolean>>())
+
+  const productionReviewScopeKey = `${date}|${plants.join('|')}|${(filterOptions?.plants || []).join('|')}|${calendarRefresh}`
 
   const productOptions = products.filter(p => !plants.length || plants.includes(String(p.plant || '')))
   const plantOptions = (filterOptions?.plants || []).map((x: string) => ({ value: String(x), label: String(x) }))
@@ -132,12 +148,105 @@ export default function DailyMeeting() {
     findActive(date)
   }, [date])
 
+  useEffect(() => {
+    const lookup = ++calendarLookup.current
+    let cancelled = false
+
+    if (productionReviewDateManual.current && productionReviewDate) {
+      setProductionReviewDateResolvedKey(productionReviewScopeKey)
+      setProductionReviewDateLoading(false)
+      return () => { cancelled = true }
+    }
+
+    setProductionReviewDate('')
+    setProductionReviewDateResolvedKey('')
+    setProductionReviewDateLoading(true)
+    setProductionReviewDateNote('Checking the plant working calendar…')
+
+    const scopePlants = [...new Set(
+      plants.length
+        ? plants
+        : ((filterOptions?.plants || []).length ? filterOptions.plants : ['Main Plant'])
+    )]
+    const firstCandidate = shiftIsoDate(date, -1)
+
+    async function resolvePreviousWorkingDate() {
+      let candidate = firstCandidate
+      let skipped = 0
+
+      for (let attempt = 0; attempt < 62; attempt += 1) {
+        const workFlags = await Promise.all(scopePlants.map(async plant => {
+          const month = candidate.slice(0, 7)
+          const cacheKey = `${plant}|${month}`
+          let calendar = calendarCache.current.get(cacheKey)
+          if (!calendar) {
+            const params = new URLSearchParams({ month: `${month}-01`, plant: String(plant) })
+            const rows: any[] = await api(`/masters/calendar?${params}`)
+            calendar = new Map(rows.map(row => [String(row.date).slice(0, 10), Boolean(row.working)]))
+            calendarCache.current.set(cacheKey, calendar)
+          }
+          return calendar.get(candidate) === true
+        }))
+
+        // A single date is used for the whole selected scope. It must be a
+        // working day at every selected plant to keep the review comparable.
+        if (workFlags.every(Boolean)) return { date: candidate, skipped }
+        candidate = shiftIsoDate(candidate, -1)
+        skipped += 1
+      }
+      throw new Error('No common working day was found in the previous 62 days. Select the Production Review Date manually.')
+    }
+
+    resolvePreviousWorkingDate().then(result => {
+      if (cancelled || lookup !== calendarLookup.current || productionReviewDateManual.current) return
+      setProductionReviewDate(result.date)
+      setProductionReviewDateNote(
+        result.skipped > 0
+          ? `Automatically selected the previous common working day; skipped ${result.skipped} non-working day(s) in the selected plant calendar.`
+          : 'Automatically selected the previous day; the working calendar confirms it is a working day for the selected plant scope.'
+      )
+      setProductionReviewDateResolvedKey(productionReviewScopeKey)
+      setProductionReviewDateLoading(false)
+    }).catch((e: any) => {
+      if (cancelled || lookup !== calendarLookup.current || productionReviewDateManual.current) return
+      setProductionReviewDate(firstCandidate)
+      setProductionReviewDateNote(`Calendar lookup failed: ${e.message}. The previous calendar day is shown; please verify or select the Production Review Date manually.`)
+      setProductionReviewDateResolvedKey(productionReviewScopeKey)
+      setProductionReviewDateLoading(false)
+    })
+
+    return () => { cancelled = true }
+  }, [date, plants.join('|'), (filterOptions?.plants || []).join('|'), calendarRefresh])
+
+  function changeMeetingDate(value: string) {
+    productionReviewDateManual.current = false
+    setProductionReviewDate('')
+    setProductionReviewDateResolvedKey('')
+    setDate(value)
+  }
+
+  function changeProductionReviewDate(value: string) {
+    if (!value) {
+      productionReviewDateManual.current = false
+      setProductionReviewDate('')
+      setProductionReviewDateResolvedKey('')
+      setCalendarRefresh(v => v + 1)
+      return
+    }
+    productionReviewDateManual.current = true
+    setProductionReviewDate(value)
+    setProductionReviewDateLoading(false)
+    setProductionReviewDateNote('Manually selected. The date is used exactly as entered; calendar holidays are not automatically adjusted.')
+    setProductionReviewDateResolvedKey(productionReviewScopeKey)
+  }
+
   async function loadSnapshot() {
     const request = ++snapshotLookup.current
     setSnapshotBusy(true)
-    const params = new URLSearchParams({ as_of: date })
-    const period = new URLSearchParams({ from_date: date, to_date: date })
-    const vendorParams = new URLSearchParams({ as_of: date, months: '36' })
+    const reviewDate = productionReviewDate
+    const params = new URLSearchParams({ as_of: reviewDate })
+    const period = new URLSearchParams({ from_date: reviewDate, to_date: reviewDate })
+    const vendorParams = new URLSearchParams({ as_of: reviewDate, months: '36' })
     if (plants.length) {
       params.set('plant', plants.join(','))
       period.set('plant', plants.join(','))
@@ -170,8 +279,9 @@ export default function DailyMeeting() {
   }
 
   useEffect(() => {
+    if (!productionReviewDate || productionReviewDateResolvedKey !== productionReviewScopeKey) return
     loadSnapshot()
-  }, [date, plants.join('|')])
+  }, [productionReviewDate, productionReviewDateResolvedKey, productionReviewScopeKey, plants.join('|')])
 
   async function start() {
     try {
@@ -217,6 +327,10 @@ export default function DailyMeeting() {
   async function openMeeting(m: any) {
     activeLookup.current += 1
     const request = activeLookup.current
+    productionReviewDateManual.current = false
+    setProductionReviewDate('')
+    setProductionReviewDateResolvedKey('')
+    setCalendarRefresh(v => v + 1)
     if (date !== m.review_date) {
       skipNextDateLookup.current = true
       setDate(m.review_date)
@@ -451,7 +565,7 @@ export default function DailyMeeting() {
     }
   }
   rejectionExceptionRows.sort((a, b) => {
-    const rank = (x: string) => x === 'BLOCKER' ? 0 : x === 'CRITICAL' ? 1 : 2
+    const rank = (x: string) => x === 'CRITICAL' ? 0 : x === 'BLOCKER' ? 1 : 2
     return rank(a.severity) - rank(b.severity) || String(a.product || '').localeCompare(String(b.product || ''))
   })
 
@@ -486,7 +600,7 @@ export default function DailyMeeting() {
     }, `mtd:${row.product_id || 0}:${severity}`)
   }
   blockingCriticalRows.sort((a, b) => {
-    const rank = (x: string) => x === 'BLOCKER' ? 0 : 1
+    const rank = (x: string) => x === 'CRITICAL' ? 0 : 1
     return rank(a.severity) - rank(b.severity) || String(a.product || '').localeCompare(String(b.product || ''))
   })
 
@@ -501,7 +615,8 @@ export default function DailyMeeting() {
 
     <section className="panel">
       <div className="form-row">
-        <label>Meeting date<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+        <label>Meeting date<input type="date" value={date} onChange={e => changeMeetingDate(e.target.value)} /></label>
+        <label>Production Review Date<input type="date" value={productionReviewDate} onChange={e => changeProductionReviewDate(e.target.value)} /></label>
         <label>Plant scope<MultiSelect value={plants} onChange={setPlants} options={plantOptions} placeholder="All Plants" /></label>
         <label>Participants<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Names / departments" disabled={Boolean(review?.ended_at)} /></label>
         <label>Meeting remarks<input value={comments} onChange={e => setComments(e.target.value)} placeholder="Key meeting notes" disabled={!review || Boolean(review.ended_at)} /></label>
@@ -520,6 +635,10 @@ export default function DailyMeeting() {
           </>
         }
       </div>
+      <div className="data-note">
+        <b>MOM Date:</b> {date} • <b>Production Review Date:</b> {productionReviewDate || (productionReviewDateLoading ? 'Calculating…' : 'Not selected')}
+      </div>
+      {productionReviewDateNote && <div className="data-note">{productionReviewDateNote}</div>}
       {mom && <div className="data-note"><b>{mom.mom_no}</b> • {review?.ended_at ? 'Closed' : 'Meeting active'} • {review?.participants || 'Participants not entered'}</div>}
     </section>
 
@@ -527,7 +646,7 @@ export default function DailyMeeting() {
       <div className="panel-title">
         <div>
           <h2>Business performance snapshot</h2>
-          <p>Production, sales and action KPIs are month-to-date through the selected date. Quality and OEE are for the selected date. Vendor WIP is a rolling 36-month view.</p>
+          <p>Production and sales KPIs are month-to-date through the Production Review Date. Quality, rejection, OEE and production blockers use that selected production date. The MOM remains dated separately.</p>
         </div>
         <button className="secondary small" onClick={loadSnapshot} disabled={snapshotBusy}>{snapshotBusy ? 'Refreshing…' : 'Refresh Snapshot'}</button>
       </div>
@@ -557,7 +676,7 @@ export default function DailyMeeting() {
       <div className="panel-title">
         <div>
           <h2>Blocking &amp; Critical Items</h2>
-          <p>Only general BLOCKER and CRITICAL items are shown here. Routine WARNING items are intentionally excluded; rejection and PPM exceptions are shown in the separate Critical Rejection panel.</p>
+          <p>Only general BLOCKER and CRITICAL items for the selected Production Review Date are shown here. Routine WARNING items are excluded; rejection and PPM exceptions are shown separately.</p>
         </div>
         <span>{blockingCriticalRows.length} item(s)</span>
       </div>
@@ -585,7 +704,7 @@ export default function DailyMeeting() {
       <div className="panel-title">
         <div>
           <h2>Critical Rejection Exceptions</h2>
-          <p>Selected-date, plant-scoped quality items. Criticality comes from the Quality Phenomenon Master; product-level rejection at or above 5,000 PPM is also critical. Missing PPM denominators are shown as blockers.</p>
+          <p>Rejection records for the selected Production Review Date. Criticality comes from the Quality Phenomenon Master; product-level rejection at or above 5,000 PPM is also critical. Missing PPM denominators are shown as blockers.</p>
         </div>
         <span>{rejectionExceptionRows.length} item(s)</span>
       </div>
