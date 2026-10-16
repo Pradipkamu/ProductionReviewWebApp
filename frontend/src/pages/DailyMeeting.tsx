@@ -228,6 +228,7 @@ export default function DailyMeeting() {
   function changeProductionReviewDate(value: string) {
     productionReviewDateManual.current = true
     setProductionReviewDate(value)
+    setProductionReviewDateLoading(false)
     setProductionReviewDateNote('Manually selected. The date is used exactly as entered; calendar holidays are not automatically adjusted.')
     setProductionReviewDateResolvedKey(productionReviewScopeKey)
   }
