@@ -565,7 +565,7 @@ export default function DailyMeeting() {
     }
   }
   rejectionExceptionRows.sort((a, b) => {
-    const rank = (x: string) => x === 'BLOCKER' ? 0 : x === 'CRITICAL' ? 1 : 2
+    const rank = (x: string) => x === 'CRITICAL' ? 0 : x === 'BLOCKER' ? 1 : 2
     return rank(a.severity) - rank(b.severity) || String(a.product || '').localeCompare(String(b.product || ''))
   })
 
@@ -600,7 +600,7 @@ export default function DailyMeeting() {
     }, `mtd:${row.product_id || 0}:${severity}`)
   }
   blockingCriticalRows.sort((a, b) => {
-    const rank = (x: string) => x === 'BLOCKER' ? 0 : 1
+    const rank = (x: string) => x === 'CRITICAL' ? 0 : 1
     return rank(a.severity) - rank(b.severity) || String(a.product || '').localeCompare(String(b.product || ''))
   })
 
