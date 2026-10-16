@@ -18,6 +18,24 @@ const fmtNum = (value: any) => value == null ? '—' : num(Number(value))
 const fmtMoney = (value: any) => value == null ? '—' : money(Number(value))
 const fmtPct = (value: any) => value == null ? '—' : pct(Number(value))
 
+function categoryForAlert(kind: string, detail: string) {
+  const value = `${kind} ${detail}`.toLowerCase()
+  if (value.includes('quality') || value.includes('ppm') || value.includes('reject')) return 'Quality'
+  if (value.includes('vendor') || value.includes('wip')) return 'Vendor'
+  if (value.includes('oee') || value.includes('machine') || value.includes('loss')) return 'Maintenance'
+  if (value.includes('stage') || value.includes('process')) return 'Process'
+  if (value.includes('delivery') || value.includes('dispatch')) return 'Delivery'
+  if (value.includes('action') || value.includes('overdue')) return 'Actions'
+  if (value.includes('schedule') || value.includes('plan')) return 'Planning'
+  return 'Production'
+}
+
+function priorityForSeverity(severity: string) {
+  const value = severity.toUpperCase()
+  if (value === 'CRITICAL' || value === 'BLOCKER') return 'CRITICAL'
+  return 'HIGH'
+}
+
 export default function DailyMeeting() {
   const [date, setDate] = useState(today())
   const [review, setReview] = useState<any>(null)
@@ -259,6 +277,28 @@ export default function DailyMeeting() {
     }
   }
 
+  function addExceptionToMom(row: any) {
+    const category = categoryForAlert(row.kind || '', row.detail || '')
+    const productId = row.product_id ? String(row.product_id) : ''
+    const productName = row.product || productOptions.find(p => String(p.id) === productId)?.name || ''
+    const detail = String(row.detail || row.summary || 'Management attention required')
+    const severity = String(row.severity || 'BLOCKER')
+    setForm((f: any) => ({
+      ...f,
+      category,
+      discussion_point: productName ? `${productName}: ${detail}` : detail,
+      action_required: true,
+      action_description: productName
+        ? `Investigate and resolve the ${category.toLowerCase()} issue for ${productName}; report the corrective action and result.`
+        : `Investigate and resolve: ${detail}; report the corrective action and result.`,
+      owner_id: '',
+      due_at: '',
+      priority: priorityForSeverity(severity),
+      product_id: productId,
+    }))
+    document.getElementById('add-mom-point')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   function addRejectionToMom(row: any) {
     const productId = row.product_id ? String(row.product_id) : ''
     const productName = row.product || productOptions.find(p => String(p.id) === productId)?.name || ''
@@ -415,6 +455,41 @@ export default function DailyMeeting() {
     return rank(a.severity) - rank(b.severity) || String(a.product || '').localeCompare(String(b.product || ''))
   })
 
+  // Restore only the general blockers and critical alerts. Routine WARNING
+  // items intentionally remain hidden. Rejection/PPM items stay in their own
+  // dedicated panel so that they are not repeated here.
+  const blockingCriticalRows: any[] = []
+  const blockingKeys = new Set<string>()
+  const addBlockingCritical = (row: any, key: string) => {
+    if (!blockingKeys.has(key)) {
+      blockingKeys.add(key)
+      blockingCriticalRows.push(row)
+    }
+  }
+  const rejectionAlertKinds = new Set(['high_daily_ppm', 'ppm_denominator_pending'])
+  for (const alert of snapshot.control?.alerts || []) {
+    const severity = String(alert.severity || '').toUpperCase()
+    if (!['BLOCKER', 'CRITICAL'].includes(severity) || rejectionAlertKinds.has(alert.kind)) continue
+    addBlockingCritical({ ...alert, severity }, `daily:${alert.kind || ''}:${alert.product_id || 0}:${alert.detail || ''}`)
+  }
+  for (const row of summary?.exceptions || []) {
+    if (!['CRITICAL', 'NO PLAN'].includes(String(row.status || '').toUpperCase())) continue
+    const severity = String(row.status).toUpperCase() === 'CRITICAL' ? 'CRITICAL' : 'BLOCKER'
+    const achievement = row.achievement == null ? 'not available' : `${(Number(row.achievement) * 100).toFixed(1)}% MTD achievement`
+    const detail = `${row.status}: ${achievement}; Plan ${num(row.plan_qty)}, Actual ${num(row.actual_qty)}`
+    addBlockingCritical({
+      kind: 'mtd_dispatch_performance',
+      severity,
+      product_id: row.product_id,
+      product: row.product,
+      detail,
+    }, `mtd:${row.product_id || 0}:${severity}`)
+  }
+  blockingCriticalRows.sort((a, b) => {
+    const rank = (x: string) => x === 'BLOCKER' ? 0 : 1
+    return rank(a.severity) - rank(b.severity) || String(a.product || '').localeCompare(String(b.product || ''))
+  })
+
   return <>
     <PageHeader
       title="Daily Management Review"
@@ -476,6 +551,34 @@ export default function DailyMeeting() {
       {Number(quality.ppm_pending_rows || 0) > 0 && <div className="data-note">PPM denominator is missing for {quality.ppm_pending_rows} record(s); the displayed PPM may be partial or pending.</div>}
       {quality.history_note && <div className="data-note">{quality.history_note}</div>}
       {!summary && !snapshotBusy && <div className="empty">Production and sales snapshot is unavailable. Check the source status above.</div>}
+    </section>
+
+    <section className="panel">
+      <div className="panel-title">
+        <div>
+          <h2>Blocking &amp; Critical Items</h2>
+          <p>Only general BLOCKER and CRITICAL items are shown here. Routine WARNING items are intentionally excluded; rejection and PPM exceptions are shown in the separate Critical Rejection panel.</p>
+        </div>
+        <span>{blockingCriticalRows.length} item(s)</span>
+      </div>
+      {blockingCriticalRows.length === 0
+        ? <div className="empty">{snapshotBusy ? 'Checking blockers and critical items…' : 'No general blocking or critical items were found for this date and plant scope.'}</div>
+        : <div className="table-wrap"><table>
+          <thead><tr><th>Severity</th><th>Category</th><th>Product</th><th>Blocking / Critical Detail</th><th>MOM</th></tr></thead>
+          <tbody>
+            {blockingCriticalRows.map((row: any, i: number) => (
+              <tr key={`${row.kind || 'critical'}-${row.product_id || 0}-${i}`}>
+                <td><Status value={row.severity} /></td>
+                <td>{categoryForAlert(row.kind || '', row.detail || '')}</td>
+                <td>{row.product || '—'}</td>
+                <td>{row.detail}</td>
+                <td><button className="small" type="button" disabled={!review || Boolean(review.ended_at)} onClick={() => addExceptionToMom(row)}>Add to MOM</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table></div>
+      }
+      {(!review || review.ended_at) && <div className="data-note">Start or reopen a meeting to add a blocking or critical item to its MOM.</div>}
     </section>
 
     <section className="panel">
