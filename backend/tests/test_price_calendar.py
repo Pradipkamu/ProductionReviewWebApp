@@ -45,7 +45,8 @@ def test_calendar_defaults_bulk_and_history():
     rows=client.get('/api/masters/calendar?month=2026-09-01&plant=2020',headers=h).json()
     assert len(rows)==30
     sunday=[x for x in rows if x['date']=='2026-09-06'][0]
-    assert sunday['working'] is False and sunday['explicit'] is False
+    assert sunday['working'] is True and sunday['explicit'] is False
+    assert 'set any plant off-day explicitly' in sunday['reason']
     r=client.post('/api/masters/calendar/bulk',headers=h,json={
         'plant':'2020','start_date':'2026-09-21','end_date':'2026-09-22','mode':'SET_OFF',
         'holiday_name':'Plant shutdown','reason':'Maintenance shutdown'
