@@ -226,6 +226,13 @@ export default function DailyMeeting() {
   }
 
   function changeProductionReviewDate(value: string) {
+    if (!value) {
+      productionReviewDateManual.current = false
+      setProductionReviewDate('')
+      setProductionReviewDateResolvedKey('')
+      setCalendarRefresh(v => v + 1)
+      return
+    }
     productionReviewDateManual.current = true
     setProductionReviewDate(value)
     setProductionReviewDateLoading(false)
