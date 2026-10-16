@@ -608,7 +608,7 @@ export default function DailyMeeting() {
     <section className="panel">
       <div className="form-row">
         <label>Meeting date<input type="date" value={date} onChange={e => changeMeetingDate(e.target.value)} /></label>
-        <label>Production Review Date<input type="date" value={productionReviewDate} onChange={e => changeProductionReviewDate(e.target.value)} disabled={productionReviewDateLoading || !productionReviewDate} /></label>
+        <label>Production Review Date<input type="date" value={productionReviewDate} onChange={e => changeProductionReviewDate(e.target.value)} /></label>
         <label>Plant scope<MultiSelect value={plants} onChange={setPlants} options={plantOptions} placeholder="All Plants" /></label>
         <label>Participants<input value={participants} onChange={e => setParticipants(e.target.value)} placeholder="Names / departments" disabled={Boolean(review?.ended_at)} /></label>
         <label>Meeting remarks<input value={comments} onChange={e => setComments(e.target.value)} placeholder="Key meeting notes" disabled={!review || Boolean(review.ended_at)} /></label>
