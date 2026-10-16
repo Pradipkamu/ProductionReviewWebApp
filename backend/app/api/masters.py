@@ -351,8 +351,8 @@ def calendar_rows(month: date, plant: str = "Main Plant", db: Session = Depends(
             out.append({"date": d, "plant": plant, "working": x.is_working_day, "holiday": x.holiday_name,
                         "reason": x.reason, "explicit": True})
         else:
-            out.append({"date": d, "plant": plant, "working": d.weekday()!=6, "holiday": None,
-                        "reason": "Default Mon-Sat working / Sunday off", "explicit": False})
+            out.append({"date": d, "plant": plant, "working": True, "holiday": None,
+                        "reason": "Default working day; set any plant off-day explicitly", "explicit": False})
         d += timedelta(days=1)
     return out
 
