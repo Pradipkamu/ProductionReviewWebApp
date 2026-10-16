@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from app.db import SessionLocal
 from app.models import Customer, DailyMIS, Product, ScheduleRevision, WorkingCalendar
-from app.services.planning import apply_schedule_revision, preview_revision, split_integer_quantity
+from app.services.planning import apply_schedule_revision, is_working_day, preview_revision, split_integer_quantity
 
 
 def test_exact_split():
@@ -28,3 +28,19 @@ def test_schedule_revision_uses_actual_before_effective_date_and_off_days():
         rev=ScheduleRevision(product_id=p.id,month=date(2026,9,1),revision_no=1,effective_from=date(2026,9,12),monthly_target_qty=Decimal('52000'))
         db.add(rev);db.flush();apply_schedule_revision(db,rev);db.commit()
         assert rev.id is not None
+
+
+
+def test_calendar_defaults_every_weekday_to_working_until_plant_marks_off_day():
+    sunday = date(2026, 9, 6)
+    with SessionLocal() as db:
+        assert is_working_day(db, sunday, "Main Plant") is True
+        db.add(WorkingCalendar(
+            work_date=sunday,
+            plant="Main Plant",
+            is_working_day=False,
+            holiday_name="Weekly Off",
+            reason="Selected in plant working calendar",
+        ))
+        db.flush()
+        assert is_working_day(db, sunday, "Main Plant") is False
