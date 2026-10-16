@@ -6,7 +6,7 @@ Open **Schedule / Price / Calendar**. Select the Product, enter Effective From, 
 The price history is effective-dated. Earlier dates retain their historical price. Existing Daily MIS rows from the effective date forward are recalculated. Future Excel re-imports use the effective price history and cannot silently replace a manual revision.
 
 ## Working calendar
-The calendar is Plant-specific. If no explicit row exists, the default is Monday-Saturday working and Sunday off.
+The calendar is Plant-specific. If no explicit row exists, the date is treated as working. No weekday (including Sunday) is automatically treated as off.
 
 The calendar screen supports:
 - individual date toggle with Holiday/Off-day name and Reason,
