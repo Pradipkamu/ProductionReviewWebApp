@@ -55,7 +55,18 @@ def test_calendar_defaults_bulk_and_history():
     rows=client.get('/api/masters/calendar?month=2026-09-01&plant=2020',headers=h).json()
     d21=[x for x in rows if x['date']=='2026-09-21'][0]
     assert d21['working'] is False and d21['holiday']=='Plant shutdown' and d21['explicit'] is True
+
+    # Sunday stays a working day unless the user explicitly marks it as an off-day.
+    marked_off = client.post('/api/masters/calendar', headers=h, json={
+        'work_date': '2026-09-06', 'plant': '2020', 'is_working_day': False,
+        'holiday_name': 'Weekly Off', 'reason': 'Selected by the plant',
+    })
+    assert marked_off.status_code == 200, marked_off.text
+    rows=client.get('/api/masters/calendar?month=2026-09-01&plant=2020',headers=h).json()
+    sunday=[x for x in rows if x['date']=='2026-09-06'][0]
+    assert sunday['working'] is False and sunday['holiday']=='Weekly Off' and sunday['explicit'] is True
+
     hist=client.get('/api/masters/calendar/history?month=2026-09-01&plant=2020',headers=h).json()
-    assert len(hist)>=2
+    assert len(hist)>=3
     with SessionLocal() as db:
-        assert db.query(WorkingCalendarChangeLog).count()>=2
+        assert db.query(WorkingCalendarChangeLog).count()>=3
