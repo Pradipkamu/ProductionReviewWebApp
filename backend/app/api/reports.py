@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db import get_db
 from ..models import (
-    Action, ActionContext, Customer, DailyMIS, DailyRequirement, LossCategory,
+    Action, ActionContext, ActionWhyWhy, Customer, DailyMIS, DailyRequirement, LossCategory,
     Machine, MachineLossEvent, MachineShiftProduction, Operation, ProcessDailySummary,
     Product, ProductValueAdditionHistory, ProcessFlowStage, ProcessFlowVersion,
     ReviewActionLink, ReviewPoint, ReviewSession, RouteOperation, RouteVersion,
@@ -1238,6 +1238,10 @@ def export_dispatch_schedule_actual(
         action_ids.update(link.action_id for link in links)
         actions = db.scalars(select(Action).where(Action.id.in_(action_ids or {-1}))).all()
         action_by_id = {action.id: action for action in actions}
+        whywhy_rows = db.scalars(
+            select(ActionWhyWhy).where(ActionWhyWhy.action_id.in_(action_ids or {-1}))
+        ).all()
+        whywhy_by_action = {plan.action_id: plan for plan in whywhy_rows}
         owner_ids = {action.owner_id for action in actions if action.owner_id}
         owners = db.scalars(select(User).where(User.id.in_(owner_ids or {-1}))).all()
         owner_by_id = {owner.id: owner for owner in owners}
@@ -1260,21 +1264,57 @@ def export_dispatch_schedule_actual(
             priority = action.priority.value if hasattr(action.priority, "value") else str(action.priority)
             status = action.status.value if hasattr(action.status, "value") else str(action.status)
             description = (action.action_description or action.problem_description or "").strip()
-            return (
-                f"Action {action.action_no}: {description} | Owner: {owner_name} "
-                f"| Due: {due_date} | Priority: {priority} | Status: {status}"
-            )
+            details = [
+                f"Action No: {action.action_no}",
+                f"Action Plan: {description}" if description else "",
+                f"Owner: {owner_name}",
+                f"Due: {due_date}",
+                f"Priority: {priority}",
+                f"Status: {status}",
+            ]
+            if action.closure_remark:
+                details.append(f"Closure Remark: {action.closure_remark.strip()}")
+            if action.effectiveness_status:
+                details.append(f"Effectiveness: {action.effectiveness_status.strip()}")
+
+            plan = whywhy_by_action.get(action.id)
+            if plan:
+                plan_fields = [
+                    ("Containment", plan.containment_action),
+                    ("Why 1", plan.why1),
+                    ("Why 2", plan.why2),
+                    ("Why 3", plan.why3),
+                    ("Why 4", plan.why4),
+                    ("Why 5", plan.why5),
+                    ("Root Cause", plan.root_cause),
+                    ("Corrective Action", plan.corrective_action),
+                    ("Preventive Action", plan.preventive_action),
+                    ("Verification Method", plan.verification_method),
+                    ("Verification Result", plan.verification_result),
+                    ("Effectiveness Check Date", plan.effectiveness_check_date.isoformat() if plan.effectiveness_check_date else None),
+                    ("Effectiveness Result", plan.effectiveness_result),
+                    ("Lessons Learned", plan.lessons_learned),
+                ]
+                populated = [f"{label}: {str(value).strip()}" for label, value in plan_fields if value is not None and str(value).strip()]
+                if populated:
+                    details.append("Why-Why Action Plan:")
+                    details.extend(populated)
+            return "\n".join(item for item in details if item)
 
         for point in points:
             review = session_by_id.get(point.review_session_id)
             if not review or not point.product_id or point.product_id not in products:
                 continue
             mom_no = f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
+            product = products[point.product_id][0]
+            part_number = f"Part No: {product.code} - {product.name}"
             category = f"[{point.category}] " if point.category else ""
-            entry = f"{mom_no} | {category}{(point.discussion_point or '').strip()}"
+            entry = f"{mom_no} | MOM Point #{point.sequence_no} | {part_number} | {category}Discussion: {(point.discussion_point or '').strip()}"
             if point.action_id and point.action_id in action_by_id:
                 entry += "\n" + action_details(action_by_id[point.action_id])
                 linked_action_seen.add((review.id, point.product_id, point.action_id))
+            elif point.action_required:
+                entry += "\nAction Plan: Action required, but no linked action record was found."
             mom_by_day_product[(review.review_date, point.product_id)].append(entry)
 
         for link in links:
@@ -1288,9 +1328,11 @@ def export_dispatch_schedule_actual(
                 if key in linked_action_seen:
                     continue
                 linked_action_seen.add(key)
+                product = products[product_id][0]
+                part_number = f"Part No: {product.code} - {product.name}"
                 category = f"[{action.problem_category}] " if action.problem_category else ""
                 problem = (action.problem_description or "").strip()
-                entry = f"{mom_no} | Linked Action {action.action_no} | {category}{problem}"
+                entry = f"{mom_no} | Linked Action | {part_number} | {category}{problem}"
                 entry += "\n" + action_details(action)
                 mom_by_day_product[(review.review_date, product_id)].append(entry)
 
@@ -1399,7 +1441,7 @@ def export_dispatch_schedule_actual(
              for column in range(2, len(dates) + 2)),
             default=1,
         )
-        ws.row_dimensions[action_row].height = min(150, max(34, 18 * max_action_lines))
+        ws.row_dimensions[action_row].height = min(300, max(54, 18 * max_action_lines))
         ws.append([])
         ws.row_dimensions[ws.max_row].height = 8
 

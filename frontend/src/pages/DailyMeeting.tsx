@@ -394,20 +394,25 @@ export default function DailyMeeting() {
   function addExceptionToMom(row: any) {
     const category = categoryForAlert(row.kind || '', row.detail || '')
     const productId = row.product_id ? String(row.product_id) : ''
-    const productName = row.product || productOptions.find(p => String(p.id) === productId)?.name || ''
+    const productMaster = productOptions.find(p => String(p.id) === productId)
+    const productName = row.product || productMaster?.name || ''
+    const productCode = row.product_code || row.part_no || productMaster?.code || ''
     const detail = String(row.detail || row.summary || 'Management attention required')
-    const severity = String(row.severity || 'BLOCKER')
+    const severity = String(row.severity || 'BLOCKER').toUpperCase()
+    const severityLabel = severity === 'CRITICAL' ? 'CRITICAL' : 'BLOCKER'
+    const partReference = productCode ? `Part No: ${productCode}` : (productName ? `Part: ${productName}` : '')
+    const discussion = [`[${severityLabel}]`, partReference, productName, detail].filter(Boolean).join(' | ')
     setForm((f: any) => ({
       ...f,
       category,
-      discussion_point: productName ? `${productName}: ${detail}` : detail,
+      discussion_point: discussion,
       action_required: true,
       action_description: productName
-        ? `Investigate and resolve the ${category.toLowerCase()} issue for ${productName}; report the corrective action and result.`
-        : `Investigate and resolve: ${detail}; report the corrective action and result.`,
+        ? `Investigate and resolve the ${category.toLowerCase()} issue for ${productCode ? `${productCode} - ` : ''}${productName}; document containment, root cause, corrective action and verification.`
+        : `Investigate and resolve: ${detail}; document containment, root cause, corrective action and verification.`,
       owner_id: '',
       due_at: '',
-      priority: priorityForSeverity(severity),
+      priority: priorityForSeverity(severityLabel),
       product_id: productId,
     }))
     document.getElementById('add-mom-point')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -739,7 +744,7 @@ export default function DailyMeeting() {
           </select></label>
           <label>Product context<select value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
             <option value="">No product context</option>
-            {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+            {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
           </select></label>
           <label>Action Required<select value={form.action_required ? 'YES' : 'NO'} onChange={e => setForm({ ...form, action_required: e.target.value === 'YES' })}>
             <option>YES</option><option>NO</option>
@@ -776,7 +781,7 @@ export default function DailyMeeting() {
       <div className="table-wrap"><table>
         <thead><tr><th>Sr.</th><th>Category</th><th>Product</th><th>Discussion</th><th>Action / Owner</th><th>Target</th><th>Priority</th><th>Status</th><th>Follow-up</th></tr></thead>
         <tbody>{mom.points.map((p: any) => <tr key={p.id}>
-          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product || '—'}</td><td>{p.discussion_point}</td>
+          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product_code ? `${p.product_code} - ${p.product || ''}` : (p.product || '—')}</td><td>{p.discussion_point}</td>
           <td>{p.action ? <><b>{p.action.action_no}</b><br />{p.action.description}<br /><small>{p.action.owner || 'Unassigned'}</small></> : 'No action'}</td>
           <td>{p.action ? formatIST(p.action.due_at) : '—'}</td>
           <td>{p.action ? <Status value={p.action.priority} /> : '—'}</td>

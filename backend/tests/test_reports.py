@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import (Action, ActionContext, Customer, DailyMIS, DailyRequirement, Operation,
+from app.models import (Action, ActionContext, ActionWhyWhy, Customer, DailyMIS, DailyRequirement, Operation,
                         ProcessFlowStage, ProcessFlowVersion, Product, ReviewActionLink,
                         ReviewPoint, ReviewSession, RouteOperation, RouteVersion)
 
@@ -234,11 +234,22 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
         db.add_all([
             ActionContext(action_id=point_action.id, context_date=day1, product_id=p1.id),
             ActionContext(action_id=linked_action.id, context_date=day1, product_id=p2.id),
+            ActionWhyWhy(
+                action_id=point_action.id,
+                containment_action="Contain affected dispatch batch",
+                why1="Daily dispatch commitment was missed",
+                root_cause="No confirmed loading slot",
+                corrective_action="Confirm and reserve dispatch slot",
+                preventive_action="Review dispatch slot every morning",
+                verification_method="Check next five dispatch days",
+                verification_result="Verified for five dispatch days",
+                lessons_learned="Escalate dispatch constraints before shift start",
+            ),
             ReviewPoint(
                 review_session_id=meeting.id,
                 sequence_no=1,
                 category="Delivery",
-                discussion_point="Review dispatch shortfall",
+                discussion_point="[CRITICAL] | Part No: DSA-1 | Review dispatch shortfall",
                 action_required=True,
                 product_id=p1.id,
                 action_id=point_action.id,
@@ -275,8 +286,17 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
     assert sheet["A6"].value == "MOM Action / Discussion"
     p1_mom = sheet["B6"].value
     assert "MOM-2026-10-01-" in p1_mom
+    assert "[CRITICAL]" in p1_mom
+    assert "Part No: DSA-1 - Dispatch Export Part 1" in p1_mom
     assert "Review dispatch shortfall" in p1_mom
-    assert "Recover the shortfall" in p1_mom
+    assert "Action Plan: Recover the shortfall" in p1_mom
+    assert "Containment: Contain affected dispatch batch" in p1_mom
+    assert "Root Cause: No confirmed loading slot" in p1_mom
+    assert "Corrective Action: Confirm and reserve dispatch slot" in p1_mom
+    assert "Preventive Action: Review dispatch slot every morning" in p1_mom
+    assert "Verification Method: Check next five dispatch days" in p1_mom
+    assert "Verification Result: Verified for five dispatch days" in p1_mom
+    assert "Lessons Learned: Escalate dispatch constraints before shift start" in p1_mom
     assert p1_mom.count("ACT-2026-DSA01") == 1
     assert sheet["A7"].value is None
 
@@ -289,4 +309,6 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
     assert sheet["A11"].value == "Gap (Actual - Plan)"
     assert sheet["B11"].value == -50
     assert sheet["A12"].value == "MOM Action / Discussion"
+    assert "Part No: DSA-2 - Dispatch Export Part 2" in sheet["B12"].value
     assert "Confirm dispatch with customer" in sheet["B12"].value
+    assert "Action Plan: Confirm dispatch with customer" in sheet["B12"].value
