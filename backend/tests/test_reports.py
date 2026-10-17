@@ -249,7 +249,7 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
                 review_session_id=meeting.id,
                 sequence_no=1,
                 category="Delivery",
-                discussion_point="[CRITICAL] | Part No: DSA-1 | Dispatch shortfall",
+                discussion_point="[CRITICAL] | Part No: DSA-1 | Review dispatch shortfall",
                 action_required=True,
                 product_id=p1.id,
                 action_id=point_action.id,
