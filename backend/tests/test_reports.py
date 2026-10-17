@@ -287,7 +287,7 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
     p1_mom = sheet["B6"].value
     assert p1_mom == (
         "MOM Date: 01-Oct-2026 | MOM Point #1 | "
-        "Discussion: [CRITICAL] | Part No: DSA-1 | Review dispatch shortfall\\n"
+        "Discussion: [CRITICAL] | Part No: DSA-1 | Review dispatch shortfall\n"
         "Action: Recover the shortfall"
     )
     assert "MOM-2026-" not in p1_mom
