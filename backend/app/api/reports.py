@@ -1248,7 +1248,7 @@ def export_dispatch_schedule_actual(
                 if action else ""
             )
             if action_text:
-                entry += f"\\nAction: {action_text}"
+                entry += f"\nAction: {action_text}"
 
             mom_by_day_product[(review.review_date, point.product_id)].append(entry)
 
