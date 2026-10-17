@@ -1126,7 +1126,12 @@ def export_dispatch_schedule_actual(
     if (to_date - from_date).days > 365:
         raise HTTPException(422, "Select a date range of no more than 366 calendar days")
 
-    products = _scoped_products(db)
+    product_rows = db.execute(
+        select(Product, Customer)
+        .outerjoin(Customer, Customer.id == Product.customer_id)
+        .order_by(Product.sort_order, Product.name, Product.id)
+    ).all()
+    products = {product.id: (product, customer) for product, customer in product_rows}
     product_ids = list(products)
     dates = [from_date + timedelta(days=offset) for offset in range((to_date - from_date).days + 1)]
 
