@@ -751,7 +751,7 @@ export default function DailyMeeting() {
             {['Production', 'Quality', 'Delivery', 'Process', 'Maintenance', 'Capacity', 'Vendor', 'Customer', 'Safety', 'Cost', 'Planning', 'Actions', 'Other'].map(x => <option key={x}>{x}</option>)}
           </select></label>
           <label>{requiresPartForBlocker ? 'Affected Part Number *' : 'Product context'}<select required={requiresPartForBlocker} value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
-            <option value="">Select Part Number</option>
+            <option value="">{requiresPartForBlocker ? 'Select Part Number' : 'No product context'}</option>
             {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
           </select></label>
           {requiresPartForBlocker && <div className="data-note">This Blocking / Critical item has no Part Number linked yet. Select the affected Part Number before adding it to the MOM so it appears against the correct part in the dispatch report.</div>}
