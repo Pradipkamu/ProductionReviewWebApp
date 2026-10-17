@@ -96,7 +96,7 @@ export default function Schedule(){
  {capacityRefreshNeeded&&<div className="warning-box">Monthly schedule changed. Saved machine allocations may be stale. <a href="/capacity">Open Machine Capacity &amp; Manpower to regenerate the all-product allocation preview.</a></div>}
  <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
  <section className="panel dispatch-export-panel">
-   <div className="panel-title"><div><h2>Dispatch Schedule vs Actual — Excel Export</h2><p>All parts in the Product Master, with dates as columns and each part shown as Dispatch Plan, Dispatch Actual, Gap and MOM Action / Discussion, followed by one blank row.</p></div><span>All parts</span></div>
+   <div className="panel-title"><div><h2>Dispatch Schedule vs Actual — Excel Export</h2><p>All parts in the Product Master, with dates as columns and each part shown as Dispatch Plan, Dispatch Actual, Gap and concise MOM Date, Point No., Discussion and Action (if any), followed by one blank row.</p></div><span>All parts</span></div>
    <div className="form-row">
      <label>From date<input type="date" required value={dispatchExportFrom} onChange={e=>setDispatchExportFrom(e.target.value)}/></label>
      <label>To date<input type="date" required value={dispatchExportTo} min={dispatchExportFrom||undefined} onChange={e=>setDispatchExportTo(e.target.value)}/></label>
