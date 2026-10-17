@@ -1,11 +1,16 @@
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
+
+from openpyxl import load_workbook
 
 from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import Action, ActionContext, Customer, DailyMIS, DailyRequirement, Product
+from app.models import (Action, ActionContext, Customer, DailyMIS, DailyRequirement, Operation,
+                        ProcessFlowStage, ProcessFlowVersion, Product, ReviewActionLink,
+                        ReviewPoint, ReviewSession, RouteOperation, RouteVersion)
 
 
 def auth_headers(client: TestClient):
@@ -127,3 +132,161 @@ def test_compliance_daily_action_counts_are_scoped_and_distinct():
     assert j['summary']['actions_raised'] == 2
     assert len(j['daily']) == 1
     assert j['daily'][0]['action_count'] == 2
+
+
+
+def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
+    day1 = date(2026, 10, 1)
+    day2 = date(2026, 10, 2)
+    day3 = date(2026, 10, 3)
+    with SessionLocal() as db:
+        customer = Customer(code="C_DSA", name="Dispatch Export Customer")
+        db.add(customer)
+        db.flush()
+        p1 = Product(code="DSA-1", name="Dispatch Export Part 1", customer_id=customer.id, plant="Plant A")
+        p2 = Product(code="DSA-2", name="Dispatch Export Part 2", customer_id=customer.id, plant="Plant B")
+        db.add_all([p1, p2])
+        db.flush()
+
+        # Explicit parent-dispatch flow plan is authoritative over the
+        # legacy non-stage requirement for the same product/date.
+        dispatch_operation = Operation(code="DSA-DISPATCH", name="Dispatch")
+        db.add(dispatch_operation)
+        db.flush()
+        route = RouteVersion(product_id=p1.id, revision_no=1, effective_from=day2)
+        db.add(route)
+        db.flush()
+        route_operation = RouteOperation(
+            route_version_id=route.id,
+            operation_id=dispatch_operation.id,
+            sequence_no=10,
+            is_dispatch=True,
+        )
+        db.add(route_operation)
+        db.flush()
+        flow = ProcessFlowVersion(
+            product_id=p1.id,
+            route_version_id=route.id,
+            effective_from=day2,
+            revision_no=1,
+            definition_sha256="a" * 64,
+            source_document="dispatch-export-test.xlsx",
+            reason="Test explicit parent dispatch plan",
+        )
+        db.add(flow)
+        db.flush()
+        parent_stage = ProcessFlowStage(
+            flow_id=flow.id,
+            code="DISPATCH",
+            name="Dispatch",
+            route_operation_id=route_operation.id,
+            source_column="A",
+            role="INTERNAL",
+            branch="",
+            variant="",
+            vendor_name="",
+            predecessors_json="[]",
+            alias_of="",
+            is_active=True,
+            parent_dispatch=True,
+            sequence_no=10,
+        )
+        db.add(parent_stage)
+        db.flush()
+
+        # Revised daily requirements must override the imported MIS plan.
+        db.add_all([
+            DailyRequirement(req_date=day1, product_id=p1.id, route_operation_id=None,
+                             baseline_plan_qty=Decimal("90"), revised_plan_qty=Decimal("100")),
+            DailyRequirement(req_date=day2, product_id=p1.id, route_operation_id=None,
+                             baseline_plan_qty=Decimal("100"), revised_plan_qty=Decimal("120")),
+            DailyRequirement(req_date=day2, product_id=p1.id, route_operation_id=route_operation.id,
+                             baseline_plan_qty=Decimal("100"), revised_plan_qty=Decimal("125")),
+            DailyRequirement(req_date=day1, product_id=p2.id, route_operation_id=None,
+                             baseline_plan_qty=Decimal("50"), revised_plan_qty=Decimal("50")),
+            DailyMIS(mis_date=day1, product_id=p1.id, plan_qty=Decimal("90"), actual_qty=Decimal("90"),
+                     sales_price=Decimal("0"), plan_sales=Decimal("0"), actual_sales=Decimal("0")),
+            DailyMIS(mis_date=day2, product_id=p1.id, plan_qty=Decimal("100"), actual_qty=Decimal("100"),
+                     sales_price=Decimal("0"), plan_sales=Decimal("0"), actual_sales=Decimal("0")),
+            DailyMIS(mis_date=day3, product_id=p1.id, plan_qty=Decimal("75"), actual_qty=Decimal("60"),
+                     sales_price=Decimal("0"), plan_sales=Decimal("0"), actual_sales=Decimal("0")),
+        ])
+
+        meeting = ReviewSession(review_date=day1, participants="Production, Quality")
+        db.add(meeting)
+        db.flush()
+        point_action = Action(
+            action_no="ACT-2026-DSA01",
+            reference_date=day1,
+            problem_category="Delivery",
+            problem_description="Dispatch was below target",
+            action_description="Recover the shortfall",
+        )
+        linked_action = Action(
+            action_no="ACT-2026-DSA02",
+            reference_date=day1,
+            problem_category="Delivery",
+            problem_description="Part 2 dispatch confirmation",
+            action_description="Confirm dispatch with customer",
+        )
+        db.add_all([point_action, linked_action])
+        db.flush()
+        db.add_all([
+            ActionContext(action_id=point_action.id, context_date=day1, product_id=p1.id),
+            ActionContext(action_id=linked_action.id, context_date=day1, product_id=p2.id),
+            ReviewPoint(
+                review_session_id=meeting.id,
+                sequence_no=1,
+                category="Delivery",
+                discussion_point="Review dispatch shortfall",
+                action_required=True,
+                product_id=p1.id,
+                action_id=point_action.id,
+            ),
+            ReviewActionLink(review_session_id=meeting.id, action_id=point_action.id),
+            ReviewActionLink(review_session_id=meeting.id, action_id=linked_action.id),
+        ])
+        db.commit()
+
+    client = TestClient(app)
+    headers = auth_headers(client)
+    response = client.get(
+        "/api/reports/dispatch-schedule-actual.xlsx?from_date=2026-10-01&to_date=2026-10-03",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    workbook = load_workbook(BytesIO(response.content), data_only=True)
+    sheet = workbook["Dispatch vs Actual"]
+    assert sheet["A1"].value == "Part / Metric"
+    assert [sheet.cell(1, col).value.date() for col in (2, 3, 4)] == [day1, day2, day3]
+
+    # First product: one part heading, Plan, Actual, Gap, MOM row, then a blank.
+    assert sheet["A2"].value.startswith("PART: DSA-1 - Dispatch Export Part 1")
+    assert sheet["A3"].value == "Dispatch Plan"
+    assert [sheet.cell(3, col).value for col in (2, 3, 4)] == [100, 125, 75]
+    assert sheet["A4"].value == "Dispatch Actual"
+    assert [sheet.cell(4, col).value for col in (2, 3, 4)] == [90, 100, 60]
+    assert sheet["A5"].value == "Gap (Actual - Plan)"
+    assert [sheet.cell(5, col).value for col in (2, 3, 4)] == [-10, -25, -15]
+    assert sheet["A6"].value == "MOM Action / Discussion"
+    p1_mom = sheet["B6"].value
+    assert "MOM-2026-10-01-" in p1_mom
+    assert "Review dispatch shortfall" in p1_mom
+    assert "Recover the shortfall" in p1_mom
+    assert p1_mom.count("ACT-2026-DSA01") == 1
+    assert sheet["A7"].value is None
+
+    # Second product is included even though it has no Daily MIS actual row.
+    assert sheet["A8"].value.startswith("PART: DSA-2 - Dispatch Export Part 2")
+    assert sheet["A9"].value == "Dispatch Plan"
+    assert sheet["B9"].value == 50
+    assert sheet["A10"].value == "Dispatch Actual"
+    assert sheet["B10"].value == 0
+    assert sheet["A11"].value == "Gap (Actual - Plan)"
+    assert sheet["B11"].value == -50
+    assert sheet["A12"].value == "MOM Action / Discussion"
+    assert "Confirm dispatch with customer" in sheet["B12"].value

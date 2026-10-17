@@ -1,6 +1,6 @@
 import { formatIST, dateIST, monthIST } from '../time'
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { api, downloadApi } from '../api'
 import { ScopeFilters, ScopeValues } from '../components/ScopeFilters'
 import { PageHeader, num } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
@@ -16,6 +16,7 @@ export default function Schedule(){
  const [correctImported,setCorrectImported]=useState(false); const [busy,setBusy]=useState(false)
  const [prices,setPrices]=useState<any[]>([]); const [priceEff,setPriceEff]=useState(today()); const [newPrice,setNewPrice]=useState(''); const [priceReason,setPriceReason]=useState('Customer price revision'); const [priceMsg,setPriceMsg]=useState('')
  const [calHistory,setCalHistory]=useState<any[]>([]); const [rangeStart,setRangeStart]=useState(today()); const [rangeEnd,setRangeEnd]=useState(today()); const [holiday,setHoliday]=useState(''); const [calReason,setCalReason]=useState('Plant calendar update')
+ const [dispatchExportFrom,setDispatchExportFrom]=useState(monthNow()); const [dispatchExportTo,setDispatchExportTo]=useState(today()); const [dispatchExportBusy,setDispatchExportBusy]=useState(false); const [dispatchExportMsg,setDispatchExportMsg]=useState(''); const [dispatchExportErr,setDispatchExportErr]=useState('')
 
  useEffect(()=>{Promise.all([api('/masters/products'),api('/masters/filter-options')]).then(([p,o]:any)=>{setProducts(p);setOptions(o);if(p[0])setPid(String(p[0].id))})},[])
  const eligible=useMemo(()=>products.filter(p=>(!scope.plant.length||scope.plant.includes(String(p.plant||'')))&&(!scope.productGroup.length||scope.productGroup.includes(String(p.product_group||'')))&&(!scope.customerId.length||scope.customerId.includes(String(p.customer_id)))),[products,scope])
@@ -52,6 +53,20 @@ export default function Schedule(){
  }
  async function recalcAll(){const from=prompt('Recalculate future requirements from date',eff)||eff; const r:any=await api(`/schedules/recalculate-month?month=${month}&from_date=${from}`,{method:'POST'});setMsg(`${r.products_recalculated} products recalculated from ${from}. Review refreshed machine loading for the month.`);setCapacityRefreshNeeded(true);load()}
 
+ async function exportDispatchScheduleActual(){
+   setDispatchExportMsg('');setDispatchExportErr('')
+   if(!dispatchExportFrom||!dispatchExportTo){setDispatchExportErr('Select both From date and To date.');return}
+   if(dispatchExportFrom>dispatchExportTo){setDispatchExportErr('To date must be on or after From date.');return}
+   const params=new URLSearchParams({from_date:dispatchExportFrom,to_date:dispatchExportTo})
+   const filename=`Dispatch_Schedule_vs_Actual_${dispatchExportFrom.replaceAll('-','')}_${dispatchExportTo.replaceAll('-','')}.xlsx`
+   setDispatchExportBusy(true)
+   try{
+     await downloadApi(`/reports/dispatch-schedule-actual.xlsx?${params.toString()}`,filename)
+     setDispatchExportMsg('Excel export generated. Check your browser downloads.')
+   }catch(e:any){setDispatchExportErr(e?.message||'Unable to generate the Excel export.')}
+   finally{setDispatchExportBusy(false)}
+ }
+
  async function applyPrice(){
    if(!pid||!newPrice)return
    await api('/masters/prices',{method:'POST',body:JSON.stringify({product_id:Number(pid),effective_from:priceEff,price:Number(newPrice),reason:priceReason})})
@@ -80,6 +95,16 @@ export default function Schedule(){
  return <><PageHeader title="Schedule, Price & Working Calendar" subtitle="Disp_Done Stage Schedule is the customer monthly schedule; revisions, prices and Plant calendars remain effective-dated with audit history." actions={<button className="secondary" onClick={recalcAll}>Recalculate month</button>}/>
  {capacityRefreshNeeded&&<div className="warning-box">Monthly schedule changed. Saved machine allocations may be stale. <a href="/capacity">Open Machine Capacity &amp; Manpower to regenerate the all-product allocation preview.</a></div>}
  <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
+ <section className="panel dispatch-export-panel">
+   <div className="panel-title"><div><h2>Dispatch Schedule vs Actual — Excel Export</h2><p>All parts in the Product Master, with dates as columns and each part shown as Dispatch Plan, Dispatch Actual, Gap and MOM Action / Discussion, followed by one blank row.</p></div><span>All parts</span></div>
+   <div className="form-row">
+     <label>From date<input type="date" required value={dispatchExportFrom} onChange={e=>setDispatchExportFrom(e.target.value)}/></label>
+     <label>To date<input type="date" required value={dispatchExportTo} min={dispatchExportFrom||undefined} onChange={e=>setDispatchExportTo(e.target.value)}/></label>
+   </div>
+   <div className="button-row"><button onClick={exportDispatchScheduleActual} disabled={dispatchExportBusy||!dispatchExportFrom||!dispatchExportTo}>{dispatchExportBusy?'Preparing Excel…':'Download Excel'}</button></div>
+   {dispatchExportMsg&&<div className="notice" role="status">{dispatchExportMsg}</div>}
+   {dispatchExportErr&&<div className="error" role="alert">{dispatchExportErr}</div>}
+ </section>
  <div className="filter-summary"><span className="filter-chip">Calendar Plant: {calendarPlant}</span>{selected?.product_group&&<span className="filter-chip">Group: {selected.product_group}</span>}{currentPrice&&<span className="filter-chip">Current Price: ₹{num(currentPrice.price)}</span>}{latestSchedule&&<span className="filter-chip">Current Schedule: {num(latestSchedule.target)}</span>}</div>
 
  <div className="two-col"><section className="panel"><div className="panel-title"><h2>Schedule history</h2><span>Source: parent dispatch / Disp_Done from Stage Schedule.</span></div><div className="form-row"><label>Product<MultiSelect singleSelect value={pid?[pid]:[]} onChange={v=>{setPid(v.at(-1)||'');setTarget('')}} placeholder="Select Product" options={eligible.map(p=>({value:String(p.id),label:p.name}))}/></label><label>Month<input type="date" value={month} onChange={e=>{setMonth(e.target.value);setTarget('')}}/></label></div>
@@ -90,7 +115,7 @@ export default function Schedule(){
  <div className="two-col"><section className="panel"><div className="panel-title"><h2>Sales price history</h2><span>Historical prices are never overwritten.</span></div><div className="table-wrap"><table><thead><tr><th>Effective from</th><th>Effective to</th><th>Price ₹/pc</th><th>Source</th><th>Reason</th></tr></thead><tbody>{prices.map((r:any)=><tr key={r.id}><td>{r.effective_from}</td><td>{r.effective_to||'Current'}</td><td>{num(r.price)}</td><td>{r.source}</td><td>{r.reason||'—'}</td></tr>)}</tbody></table></div></section>
  <section className="panel"><h2>Create sales price revision</h2><p className="muted">The new price applies only from its effective date. Earlier MIS and sales values keep the old price.</p><label>Effective from<input type="date" value={priceEff} onChange={e=>setPriceEff(e.target.value)}/></label><label>New price ₹ / pc<input type="number" step="0.01" min="0.01" value={newPrice} onChange={e=>setNewPrice(e.target.value)}/></label><label>Reason / reference<textarea value={priceReason} onChange={e=>setPriceReason(e.target.value)}/></label><button onClick={applyPrice} disabled={!pid||!newPrice||Number(newPrice)<=0}>Apply price revision</button>{priceMsg&&<div className="notice">{priceMsg}</div>}</section></div>
 
- <section className="panel"><div className="panel-title"><h2>Working calendar — {calendarPlant}</h2><span>Default: Mon–Sat working, Sunday off. Explicit changes are stored and audited.</span></div>
+ <section className="panel"><div className="panel-title"><h2>Working calendar — {calendarPlant}</h2><span>All dates are working by default; mark any plant off-day explicitly. Changes are stored and audited.</span></div>
  <div className="form-row"><label>Range start<input type="date" value={rangeStart} onChange={e=>setRangeStart(e.target.value)}/></label><label>Range end<input type="date" value={rangeEnd} onChange={e=>setRangeEnd(e.target.value)}/></label><label>Holiday / off-day name<input value={holiday} onChange={e=>setHoliday(e.target.value)} placeholder="e.g. Diwali"/></label><label>Reason<input value={calReason} onChange={e=>setCalReason(e.target.value)}/></label></div>
  <div className="button-row"><button className="secondary" onClick={()=>bulk('SUNDAYS_OFF')}>Set Sundays off</button><button className="secondary" onClick={()=>bulk('SET_OFF')}>Mark range off</button><button className="secondary" onClick={()=>bulk('SET_WORKING')}>Mark range working</button></div>
  <div className="calendar-grid">{calendar.map(r=><button key={r.date} className={`day ${r.working?'working':'off'}`} title={`${r.holiday||''} ${r.reason||''}`} onClick={()=>editDay(r)}><b>{r.date.slice(-2)}</b><span>{r.working?'Working':'Off'}</span>{r.holiday&&<small>{r.holiday}</small>}</button>)}</div></section>

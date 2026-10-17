@@ -4,9 +4,14 @@ from ..time_utils import ist_today, ist_date
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from io import BytesIO
 
 from dateutil.relativedelta import relativedelta
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -15,8 +20,9 @@ from ..db import get_db
 from ..models import (
     Action, ActionContext, Customer, DailyMIS, DailyRequirement, LossCategory,
     Machine, MachineLossEvent, MachineShiftProduction, Operation, ProcessDailySummary,
-    Product, ProductValueAdditionHistory, RouteOperation, RouteVersion, SalesPriceHistory, ScheduleRevision,
-    User, Vendor, VendorMovement,
+    Product, ProductValueAdditionHistory, ProcessFlowStage, ProcessFlowVersion,
+    ReviewActionLink, ReviewPoint, ReviewSession, RouteOperation, RouteVersion,
+    SalesPriceHistory, ScheduleRevision, User, Vendor, VendorMovement,
 )
 from ..enums import ActionStatus
 from ..services.oee import calculate_oee
@@ -1104,3 +1110,311 @@ def month_end_forecast_report(
             "critical": sum(1 for x in rows if x["risk"] == "CRITICAL"), "watch": sum(1 for x in rows if x["risk"] == "WATCH"), "on_track": sum(1 for x in rows if x["risk"] == "ON_TRACK"),
         },
     }
+
+
+
+@router.get("/dispatch-schedule-actual.xlsx")
+def export_dispatch_schedule_actual(
+    from_date: date,
+    to_date: date,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Export every Product Master part with daily dispatch plan, actual, gap and MOM discussion."""
+    if to_date < from_date:
+        raise HTTPException(422, "To date must be on or after From date")
+    if (to_date - from_date).days > 365:
+        raise HTTPException(422, "Select a date range of no more than 366 calendar days")
+
+    product_rows = db.execute(
+        select(Product, Customer)
+        .outerjoin(Customer, Customer.id == Product.customer_id)
+        .order_by(Product.sort_order, Product.name, Product.id)
+    ).all()
+    products = {product.id: (product, customer) for product, customer in product_rows}
+    product_ids = list(products)
+    dates = [from_date + timedelta(days=offset) for offset in range((to_date - from_date).days + 1)]
+
+    # The parent-dispatch stage is the authoritative scheduled quantity when
+    # an effective process flow defines one. For legacy products use the
+    # non-stage DailyRequirement row, then the stored Daily MIS plan.
+    requirements: dict[tuple[date, int, int | None], Decimal] = {}
+    mis_by_day: dict[tuple[date, int], DailyMIS] = {}
+    parent_route_by_day: dict[tuple[date, int], int] = {}
+
+    if product_ids:
+        req_rows = db.scalars(
+            select(DailyRequirement).where(
+                DailyRequirement.req_date >= from_date,
+                DailyRequirement.req_date <= to_date,
+                DailyRequirement.product_id.in_(product_ids),
+            )
+        ).all()
+        for req in req_rows:
+            requirements[(req.req_date, req.product_id, req.route_operation_id)] = _value(req.revised_plan_qty)
+
+        mis_rows = db.scalars(
+            select(DailyMIS).where(
+                DailyMIS.mis_date >= from_date,
+                DailyMIS.mis_date <= to_date,
+                DailyMIS.product_id.in_(product_ids),
+            )
+        ).all()
+        mis_by_day = {(row.mis_date, row.product_id): row for row in mis_rows}
+
+        flows = db.scalars(
+            select(ProcessFlowVersion)
+            .where(
+                ProcessFlowVersion.product_id.in_(product_ids),
+                ProcessFlowVersion.effective_from <= to_date,
+            )
+            .order_by(
+                ProcessFlowVersion.product_id,
+                ProcessFlowVersion.effective_from,
+                ProcessFlowVersion.revision_no,
+                ProcessFlowVersion.id,
+            )
+        ).all()
+        flows_by_product: dict[int, list[ProcessFlowVersion]] = defaultdict(list)
+        for flow in flows:
+            flows_by_product[flow.product_id].append(flow)
+
+        flow_ids = [flow.id for flow in flows]
+        stage_by_flow: dict[int, ProcessFlowStage] = {}
+        if flow_ids:
+            parent_stages = db.scalars(
+                select(ProcessFlowStage)
+                .where(
+                    ProcessFlowStage.flow_id.in_(flow_ids),
+                    ProcessFlowStage.parent_dispatch.is_(True),
+                    ProcessFlowStage.is_active.is_(True),
+                    ProcessFlowStage.route_operation_id.is_not(None),
+                )
+                .order_by(ProcessFlowStage.id)
+            ).all()
+            for stage in parent_stages:
+                stage_by_flow.setdefault(stage.flow_id, stage)
+
+        # Walk dates chronologically so each product's flow revision is
+        # resolved once per effective date, without one database query per day.
+        for product_id in product_ids:
+            product_flows = flows_by_product.get(product_id, [])
+            flow_index = 0
+            active_flow = None
+            for day in dates:
+                while flow_index < len(product_flows) and product_flows[flow_index].effective_from <= day:
+                    active_flow = product_flows[flow_index]
+                    flow_index += 1
+                stage = stage_by_flow.get(active_flow.id) if active_flow is not None else None
+                if stage and stage.route_operation_id is not None:
+                    parent_route_by_day[(day, product_id)] = stage.route_operation_id
+
+    # Gather MOM discussion points plus the actions explicitly linked to each
+    # meeting. A linked action is assigned to every Product Master part in its
+    # ActionContext; point actions are de-duplicated against that linked register.
+    mom_by_day_product: dict[tuple[date, int], list[str]] = defaultdict(list)
+    linked_action_seen: set[tuple[int, int, int]] = set()
+    review_sessions = db.scalars(
+        select(ReviewSession)
+        .where(ReviewSession.review_date >= from_date, ReviewSession.review_date <= to_date)
+        .order_by(ReviewSession.review_date, ReviewSession.id)
+    ).all()
+    review_ids = [review.id for review in review_sessions]
+    session_by_id = {review.id: review for review in review_sessions}
+
+    if review_ids:
+        points = db.scalars(
+            select(ReviewPoint)
+            .where(ReviewPoint.review_session_id.in_(review_ids))
+            .order_by(ReviewPoint.review_session_id, ReviewPoint.sequence_no, ReviewPoint.id)
+        ).all()
+        links = db.scalars(
+            select(ReviewActionLink)
+            .where(ReviewActionLink.review_session_id.in_(review_ids))
+            .order_by(ReviewActionLink.review_session_id, ReviewActionLink.id)
+        ).all()
+
+        action_ids = {point.action_id for point in points if point.action_id}
+        action_ids.update(link.action_id for link in links)
+        actions = db.scalars(select(Action).where(Action.id.in_(action_ids or {-1}))).all()
+        action_by_id = {action.id: action for action in actions}
+        owner_ids = {action.owner_id for action in actions if action.owner_id}
+        owners = db.scalars(select(User).where(User.id.in_(owner_ids or {-1}))).all()
+        owner_by_id = {owner.id: owner for owner in owners}
+
+        contexts = db.scalars(
+            select(ActionContext).where(
+                ActionContext.action_id.in_(action_ids or {-1}),
+                ActionContext.product_id.is_not(None),
+            )
+        ).all()
+        context_products: dict[int, set[int]] = defaultdict(set)
+        for ctx in contexts:
+            if ctx.product_id in products:
+                context_products[ctx.action_id].add(ctx.product_id)
+
+        def action_details(action: Action) -> str:
+            owner = owner_by_id.get(action.owner_id) if action.owner_id else None
+            owner_name = (owner.full_name or owner.username) if owner else "Unassigned"
+            due_date = ist_date(action.due_at).isoformat() if action.due_at else "Not set"
+            priority = action.priority.value if hasattr(action.priority, "value") else str(action.priority)
+            status = action.status.value if hasattr(action.status, "value") else str(action.status)
+            description = (action.action_description or action.problem_description or "").strip()
+            return (
+                f"Action {action.action_no}: {description} | Owner: {owner_name} "
+                f"| Due: {due_date} | Priority: {priority} | Status: {status}"
+            )
+
+        for point in points:
+            review = session_by_id.get(point.review_session_id)
+            if not review or not point.product_id or point.product_id not in products:
+                continue
+            mom_no = f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
+            category = f"[{point.category}] " if point.category else ""
+            entry = f"{mom_no} | {category}{(point.discussion_point or '').strip()}"
+            if point.action_id and point.action_id in action_by_id:
+                entry += "\n" + action_details(action_by_id[point.action_id])
+                linked_action_seen.add((review.id, point.product_id, point.action_id))
+            mom_by_day_product[(review.review_date, point.product_id)].append(entry)
+
+        for link in links:
+            review = session_by_id.get(link.review_session_id)
+            action = action_by_id.get(link.action_id)
+            if not review or not action:
+                continue
+            mom_no = f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
+            for product_id in sorted(context_products.get(action.id, set())):
+                key = (review.id, product_id, action.id)
+                if key in linked_action_seen:
+                    continue
+                linked_action_seen.add(key)
+                category = f"[{action.problem_category}] " if action.problem_category else ""
+                problem = (action.problem_description or "").strip()
+                entry = f"{mom_no} | Linked Action {action.action_no} | {category}{problem}"
+                entry += "\n" + action_details(action)
+                mom_by_day_product[(review.review_date, product_id)].append(entry)
+
+    def safe_excel_text(value: str) -> str:
+        text = str(value or "")
+        if text.lstrip(" \t\r\n")[:1] in {"=", "+", "-", "@"}:
+            return "'" + text
+        return text
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Dispatch vs Actual"
+    ws.sheet_view.showGridLines = False
+    ws.freeze_panes = "B2"
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.print_title_rows = "1:1"
+    wb.properties.title = "Dispatch Schedule vs Actual"
+    wb.properties.subject = f"All parts from {from_date.isoformat()} to {to_date.isoformat()}"
+
+    ws.append(["Part / Metric", *dates])
+    header_fill = PatternFill(fill_type="solid", fgColor="1F4E78")
+    part_fill = PatternFill(fill_type="solid", fgColor="D9EAF7")
+    metric_fill = PatternFill(fill_type="solid", fgColor="EEF3F8")
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        if cell.column > 1:
+            cell.number_format = "dd-mmm-yyyy"
+    ws.row_dimensions[1].height = 28
+    ws.column_dimensions["A"].width = 36
+    for column in range(2, len(dates) + 2):
+        ws.column_dimensions[get_column_letter(column)].width = 19
+
+    for product_id, (product, customer) in products.items():
+        part_label = f"PART: {product.code} - {product.name}"
+        details = [x for x in [product.plant, customer.name if customer else None, product.product_group] if x]
+        if details:
+            part_label += " | " + " | ".join(details)
+
+        ws.append([safe_excel_text(part_label)])
+        part_row = ws.max_row
+        ws.merge_cells(start_row=part_row, start_column=1, end_row=part_row, end_column=len(dates) + 1)
+        part_cell = ws.cell(row=part_row, column=1)
+        part_cell.font = Font(bold=True, color="17365D")
+        part_cell.fill = part_fill
+        part_cell.alignment = Alignment(vertical="center")
+        ws.row_dimensions[part_row].height = 22
+
+        plans: list[float] = []
+        actuals: list[float] = []
+        gaps: list[float] = []
+        for day in dates:
+            key = (day, product_id)
+            mis = mis_by_day.get(key)
+            route_operation_id = parent_route_by_day.get(key)
+            plan = requirements.get((day, product_id, route_operation_id)) if route_operation_id is not None else None
+            if plan is None:
+                plan = requirements.get((day, product_id, None))
+            if plan is None:
+                plan = _value(mis.plan_qty) if mis is not None else ZERO
+            actual = _value(mis.actual_qty) if mis is not None else ZERO
+            plan_value = float(plan)
+            actual_value = float(actual)
+            plans.append(plan_value)
+            actuals.append(actual_value)
+            gaps.append(actual_value - plan_value)
+
+        ws.append(["Dispatch Plan", *plans])
+        plan_row = ws.max_row
+        ws.append(["Dispatch Actual", *actuals])
+        actual_row = ws.max_row
+        ws.append(["Gap (Actual - Plan)", *gaps])
+        gap_row = ws.max_row
+        ws.append([
+            "MOM Action / Discussion",
+            *[
+                safe_excel_text("\n\n".join(mom_by_day_product.get((day, product_id), [])))
+                for day in dates
+            ],
+        ])
+        action_row = ws.max_row
+
+        for row_number in (plan_row, actual_row, gap_row, action_row):
+            label_cell = ws.cell(row=row_number, column=1)
+            label_cell.font = Font(bold=True, color="1F1F1F")
+            label_cell.fill = metric_fill
+            label_cell.alignment = Alignment(vertical="center", wrap_text=True)
+            for column in range(2, len(dates) + 2):
+                cell = ws.cell(row=row_number, column=column)
+                cell.alignment = Alignment(
+                    horizontal="center" if row_number != action_row else "left",
+                    vertical="top" if row_number == action_row else "center",
+                    wrap_text=(row_number == action_row),
+                )
+                if row_number != action_row:
+                    cell.number_format = '#,##0.###;[Red]-#,##0.###;-'
+        ws.row_dimensions[plan_row].height = 20
+        ws.row_dimensions[actual_row].height = 20
+        ws.row_dimensions[gap_row].height = 20
+        max_action_lines = max(
+            (str(ws.cell(row=action_row, column=column).value or "").count("\n") + 1
+             for column in range(2, len(dates) + 2)),
+            default=1,
+        )
+        ws.row_dimensions[action_row].height = min(150, max(34, 18 * max_action_lines))
+        ws.append([])
+        ws.row_dimensions[ws.max_row].height = 8
+
+    if not products:
+        ws.append(["No parts are available in the Product Master."])
+
+    output = BytesIO()
+    wb.save(output)
+    filename = f"Dispatch_Schedule_vs_Actual_{from_date:%Y%m%d}_{to_date:%Y%m%d}.xlsx"
+    return Response(
+        output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

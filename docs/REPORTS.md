@@ -47,3 +47,5 @@
 ## Exports
 - Management report tables can be exported as CSV for Excel.
 - Use `Print / Save PDF` to create a PDF snapshot of the selected report page.
+
+- Dispatch Schedule vs Actual workbook: select a date range to export all Product Master parts with daily date columns, Dispatch Plan, Dispatch Actual, Gap and part-linked MOM discussion / actions.
