@@ -1441,7 +1441,7 @@ def export_dispatch_schedule_actual(
              for column in range(2, len(dates) + 2)),
             default=1,
         )
-        ws.row_dimensions[action_row].height = min(150, max(34, 18 * max_action_lines))
+        ws.row_dimensions[action_row].height = min(300, max(54, 18 * max_action_lines))
         ws.append([])
         ws.row_dimensions[ws.max_row].height = 8
 
