@@ -1209,11 +1209,9 @@ def export_dispatch_schedule_actual(
                 if stage and stage.route_operation_id is not None:
                     parent_route_by_day[(day, product_id)] = stage.route_operation_id
 
-    # Gather MOM discussion points plus the actions explicitly linked to each
-    # meeting. A linked action is assigned to every Product Master part in its
-    # ActionContext; point actions are de-duplicated against that linked register.
+    # Keep each exported MOM entry concise: meeting date, point number,
+    # the saved discussion point, and the action description when one exists.
     mom_by_day_product: dict[tuple[date, int], list[str]] = defaultdict(list)
-    linked_action_seen: set[tuple[int, int, int]] = set()
     review_sessions = db.scalars(
         select(ReviewSession)
         .where(ReviewSession.review_date >= from_date, ReviewSession.review_date <= to_date)
@@ -1228,113 +1226,31 @@ def export_dispatch_schedule_actual(
             .where(ReviewPoint.review_session_id.in_(review_ids))
             .order_by(ReviewPoint.review_session_id, ReviewPoint.sequence_no, ReviewPoint.id)
         ).all()
-        links = db.scalars(
-            select(ReviewActionLink)
-            .where(ReviewActionLink.review_session_id.in_(review_ids))
-            .order_by(ReviewActionLink.review_session_id, ReviewActionLink.id)
-        ).all()
 
         action_ids = {point.action_id for point in points if point.action_id}
-        action_ids.update(link.action_id for link in links)
         actions = db.scalars(select(Action).where(Action.id.in_(action_ids or {-1}))).all()
         action_by_id = {action.id: action for action in actions}
-        whywhy_rows = db.scalars(
-            select(ActionWhyWhy).where(ActionWhyWhy.action_id.in_(action_ids or {-1}))
-        ).all()
-        whywhy_by_action = {plan.action_id: plan for plan in whywhy_rows}
-        owner_ids = {action.owner_id for action in actions if action.owner_id}
-        owners = db.scalars(select(User).where(User.id.in_(owner_ids or {-1}))).all()
-        owner_by_id = {owner.id: owner for owner in owners}
-
-        contexts = db.scalars(
-            select(ActionContext).where(
-                ActionContext.action_id.in_(action_ids or {-1}),
-                ActionContext.product_id.is_not(None),
-            )
-        ).all()
-        context_products: dict[int, set[int]] = defaultdict(set)
-        for ctx in contexts:
-            if ctx.product_id in products:
-                context_products[ctx.action_id].add(ctx.product_id)
-
-        def action_details(action: Action) -> str:
-            owner = owner_by_id.get(action.owner_id) if action.owner_id else None
-            owner_name = (owner.full_name or owner.username) if owner else "Unassigned"
-            due_date = ist_date(action.due_at).isoformat() if action.due_at else "Not set"
-            priority = action.priority.value if hasattr(action.priority, "value") else str(action.priority)
-            status = action.status.value if hasattr(action.status, "value") else str(action.status)
-            description = (action.action_description or action.problem_description or "").strip()
-            details = [
-                f"Action No: {action.action_no}",
-                f"Action Plan: {description}" if description else "",
-                f"Owner: {owner_name}",
-                f"Due: {due_date}",
-                f"Priority: {priority}",
-                f"Status: {status}",
-            ]
-            if action.closure_remark:
-                details.append(f"Closure Remark: {action.closure_remark.strip()}")
-            if action.effectiveness_status:
-                details.append(f"Effectiveness: {action.effectiveness_status.strip()}")
-
-            plan = whywhy_by_action.get(action.id)
-            if plan:
-                plan_fields = [
-                    ("Containment", plan.containment_action),
-                    ("Why 1", plan.why1),
-                    ("Why 2", plan.why2),
-                    ("Why 3", plan.why3),
-                    ("Why 4", plan.why4),
-                    ("Why 5", plan.why5),
-                    ("Root Cause", plan.root_cause),
-                    ("Corrective Action", plan.corrective_action),
-                    ("Preventive Action", plan.preventive_action),
-                    ("Verification Method", plan.verification_method),
-                    ("Verification Result", plan.verification_result),
-                    ("Effectiveness Check Date", plan.effectiveness_check_date.isoformat() if plan.effectiveness_check_date else None),
-                    ("Effectiveness Result", plan.effectiveness_result),
-                    ("Lessons Learned", plan.lessons_learned),
-                ]
-                populated = [f"{label}: {str(value).strip()}" for label, value in plan_fields if value is not None and str(value).strip()]
-                if populated:
-                    details.append("Why-Why Action Plan:")
-                    details.extend(populated)
-            return "\n".join(item for item in details if item)
 
         for point in points:
             review = session_by_id.get(point.review_session_id)
             if not review or not point.product_id or point.product_id not in products:
                 continue
-            mom_no = f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
-            product = products[point.product_id][0]
-            part_number = f"Part No: {product.code} - {product.name}"
-            category = f"[{point.category}] " if point.category else ""
-            entry = f"{mom_no} | MOM Point #{point.sequence_no} | {part_number} | {category}Discussion: {(point.discussion_point or '').strip()}"
-            if point.action_id and point.action_id in action_by_id:
-                entry += "\n" + action_details(action_by_id[point.action_id])
-                linked_action_seen.add((review.id, point.product_id, point.action_id))
-            elif point.action_required:
-                entry += "\nAction Plan: Action required, but no linked action record was found."
-            mom_by_day_product[(review.review_date, point.product_id)].append(entry)
 
-        for link in links:
-            review = session_by_id.get(link.review_session_id)
-            action = action_by_id.get(link.action_id)
-            if not review or not action:
-                continue
-            mom_no = f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
-            for product_id in sorted(context_products.get(action.id, set())):
-                key = (review.id, product_id, action.id)
-                if key in linked_action_seen:
-                    continue
-                linked_action_seen.add(key)
-                product = products[product_id][0]
-                part_number = f"Part No: {product.code} - {product.name}"
-                category = f"[{action.problem_category}] " if action.problem_category else ""
-                problem = (action.problem_description or "").strip()
-                entry = f"{mom_no} | Linked Action | {part_number} | {category}{problem}"
-                entry += "\n" + action_details(action)
-                mom_by_day_product[(review.review_date, product_id)].append(entry)
+            discussion = (point.discussion_point or "").strip()
+            entry = (
+                f"MOM Date: {review.review_date.strftime('%d-%b-%Y')} | "
+                f"MOM Point #{point.sequence_no} | "
+                f"Discussion: {discussion}"
+            )
+            action = action_by_id.get(point.action_id) if point.action_id else None
+            action_text = (
+                (action.action_description or action.problem_description or "").strip()
+                if action else ""
+            )
+            if action_text:
+                entry += f"\\nAction: {action_text}"
+
+            mom_by_day_product[(review.review_date, point.product_id)].append(entry)
 
     def safe_excel_text(value: str) -> str:
         text = str(value or "")
