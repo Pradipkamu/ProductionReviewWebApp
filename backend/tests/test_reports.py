@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import (Action, ActionContext, Customer, DailyMIS, DailyRequirement, Product,\n                        ReviewActionLink, ReviewPoint, ReviewSession)
+from app.models import (Action, ActionContext, Customer, DailyMIS, DailyRequirement, Product,
+                        ReviewActionLink, ReviewPoint, ReviewSession)
 
 
 def auth_headers(client: TestClient):
