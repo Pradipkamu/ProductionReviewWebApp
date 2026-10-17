@@ -307,6 +307,7 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
     assert sheet["A11"].value == "Gap (Actual - Plan)"
     assert sheet["B11"].value == -50
     assert sheet["A12"].value == "MOM Action / Discussion"
-    # A meeting-level linked action without a MOM point is not duplicated
-    # into the export; actions are shown only against their associated MOM point.
-    assert sheet["B12"].value in (None, "")
+    # Meeting-linked actions without a point remain concise: date and action only.
+    assert sheet["B12"].value == (
+        "MOM Date: 01-Oct-2026 | Action: Confirm dispatch with customer"
+    )
