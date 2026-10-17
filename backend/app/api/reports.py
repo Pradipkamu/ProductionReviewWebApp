@@ -1226,11 +1226,28 @@ def export_dispatch_schedule_actual(
             .where(ReviewPoint.review_session_id.in_(review_ids))
             .order_by(ReviewPoint.review_session_id, ReviewPoint.sequence_no, ReviewPoint.id)
         ).all()
+        links = db.scalars(
+            select(ReviewActionLink)
+            .where(ReviewActionLink.review_session_id.in_(review_ids))
+            .order_by(ReviewActionLink.review_session_id, ReviewActionLink.id)
+        ).all()
 
         action_ids = {point.action_id for point in points if point.action_id}
+        action_ids.update(link.action_id for link in links)
         actions = db.scalars(select(Action).where(Action.id.in_(action_ids or {-1}))).all()
         action_by_id = {action.id: action for action in actions}
+        contexts = db.scalars(
+            select(ActionContext).where(
+                ActionContext.action_id.in_(action_ids or {-1}),
+                ActionContext.product_id.is_not(None),
+            )
+        ).all()
+        context_products: dict[int, set[int]] = defaultdict(set)
+        for ctx in contexts:
+            if ctx.product_id in products:
+                context_products[ctx.action_id].add(ctx.product_id)
 
+        linked_action_seen: set[tuple[int, int, int]] = set()
         for point in points:
             review = session_by_id.get(point.review_session_id)
             if not review or not point.product_id or point.product_id not in products:
@@ -1248,9 +1265,31 @@ def export_dispatch_schedule_actual(
                 if action else ""
             )
             if action_text:
-                entry += f"\nAction: {action_text}"
+                entry += f"\\nAction: {action_text}"
+                linked_action_seen.add((review.id, point.product_id, action.id))
 
             mom_by_day_product[(review.review_date, point.product_id)].append(entry)
+
+        # Preserve meeting-linked actions that have a product context but are
+        # not already attached to a specific MOM point.
+        for link in links:
+            review = session_by_id.get(link.review_session_id)
+            action = action_by_id.get(link.action_id)
+            if not review or not action:
+                continue
+            action_text = (action.action_description or action.problem_description or "").strip()
+            if not action_text:
+                continue
+            for product_id in sorted(context_products.get(action.id, set())):
+                key = (review.id, product_id, action.id)
+                if key in linked_action_seen:
+                    continue
+                linked_action_seen.add(key)
+                entry = (
+                    f"MOM Date: {review.review_date.strftime('%d-%b-%Y')} | "
+                    f"Action: {action_text}"
+                )
+                mom_by_day_product[(review.review_date, product_id)].append(entry)
 
     def safe_excel_text(value: str) -> str:
         text = str(value or "")
