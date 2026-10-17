@@ -8,8 +8,9 @@ from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import (Action, ActionContext, Customer, DailyMIS, DailyRequirement, Product,
-                        ReviewActionLink, ReviewPoint, ReviewSession)
+from app.models import (Action, ActionContext, Customer, DailyMIS, DailyRequirement, Operation,
+                        ProcessFlowStage, ProcessFlowVersion, Product, ReviewActionLink,
+                        ReviewPoint, ReviewSession, RouteOperation, RouteVersion)
 
 
 def auth_headers(client: TestClient):
@@ -147,12 +148,60 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
         db.add_all([p1, p2])
         db.flush()
 
+        # Explicit parent-dispatch flow plan is authoritative over the
+        # legacy non-stage requirement for the same product/date.
+        dispatch_operation = Operation(code="DSA-DISPATCH", name="Dispatch")
+        db.add(dispatch_operation)
+        db.flush()
+        route = RouteVersion(product_id=p1.id, revision_no=1, effective_from=day2)
+        db.add(route)
+        db.flush()
+        route_operation = RouteOperation(
+            route_version_id=route.id,
+            operation_id=dispatch_operation.id,
+            sequence_no=10,
+            is_dispatch=True,
+        )
+        db.add(route_operation)
+        db.flush()
+        flow = ProcessFlowVersion(
+            product_id=p1.id,
+            route_version_id=route.id,
+            effective_from=day2,
+            revision_no=1,
+            definition_sha256="a" * 64,
+            source_document="dispatch-export-test.xlsx",
+            reason="Test explicit parent dispatch plan",
+        )
+        db.add(flow)
+        db.flush()
+        parent_stage = ProcessFlowStage(
+            flow_id=flow.id,
+            code="DISPATCH",
+            name="Dispatch",
+            route_operation_id=route_operation.id,
+            source_column="A",
+            role="INTERNAL",
+            branch="",
+            variant="",
+            vendor_name="",
+            predecessors_json="[]",
+            alias_of="",
+            is_active=True,
+            parent_dispatch=True,
+            sequence_no=10,
+        )
+        db.add(parent_stage)
+        db.flush()
+
         # Revised daily requirements must override the imported MIS plan.
         db.add_all([
             DailyRequirement(req_date=day1, product_id=p1.id, route_operation_id=None,
                              baseline_plan_qty=Decimal("90"), revised_plan_qty=Decimal("100")),
             DailyRequirement(req_date=day2, product_id=p1.id, route_operation_id=None,
                              baseline_plan_qty=Decimal("100"), revised_plan_qty=Decimal("120")),
+            DailyRequirement(req_date=day2, product_id=p1.id, route_operation_id=route_operation.id,
+                             baseline_plan_qty=Decimal("100"), revised_plan_qty=Decimal("125")),
             DailyRequirement(req_date=day1, product_id=p2.id, route_operation_id=None,
                              baseline_plan_qty=Decimal("50"), revised_plan_qty=Decimal("50")),
             DailyMIS(mis_date=day1, product_id=p1.id, plan_qty=Decimal("90"), actual_qty=Decimal("90"),
@@ -218,11 +267,11 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
     # First product: one part heading, Plan, Actual, Gap, MOM row, then a blank.
     assert sheet["A2"].value.startswith("PART: DSA-1 - Dispatch Export Part 1")
     assert sheet["A3"].value == "Dispatch Plan"
-    assert [sheet.cell(3, col).value for col in (2, 3, 4)] == [100, 120, 75]
+    assert [sheet.cell(3, col).value for col in (2, 3, 4)] == [100, 125, 75]
     assert sheet["A4"].value == "Dispatch Actual"
     assert [sheet.cell(4, col).value for col in (2, 3, 4)] == [90, 100, 60]
     assert sheet["A5"].value == "Gap (Actual - Plan)"
-    assert [sheet.cell(5, col).value for col in (2, 3, 4)] == [-10, -20, -15]
+    assert [sheet.cell(5, col).value for col in (2, 3, 4)] == [-10, -25, -15]
     assert sheet["A6"].value == "MOM Action / Discussion"
     p1_mom = sheet["B6"].value
     assert "MOM-2026-10-01-" in p1_mom
