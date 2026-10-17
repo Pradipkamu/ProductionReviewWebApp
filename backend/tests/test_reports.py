@@ -285,19 +285,17 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
     assert [sheet.cell(5, col).value for col in (2, 3, 4)] == [-10, -25, -15]
     assert sheet["A6"].value == "MOM Action / Discussion"
     p1_mom = sheet["B6"].value
-    assert "MOM-2026-10-01-" in p1_mom
-    assert "[CRITICAL]" in p1_mom
-    assert "Part No: DSA-1 - Dispatch Export Part 1" in p1_mom
-    assert "Review dispatch shortfall" in p1_mom
-    assert "Action Plan: Recover the shortfall" in p1_mom
-    assert "Containment: Contain affected dispatch batch" in p1_mom
-    assert "Root Cause: No confirmed loading slot" in p1_mom
-    assert "Corrective Action: Confirm and reserve dispatch slot" in p1_mom
-    assert "Preventive Action: Review dispatch slot every morning" in p1_mom
-    assert "Verification Method: Check next five dispatch days" in p1_mom
-    assert "Verification Result: Verified for five dispatch days" in p1_mom
-    assert "Lessons Learned: Escalate dispatch constraints before shift start" in p1_mom
-    assert p1_mom.count("ACT-2026-DSA01") == 1
+    assert p1_mom == (
+        "MOM Date: 01-Oct-2026 | MOM Point #1 | "
+        "Discussion: [CRITICAL] | Part No: DSA-1 | Review dispatch shortfall\n"
+        "Action: Recover the shortfall"
+    )
+    assert "MOM-2026-" not in p1_mom
+    assert "Part No: DSA-1 - Dispatch Export Part 1" not in p1_mom
+    assert "Action No:" not in p1_mom
+    assert "Owner:" not in p1_mom
+    assert "Containment:" not in p1_mom
+    assert "Root Cause:" not in p1_mom
     assert sheet["A7"].value is None
 
     # Second product is included even though it has no Daily MIS actual row.
@@ -309,6 +307,7 @@ def test_dispatch_schedule_actual_excel_contains_all_parts_and_mom_actions():
     assert sheet["A11"].value == "Gap (Actual - Plan)"
     assert sheet["B11"].value == -50
     assert sheet["A12"].value == "MOM Action / Discussion"
-    assert "Part No: DSA-2 - Dispatch Export Part 2" in sheet["B12"].value
-    assert "Confirm dispatch with customer" in sheet["B12"].value
-    assert "Action Plan: Confirm dispatch with customer" in sheet["B12"].value
+    # Meeting-linked actions without a point remain concise: date and action only.
+    assert sheet["B12"].value == (
+        "MOM Date: 01-Oct-2026 | Action: Confirm dispatch with customer"
+    )
