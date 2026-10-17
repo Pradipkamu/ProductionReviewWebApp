@@ -72,6 +72,7 @@ export default function DailyMeeting() {
     priority: 'HIGH',
     product_id: '',
   })
+  const [requiresPartForBlocker, setRequiresPartForBlocker] = useState(false)
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot)
   const [snapshotBusy, setSnapshotBusy] = useState(false)
   const [snapshotWarnings, setSnapshotWarnings] = useState<string[]>([])
@@ -363,6 +364,10 @@ export default function DailyMeeting() {
   async function addPoint(e: React.FormEvent) {
     e.preventDefault()
     if (!review) return
+    if (requiresPartForBlocker && !form.product_id) {
+      setErr('Select the affected Part Number before adding this Blocking / Critical item to the MOM.')
+      return
+    }
     if (form.action_required && !form.owner_id) {
       setErr('Select a responsible owner before assigning this action.')
       return
@@ -382,6 +387,7 @@ export default function DailyMeeting() {
           due_at: form.due_at ? istLocalToUTC(form.due_at) : null,
         }),
       })
+      setRequiresPartForBlocker(false)
       setForm((f: any) => ({ ...f, discussion_point: '', action_description: '' }))
       await load(review)
       await loadHistory()
@@ -394,6 +400,7 @@ export default function DailyMeeting() {
   function addExceptionToMom(row: any) {
     const category = categoryForAlert(row.kind || '', row.detail || '')
     const productId = row.product_id ? String(row.product_id) : ''
+    setRequiresPartForBlocker(!productId)
     const productMaster = productOptions.find(p => String(p.id) === productId)
     const productName = row.product || productMaster?.name || ''
     const productCode = row.product_code || row.part_no || productMaster?.code || ''
@@ -419,6 +426,7 @@ export default function DailyMeeting() {
   }
 
   function addRejectionToMom(row: any) {
+    setRequiresPartForBlocker(false)
     const productId = row.product_id ? String(row.product_id) : ''
     const productName = row.product || productOptions.find(p => String(p.id) === productId)?.name || ''
     const defect = row.phenomenon || row.detail || 'Critical rejection'
@@ -742,10 +750,11 @@ export default function DailyMeeting() {
           <label>Category<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
             {['Production', 'Quality', 'Delivery', 'Process', 'Maintenance', 'Capacity', 'Vendor', 'Customer', 'Safety', 'Cost', 'Planning', 'Actions', 'Other'].map(x => <option key={x}>{x}</option>)}
           </select></label>
-          <label>Product context<select value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
-            <option value="">No product context</option>
+          <label>{requiresPartForBlocker ? 'Affected Part Number *' : 'Product context'}<select required={requiresPartForBlocker} value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
+            <option value="">{requiresPartForBlocker ? 'Select Part Number' : 'No product context'}</option>
             {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
           </select></label>
+          {requiresPartForBlocker && <div className="data-note">This Blocking / Critical item has no Part Number linked yet. Select the affected Part Number before adding it to the MOM so it appears against the correct part in the dispatch report.</div>}
           <label>Action Required<select value={form.action_required ? 'YES' : 'NO'} onChange={e => setForm({ ...form, action_required: e.target.value === 'YES' })}>
             <option>YES</option><option>NO</option>
           </select></label>
