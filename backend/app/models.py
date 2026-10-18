@@ -534,6 +534,7 @@ class QualityRejectionDaily(Base, TimestampMixin):
     machine_id: Mapped[Optional[int]] = mapped_column(ForeignKey("machines.id"), nullable=True, index=True)
     phenomenon_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_phenomena.id"), index=True)
     reject_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
+    approved_salvage_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"), server_default="0", nullable=False)
     rework_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
     scrap_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
     denominator_source: Mapped[str] = mapped_column(String(80), default="DISP_DONE")
@@ -547,6 +548,24 @@ class QualityRejectionDaily(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_quality_daily_date_product", "rejection_date", "product_id"),
         Index("ix_quality_daily_date_phenomenon", "rejection_date", "phenomenon_id"),
+    )
+
+
+class QualityRejectionSalvageRequest(Base, TimestampMixin):
+    __tablename__ = "quality_rejection_salvage_requests"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    daily_rejection_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_daily.id"), index=True)
+    requested_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING", server_default="PENDING", index=True)
+    requested_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    review_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved_before_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    approved_after_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 3), nullable=True)
+    __table_args__ = (
+        Index("ix_quality_salvage_daily_status", "daily_rejection_id", "status"),
     )
 
 

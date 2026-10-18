@@ -120,7 +120,9 @@ def data_quality(db, as_of, products):
         if len(prices)>1:add('conflict',p,'Overlapping effective price ranges')
     byid={p.id:p for p in products}
     for r in db.scalars(select(QualityRejectionDaily).where(QualityRejectionDaily.product_id.in_(ids),QualityRejectionDaily.rejection_date<=as_of)):
-        if r.denominator_qty is None or r.denominator_qty<=0:add('ppm_denominator_pending',byid[r.product_id],str(r.rejection_date),r.id)
+        net_reject = (r.reject_qty or 0) - (r.approved_salvage_qty or 0)
+        if net_reject > 0 and (r.denominator_qty is None or r.denominator_qty<=0):
+            add('ppm_denominator_pending',byid[r.product_id],str(r.rejection_date),r.id)
     history=db.scalars(select(QualityRejectionMonthlyHistory).where(
         QualityRejectionMonthlyHistory.product_id.in_(ids),QualityRejectionMonthlyHistory.month<=as_of)).all()
     dispatch_by_month={}

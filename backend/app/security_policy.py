@@ -32,6 +32,9 @@ def enforce_api_policy(user, request: Request):
     # receiving permission to edit the underlying production record.
     if section == 'oee' and path.endswith('/raise-action') and user.role.value in WRITE_ROLES['actions']:
         return
+    # Production may submit salvage requests, but cannot write other Quality records.
+    if section == 'quality' and path == '/api/quality/salvage/requests' and request.method == 'POST' and user.role == UserRole.PRODUCTION:
+        return
     if section == 'insights' and '/reminders/' in path and user.role.value != 'VIEW_ONLY':
         return
     if section == 'masters' and '/value-addition-' in path and user.role.value == 'QUALITY':
