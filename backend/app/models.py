@@ -874,7 +874,7 @@ class HistoricalCorrectionGrant(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     month: Mapped[date] = mapped_column(Date, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    reviewed_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    approved_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     reason: Mapped[str] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
