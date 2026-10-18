@@ -141,11 +141,11 @@ export default function RejectionSalvage({me}:{me:any}) {
     </section>
     <section className="panel">
       <div className="panel-title"><div><h2>Salvage Approval Register</h2><p>Complete request history, including rejected and approved requests.</p></div><span>{requests.length} requests</span></div>
-      <div className="table-wrap"><table><thead><tr><th>Request / Date</th><th>Part / Phenomenon</th><th>Requested Qty</th><th>Reason</th><th>Status</th><th>Requested By / At</th><th>Approved By / At</th><th>Approval Quantity Before → After</th><th>Review Note / Decision</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>Request / Date</th><th>Part / Phenomenon</th><th>Requested Qty</th><th>Reason</th><th>Status</th><th>Requested By / At</th><th>Reviewed By / At</th><th>Approval Quantity Before → After</th><th>Review Note / Decision</th></tr></thead><tbody>
         {requests.map(item=><tr key={item.id}>
           <td>#{item.id}<br/><small>{item.date} • {item.shift}</small></td><td><b>{item.product_code}</b><br/>{item.product}<br/><small>{item.phenomenon}</small></td><td>{num(item.requested_qty)}</td><td>{item.reason}</td>
           <td><span className={'status ' + String(item.status).toLowerCase()}>{item.status}</span></td>
-          <td>{item.requested_by}<br/><small>{formatIST(item.requested_at)}</small></td><td>{item.approved_by||'—'}<br/><small>{formatIST(item.reviewed_at)}</small></td>
+          <td>{item.requested_by}<br/><small>{formatIST(item.requested_at)}</small></td><td>{item.reviewed_by||'—'}<br/><small>{formatIST(item.reviewed_at)}</small></td>
           <td>{item.approved_before_qty==null?'—':num(item.approved_before_qty) + ' → ' + num(item.approved_after_qty)}</td>
           <td>{item.review_note||'—'}{canReview&&item.status==='PENDING'&&<div className="salvage-review-controls"><textarea value={reviewNotes[item.id]||''} onChange={e=>setReviewNotes(v=>({...v,[item.id]:e.target.value}))} placeholder="Optional approval note; mandatory rejection reason" rows={2}/><div className="button-row"><button className="small" disabled={saving} onClick={()=>reviewRequest(item.id,'APPROVE')}>Approve</button><button className="small danger-button" disabled={saving} onClick={()=>reviewRequest(item.id,'REJECT')}>Reject</button></div></div>}</td>
         </tr>)}

@@ -119,7 +119,7 @@ def eligible_rejections(
             "approved_salvage_qty": approved,
             "net_reject_qty": remaining,
             "pending_salvage_qty": pending_qty,
-            "available_qty": max(0.0, remaining - pending_qty),
+            "available_qty": 0.0 if pending_qty > 0 else remaining,
         })
     return result
 
@@ -154,7 +154,7 @@ def list_salvage_requests(
     ).all()
     user_ids = {
         uid for request, *_ in rows
-        for uid in (request.requested_by_id, request.approved_by_id) if uid is not None
+        for uid in (request.requested_by_id, request.reviewed_by_id) if uid is not None
     }
     users = {
         x.id: x for x in db.scalars(select(User).where(User.id.in_(user_ids))).all()
@@ -162,7 +162,7 @@ def list_salvage_requests(
     result = []
     for request, rejection, product, phenomenon in rows:
         requester = users.get(request.requested_by_id)
-        reviewer = users.get(request.approved_by_id)
+        reviewer = users.get(request.reviewed_by_id)
         result.append({
             "id": request.id,
             "rejection_id": rejection.id,
@@ -181,7 +181,7 @@ def list_salvage_requests(
             "requested_by": requester.full_name if requester else "Former User",
             "requested_by_id": request.requested_by_id,
             "requested_at": request.created_at,
-            "approved_by": reviewer.full_name if reviewer else None,
+            "reviewed_by": reviewer.full_name if reviewer else None,
             "reviewed_at": request.reviewed_at,
             "review_note": request.review_note,
             "approved_before_qty": _num(request.approved_before_qty) if request.approved_before_qty is not None else None,
@@ -272,7 +272,7 @@ def review_salvage_request(
         request.status = "REJECTED"
     request.approved_before_qty = before
     request.approved_after_qty = after
-    request.approved_by_id = user.id
+    request.reviewed_by_id = user.id
     request.reviewed_at = datetime.utcnow()
     request.review_note = payload.note.strip() if payload.note and payload.note.strip() else None
     db.commit()

@@ -21,7 +21,7 @@ def upgrade():
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("status", sa.String(20), nullable=False, server_default="PENDING"),
         sa.Column("requested_by_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("approved_by_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("reviewed_by_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("reviewed_at", sa.DateTime(), nullable=True),
         sa.Column("review_note", sa.Text(), nullable=True),
         sa.Column("approved_before_qty", sa.Numeric(16, 3), nullable=True),
