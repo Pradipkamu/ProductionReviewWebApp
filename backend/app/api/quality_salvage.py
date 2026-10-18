@@ -55,6 +55,44 @@ def _eligible_row(db: Session, rejection_id: int) -> QualityRejectionDaily:
     return row
 
 
+@router.get("/plants")
+def salvage_plants(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    # Include current Product Master plants and historical plants retained on
+    # daily rejection rows, because Product Master assignments can change.
+    product_plants = db.scalars(
+        select(Product.plant).where(Product.plant.is_not(None), Product.plant != "")
+    ).all()
+    historical_plants = db.scalars(
+        select(QualityRejectionDaily.plant).where(
+            QualityRejectionDaily.plant.is_not(None),
+            QualityRejectionDaily.plant != "",
+        )
+    ).all()
+    return sorted(
+        {str(value).strip() for value in [*product_plants, *historical_plants] if value and str(value).strip()},
+        key=str.casefold,
+    )
+
+
+@router.get("/parts")
+def salvage_parts(
+    plant: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    q = select(Product).distinct()
+    if plant:
+        q = (
+            q.outerjoin(QualityRejectionDaily, QualityRejectionDaily.product_id == Product.id)
+            .where(or_(Product.plant == plant, QualityRejectionDaily.plant == plant))
+        )
+    rows = db.scalars(q.order_by(Product.sort_order, Product.name)).all()
+    return [{"id": row.id, "code": row.code, "name": row.name, "plant": row.plant} for row in rows]
+
+
 @router.get("/rejections")
 def eligible_rejections(
     from_date: date,
