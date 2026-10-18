@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { Kpi, PageHeader, num } from '../components/UI'
+import { MultiSelect } from '../components/MultiSelect'
 import { dateIST, daysAgoIST, formatIST } from '../time'
 
 export default function RejectionSalvage({me}:{me:any}) {
@@ -9,7 +10,9 @@ export default function RejectionSalvage({me}:{me:any}) {
   const [fromDate,setFromDate] = useState(daysAgoIST(30))
   const [toDate,setToDate] = useState(dateIST())
   const [plant,setPlant] = useState('')
-  const [search,setSearch] = useState('')
+  const [productId,setProductId] = useState('')
+  const [products,setProducts] = useState<any[]>([])
+  const [filters,setFilters] = useState<any>({plants:[]})
   const [rows,setRows] = useState<any[]>([])
   const [requests,setRequests] = useState<any[]>([])
   const [selected,setSelected] = useState<any>(null)
@@ -26,10 +29,24 @@ export default function RejectionSalvage({me}:{me:any}) {
 
   const query = useMemo(() => {
     const p = new URLSearchParams({from_date:fromDate,to_date:toDate})
-    if(plant.trim()) p.set('plant',plant.trim())
-    if(search.trim()) p.set('search',search.trim())
+    if(plant) p.set('plant',plant)
+    if(productId) p.set('product_id',productId)
     return p.toString()
-  },[fromDate,toDate,plant,search])
+  },[fromDate,toDate,plant,productId])
+
+  const plantProducts = useMemo(
+    () => products.filter(p=>!plant || String(p.plant||'').trim()===plant),
+    [products,plant]
+  )
+
+  async function loadMasters() {
+    const [allProducts,filterOptions] = await Promise.all([
+      api<any[]>('/masters/products'),
+      api<any>('/masters/filter-options')
+    ])
+    setProducts(allProducts)
+    setFilters(filterOptions)
+  }
 
   async function load() {
     setBusy(true); setError('')
@@ -47,7 +64,8 @@ export default function RejectionSalvage({me}:{me:any}) {
     finally { setBusy(false) }
   }
 
-  useEffect(()=>{load()},[query,fromDate,toDate])
+  useEffect(()=>{loadMasters().catch((e:any)=>setError(e.message))},[])
+  useEffect(()=>{load()},[query])
 
   const pending = requests.filter(x=>x.status==='PENDING')
   const approved = requests.filter(x=>x.status==='APPROVED')
@@ -101,8 +119,8 @@ export default function RejectionSalvage({me}:{me:any}) {
       <div className="filters salvage-filters">
         <label>From Date<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/></label>
         <label>To Date<input type="date" value={toDate} onChange={e=>setToDate(e.target.value)}/></label>
-        <label>Plant<input value={plant} onChange={e=>setPlant(e.target.value)} placeholder="All plants"/></label>
-        <label>Part Number / Name<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search product code or name"/></label>
+        <label>Plant<MultiSelect singleSelect value={plant?[plant]:[]} onChange={v=>{setPlant(v.at(-1)||'');setProductId('')}} placeholder="All Plants" options={(filters.plants||[]).map((x:string)=>({value:String(x),label:String(x)}))}/></label>
+        <label>Part Number / Name<MultiSelect singleSelect value={productId?[productId]:[]} onChange={v=>setProductId(v.at(-1)||'')} placeholder="All Parts" options={plantProducts.map((p:any)=>({value:String(p.id),label:`${p.code} — ${p.name}`}))}/></label>
       </div>
       {error&&<div className="error">{error}</div>}
       {notice&&<div className="notice">{notice}</div>}
