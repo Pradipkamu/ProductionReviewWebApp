@@ -70,6 +70,15 @@ def _net_reject_qty(row: QualityRejectionDaily) -> float:
     return max(0.0, _num(row.reject_qty) - _num(row.approved_salvage_qty))
 
 
+def _net_ppm(row: QualityRejectionDaily) -> float | None:
+    net_reject = _net_reject_qty(row)
+    if row.denominator_qty is not None and _num(row.denominator_qty) > 0:
+        return net_reject / _num(row.denominator_qty) * 1_000_000
+    if row.ppm is not None and _num(row.reject_qty) > 0:
+        return _num(row.ppm) * net_reject / _num(row.reject_qty)
+    return None
+
+
 def _bool(value) -> bool:
     return bool(value)
 
@@ -137,7 +146,7 @@ def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
         "scrap_qty": _num(row.scrap_qty),
         "denominator_source": row.denominator_source,
         "denominator_qty": _num(row.denominator_qty) if row.denominator_qty is not None else None,
-        "ppm": (_net_reject_qty(row) / _num(row.denominator_qty) * 1_000_000) if row.denominator_qty is not None and _num(row.denominator_qty) > 0 else None,
+        "ppm": _net_ppm(row),
         "remark": row.remark,
         "action_required": row.action_required,
         "action": {"id": action.id, "action_no": action.action_no, "status": action.status.value} if action else None,
@@ -1116,7 +1125,7 @@ def raise_action(rejection_id: int, payload: QualityActionCreate, db: Session = 
     count=db.query(Action).count()+1
     action_no=f"ACT-{rej.rejection_date.year}-{count:05d}"
     net_reject = max(Decimal("0"), (rej.reject_qty or Decimal("0")) - (rej.approved_salvage_qty or Decimal("0")))
-    net_ppm = (net_reject / rej.denominator_qty * Decimal("1000000")) if rej.denominator_qty and rej.denominator_qty > 0 else None
+    net_ppm = (net_reject / rej.denominator_qty * Decimal("1000000")) if rej.denominator_qty and rej.denominator_qty > 0 else ((rej.ppm * net_reject / rej.reject_qty) if rej.ppm is not None and rej.reject_qty and rej.reject_qty > 0 else None)
     ppm_text=f"{_num(net_ppm):,.0f} PPM" if net_ppm is not None else "PPM pending"
     problem=f"{ph.name if ph else 'Rejection'} - {_num(net_reject):g} Nos. ({ppm_text})"
     a=Action(action_no=action_no, reference_date=rej.rejection_date, problem_category="Quality / Rejection",
