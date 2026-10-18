@@ -75,6 +75,42 @@ def _seed():
 
 
 
+
+def test_salvage_dropdown_options_include_historical_plant_assignments():
+    rejection_id = _seed()
+    with SessionLocal() as db:
+        rejection = db.get(QualityRejectionDaily, rejection_id)
+        product = db.get(Product, rejection.product_id)
+        rejection.plant = "OLD-PLANT"
+        product.plant = "NEW-PLANT"
+        product_id = product.id
+        db.commit()
+
+    client = TestClient(app)
+    production = _headers(client, "salvage-production")
+
+    plants = client.get("/api/quality/salvage/plants", headers=production)
+    assert plants.status_code == 200, plants.text
+    assert "OLD-PLANT" in plants.json()
+    assert "NEW-PLANT" in plants.json()
+
+    historical_parts = client.get(
+        "/api/quality/salvage/parts",
+        params={"plant": "OLD-PLANT"},
+        headers=production,
+    )
+    assert historical_parts.status_code == 200, historical_parts.text
+    assert any(row["id"] == product_id and row["code"] == "SAL-P" for row in historical_parts.json())
+
+    current_parts = client.get(
+        "/api/quality/salvage/parts",
+        params={"plant": "NEW-PLANT"},
+        headers=production,
+    )
+    assert current_parts.status_code == 200, current_parts.text
+    assert any(row["id"] == product_id for row in current_parts.json())
+
+
 def test_salvage_rejection_filters_use_effective_plant_and_exact_product():
     rejection_id = _seed()
     with SessionLocal() as db:
