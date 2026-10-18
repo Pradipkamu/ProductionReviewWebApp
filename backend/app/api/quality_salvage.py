@@ -60,6 +60,7 @@ def eligible_rejections(
     from_date: date,
     to_date: date,
     plant: str | None = None,
+    product_id: int | None = None,
     search: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -76,7 +77,9 @@ def eligible_rejections(
         )
     )
     if plant:
-        q = q.where(QualityRejectionDaily.plant == plant)
+        q = q.where(func.coalesce(QualityRejectionDaily.plant, Product.plant) == plant)
+    if product_id is not None:
+        q = q.where(Product.id == product_id)
     if search and search.strip():
         term = "%" + search.strip() + "%"
         q = q.where(or_(Product.name.ilike(term), Product.code.ilike(term)))
