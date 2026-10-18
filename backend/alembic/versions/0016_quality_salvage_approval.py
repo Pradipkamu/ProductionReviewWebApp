@@ -33,6 +33,16 @@ def upgrade():
     op.create_index("ix_quality_rejection_salvage_requests_status", "quality_rejection_salvage_requests", ["status"])
     op.create_index("ix_quality_salvage_daily_status", "quality_rejection_salvage_requests", ["daily_rejection_id", "status"])
 
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        preparer = bind.dialect.identifier_preparer
+        table = "quality_rejection_salvage_requests"
+        op.execute(sa.text(
+            f'CREATE TRIGGER {preparer.quote("revision_" + table)} '
+            f'AFTER INSERT OR UPDATE OR DELETE ON {preparer.quote(table)} '
+            'FOR EACH STATEMENT EXECUTE FUNCTION bump_business_data_revision()'
+        ))
+
 
 def downgrade():
     raise RuntimeError("Salvage approvals are audit records; restore a verified backup rather than deleting approval history.")
