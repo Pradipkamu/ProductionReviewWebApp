@@ -554,7 +554,7 @@ class QualityRejectionDaily(Base, TimestampMixin):
 class QualityRejectionSalvageRequest(Base, TimestampMixin):
     __tablename__ = "quality_rejection_salvage_requests"
     id: Mapped[int] = mapped_column(primary_key=True)
-    daily_rejection_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_daily.id", ondelete="CASCADE"), index=True)
+    daily_rejection_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_daily.id"), index=True)
     requested_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="PENDING", server_default="PENDING", index=True)

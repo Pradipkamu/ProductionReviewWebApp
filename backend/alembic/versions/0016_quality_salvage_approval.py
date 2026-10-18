@@ -16,7 +16,7 @@ def upgrade():
     op.create_table(
         "quality_rejection_salvage_requests",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("daily_rejection_id", sa.Integer(), sa.ForeignKey("quality_rejection_daily.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("daily_rejection_id", sa.Integer(), sa.ForeignKey("quality_rejection_daily.id"), nullable=False),
         sa.Column("requested_qty", sa.Numeric(16, 3), nullable=False),
         sa.Column("reason", sa.Text(), nullable=False),
         sa.Column("status", sa.String(20), nullable=False, server_default="PENDING"),
