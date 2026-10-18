@@ -34,18 +34,17 @@ export default function RejectionSalvage({me}:{me:any}) {
     return p.toString()
   },[fromDate,toDate,plant,productId])
 
-  const plantProducts = useMemo(
-    () => products.filter(p=>!plant || String(p.plant||'').trim()===plant),
-    [products,plant]
-  )
-
   async function loadMasters() {
-    const [allProducts,filterOptions] = await Promise.all([
-      api<any[]>('/masters/products'),
-      api<any>('/masters/filter-options')
-    ])
-    setProducts(allProducts)
-    setFilters(filterOptions)
+    const plantOptions = await api<string[]>('/quality/salvage/plants')
+    setFilters({plants:plantOptions})
+  }
+
+  async function loadParts(selectedPlant:string) {
+    const params = new URLSearchParams()
+    if(selectedPlant) params.set('plant',selectedPlant)
+    const suffix = params.toString() ? '?' + params.toString() : ''
+    const options = await api<any[]>('/quality/salvage/parts' + suffix)
+    setProducts(options)
   }
 
   async function load() {
@@ -65,6 +64,7 @@ export default function RejectionSalvage({me}:{me:any}) {
   }
 
   useEffect(()=>{loadMasters().catch((e:any)=>setError(e.message))},[])
+  useEffect(()=>{loadParts(plant).catch((e:any)=>setError(e.message))},[plant])
   useEffect(()=>{load()},[query])
 
   const pending = requests.filter(x=>x.status==='PENDING')
@@ -120,7 +120,7 @@ export default function RejectionSalvage({me}:{me:any}) {
         <label>From Date<input type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/></label>
         <label>To Date<input type="date" value={toDate} onChange={e=>setToDate(e.target.value)}/></label>
         <label>Plant<MultiSelect singleSelect value={plant?[plant]:[]} onChange={v=>{setPlant(v.at(-1)||'');setProductId('')}} placeholder="All Plants" options={(filters.plants||[]).map((x:string)=>({value:String(x),label:String(x)}))}/></label>
-        <label>Part Number / Name<MultiSelect singleSelect value={productId?[productId]:[]} onChange={v=>setProductId(v.at(-1)||'')} placeholder="All Parts" options={plantProducts.map((p:any)=>({value:String(p.id),label:`${p.code} — ${p.name}`}))}/></label>
+        <label>Part Number / Name<MultiSelect singleSelect value={productId?[productId]:[]} onChange={v=>setProductId(v.at(-1)||'')} placeholder="All Parts" options={products.map((p:any)=>({value:String(p.id),label:`${p.code} — ${p.name}`}))}/></label>
       </div>
       {error&&<div className="error">{error}</div>}
       {notice&&<div className="notice">{notice}</div>}
