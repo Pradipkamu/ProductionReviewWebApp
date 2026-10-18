@@ -576,6 +576,46 @@ def test_historical_ppm_production_requires_both_sources_but_allows_explicit_zer
         assert any('enter both Siddharth Machining Production and Silver Production' in e for e in stats['errors'])
 
 
+
+def test_daily_rejection_trend_keeps_reject_qty_when_ppm_denominator_pending():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with SessionLocal() as db:
+        product, route_op, phenomenon = _seed_quality_context(db)
+        for day in range(1, 13):
+            db.add(QualityRejectionDaily(
+                record_key=f"pending-denominator-202609{day:02d}",
+                rejection_date=date(2026, 9, day),
+                shift="A",
+                product_id=product.id,
+                plant="2020",
+                detection_route_operation_id=route_op.id,
+                phenomenon_id=phenomenon.id,
+                reject_qty=Decimal(day),
+                denominator_source="DISP_DONE",
+                denominator_qty=None,
+                ppm=None,
+                source=SourceType.MANUAL,
+            ))
+        db.commit()
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/quality/report-pack?from_date=2026-09-01&to_date=2026-09-12&plant=2020",
+        headers=_headers_for_quality(client),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    daily = [row for row in payload["trend"] if row["reject_qty"] > 0]
+
+    assert len(daily) == 12
+    assert sum(row["reject_qty"] for row in daily) == 78.0
+    assert all(row["ppm"] is None for row in daily)
+    assert all(row["ppm_pending_rows"] == 1 for row in daily)
+    assert payload["summary"]["reject_qty"] == 78.0
+
+
 def test_daily_rejection_saves_when_siddharth_or_silver_is_missing(tmp_path):
     path=tmp_path/'daily_quality_pending.xlsx'; _make_daily_xlsx(path,15)
     with SessionLocal() as db:
