@@ -74,6 +74,47 @@ def _seed():
         return rejection.id
 
 
+
+def test_salvage_rejection_filters_use_effective_plant_and_exact_product():
+    rejection_id = _seed()
+    with SessionLocal() as db:
+        rejection = db.get(QualityRejectionDaily, rejection_id)
+        rejection.plant = None
+        product_id = rejection.product_id
+        db.commit()
+
+    client = TestClient(app)
+    production = _headers(client, "salvage-production")
+    response = client.get(
+        "/api/quality/salvage/rejections",
+        params={
+            "from_date": "2026-10-01",
+            "to_date": "2026-10-01",
+            "plant": "2020",
+            "product_id": product_id,
+        },
+        headers=production,
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["product_id"] == product_id
+    assert rows[0]["plant"] == "2020"
+
+    no_match = client.get(
+        "/api/quality/salvage/rejections",
+        params={
+            "from_date": "2026-10-01",
+            "to_date": "2026-10-01",
+            "plant": "2020",
+            "product_id": product_id + 999999,
+        },
+        headers=production,
+    )
+    assert no_match.status_code == 200, no_match.text
+    assert no_match.json() == []
+
+
 def test_pending_salvage_does_not_change_rejection_reports_but_quality_approval_does():
     rejection_id = _seed()
     client = TestClient(app)
