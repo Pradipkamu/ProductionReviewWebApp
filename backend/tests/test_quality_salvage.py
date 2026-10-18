@@ -74,6 +74,83 @@ def _seed():
         return rejection.id
 
 
+
+
+def test_salvage_dropdown_options_include_historical_plant_assignments():
+    rejection_id = _seed()
+    with SessionLocal() as db:
+        rejection = db.get(QualityRejectionDaily, rejection_id)
+        product = db.get(Product, rejection.product_id)
+        rejection.plant = "OLD-PLANT"
+        product.plant = "NEW-PLANT"
+        product_id = product.id
+        db.commit()
+
+    client = TestClient(app)
+    production = _headers(client, "salvage-production")
+
+    plants = client.get("/api/quality/salvage/plants", headers=production)
+    assert plants.status_code == 200, plants.text
+    assert "OLD-PLANT" in plants.json()
+    assert "NEW-PLANT" in plants.json()
+
+    historical_parts = client.get(
+        "/api/quality/salvage/parts",
+        params={"plant": "OLD-PLANT"},
+        headers=production,
+    )
+    assert historical_parts.status_code == 200, historical_parts.text
+    assert any(row["id"] == product_id and row["code"] == "SAL-P" for row in historical_parts.json())
+
+    current_parts = client.get(
+        "/api/quality/salvage/parts",
+        params={"plant": "NEW-PLANT"},
+        headers=production,
+    )
+    assert current_parts.status_code == 200, current_parts.text
+    assert any(row["id"] == product_id for row in current_parts.json())
+
+
+def test_salvage_rejection_filters_use_effective_plant_and_exact_product():
+    rejection_id = _seed()
+    with SessionLocal() as db:
+        rejection = db.get(QualityRejectionDaily, rejection_id)
+        rejection.plant = None
+        product_id = rejection.product_id
+        db.commit()
+
+    client = TestClient(app)
+    production = _headers(client, "salvage-production")
+    response = client.get(
+        "/api/quality/salvage/rejections",
+        params={
+            "from_date": "2026-10-01",
+            "to_date": "2026-10-01",
+            "plant": "2020",
+            "product_id": product_id,
+        },
+        headers=production,
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert len(rows) == 1
+    assert rows[0]["product_id"] == product_id
+    assert rows[0]["plant"] == "2020"
+
+    no_match = client.get(
+        "/api/quality/salvage/rejections",
+        params={
+            "from_date": "2026-10-01",
+            "to_date": "2026-10-01",
+            "plant": "2020",
+            "product_id": product_id + 999999,
+        },
+        headers=production,
+    )
+    assert no_match.status_code == 200, no_match.text
+    assert no_match.json() == []
+
+
 def test_pending_salvage_does_not_change_rejection_reports_but_quality_approval_does():
     rejection_id = _seed()
     client = TestClient(app)
