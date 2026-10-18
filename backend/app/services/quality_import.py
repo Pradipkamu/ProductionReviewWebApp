@@ -442,6 +442,12 @@ def import_daily_rejection_workbook(db: Session, path: str | Path, *, batch_id: 
             continue
         workbook_keys[key] = r
         row = db.scalar(select(QualityRejectionDaily).where(QualityRejectionDaily.record_key == key))
+        if row and (row.approved_salvage_qty or Decimal("0")) > reject_qty:
+            stats["errors"].append(
+                f"Row {r}: Reject Qty {reject_qty} is below the already approved salvage quantity "
+                f"{row.approved_salvage_qty}. Keep the imported rejection quantity at or above approved salvage."
+            )
+            continue
         desired = (
             reject_qty, rework_qty, scrap_qty, denom_source, denom_qty, ppm,
             str(remark).strip() if remark not in (None, "") else None,
