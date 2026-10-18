@@ -29,8 +29,8 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
     )
-    op.create_index("ix_quality_rejection_salvage_daily", "quality_rejection_salvage_requests", ["daily_rejection_id"])
-    op.create_index("ix_quality_rejection_salvage_status", "quality_rejection_salvage_requests", ["status"])
+    op.create_index("ix_quality_rejection_salvage_requests_daily_rejection_id", "quality_rejection_salvage_requests", ["daily_rejection_id"])
+    op.create_index("ix_quality_rejection_salvage_requests_status", "quality_rejection_salvage_requests", ["status"])
     op.create_index("ix_quality_salvage_daily_status", "quality_rejection_salvage_requests", ["daily_rejection_id", "status"])
 
 
