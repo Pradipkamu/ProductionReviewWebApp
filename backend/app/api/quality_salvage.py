@@ -17,7 +17,7 @@ from ..models import (
     QualityRejectionSalvageRequest, RouteOperation, User,
 )
 
-router = APIRouter(prefix="/quality-salvage", tags=["quality-salvage"])
+router = APIRouter(prefix="/quality/salvage", tags=["quality-salvage"])
 
 
 class SalvageRequestCreate(BaseModel):

@@ -35,8 +35,8 @@ export default function RejectionSalvage({me}:{me:any}) {
     setBusy(true); setError('')
     try {
       const [eligible,history] = await Promise.all([
-        api<any[]>('/quality-salvage/rejections?' + query),
-        api<any[]>('/quality-salvage/requests?' + new URLSearchParams({from_date:fromDate,to_date:toDate}).toString())
+        api<any[]>('/quality/salvage/rejections?' + query),
+        api<any[]>('/quality/salvage/requests?' + new URLSearchParams({from_date:fromDate,to_date:toDate}).toString())
       ])
       setRows(eligible); setRequests(history)
       if(selected) {
@@ -64,7 +64,7 @@ export default function RejectionSalvage({me}:{me:any}) {
     if(reason.trim().length<10) { setError('Please enter a reason of at least 10 characters.'); return }
     setSaving(true)
     try {
-      const result:any = await api('/quality-salvage/requests',{method:'POST',body:JSON.stringify({
+      const result:any = await api('/quality/salvage/requests',{method:'POST',body:JSON.stringify({
         rejection_id:selected.rejection_id,salvage_qty:Number(salvageQty),reason:reason.trim()
       })})
       setNotice('Salvage request #' + result.id + ' submitted for Quality approval.')
@@ -83,7 +83,7 @@ export default function RejectionSalvage({me}:{me:any}) {
     }
     setSaving(true)
     try {
-      const result:any = await api('/quality-salvage/requests/' + id + '/review',{
+      const result:any = await api('/quality/salvage/requests/' + id + '/review',{
         method:'POST',body:JSON.stringify({action,note:note.trim()||null})
       })
       setNotice(action==='APPROVE'

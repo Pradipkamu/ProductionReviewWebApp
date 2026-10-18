@@ -81,7 +81,7 @@ def test_pending_salvage_does_not_change_rejection_reports_but_quality_approval_
     quality = _headers(client, "salvage-quality")
 
     submitted = client.post(
-        "/api/quality-salvage/requests",
+        "/api/quality/salvage/requests",
         headers=production,
         json={"rejection_id": rejection_id, "salvage_qty": 25, "reason": "Reworked and accepted after dimensional re-inspection."},
     )
@@ -98,7 +98,7 @@ def test_pending_salvage_does_not_change_rejection_reports_but_quality_approval_
     assert report.json()["summary"]["reject_qty"] == 100.0
 
     approved = client.post(
-        "/api/quality-salvage/requests/" + str(request_id) + "/review",
+        "/api/quality/salvage/requests/" + str(request_id) + "/review",
         headers=quality,
         json={"action": "APPROVE", "note": "Inspection evidence verified."},
     )
@@ -123,14 +123,14 @@ def test_salvage_request_cannot_exceed_remaining_rejection_or_duplicate_pending_
     client = TestClient(app)
     production = _headers(client, "salvage-production")
     payload = {"rejection_id": rejection_id, "salvage_qty": 60, "reason": "Verified rework and acceptance evidence."}
-    first = client.post("/api/quality-salvage/requests", headers=production, json=payload)
+    first = client.post("/api/quality/salvage/requests", headers=production, json=payload)
     assert first.status_code == 200, first.text
 
-    duplicate = client.post("/api/quality-salvage/requests", headers=production, json=payload)
+    duplicate = client.post("/api/quality/salvage/requests", headers=production, json=payload)
     assert duplicate.status_code == 409
 
     too_much = client.post(
-        "/api/quality-salvage/requests",
+        "/api/quality/salvage/requests",
         headers=production,
         json={"rejection_id": rejection_id, "salvage_qty": 101, "reason": "Verified rework and acceptance evidence."},
     )
@@ -145,13 +145,13 @@ def test_requester_cannot_approve_own_request_and_rejection_requires_reason():
     quality = _headers(client, "salvage-quality")
 
     own = client.post(
-        "/api/quality-salvage/requests",
+        "/api/quality/salvage/requests",
         headers=admin,
         json={"rejection_id": rejection_id, "salvage_qty": 10, "reason": "Admin raised for test separation of duties."},
     )
     assert own.status_code == 200
     denied = client.post(
-        "/api/quality-salvage/requests/" + str(own.json()["id"]) + "/review",
+        "/api/quality/salvage/requests/" + str(own.json()["id"]) + "/review",
         headers=admin,
         json={"action": "APPROVE"},
     )
@@ -159,19 +159,19 @@ def test_requester_cannot_approve_own_request_and_rejection_requires_reason():
 
     rejection_id_2 = _seed_second_rejection()
     request = client.post(
-        "/api/quality-salvage/requests",
+        "/api/quality/salvage/requests",
         headers=production,
         json={"rejection_id": rejection_id_2, "salvage_qty": 5, "reason": "Rework passed inspection and is accepted."},
     )
     assert request.status_code == 200
     rejected = client.post(
-        "/api/quality-salvage/requests/" + str(request.json()["id"]) + "/review",
+        "/api/quality/salvage/requests/" + str(request.json()["id"]) + "/review",
         headers=quality,
         json={"action": "REJECT", "note": " "},
     )
     assert rejected.status_code == 422
     rejected = client.post(
-        "/api/quality-salvage/requests/" + str(request.json()["id"]) + "/review",
+        "/api/quality/salvage/requests/" + str(request.json()["id"]) + "/review",
         headers=quality,
         json={"action": "REJECT", "note": "Inspection evidence was insufficient."},
     )
