@@ -66,6 +66,10 @@ def _num(value) -> float:
     return float(value or 0)
 
 
+def _net_reject_qty(row: QualityRejectionDaily) -> float:
+    return max(0.0, _num(row.reject_qty) - _num(row.approved_salvage_qty))
+
+
 def _bool(value) -> bool:
     return bool(value)
 
@@ -126,12 +130,14 @@ def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
         "phenomenon": ph.name if ph else None,
         "phenomenon_group": ph.phenomenon_group if ph else None,
         "criticality": ph.criticality if ph else "NORMAL",
-        "reject_qty": _num(row.reject_qty),
+        "original_reject_qty": _num(row.reject_qty),
+        "approved_salvage_qty": _num(row.approved_salvage_qty),
+        "reject_qty": _net_reject_qty(row),
         "rework_qty": _num(row.rework_qty),
         "scrap_qty": _num(row.scrap_qty),
         "denominator_source": row.denominator_source,
         "denominator_qty": _num(row.denominator_qty) if row.denominator_qty is not None else None,
-        "ppm": _num(row.ppm) if row.ppm is not None else None,
+        "ppm": (_net_reject_qty(row) / _num(row.denominator_qty) * 1_000_000) if row.denominator_qty is not None and _num(row.denominator_qty) > 0 else None,
         "remark": row.remark,
         "action_required": row.action_required,
         "action": {"id": action.id, "action_no": action.action_no, "status": action.status.value} if action else None,
@@ -174,7 +180,9 @@ def _daily_rows(db: Session, *, from_date: date, to_date: date, plant: str | Non
 
 
 def _aggregate_daily(rows: list[QualityRejectionDaily]) -> dict:
-    reject = sum((_num(x.reject_qty) for x in rows), 0.0)
+    original_reject = sum((_num(x.reject_qty) for x in rows), 0.0)
+    approved_salvage = sum((_num(x.approved_salvage_qty) for x in rows), 0.0)
+    reject = sum((_net_reject_qty(x) for x in rows), 0.0)
     rework = sum((_num(x.rework_qty) for x in rows), 0.0)
     scrap = sum((_num(x.scrap_qty) for x in rows), 0.0)
     denoms: dict[tuple, float] = {}
@@ -183,12 +191,13 @@ def _aggregate_daily(rows: list[QualityRejectionDaily]) -> dict:
         key = (x.rejection_date, x.shift, x.product_id, x.detection_route_operation_id, x.machine_id, x.denominator_source)
         if x.denominator_qty is not None and _num(x.denominator_qty) > 0:
             denoms[key] = max(denoms.get(key, 0.0), _num(x.denominator_qty))
-        elif _num(x.reject_qty) > 0:
+        elif _net_reject_qty(x) > 0:
             pending += 1
     denominator = sum(denoms.values())
     ppm = reject / denominator * 1_000_000 if denominator > 0 and pending == 0 else None
-    return {"reject_qty": reject, "rework_qty": rework, "scrap_qty": scrap, "denominator_qty": denominator,
-            "ppm": ppm, "ppm_pending_rows": pending}
+    return {"reject_qty": reject, "original_reject_qty": original_reject,
+            "approved_salvage_qty": approved_salvage, "rework_qty": rework, "scrap_qty": scrap,
+            "denominator_qty": denominator, "ppm": ppm, "ppm_pending_rows": pending}
 
 
 def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_date: date, to_date: date) -> dict:
@@ -1106,12 +1115,14 @@ def raise_action(rejection_id: int, payload: QualityActionCreate, db: Session = 
     p=db.get(Product,rej.product_id); ph=db.get(QualityPhenomenon,rej.phenomenon_id)
     count=db.query(Action).count()+1
     action_no=f"ACT-{rej.rejection_date.year}-{count:05d}"
-    ppm_text=f"{_num(rej.ppm):,.0f} PPM" if rej.ppm is not None else "PPM pending"
-    problem=f"{ph.name if ph else 'Rejection'} - {_num(rej.reject_qty):g} Nos. ({ppm_text})"
+    net_reject = max(Decimal("0"), (rej.reject_qty or Decimal("0")) - (rej.approved_salvage_qty or Decimal("0")))
+    net_ppm = (net_reject / rej.denominator_qty * Decimal("1000000")) if rej.denominator_qty and rej.denominator_qty > 0 else None
+    ppm_text=f"{_num(net_ppm):,.0f} PPM" if net_ppm is not None else "PPM pending"
+    problem=f"{ph.name if ph else 'Rejection'} - {_num(net_reject):g} Nos. ({ppm_text})"
     a=Action(action_no=action_no, reference_date=rej.rejection_date, problem_category="Quality / Rejection",
              problem_description=problem, action_description=payload.action_description, owner_id=payload.owner_id,
              due_at=payload.due_at, priority=payload.priority, kpi_type="PPM",
-             kpi_value_when_raised=rej.ppm, gap_when_raised=rej.reject_qty)
+             kpi_value_when_raised=net_ppm, gap_when_raised=net_reject)
     db.add(a);db.flush()
     db.add(ActionContext(action_id=a.id,context_date=rej.rejection_date,product_id=rej.product_id,
                          route_operation_id=rej.detection_route_operation_id,machine_id=rej.machine_id))
