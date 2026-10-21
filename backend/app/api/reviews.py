@@ -53,6 +53,7 @@ def serialize_review(row: ReviewSession, db: Session | None = None) -> dict:
         ).union(
             select(ReviewActionLink.action_id).where(ReviewActionLink.review_session_id == row.id)
         )
+        result["total_point_count"] = db.scalar(select(func.count(ReviewPoint.id)).where(ReviewPoint.review_session_id == row.id)) or 0
         result["action_count"] = db.scalar(select(func.count(Action.id)).where(Action.id.in_(action_ids))) or 0
         result["closed_action_count"] = db.scalar(select(func.count(Action.id)).where(
             Action.id.in_(action_ids), Action.status == ActionStatus.CLOSED
@@ -61,6 +62,14 @@ def serialize_review(row: ReviewSession, db: Session | None = None) -> dict:
             Action.id.in_(action_ids), Action.status != ActionStatus.CLOSED,
             Action.due_at.is_not(None), Action.due_at < datetime.utcnow()
         )) or 0
+        overdue_dates = db.scalars(select(Action.due_at).where(
+            Action.id.in_(action_ids), Action.status != ActionStatus.CLOSED,
+            Action.due_at.is_not(None), Action.due_at < datetime.utcnow()
+        )).all()
+        result["max_overdue_days"] = max(
+            (max(0, (ist_today() - ist_date(due_at)).days) for due_at in overdue_dates),
+            default=0,
+        )
     return result
 
 

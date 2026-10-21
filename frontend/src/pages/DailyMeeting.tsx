@@ -62,6 +62,9 @@ export default function DailyMeeting() {
   const [meetings, setMeetings] = useState<any[]>([])
   const [participantFilter, setParticipantFilter] = useState('')
   const [meetingSearch, setMeetingSearch] = useState('')
+  const [overdueMeeting, setOverdueMeeting] = useState<any>(null)
+  const [overdueActions, setOverdueActions] = useState<any[]>([])
+  const [overdueLoading, setOverdueLoading] = useState(false)
   const [form, setForm] = useState<any>({
     category: 'Production',
     discussion_point: '',
@@ -322,6 +325,27 @@ export default function DailyMeeting() {
       setMessage('Meeting participants and remarks saved.')
     } catch (e: any) {
       setErr(e.message)
+    }
+  }
+
+  async function openOverdueActions(m: any) {
+    if (!Number(m.overdue_action_count || 0)) return
+    setOverdueMeeting(m)
+    setOverdueActions([])
+    setOverdueLoading(true)
+    try {
+      const data: any = await api(`/reviews/${m.id}/mom`)
+      const pointActions = (data.points || []).map((p: any) => p.action).filter(Boolean)
+      const allActions = [...pointActions, ...(data.linked_actions || [])]
+      const unique = Array.from(new Map(allActions.map((a: any) => [a.id, a])).values())
+      setOverdueActions(unique.filter((a: any) =>
+        a.status !== 'CLOSED' && Number(a.overdue_days || 0) > 0
+      ).sort((a: any, b: any) => Number(b.overdue_days || 0) - Number(a.overdue_days || 0)))
+    } catch (e: any) {
+      setErr(`Unable to load overdue actions: ${e.message}`)
+      setOverdueMeeting(null)
+    } finally {
+      setOverdueLoading(false)
     }
   }
 
@@ -849,19 +873,31 @@ export default function DailyMeeting() {
         <label>Filter Participants<input value={participantFilter} onChange={e => setParticipantFilter(e.target.value)} placeholder="Name or department" /></label>
       </div>
       <div className="table-wrap"><table>
-        <thead><tr><th>MOM</th><th>Date</th><th>Participants</th><th>Actions</th><th>Closed</th><th>Pending</th><th>Overdue</th><th>Status</th><th>Open</th><th>Meeting Note</th></tr></thead>
+        <thead><tr><th>MOM</th><th>Date</th><th>Participants</th><th>Total Points</th><th>Actions</th><th>Closed</th><th>Pending</th><th>Overdue</th><th>Status</th><th>Open</th><th>Meeting Note</th></tr></thead>
         <tbody>{meetings
           .filter((m: any) => (!participantFilter.trim() || String(m.participants || '').toLowerCase().includes(participantFilter.trim().toLowerCase()))
             && (!meetingSearch.trim() || (`MOM-${m.review_date}-${String(m.id).padStart(3, '0')}`).toLowerCase().includes(meetingSearch.trim().toLowerCase())))
           .map((m: any) => <tr key={m.id}>
             <td><b>{`MOM-${m.review_date}-${String(m.id).padStart(3, '0')}`}</b></td><td>{m.review_date}</td><td>{m.participants || '—'}</td>
-            <td><b>{m.action_count || 0}</b></td><td><b>{m.closed_action_count || 0}</b></td><td><b>{Math.max(0, (m.action_count || 0) - (m.closed_action_count || 0))}</b></td>
-            <td>{m.overdue_action_count || 0}</td><td>{m.ended_at ? <Status value="CLOSED" /> : <Status value="OPEN" />}</td>
+            <td><b>{m.total_point_count || 0}</b></td><td><b>{m.action_count || 0}</b></td><td><b>{m.closed_action_count || 0}</b></td><td><b>{Math.max(0, (m.action_count || 0) - (m.closed_action_count || 0))}</b></td>
+            <td>{Number(m.overdue_action_count || 0) > 0
+              ? <button type="button" className={`overdue-count overdue-level-${Math.min(5, Number(m.max_overdue_days || 1))}`} title={`Open overdue actions; oldest is ${m.max_overdue_days || 1} day(s) overdue`} onClick={() => openOverdueActions(m)}>{m.overdue_action_count}</button>
+              : <span className="overdue-zero">0</span>}</td>
+            <td>{m.ended_at ? <Status value="CLOSED" /> : <Status value="OPEN" />}</td>
             <td><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button></td>
             <td><button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/pdf`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.pdf`)}>PDF</button> <button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/xlsx`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.xlsx`)}>Excel</button></td>
           </tr>)}
         </tbody>
       </table></div>
+      {overdueMeeting && <div className="overdue-detail-backdrop" onClick={() => setOverdueMeeting(null)}>
+        <section className="panel overdue-detail-panel" role="dialog" aria-modal="true" aria-label="Overdue MOM actions" onClick={e => e.stopPropagation()}>
+          <div className="panel-title"><div><h2>Overdue Actions — MOM-{overdueMeeting.review_date}-{String(overdueMeeting.id).padStart(3, '0')}</h2><p>Open actions linked to this meeting, sorted by overdue age.</p></div><button className="secondary small" onClick={() => setOverdueMeeting(null)}>Close</button></div>
+          {overdueLoading ? <p className="muted">Loading overdue actions…</p> : overdueActions.length ? <div className="table-wrap"><table>
+            <thead><tr><th>Action No.</th><th>Action Description</th><th>Owner</th><th>Due Date</th><th>Status</th><th>Overdue Days</th></tr></thead>
+            <tbody>{overdueActions.map((a: any) => <tr key={a.id}><td><b>{a.action_no}</b></td><td>{a.description}</td><td>{a.owner || '—'}</td><td>{a.due_at ? formatIST(a.due_at) : '—'}</td><td><Status value={a.status} /></td><td><span className={`overdue-age overdue-level-${Math.min(5, Number(a.overdue_days || 1))}`}>{a.overdue_days} day(s)</span></td></tr>)}</tbody>
+          </table></div> : <p className="muted">No currently overdue actions were found for this meeting. Refresh Meeting History if the count has changed.</p>}
+        </section>
+      </div>}
     </section>
   </>
 }
