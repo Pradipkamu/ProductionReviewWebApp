@@ -53,7 +53,24 @@ def serialize_review(row: ReviewSession, db: Session | None = None) -> dict:
         ).union(
             select(ReviewActionLink.action_id).where(ReviewActionLink.review_session_id == row.id)
         )
-        result["total_point_count"] = db.scalar(select(func.count(ReviewPoint.id)).where(ReviewPoint.review_session_id == row.id)) or 0
+        discussion_point_count = db.scalar(
+            select(func.count(ReviewPoint.id)).where(ReviewPoint.review_session_id == row.id)
+        ) or 0
+        # Include actions linked to the MOM from Dashboard, Quality, OEE or
+        # the Actions page. Actions already represented by a typed ReviewPoint
+        # are excluded here so an actionable discussion point is counted once.
+        linked_action_point_count = db.scalar(
+            select(func.count(func.distinct(ReviewActionLink.action_id))).where(
+                ReviewActionLink.review_session_id == row.id,
+                ReviewActionLink.action_id.not_in(
+                    select(ReviewPoint.action_id).where(
+                        ReviewPoint.review_session_id == row.id,
+                        ReviewPoint.action_id.is_not(None),
+                    )
+                ),
+            )
+        ) or 0
+        result["total_point_count"] = discussion_point_count + linked_action_point_count
         result["action_count"] = db.scalar(select(func.count(Action.id)).where(Action.id.in_(action_ids))) or 0
         result["closed_action_count"] = db.scalar(select(func.count(Action.id)).where(
             Action.id.in_(action_ids), Action.status == ActionStatus.CLOSED
