@@ -36,7 +36,7 @@ export default function Quality(){
   const [summary,setSummary]=useState<any>({}); const [rows,setRows]=useState<any[]>([]); const [trend,setTrend]=useState<any[]>([])
   const [monthlyTrend,setMonthlyTrend]=useState<any[]>([]); const [historyRows,setHistoryRows]=useState<any[]>([]); const [historyRange,setHistoryRange]=useState<any>({min_month:null,max_month:null,records:0})
   const [partPareto,setPartPareto]=useState<any[]>([]); const [phenPareto,setPhenPareto]=useState<any[]>([]); const [busy,setBusy]=useState(false); const [err,setErr]=useState('')
-  const [newPhen,setNewPhen]=useState(''); const [rejectionType,setRejectionType]=useState<string>('')
+  const [newPhen,setNewPhen]=useState(''); const [rejectionType,setRejectionType]=useState<string>(''); const [selectedActionDay,setSelectedActionDay]=useState<string>('')
   const [showManual,setShowManual]=useState(false); const [manualOps,setManualOps]=useState<any[]>([]); const [manualSaving,setManualSaving]=useState(false); const [manualMsg,setManualMsg]=useState(''); const [actionMsg,setActionMsg]=useState('')
   const [manual,setManual]=useState<any>({rejection_date:today,shift:'A',product_id:'',detection_route_operation_id:'',responsible_route_operation_id:'',machine_id:'',phenomenon_id:'',reject_qty:'',rework_qty:'0',scrap_qty:'0',remark:'',action_required:false})
 
@@ -161,6 +161,19 @@ export default function Quality(){
   // Rejection quantity is independent of the PPM denominator. Keep this series
   // visible even when dispatch production is pending for some or all days.
   const dailyRejectionRows=trend.map((x:any)=>({...x,value:Number(x.reject_qty||0)}))
+  const rejectionActionsByDay=useMemo(()=>{
+    const grouped=new Map<string,Map<number,any>>()
+    for(const row of rows||[]){
+      if(!row.action?.id)continue
+      const day=String(row.date||'').slice(0,10)
+      if(!day)continue
+      if(!grouped.has(day))grouped.set(day,new Map())
+      grouped.get(day)!.set(Number(row.action.id),{...row.action,date:day,product:row.product,phenomenon:row.phenomenon,plant:row.plant})
+    }
+    return grouped
+  },[rows])
+  const rejectionActionDays=trend.map((day:any)=>({...day,action_count:rejectionActionsByDay.get(String(day.date).slice(0,10))?.size||0}))
+  const selectedRejectionActions=selectedActionDay?[...(rejectionActionsByDay.get(selectedActionDay)?.values()||[])]:[]
   const dailyPpmRows=trend.filter((x:any)=>x.ppm!=null).map((x:any)=>({...x,value:Number(x.ppm)}))
   const dailyPpmPending=trend.filter((x:any)=>x.ppm==null&&Number(x.reject_qty||0)>0).length
   return <>
@@ -192,19 +205,11 @@ export default function Quality(){
     <section className="panel ppm-trend-panel"><div className="panel-title"><h2>Monthly PPM Trend</h2><span>Daily net of approved salvage • historical reported totals</span></div><ValueTrendChart onSelect={drill} rows={monthlyPpmRows} keyName="value" label="PPM"/>{monthlyTrend.length>0&&<div className="table-wrap ppm-quantity-matrix" aria-label="Monthly rejection and dispatch quantities"><table><thead><tr><th>Quantity</th>{monthlyTrend.map((r:any)=><th key={String(r.month)}>{r.label||String(r.month).slice(0,7)}</th>)}</tr></thead><tbody><tr className="ppm-rejection-row"><th>Rejection Qty</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{num(r.reject_qty||0)}</td>)}</tr><tr><th>PPM Production</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{Number(r.denominator_qty||0)>0?num(r.denominator_qty):Number(r.reject_qty||0)>0?'Pending':'0'}</td>)}</tr></tbody></table></div>}{monthlyPpmPending>0&&<p className="muted">{monthlyPpmPending} month{monthlyPpmPending===1?'':'s'} not plotted because the required PPM production denominator is still pending.</p>}<p className="muted">PPM denominator: Plant 2070 = Siddharth Machining + Silver Production; all other plants = Disp_Done.</p></section>
     <section className="panel"><div className="panel-title"><h2>Daily Rejection Qty Trend</h2><span>Net rejection after approved salvage • independent of PPM production</span></div>{dailyRejectionRows.length>0?<ValueTrendChart onSelect={drill} rows={dailyRejectionRows} keyName="value" label="Reject Qty"/>:<p className="muted">No daily rejection data is available for the selected date range and filters.</p>}</section>
     <section className="panel">
-      <div className="panel-title">
-        <div><h2>Actions Initiated for Rejections</h2><p>Actions raised against rejection records in the selected date range and filters.</p></div>
-        <span>{rows.filter((r:any)=>r.action).length} action(s)</span>
-      </div>
-      {rows.some((r:any)=>r.action) ? <div className="table-wrap">
-        <table><thead><tr><th>Date</th><th>Plant</th><th>Product</th><th>Phenomenon</th><th>Net Reject Qty</th><th>PPM</th><th>Action No.</th><th>Status</th></tr></thead>
-          <tbody>{rows.filter((r:any)=>r.action).map((r:any)=><tr key={r.id}>
-            <td>{r.date}</td><td>{r.plant||'—'}</td><td>{r.product||'—'}</td><td>{r.phenomenon||'—'}</td>
-            <td><b>{num(r.reject_qty)}</b></td><td>{r.ppm==null?'Pending':Math.round(r.ppm).toLocaleString('en-IN')}</td>
-            <td><a href="/actions">{r.action.action_no}</a></td><td>{r.action.status||'—'}</td>
-          </tr>)}</tbody>
-        </table>
-      </div> : <p className="muted">No actions have been initiated for rejection records in the selected date range and filters.</p>}
+      <div className="panel-title"><div><h2>Rejection Actions Raised by Day</h2><p>Only actions linked to rejection records. Counts follow all selected Quality / Rejection filters.</p></div></div>
+      <div className="daily-action-scroll">{rejectionActionDays.map((day:any)=>{const count=Number(day.action_count||0);const key=String(day.date).slice(0,10);return <button type="button" className={`daily-action-cell ${count>0?'has-actions':''}`} key={key} disabled={!count} onClick={()=>setSelectedActionDay(selectedActionDay===key?'':key)} title={`${day.label}: ${count} rejection action${count===1?'':'s'} raised`}><span>{day.label}</span><strong>{count}</strong><small>{count===1?'action':'actions'}</small></button>})}</div>
+      {selectedActionDay&&<div className="action-inline-detail"><div className="panel-title"><div><h3>Rejection Actions — {selectedActionDay}</h3><p>{selectedRejectionActions.length} action(s) raised for rejection records on this date, within the current filters.</p></div><button type="button" className="secondary small" onClick={()=>setSelectedActionDay('')}>Close</button></div>
+        {selectedRejectionActions.length?<div className="table-wrap"><table><thead><tr><th>Action</th><th>Plant</th><th>Product</th><th>Phenomenon</th><th>Status</th></tr></thead><tbody>{selectedRejectionActions.map((a:any)=><tr key={a.id}><td><button type="button" className="secondary small" onClick={()=>navigate(`/actions?date=${selectedActionDay}&action_id=${a.id}`)}>{a.action_no}</button></td><td>{a.plant||'—'}</td><td>{a.product||'—'}</td><td>{a.phenomenon||'—'}</td><td>{a.status||'—'}</td></tr>)}</tbody></table></div>:<p className="muted">No rejection actions for this date under the current filters.</p>}
+      </div>}
     </section>
     <section className="panel"><div className="panel-title"><h2>Daily PPM Trend</h2><span>Daily rejection uploads • labels ON</span></div>{dailyPpmRows.length>0?<ValueTrendChart onSelect={drill} rows={dailyPpmRows} keyName="value" label="PPM"/>:<p className="muted">No daily PPM is available for the selected date range and filters.</p>}{dailyPpmPending>0&&<p className="muted">{dailyPpmPending} day{dailyPpmPending===1?'':'s'} contain rejection data but cannot plot PPM because the denominator is pending. Rejection quantity is shown separately above.</p>}</section>
     <section className="panel"><div className="panel-title"><h2>Rejection by Type</h2><span>Casting vs Machining • click to filter Phenomenon Pareto</span></div><RankedBars rows={rejectionTypeRows} valueKey="reject_qty" labelKey="name" valueLabel="Reject Qty" onSelect={pickRejectionType} selectedName={rejectionType||undefined}/></section>
