@@ -106,8 +106,9 @@ def _daily_context(db: Session, rows: list[QualityRejectionDaily]) -> dict:
     for link in links:
         latest_links.setdefault(link.daily_rejection_id, link.action_id)
     actions = _by_id(db, Action, set(latest_links.values()))
+    owners = _by_id(db, User, {a.owner_id for a in actions.values() if a.owner_id})
     return dict(products=products, phenomena=phenomena, machines=machines,
-                routes=routes, operations=operations, latest_links=latest_links, actions=actions)
+                routes=routes, operations=operations, latest_links=latest_links, actions=actions, owners=owners)
 
 
 def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
@@ -119,6 +120,8 @@ def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
     det_op = context['operations'].get(det.operation_id) if det else None
     resp_op = context['operations'].get(resp.operation_id) if resp else None
     action = context['actions'].get(context['latest_links'].get(row.id))
+    owner = context['owners'].get(action.owner_id) if action and action.owner_id else None
+    overdue_days = max(0, (ist_today() - ist_date(action.due_at)).days) if action and action.due_at and action.status != ActionStatus.CLOSED else 0
     return {
         "id": row.id,
         "date": row.rejection_date,
@@ -149,7 +152,14 @@ def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
         "ppm": _net_ppm(row),
         "remark": row.remark,
         "action_required": row.action_required,
-        "action": {"id": action.id, "action_no": action.action_no, "status": action.status.value} if action else None,
+        "action": ({
+            "id": action.id, "action_no": action.action_no, "status": action.status.value,
+            "action_description": action.action_description, "problem_description": action.problem_description,
+            "owner_id": action.owner_id, "owner_name": owner.full_name if owner else None,
+            "due_at": action.due_at, "priority": action.priority.value,
+            "overdue": bool(action.due_at and action.status != ActionStatus.CLOSED and action.due_at < datetime.utcnow()),
+            "overdue_days": overdue_days,
+        } if action else None),
     }
 
 
