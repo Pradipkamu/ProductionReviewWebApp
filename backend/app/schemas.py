@@ -118,7 +118,7 @@ class SchedulePreviewRequest(BaseModel):
 class SalesPriceRevisionCreate(BaseModel):
     product_id: int
     effective_from: date
-    price: Decimal = Field(gt=0)
+    price: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     reason: str = Field(min_length=2)
 
 
