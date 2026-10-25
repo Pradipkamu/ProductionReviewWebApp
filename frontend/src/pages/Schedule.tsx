@@ -14,7 +14,7 @@ export default function Schedule(){
  const [eff,setEff]=useState(today()); const [target,setTarget]=useState(''); const [reason,setReason]=useState('Customer schedule revision'); const [preview,setPreview]=useState<any>(null); const [msg,setMsg]=useState('')
  const [capacityRefreshNeeded,setCapacityRefreshNeeded]=useState(false)
  const [correctImported,setCorrectImported]=useState(false); const [busy,setBusy]=useState(false)
- const [prices,setPrices]=useState<any[]>([]); const [priceEff,setPriceEff]=useState(today()); const [newPrice,setNewPrice]=useState(''); const [priceReason,setPriceReason]=useState('Customer price revision'); const [priceMsg,setPriceMsg]=useState('')
+ const [prices,setPrices]=useState<any[]>([]); const [priceEff,setPriceEff]=useState(today()); const [newPrice,setNewPrice]=useState(''); const [priceReason,setPriceReason]=useState('Customer price revision'); const [priceMsg,setPriceMsg]=useState(''); const [priceBusy,setPriceBusy]=useState(false)
  const [calHistory,setCalHistory]=useState<any[]>([]); const [rangeStart,setRangeStart]=useState(today()); const [rangeEnd,setRangeEnd]=useState(today()); const [holiday,setHoliday]=useState(''); const [calReason,setCalReason]=useState('Plant calendar update')
  const [dispatchExportFrom,setDispatchExportFrom]=useState(monthNow()); const [dispatchExportTo,setDispatchExportTo]=useState(today()); const [dispatchExportBusy,setDispatchExportBusy]=useState(false); const [dispatchExportMsg,setDispatchExportMsg]=useState(''); const [dispatchExportErr,setDispatchExportErr]=useState('')
 
@@ -68,10 +68,21 @@ export default function Schedule(){
  }
 
  async function applyPrice(){
-   if(!pid||!newPrice)return
-   await api('/masters/prices',{method:'POST',body:JSON.stringify({product_id:Number(pid),effective_from:priceEff,price:Number(newPrice),reason:priceReason})})
-   setPriceMsg(`Price revision applied from ${priceEff}. Earlier MIS and sales values keep the old price; existing MIS sales from the effective date were recalculated.`)
-   setNewPrice(''); await load()
+   setPriceMsg('')
+   const price=Number(newPrice)
+   if(!pid){setPriceMsg('Select a product before applying the price.');return}
+   if(!priceEff){setPriceMsg('Select the price effective date.');return}
+   if(!Number.isFinite(price)||price<=0){setPriceMsg('Enter a valid price greater than zero.');return}
+   if(priceReason.trim().length<2){setPriceMsg('Enter a reason / reference (at least 2 characters).');return}
+   setPriceBusy(true)
+   try{
+     const r:any=await api('/masters/prices',{method:'POST',body:JSON.stringify({product_id:Number(pid),effective_from:priceEff,price,reason:priceReason.trim()})})
+     setPriceMsg(`Price revision saved successfully: ₹${num(r.price)} per pc from ${r.effective_from}. Existing MIS sales from this date were recalculated.`)
+     setNewPrice('')
+     await load()
+   }catch(e){
+     setPriceMsg(e instanceof Error?e.message:'Unable to save price revision. Check the API/server logs.')
+   }finally{setPriceBusy(false)}
  }
 
  async function editDay(r:any){
@@ -113,7 +124,7 @@ export default function Schedule(){
  {preview&&<><div className="preview"><b>Balance: {num(preview.balance_requirement)}</b><span>{preview.source?.includes('Disp_Done')?'Plan issued before date':'Actual before date'}: {num(preview.plan_before_effective_date??preview.actual_before_effective_date)}</span><span>Remaining working days ({calendarPlant}): {preview.remaining_working_days}</span><span>Avg/day: {num(preview.average_daily_requirement)}</span><span>Resulting plan from effective date: {num(preview.result_plan_qty)}</span></div>{preview.protected_days>0&&<p className="notice">{preview.protected_days} imported days are protected. Select “Correct imported historical plans” and preview again to apply your schedule.</p>}<div className="table-wrap"><table><thead><tr><th>Date</th><th>Current plan</th><th>Proposed plan</th><th>Resulting plan</th><th>Status</th></tr></thead><tbody>{preview.preview.map((r:any)=><tr key={r.date}><td>{r.date}</td><td>{num(r.current_qty)}</td><td>{num(r.qty)}</td><td>{num(r.result_qty)}</td><td>{r.protected?'Protected':'Will apply'}</td></tr>)}</tbody></table></div></>}</section></div>
 
  <div className="two-col"><section className="panel"><div className="panel-title"><h2>Sales price history</h2><span>Historical prices are never overwritten.</span></div><div className="table-wrap"><table><thead><tr><th>Effective from</th><th>Effective to</th><th>Price ₹/pc</th><th>Source</th><th>Reason</th></tr></thead><tbody>{prices.map((r:any)=><tr key={r.id}><td>{r.effective_from}</td><td>{r.effective_to||'Current'}</td><td>{num(r.price)}</td><td>{r.source}</td><td>{r.reason||'—'}</td></tr>)}</tbody></table></div></section>
- <section className="panel"><h2>Create sales price revision</h2><p className="muted">The new price applies only from its effective date. Earlier MIS and sales values keep the old price.</p><label>Effective from<input type="date" value={priceEff} onChange={e=>setPriceEff(e.target.value)}/></label><label>New price ₹ / pc<input type="number" step="0.01" min="0.01" value={newPrice} onChange={e=>setNewPrice(e.target.value)}/></label><label>Reason / reference<textarea value={priceReason} onChange={e=>setPriceReason(e.target.value)}/></label><button onClick={applyPrice} disabled={!pid||!newPrice||Number(newPrice)<=0}>Apply price revision</button>{priceMsg&&<div className="notice">{priceMsg}</div>}</section></div>
+ <section className="panel"><h2>Create sales price revision</h2><p className="muted">The new price applies only from its effective date. Earlier MIS and sales values keep the old price.</p><label>Effective from<input type="date" value={priceEff} onChange={e=>setPriceEff(e.target.value)}/></label><label>New price ₹ / pc<input type="number" step="0.01" min="0.01" value={newPrice} onChange={e=>setNewPrice(e.target.value)}/></label><label>Reason / reference<textarea value={priceReason} onChange={e=>setPriceReason(e.target.value)}/></label><button onClick={applyPrice} disabled={priceBusy||!pid||!newPrice||Number(newPrice)<=0}>{priceBusy?'Saving price…':'Apply price revision'}</button>{priceMsg&&<div className={priceMsg.startsWith('Price revision saved successfully:')?'notice':'error'} role="status">{priceMsg}</div>}</section></div>
 
  <section className="panel"><div className="panel-title"><h2>Working calendar — {calendarPlant}</h2><span>All dates are working by default; mark any plant off-day explicitly. Changes are stored and audited.</span></div>
  <div className="form-row"><label>Range start<input type="date" value={rangeStart} onChange={e=>setRangeStart(e.target.value)}/></label><label>Range end<input type="date" value={rangeEnd} onChange={e=>setRangeEnd(e.target.value)}/></label><label>Holiday / off-day name<input value={holiday} onChange={e=>setHoliday(e.target.value)} placeholder="e.g. Diwali"/></label><label>Reason<input value={calReason} onChange={e=>setCalReason(e.target.value)}/></label></div>
