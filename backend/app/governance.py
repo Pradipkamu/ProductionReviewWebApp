@@ -53,7 +53,27 @@ def protect_months(db, flush_context, instances):
         if table not in PERIOD_FIELDS or (obj in db.dirty and not db.is_modified(obj, include_collections=False)):
             continue
         periods = set()
-        for field in PERIOD_FIELDS[table]:
+        # Closing the previous sales-price range when a new future-effective
+        # price is added only updates its effective_to boundary. It does not
+        # rewrite the historical price or any MIS values in the already-closed
+        # month. Do not treat that boundary-only update as a correction to the
+        # previous price's effective_from month.
+        sales_price_boundary_only = (
+            table == 'sales_price_history'
+            and obj in db.dirty
+            and not inspect(obj).attrs.effective_from.history.has_changes()
+            and not any(
+                inspect(obj).attrs[name].history.has_changes()
+                for name in ('price', 'reason', 'source', 'entered_by_id', 'product_id')
+                if hasattr(obj, name)
+            )
+            and inspect(obj).attrs.effective_to.history.has_changes()
+        )
+        if sales_price_boundary_only:
+            fields_to_check = []
+        else:
+            fields_to_check = PERIOD_FIELDS[table]
+        for field in fields_to_check:
             if table == 'vendor_movements' and obj in db.dirty:
                 if field == 'outward_date' and not any(inspect(obj).attrs[k].history.has_changes() for k in ['outward_date','outward_qty','product_id','vendor_id','route_operation_id','challan_no','expected_return_date']):
                     continue
@@ -63,7 +83,7 @@ def protect_months(db, flush_context, instances):
             attr = inspect(obj).attrs[field]
             values = [getattr(obj, field)] + list(attr.history.deleted)
             periods.update(v.replace(day=1) for v in values if isinstance(v, date))
-        if table in RANGE_TABLES:
+        if table in RANGE_TABLES and not sales_price_boundary_only:
             starts = [getattr(obj, 'effective_from')] + list(inspect(obj).attrs.effective_from.history.deleted)
             first = min(x for x in starts if x)
             # A backdated revision can alter a previously closed month downstream.
