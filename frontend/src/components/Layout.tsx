@@ -58,7 +58,7 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
     routeLocation.pathname==='/customer-quality'?'customer_quality':''
   )))?.label||'Workspace'
   const displayName=me?.full_name||me?.username||'User'
-  const initials=String(displayName).trim().split(/\\s+/).slice(0,2).map((part:string)=>part[0]||'').join('').toUpperCase()
+  const initials=String(displayName).trim().split(/\s+/).slice(0,2).map((part:string)=>part[0]||'').join('').toUpperCase()
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to content</a>
     <button className="mobile-menu-button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}>{menuOpen?'×':'☰'}<span>Menu</span></button>
@@ -69,7 +69,7 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
       <nav aria-label="Primary navigation">{groups.map(group=>{const items=visible.filter(item=>group.keys.includes(item.key));if(!items.length)return null;return <div className="nav-group" key={group.label}><div className="nav-group-label">{group.label}</div>{items.map(({to,label}) => <NavLink key={to} to={to} end={to==='/'} className={({isActive}) => isActive ? 'active' : ''}>{label}</NavLink>)}</div>})}</nav>
       <button className="ghost danger sign-out" onClick={signOut}>Sign out</button>
     </aside>
-    <main className="content" id="main-content">
+    <main className="content" id="main-content" tabIndex={-1}>
       <header className="app-topbar">
         <div className="app-breadcrumb" aria-label="Breadcrumb">
           <span className="app-breadcrumb-root">WORKSPACE</span><span className="app-breadcrumb-separator">/</span>
