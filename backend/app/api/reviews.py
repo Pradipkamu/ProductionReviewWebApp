@@ -383,17 +383,15 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
     control_label.leading=9
     control_label.textColor=colors.HexColor("#526579")
     control_data=[
-      [Paragraph("<b>Ref. No.</b>",control_label),Paragraph("<b>Issue No. / Date</b>",control_label),Paragraph("<b>Rev. No. / Date</b>",control_label)],
-      [Paragraph("IMS/MR/F/14",control_style),Paragraph("02 / 16.11.2022",control_style),Paragraph("01 / 16.11.2022",control_style)]
+      [Paragraph("<b>Ref. No.:</b> IMS/MR/F/14",control_style)],
+      [Paragraph("<b>Issue No. / Date:</b> 02 / 16.11.2022",control_style)],
+      [Paragraph("<b>Rev. No. / Date:</b> 01 / 16.11.2022",control_style)],
     ]
-    control_table=Table(control_data,colWidths=[doc.width/3]*3)
+    control_table=Table(control_data,colWidths=[doc.width*0.42])
     control_table.setStyle(TableStyle([
-      ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#eaf0f6")),
-      ("BOX",(0,0),(-1,-1),0.5,colors.HexColor("#9aa9b8")),
-      ("INNERGRID",(0,0),(-1,-1),0.35,colors.HexColor("#c3ccd5")),
       ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-      ("LEFTPADDING",(0,0),(-1,-1),6),("RIGHTPADDING",(0,0),(-1,-1),6),
-      ("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4),
+      ("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),4),
+      ("TOPPADDING",(0,0),(-1,-1),1),("BOTTOMPADDING",(0,0),(-1,-1),1),
     ]))
     story=[control_table,Spacer(1,4*mm),Paragraph("Daily Review - Minutes of Meeting",styles["Title"]),
       Paragraph(f"<b>MOM:</b> {mom_no} &nbsp;&nbsp; <b>Date:</b> {review.review_date} &nbsp;&nbsp; <b>Participants:</b> {review.participants or '-'}",styles["BodyText"]),Spacer(1,5*mm)]
