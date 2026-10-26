@@ -375,26 +375,59 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
     mom_no=f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
     buf=BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=10*mm,bottomMargin=10*mm)
     styles=getSampleStyleSheet()
+    def safe(value):
+        return str(value or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+
     control_style=styles["BodyText"].clone("MOMControl")
+    control_style.fontName="Helvetica"
     control_style.fontSize=8
-    control_style.leading=10
-    control_label=styles["BodyText"].clone("MOMControlLabel")
-    control_label.fontSize=7
-    control_label.leading=9
-    control_label.textColor=colors.HexColor("#526579")
-    control_data=[
-      [Paragraph("<b>Ref. No.:</b> IMS/MR/F/14",control_style)],
-      [Paragraph("<b>Issue No. / Date:</b> 02 / 16.11.2022",control_style)],
-      [Paragraph("<b>Rev. No. / Date:</b> 01 / 16.11.2022",control_style)],
-    ]
-    control_table=Table(control_data,colWidths=[doc.width*0.42])
-    control_table.setStyle(TableStyle([
-      ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-      ("LEFTPADDING",(0,0),(-1,-1),0),("RIGHTPADDING",(0,0),(-1,-1),4),
-      ("TOPPADDING",(0,0),(-1,-1),1),("BOTTOMPADDING",(0,0),(-1,-1),1),
+    control_style.leading=12
+    title_style=styles["Title"].clone("MOMCorporateTitle")
+    title_style.fontName="Helvetica-Bold"
+    title_style.fontSize=19
+    title_style.leading=23
+    title_style.textColor=colors.HexColor("#17365D")
+    title_style.alignment=2
+    subtitle_style=styles["BodyText"].clone("MOMSubtitle")
+    subtitle_style.fontSize=8
+    subtitle_style.leading=11
+    subtitle_style.textColor=colors.HexColor("#526579")
+    subtitle_style.alignment=2
+    control_block=Paragraph(
+        "<b>Ref. No.:</b> IMS/MR/F/14<br/>"
+        "<b>Issue No. / Date:</b> 02 / 16.11.2022<br/>"
+        "<b>Rev. No. / Date:</b> 01 / 16.11.2022",
+        control_style
+    )
+    title_block=Paragraph("DAILY REVIEW<br/>MINUTES OF MEETING",title_style)
+    header=Table([[control_block,title_block]],colWidths=[doc.width*0.48,doc.width*0.52])
+    header.setStyle(TableStyle([
+        ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+        ("ALIGN",(1,0),(1,0),"RIGHT"),
+        ("LINEBELOW",(0,0),(-1,-1),1.2,colors.HexColor("#1F4E78")),
+        ("LEFTPADDING",(0,0),(-1,-1),0),
+        ("RIGHTPADDING",(0,0),(-1,-1),0),
+        ("TOPPADDING",(0,0),(-1,-1),2),
+        ("BOTTOMPADDING",(0,0),(-1,-1),7),
     ]))
-    story=[control_table,Spacer(1,4*mm),Paragraph("Daily Review - Minutes of Meeting",styles["Title"]),
-      Paragraph(f"<b>MOM:</b> {mom_no} &nbsp;&nbsp; <b>Date:</b> {review.review_date} &nbsp;&nbsp; <b>Participants:</b> {review.participants or '-'}",styles["BodyText"]),Spacer(1,5*mm)]
+    meta_style=styles["BodyText"].clone("MOMMeta")
+    meta_style.fontSize=8
+    meta_style.leading=11
+    meta_style.textColor=colors.HexColor("#243447")
+    meta_data=[[
+        Paragraph(f"<b>MOM Reference</b><br/>{safe(mom_no)}",meta_style),
+        Paragraph(f"<b>Meeting Date</b><br/>{safe(review.review_date)}",meta_style),
+        Paragraph(f"<b>Participants</b><br/>{safe(review.participants or '-')}",meta_style),
+    ]]
+    meta=Table(meta_data,colWidths=[doc.width*0.28,doc.width*0.20,doc.width*0.52])
+    meta.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#EEF3F8")),
+        ("BOX",(0,0),(-1,-1),0.5,colors.HexColor("#C5D1DE")),
+        ("VALIGN",(0,0),(-1,-1),"TOP"),
+        ("LEFTPADDING",(0,0),(-1,-1),7),("RIGHTPADDING",(0,0),(-1,-1),7),
+        ("TOPPADDING",(0,0),(-1,-1),6),("BOTTOMPADDING",(0,0),(-1,-1),6),
+    ]))
+    story=[header,Spacer(1,3*mm),meta,Spacer(1,5*mm)]
     raw_data=[["Sr.","Category","Product","Discussion / MOM Point","Action Required","Owner","Target","Priority","Status","Closure Remark"]]+_mom_rows(db,review)
     cell_style=styles["BodyText"].clone("MOMCell"); cell_style.fontSize=7; cell_style.leading=9
     head_style=styles["BodyText"].clone("MOMHead"); head_style.fontSize=7; head_style.leading=9; head_style.textColor=colors.white; head_style.fontName="Helvetica-Bold"
@@ -404,8 +437,20 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
       ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8),("VALIGN",(0,0),(-1,-1),"TOP"),
       ("GRID",(0,0),(-1,-1),0.4,colors.grey),("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f4f7fa")])]))
     story.append(table)
-    if review.comments: story += [Spacer(1,4*mm),Paragraph(f"<b>Meeting remarks:</b> {review.comments}",styles["BodyText"])]
-    doc.build(story)
+    if review.comments: story += [Spacer(1,4*mm),Paragraph(f"<b>Meeting remarks:</b> {safe(review.comments)}",styles["BodyText"])]
+    def add_page_footer(canvas, document):
+        canvas.saveState()
+        page_width,page_height=landscape(A4)
+        canvas.setStrokeColor(colors.HexColor("#C5D1DE"))
+        canvas.setLineWidth(0.5)
+        canvas.line(doc.leftMargin,8*mm,page_width-doc.rightMargin,8*mm)
+        canvas.setFont("Helvetica",7)
+        canvas.setFillColor(colors.HexColor("#66788A"))
+        canvas.drawString(doc.leftMargin,5*mm,"IMS/MR/F/14  |  Controlled document")
+        canvas.drawRightString(page_width-doc.rightMargin,5*mm,f"Page {document.page}")
+        canvas.restoreState()
+
+    doc.build(story,onFirstPage=add_page_footer,onLaterPages=add_page_footer)
     return Response(buf.getvalue(),media_type="application/pdf",headers={"Content-Disposition":f'attachment; filename="{mom_no}.pdf"'})
 
 
