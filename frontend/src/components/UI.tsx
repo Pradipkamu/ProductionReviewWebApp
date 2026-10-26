@@ -1,5 +1,8 @@
-export function Kpi({ label, value, tone='neutral', sub }: { label: string, value: string|number, tone?: string, sub?: string }) {
-  return <div className={`kpi ${tone}`}><span>{label}</span><strong>{value}</strong>{sub && <small>{sub}</small>}</div>
+export function Kpi({ label, value, tone='neutral', sub, onClick }: { label: string, value: string|number, tone?: string, sub?: string, onClick?: () => void }) {
+  const content=<><span>{label}</span><strong>{value}</strong>{sub && <small>{sub}</small>}</>
+  return onClick
+    ? <button type="button" className={`kpi kpi-interactive ${tone}`} onClick={onClick} aria-label={`${label}: ${value}. Open details`}>{content}</button>
+    : <div className={`kpi ${tone}`}>{content}</div>
 }
 
 export function Status({ value }: { value: string }) {
