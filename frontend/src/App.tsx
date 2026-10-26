@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { api, getToken, login, setToken } from './api'
+import { api, clearToken, getToken, login, setToken } from './api'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import MIS from './pages/MIS'
@@ -47,9 +47,21 @@ function Login() {
 
 export default function App(){
   const [me,setMe]=useState<any>(null)
-  useEffect(()=>{if(getToken())api('/auth/me').then(setMe).catch(()=>{})},[])
+  const [authError,setAuthError]=useState('')
+  const [retryAuth,setRetryAuth]=useState(0)
+  useEffect(()=>{
+    if(!getToken())return
+    let active=true
+    setAuthError('')
+    api('/auth/me')
+      .then((user:any)=>{if(active)setMe(user)})
+      .catch((error:any)=>{if(active)setAuthError(error?.message||'Unable to connect to the server.')})
+    return ()=>{active=false}
+  },[retryAuth])
   if(!getToken()) return <Login />
-  if(!me) return <div className="loading-screen"><div><div className="brand-mark lg">PR</div><p>Loading your workspace…</p></div></div>
+  if(!me) return <div className="loading-screen"><div><div className="brand-mark lg">PR</div>{authError
+    ? <><p>Unable to load your workspace.</p><div className="error">{authError}</div><button onClick={()=>setRetryAuth(v=>v+1)}>Retry connection</button><button className="secondary" onClick={()=>{clearToken();location.reload()}}>Return to sign in</button></>
+    : <p>Loading your workspace…</p>}</div></div>
   if(me.must_change_password) return <div className="login-page"><PasswordForm required/></div>
   const page=(pageKey:string,element:React.ReactNode)=><PageGate me={me} pageKey={pageKey}>{element}</PageGate>
   return <Layout me={me}><Routes>
