@@ -448,3 +448,23 @@ button.ghost{color:inherit}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Phase 2A — Dashboard clarity and safe KPI drill-down */
+.kpi-grid>.kpi{height:100%;min-height:132px}
+.kpi-interactive{display:flex;width:100%;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;text-align:left;font:inherit;cursor:pointer;appearance:none}
+.kpi-interactive:hover{border-color:#9eb6d3;box-shadow:0 7px 18px rgba(18,42,72,.09);transform:translateY(-1px)}
+.kpi-interactive:focus-visible{outline:3px solid rgba(40,95,168,.28);outline-offset:3px}
+.dashboard-action-row{align-items:center;gap:9px}
+.dashboard-action-row button{min-height:46px;padding:10px 16px;white-space:nowrap;line-height:1.25}
+.dashboard-action-row input[type=date]{width:170px;min-width:150px;min-height:46px}
+@media(max-width:900px){
+  .dashboard-action-row{flex-wrap:wrap}
+  .dashboard-action-row button{flex:0 0 auto}
+}
+@media(max-width:700px){
+  .dashboard-action-row{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dashboard-action-row input[type=date]{width:100%;min-width:0;grid-column:1/-1;grid-row:1}
+  .dashboard-action-row button{width:100%;white-space:normal}
+  .kpi-grid>.kpi{min-height:116px}
+}
