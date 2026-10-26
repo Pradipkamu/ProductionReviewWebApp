@@ -374,7 +374,28 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
     if not review: raise HTTPException(404,"Review session not found")
     mom_no=f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
     buf=BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=10*mm,bottomMargin=10*mm)
-    styles=getSampleStyleSheet(); story=[Paragraph("Daily Review - Minutes of Meeting",styles["Title"]),
+    styles=getSampleStyleSheet()
+    control_style=styles["BodyText"].clone("MOMControl")
+    control_style.fontSize=8
+    control_style.leading=10
+    control_label=styles["BodyText"].clone("MOMControlLabel")
+    control_label.fontSize=7
+    control_label.leading=9
+    control_label.textColor=colors.HexColor("#526579")
+    control_data=[
+      [Paragraph("<b>Ref. No.</b>",control_label),Paragraph("<b>Issue No. / Date</b>",control_label),Paragraph("<b>Rev. No. / Date</b>",control_label)],
+      [Paragraph("IMS/MR/F/14",control_style),Paragraph("02 / 16.11.2022",control_style),Paragraph("01 / 16.11.2022",control_style)]
+    ]
+    control_table=Table(control_data,colWidths=[doc.width/3]*3)
+    control_table.setStyle(TableStyle([
+      ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#eaf0f6")),
+      ("BOX",(0,0),(-1,-1),0.5,colors.HexColor("#9aa9b8")),
+      ("INNERGRID",(0,0),(-1,-1),0.35,colors.HexColor("#c3ccd5")),
+      ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+      ("LEFTPADDING",(0,0),(-1,-1),6),("RIGHTPADDING",(0,0),(-1,-1),6),
+      ("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4),
+    ]))
+    story=[control_table,Spacer(1,4*mm),Paragraph("Daily Review - Minutes of Meeting",styles["Title"]),
       Paragraph(f"<b>MOM:</b> {mom_no} &nbsp;&nbsp; <b>Date:</b> {review.review_date} &nbsp;&nbsp; <b>Participants:</b> {review.participants or '-'}",styles["BodyText"]),Spacer(1,5*mm)]
     raw_data=[["Sr.","Category","Product","Discussion / MOM Point","Action Required","Owner","Target","Priority","Status","Closure Remark"]]+_mom_rows(db,review)
     cell_style=styles["BodyText"].clone("MOMCell"); cell_style.fontSize=7; cell_style.leading=9
