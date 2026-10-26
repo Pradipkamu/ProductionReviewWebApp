@@ -307,3 +307,27 @@ button,input,select,textarea,.multi-select-trigger{touch-action:manipulation}
 .overdue-detail-backdrop{position:fixed;inset:0;z-index:120;background:rgba(10,25,43,.52);display:grid;place-items:center;padding:20px}
 .overdue-detail-panel{width:min(1100px,96vw);max-height:85vh;overflow:auto;margin:0;box-shadow:0 18px 60px rgba(0,0,0,.25)}
 @media(max-width:650px){.overdue-detail-backdrop{padding:8px}.overdue-detail-panel{width:100%;max-height:92vh;padding:12px}}
+
+
+/* Corporate Standard Why-Why action plan modal */
+.action-modal-backdrop{position:fixed;inset:0;z-index:1000;background:rgba(13,27,45,.58);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:2.5vh 2vw}
+.action-plan-modal{width:min(1500px,96vw);max-width:96vw;max-height:95vh;overflow:auto;overscroll-behavior:contain;margin:0;padding:22px 24px 24px;box-shadow:0 24px 80px rgba(8,24,45,.3);border:1px solid #cbd6e3}
+.action-plan-modal-header{position:sticky;top:-22px;z-index:5;margin:-22px -24px 16px;padding:17px 24px 14px;background:#fff;border-bottom:1px solid var(--line);gap:18px}
+.action-plan-modal-header h2{font-size:21px;letter-spacing:.1px;color:#17365d;margin:3px 0 5px}
+.action-plan-modal-header p{margin:0;color:#61718a;font-size:13px;max-width:760px}
+.action-plan-eyebrow{font-size:10px;font-weight:800;letter-spacing:1.1px;color:#55769b}
+.action-plan-header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.action-plan-summary{display:grid;grid-template-columns:1.3fr 1fr 1fr .8fr 1.3fr;gap:12px;padding:13px 15px;margin-bottom:18px;border:1px solid #d7e1ed;border-radius:10px;background:#f4f7fb}
+.action-plan-summary>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.action-plan-summary small{font-size:10px;text-transform:uppercase;letter-spacing:.45px;color:#738198;font-weight:700}
+.action-plan-summary b{font-size:12px;color:#253952;overflow-wrap:anywhere}
+.action-plan-progress>div:first-child{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:6px}
+.action-plan-progress-track{height:7px;background:#dce5ef;border-radius:99px;overflow:hidden;margin-top:4px}
+.action-plan-progress-track span{display:block;height:100%;background:#21845e;border-radius:99px;transition:width .2s ease}
+.action-plan-modal .whywhy-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.action-plan-modal .whywhy-grid>div{background:#fbfcfe;border-color:#dce4ed}
+.action-plan-modal .whywhy-grid label{font-size:12px}
+.action-plan-modal .whywhy-grid textarea{min-height:82px}
+.action-plan-modal .whywhy-footer{position:sticky;bottom:-24px;z-index:4;background:#f2f7ff;border-top:1px solid #d7e3f2;box-shadow:0 -8px 16px rgba(255,255,255,.9);margin:18px -24px 16px;padding:13px 24px}
+.action-plan-modal .attachment-box{padding-top:18px}
+@media(max-width:900px){.action-modal-backdrop{padding:0;align-items:stretch}.action-plan-modal{width:100%;max-width:100%;max-height:100vh;border-radius:0;padding:16px}.action-plan-modal-header{top:-16px;margin:-16px -16px 14px;padding:14px 16px;align-items:flex-start;flex-direction:column}.action-plan-header-actions{justify-content:flex-start}.action-plan-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.action-plan-modal .whywhy-grid{grid-template-columns:1fr}.action-plan-modal .whywhy-footer{bottom:-16px;margin-left:-16px;margin-right:-16px;padding-left:16px;padding-right:16px}}
