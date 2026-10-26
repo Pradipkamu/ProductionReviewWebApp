@@ -44,7 +44,23 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
   }
 
   const visible=navItems.filter(item=>canViewPage(me,item.key))
+  const currentNav=navItems.find(item=>item.to===routeLocation.pathname)
+    || navItems.find(item=>item.to!=='/'&&routeLocation.pathname.startsWith(item.to+'/'))
+  const currentLabel=routeLocation.pathname==='/quality-salvage'?'Rejection Salvage'
+    :routeLocation.pathname==='/admin-action-review'?'User-wise Action Review'
+    :routeLocation.pathname==='/casting-quality'?'Casting Quality'
+    :routeLocation.pathname==='/customer-quality'?'Customer Quality'
+    :currentNav?.label||'Workspace'
+  const currentGroup=groups.find(group=>group.keys.includes(currentNav?.key||(
+    routeLocation.pathname==='/quality-salvage'?'quality':
+    routeLocation.pathname==='/admin-action-review'?'admin_action_review':
+    routeLocation.pathname==='/casting-quality'?'casting_quality':
+    routeLocation.pathname==='/customer-quality'?'customer_quality':''
+  )))?.label||'Workspace'
+  const displayName=me?.full_name||me?.username||'User'
+  const initials=String(displayName).trim().split(/\\s+/).slice(0,2).map((part:string)=>part[0]||'').join('').toUpperCase()
   return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Skip to content</a>
     <button className="mobile-menu-button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}>{menuOpen?'×':'☰'}<span>Menu</span></button>
     {menuOpen&&<button className="sidebar-backdrop" aria-label="Close navigation" onClick={()=>setMenuOpen(false)}/>}
     <aside className={`sidebar ${menuOpen?'open':''}`}>
@@ -53,6 +69,20 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
       <nav aria-label="Primary navigation">{groups.map(group=>{const items=visible.filter(item=>group.keys.includes(item.key));if(!items.length)return null;return <div className="nav-group" key={group.label}><div className="nav-group-label">{group.label}</div>{items.map(({to,label}) => <NavLink key={to} to={to} end={to==='/'} className={({isActive}) => isActive ? 'active' : ''}>{label}</NavLink>)}</div>})}</nav>
       <button className="ghost danger sign-out" onClick={signOut}>Sign out</button>
     </aside>
-    <main className="content"><CorrectionControls role={me?.role}/>{children}</main>
+    <main className="content" id="main-content">
+      <header className="app-topbar">
+        <div className="app-breadcrumb" aria-label="Breadcrumb">
+          <span className="app-breadcrumb-root">WORKSPACE</span><span className="app-breadcrumb-separator">/</span>
+          <span className="app-breadcrumb-group">{currentGroup}</span><span className="app-breadcrumb-separator">/</span>
+          <strong>{currentLabel}</strong>
+        </div>
+        <div className="app-topbar-profile">
+          <span className="app-environment"><i/>Operational workspace</span>
+          <div className="app-topbar-avatar" aria-hidden="true">{initials||'U'}</div>
+          <div className="app-topbar-identity"><b>{displayName}</b><span>{String(me?.role||'').replaceAll('_',' ')}</span></div>
+        </div>
+      </header>
+      <CorrectionControls role={me?.role}/>{children}
+    </main>
   </div>
 }
