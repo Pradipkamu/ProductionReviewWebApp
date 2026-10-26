@@ -432,7 +432,7 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
     cell_style=styles["BodyText"].clone("MOMCell"); cell_style.fontSize=7; cell_style.leading=9
     head_style=styles["BodyText"].clone("MOMHead"); head_style.fontSize=7; head_style.leading=9; head_style.textColor=colors.white; head_style.fontName="Helvetica-Bold"
     data=[[Paragraph(str(v or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;"), head_style if ri==0 else cell_style) for v in row] for ri,row in enumerate(raw_data)]
-    table=Table(data,colWidths=[9*mm,16*mm,24*mm,40*mm,40*mm,24*mm,20*mm,14*mm,18*mm,42*mm],repeatRows=1)
+    base_col_widths=[9*mm,16*mm,24*mm,40*mm,40*mm,24*mm,20*mm,14*mm,18*mm,42*mm]\n    width_scale=doc.width/sum(base_col_widths)\n    table=Table(data,colWidths=[w*width_scale for w in base_col_widths],repeatRows=1)
     table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#1f4e78")),("TEXTCOLOR",(0,0),(-1,0),colors.white),
       ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),("FONTSIZE",(0,0),(-1,-1),8),("VALIGN",(0,0),(-1,-1),"TOP"),
       ("GRID",(0,0),(-1,-1),0.4,colors.grey),("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f4f7fa")])]))
