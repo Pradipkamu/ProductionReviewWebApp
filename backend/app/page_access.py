@@ -11,6 +11,7 @@ PAGE_CATALOG = (
     {"key": "account", "label": "Security / Users", "path": "/account", "required": True},
     {"key": "governance", "label": "Month Close / Audit", "path": "/governance"},
     {"key": "daily_review", "label": "Daily Review", "path": "/"},
+    {"key": "daily_meeting", "label": "Daily Review Meeting", "path": "/daily-meeting"},
     {"key": "mis", "label": "MIS", "path": "/mis"},
     {"key": "schedule", "label": "Schedule / Price / Calendar", "path": "/schedule"},
     {"key": "machine_master", "label": "Machine Master", "path": "/machine-master"},
