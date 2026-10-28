@@ -527,3 +527,17 @@ button.ghost{color:inherit}
     padding:14px 16px;
   }
 }
+
+
+/* Compliance action modal must be an opaque surface above the report */
+.action-modal-backdrop{background:rgba(13,27,45,.72)!important;backdrop-filter:blur(3px)}
+.action-modal-backdrop .action-plan-modal{background:#fff!important;color:#24364d;isolation:isolate}
+.action-modal-backdrop .action-plan-modal .table-wrap,
+.action-modal-backdrop .action-plan-modal table,
+.action-modal-backdrop .action-plan-modal thead,
+.action-modal-backdrop .action-plan-modal tbody,
+.action-modal-backdrop .action-plan-modal tr,
+.action-modal-backdrop .action-plan-modal th,
+.action-modal-backdrop .action-plan-modal td{background-color:#fff}
+.action-modal-backdrop .action-plan-modal thead th{background:#f2f6fb}
+.action-modal-backdrop .action-plan-modal tbody tr:hover td{background:#f7faff}
