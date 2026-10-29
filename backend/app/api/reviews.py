@@ -298,7 +298,6 @@ def get_review(review_id: int, db: Session = Depends(get_db), user: User = Depen
     row = db.get(ReviewSession, review_id)
     if not row:
         raise HTTPException(404, "Review session not found")
-    require_meeting_access(db, row, user)
     result = serialize_review(row, db)
     result["is_owner"] = bool(row.owner_id == user.id)
     return result
@@ -763,7 +762,6 @@ def _mom_rows(db: Session, review: ReviewSession):
 def download_mom_pdf(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     review=db.get(ReviewSession,review_id)
     if not review: raise HTTPException(404,"Review session not found")
-    require_meeting_access(db, review, user)
     mom_no=f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
     buf=BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=10*mm,bottomMargin=10*mm)
     styles=getSampleStyleSheet()
@@ -852,7 +850,6 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), user: User =
 def download_mom_xlsx(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     review=db.get(ReviewSession,review_id)
     if not review: raise HTTPException(404,"Review session not found")
-    require_meeting_access(db, review, user)
     mom_no=f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
     wb=Workbook(); ws=wb.active; ws.title="MOM"
     ws.append(["Daily Review - Minutes of Meeting"]); ws.append(["MOM No",mom_no]); ws.append(["Date",review.review_date.isoformat()])
