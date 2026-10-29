@@ -711,10 +711,10 @@ export default function DailyMeeting() {
 
 
     {ownerRequests.length > 0 && <section className="panel">
-      <div className="panel-title"><div><h2>Requests to join your meeting</h2><p>Colleagues are waiting for you to join their discussion.</p></div><button className="secondary small" onClick={refreshOwnerRequests}>Refresh</button></div>
+      <div className="panel-title"><div><h2>Requests to join your meeting</h2><p>Approve a colleague’s request to join your active MOM. Their screen will open the shared discussion automatically.</p></div><button className="secondary small" onClick={refreshOwnerRequests}>Refresh</button></div>
       {ownerRequests.map((item: any) => <div className="data-note" key={item.id}>
         <b>{item.requester_name}</b> requested you to join <b>{item.mom_no}</b> ({item.review_date})
-        <button className="secondary small" onClick={() => openOwnerRequest(item)}>Open Meeting</button>
+        <button className="secondary small" onClick={() => openOwnerRequest(item)}>Approve &amp; Open Meeting</button>
       </div>)}
     </section>}
 
