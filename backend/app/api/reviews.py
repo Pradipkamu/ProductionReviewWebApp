@@ -186,7 +186,22 @@ def list_reviews(participant: str | None = None, db: Session = Depends(get_db), 
     if participant:
         stmt = stmt.where(ReviewSession.participants.ilike(f"%{participant.strip()}%"))
     rows = db.scalars(stmt.order_by(ReviewSession.review_date.desc(), ReviewSession.id.desc()).limit(200)).all()
-    return [{**serialize_review(x, db), "is_owner": bool(x.owner_id == user.id), "is_admin": user.role == UserRole.ADMIN} for x in rows]
+    result = []
+    for row in rows:
+        is_owner = row.owner_id == user.id
+        has_presence = db.scalar(select(ReviewParticipantPresence.id).where(
+            ReviewParticipantPresence.review_session_id == row.id,
+            ReviewParticipantPresence.user_id == user.id,
+        ).limit(1)) is not None
+        has_approved_access = db.scalar(select(ReviewMeetingRequest.id).where(
+            ReviewMeetingRequest.review_session_id == row.id,
+            ReviewMeetingRequest.requester_id == user.id,
+            ReviewMeetingRequest.status.in_(["ACKNOWLEDGED", "LEFT"]),
+        ).limit(1)) is not None
+        result.append({**serialize_review(row, db), "is_owner": is_owner,
+            "is_admin": user.role == UserRole.ADMIN,
+            "has_meeting_access": bool(is_owner or has_presence or has_approved_access)})
+    return result
 
 
 @router.get("/collaboration/active")
