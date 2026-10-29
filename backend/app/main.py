@@ -12,6 +12,7 @@ from .db import Base, SessionLocal, engine
 from .migrate import upgrade_database
 from .seed import seed_defaults
 from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, quality_salvage, governance, insights, import_preview, flows, diagnostics, capacity, special_quality
+from .api.reviews import release_meeting_participants
 
 settings = get_settings()
 
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
                 if not owner_active:
                     meeting.ended_at = now
                     meeting.auto_close_reason = 'Automatically closed due to owner inactivity for more than 30 minutes.'
+                    release_meeting_participants(db, meeting.id, now)
                     changed = True
             if changed:
                 db.commit()
