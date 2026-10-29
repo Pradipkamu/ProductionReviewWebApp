@@ -800,7 +800,7 @@ export default function DailyMeeting() {
     </div>}
 
     {mom && <section className="panel">
-      <div className="panel-title"><h2>Today's MOM Points</h2><span>{mom.points.length} point(s)</span></div>
+      <div className="panel-title"><div><h2>Today's MOM Points</h2><p>Multiple participants can add separate points to this meeting. Refresh to load contributions added by other users.</p></div><div><span>{mom.points.length} point(s) </span><button className="secondary small" type="button" onClick={() => load(review)}>Refresh MOM</button></div></div>
       <div className="table-wrap"><table>
         <thead><tr><th>Sr.</th><th>Category</th><th>Product</th><th>Discussion</th><th>Added By</th><th>Action / Owner</th><th>Target</th><th>Priority</th><th>Status</th><th>Follow-up</th></tr></thead>
         <tbody>{mom.points.map((p: any) => <tr key={p.id}>
