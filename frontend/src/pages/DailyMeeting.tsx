@@ -139,19 +139,36 @@ export default function DailyMeeting() {
   }
 
   useEffect(() => {
-    Promise.all([
-      api('/masters/users'),
-      api('/masters/products'),
-      api('/masters/filter-options'),
-    ]).then(([u, p, f]: any[]) => {
-      setUsers(u)
-      setProducts(p)
-      setFilterOptions(f)
-    }).catch((e: any) => setErr(e.message))
+    api('/masters/filter-options').then(setFilterOptions).catch(() => {
+      // Meeting participants use the meeting-scoped lookup below.
+    })
     loadHistory()
     refreshOwnerRequests()
     refreshMyMeetingRequests()
   }, [])
+
+  // Global master endpoints may be restricted for non-admin participants.
+  // Load assignment choices through the active meeting after the user joins.
+  useEffect(() => {
+    if (!review || review.ended_at) {
+      setUsers([])
+      setProducts([])
+      return
+    }
+    let cancelled = false
+    api(`/reviews/${review.id}/lookups`).then((data: any) => {
+      if (cancelled) return
+      setUsers(Array.isArray(data.users) ? data.users : [])
+      setProducts(Array.isArray(data.products) ? data.products : [])
+    }).catch((e: any) => {
+      if (!cancelled) {
+        setUsers([])
+        setProducts([])
+        setErr(`Unable to load Responsible Owner list: ${e.message}`)
+      }
+    })
+    return () => { cancelled = true }
+  }, [review?.id, review?.ended_at])
 
   useEffect(() => {
     if (skipNextDateLookup.current) {
