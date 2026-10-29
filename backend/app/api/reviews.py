@@ -112,8 +112,10 @@ def action_data(db: Session, a: Action | None, followup: dict | None = None) -> 
 
 def point_data(db: Session, p: ReviewPoint) -> dict:
     product = db.get(Product, p.product_id) if p.product_id else None
+    creator = db.get(User, p.created_by_id) if p.created_by_id else None
     return {"id": p.id, "sequence_no": p.sequence_no, "category": p.category,
             "discussion_point": p.discussion_point, "action_required": p.action_required,
+            "created_by": creator.full_name if creator else None,
             "product_id": p.product_id, "product_code": product.code if product else None,
             "product": product.name if product else None,
             "action": action_data(db, db.get(Action, p.action_id) if p.action_id else None)}
