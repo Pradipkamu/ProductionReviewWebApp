@@ -230,11 +230,13 @@ def acknowledge_owner_request(request_id: int, db: Session = Depends(get_db), us
 
 
 @router.get("/{review_id}")
-def get_review(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def get_review(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(ReviewSession, review_id)
     if not row:
         raise HTTPException(404, "Review session not found")
-    return serialize_review(row, db)
+    result = serialize_review(row, db)
+    result["is_owner"] = bool(row.owner_id == user.id)
+    return result
 
 
 @router.patch("/{review_id}")
@@ -254,10 +256,12 @@ def update_review(review_id: int, payload: ReviewUpdate, db: Session = Depends(g
 
 
 @router.patch("/{review_id}/reopen")
-def reopen_review(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def reopen_review(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(ReviewSession, review_id)
     if not row:
         raise HTTPException(404, "Review session not found")
+    if row.owner_id is None or row.owner_id != user.id:
+        raise HTTPException(403, "Only the meeting owner can reopen this MOM.")
     # Multiple independent MOMs may be active for the same date. Reopening
     # one historical meeting must not be blocked by another meeting's state.
     row.ended_at = None
@@ -279,13 +283,16 @@ def start_review(payload: ReviewStart, db: Session = Depends(get_db), user: User
     db.refresh(row)
     result = serialize_review(row, db)
     result["existing"] = False
+    result["is_owner"] = True
     return result
 
 
 @router.patch("/{review_id}/close")
-def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(ReviewSession, review_id)
     if not row: raise HTTPException(404, "Review session not found")
+    if row.owner_id is None or row.owner_id != user.id:
+        raise HTTPException(403, "Only the meeting owner can close this MOM.")
 
     point_count = db.scalar(
         select(func.count(ReviewPoint.id)).where(ReviewPoint.review_session_id == review_id)
