@@ -36,6 +36,17 @@ class ReviewPointCreate(BaseModel):
     product_id: int | None = None
 
 
+class ReviewPointUpdate(BaseModel):
+    category: str | None = Field(default=None, max_length=120)
+    discussion_point: str = Field(min_length=2, max_length=5000)
+    product_id: int | None = None
+    action_required: bool = False
+    action_description: str | None = Field(default=None, max_length=5000)
+    owner_id: int | None = None
+    due_at: UTCTimestamp | None = None
+    priority: Priority = Priority.MEDIUM
+
+
 class ReviewUpdate(BaseModel):
     participants: str | None = Field(default=None, max_length=5000)
     comments: str | None = Field(default=None, max_length=5000)
@@ -277,6 +288,11 @@ def reopen_review(review_id: int, db: Session = Depends(get_db), user: User = De
 
 @router.post("")
 def start_review(payload: ReviewStart, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    occupied = db.scalar(select(ReviewParticipantPresence.id).join(ReviewSession, ReviewSession.id == ReviewParticipantPresence.review_session_id).where(
+        ReviewParticipantPresence.user_id == user.id, ReviewSession.ended_at.is_(None)
+    ).limit(1))
+    if occupied:
+        raise HTTPException(409, "Leave your current meeting before starting another MOM.")
     # Each explicit Start action creates an independent MOM, even when another
     # meeting for the same date is already active. Collaboration happens inside
     # a selected meeting; it must not silently merge separate meetings.
@@ -364,11 +380,90 @@ def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(
     return point_data(db, point)
 
 
+@router.patch("/{review_id}/points/{point_id}")
+def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    review = db.get(ReviewSession, review_id)
+    if not review:
+        raise HTTPException(404, "Review session not found")
+    if review.ended_at is not None:
+        raise HTTPException(409, "Closed meetings cannot be edited")
+    point = db.scalar(select(ReviewPoint).where(ReviewPoint.id == point_id, ReviewPoint.review_session_id == review_id))
+    if not point:
+        raise HTTPException(404, "MOM point not found")
+    product = db.get(Product, payload.product_id) if payload.product_id is not None else None
+    if payload.product_id is not None and (not product or not product.is_active):
+        raise HTTPException(422, "Selected product is not available in the active Product Master")
+    point.category = payload.category
+    point.discussion_point = payload.discussion_point.strip()
+    point.product_id = product.id if product else None
+    point.action_required = payload.action_required
+    action = db.get(Action, point.action_id) if point.action_id else None
+    if payload.action_required:
+        if not (payload.action_description or "").strip():
+            raise HTTPException(422, "Action description is required when Action Required is Yes")
+        if payload.owner_id is None:
+            raise HTTPException(422, "Select a responsible owner before assigning this action")
+        owner = db.get(User, payload.owner_id)
+        if not owner or not owner.is_active:
+            raise HTTPException(422, "Selected action owner is not active")
+        if payload.due_at is None:
+            raise HTTPException(422, "Enter a target date and time before assigning this action")
+        if action:
+            old_description = action.action_description
+            action.action_description = payload.action_description.strip()
+            action.problem_description = point.discussion_point
+            action.owner_id = payload.owner_id
+            action.due_at = payload.due_at
+            action.priority = payload.priority
+            if old_description != action.action_description:
+                db.add(ActionHistory(action_id=action.id, changed_by_id=user.id, old_status=action.status,
+                    new_status=action.status, comment="Action details updated from MOM point"))
+            contexts = db.scalars(select(ActionContext).where(ActionContext.action_id == action.id)).all()
+            if contexts:
+                contexts[0].product_id = product.id if product else None
+                contexts[0].context_date = review.review_date
+                for extra in contexts[1:]:
+                    db.delete(extra)
+            elif product:
+                db.add(ActionContext(action_id=action.id, context_date=review.review_date, product_id=product.id))
+        else:
+            count = db.query(Action).count() + 1
+            action = Action(action_no=f"ACT-{review.review_date.year}-{count:05d}", reference_date=review.review_date,
+                problem_category=payload.category or "Daily Review", problem_description=point.discussion_point,
+                action_description=payload.action_description.strip(), owner_id=payload.owner_id,
+                due_at=payload.due_at, priority=payload.priority, action_type="DAILY_REVIEW", requires_whywhy=False)
+            db.add(action); db.flush()
+            db.add(ActionHistory(action_id=action.id, changed_by_id=user.id, new_status=action.status,
+                comment=f"Created from edited Daily Review point #{point.id}"))
+            db.add(ReviewActionLink(review_session_id=review.id, action_id=action.id))
+            if product:
+                db.add(ActionContext(action_id=action.id, context_date=review.review_date, product_id=product.id))
+            point.action_id = action.id
+    elif action:
+        raise HTTPException(422, "An existing action cannot be removed by editing the MOM point. Close or cancel the action separately.")
+    db.commit(); db.refresh(point)
+    return point_data(db, point)
+
+
 @router.post("/{review_id}/presence")
 def update_meeting_presence(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     meeting = db.get(ReviewSession, review_id)
     if not meeting or meeting.ended_at is not None:
         raise HTTPException(409, "Meeting is not active")
+    if meeting.owner_id != user.id:
+        approved = db.scalar(select(ReviewMeetingRequest.id).where(
+            ReviewMeetingRequest.review_session_id == review_id,
+            ReviewMeetingRequest.requester_id == user.id,
+            ReviewMeetingRequest.status == "ACKNOWLEDGED",
+        ).limit(1))
+        if not approved:
+            raise HTTPException(403, "The meeting owner must approve your request before you can join.")
+    other = db.scalar(select(ReviewParticipantPresence.id).join(ReviewSession, ReviewSession.id == ReviewParticipantPresence.review_session_id).where(
+        ReviewParticipantPresence.user_id == user.id, ReviewSession.ended_at.is_(None),
+        ReviewParticipantPresence.review_session_id != review_id,
+    ).limit(1))
+    if other:
+        raise HTTPException(409, "You are already participating in another meeting. Leave it first.")
     now = datetime.utcnow()
     row = db.scalar(select(ReviewParticipantPresence).where(ReviewParticipantPresence.review_session_id == review_id,
         ReviewParticipantPresence.user_id == user.id).with_for_update())
@@ -378,6 +473,30 @@ def update_meeting_presence(review_id: int, db: Session = Depends(get_db), user:
         db.add(ReviewParticipantPresence(review_session_id=review_id, user_id=user.id, last_seen_at=now))
     db.commit()
     return {"ok": True, "last_seen_at": now}
+
+
+@router.delete("/{review_id}/presence")
+def leave_meeting(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    meeting = db.get(ReviewSession, review_id)
+    if not meeting or meeting.ended_at is not None:
+        raise HTTPException(409, "Meeting is not active")
+    if meeting.owner_id == user.id:
+        raise HTTPException(403, "The meeting owner cannot leave. Close the meeting instead.")
+    row = db.scalar(select(ReviewParticipantPresence).where(
+        ReviewParticipantPresence.review_session_id == review_id,
+        ReviewParticipantPresence.user_id == user.id,
+    ))
+    if row:
+        db.delete(row)
+    request_row = db.scalar(select(ReviewMeetingRequest).where(
+        ReviewMeetingRequest.review_session_id == review_id,
+        ReviewMeetingRequest.requester_id == user.id,
+        ReviewMeetingRequest.status == "ACKNOWLEDGED",
+    ).order_by(ReviewMeetingRequest.responded_at.desc()).limit(1))
+    if request_row:
+        request_row.status = "LEFT"
+    db.commit()
+    return {"ok": True, "message": "You have left the meeting."}
 
 
 @router.post("/actions/{action_id}/escalate-whywhy")
