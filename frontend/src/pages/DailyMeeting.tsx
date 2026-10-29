@@ -483,6 +483,10 @@ export default function DailyMeeting() {
     if (!review || review.ended_at) return
     const discussion = window.prompt('Edit discussion / MOM point:', point.discussion_point || '')
     if (discussion === null || discussion.trim().length < 2) return
+    const actionDescription = point.action
+      ? window.prompt('Edit action required:', point.action.description || '')
+      : null
+    if (point.action && (actionDescription === null || !actionDescription.trim())) return
     try {
       await api(`/reviews/${review.id}/points/${point.id}`, {
         method: 'PATCH',
@@ -491,7 +495,7 @@ export default function DailyMeeting() {
           discussion_point: discussion.trim(),
           product_id: point.product_id || null,
           action_required: Boolean(point.action),
-          action_description: point.action?.description || null,
+          action_description: point.action ? actionDescription?.trim() : null,
           owner_id: point.action?.owner_id || null,
           due_at: point.action?.due_at || null,
           priority: point.action?.priority || 'MEDIUM',
