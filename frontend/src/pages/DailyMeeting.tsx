@@ -294,19 +294,9 @@ export default function DailyMeeting() {
         method: 'POST',
         body: JSON.stringify({ review_date: date, participants: participants || null, comments: comments || null }),
       })
-      if (r.existing) {
-        const updated: any = await api(`/reviews/${r.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ participants: participants || null, comments: comments || null }),
-        })
-        setReview(updated)
-        await load(updated)
-        setMessage('Existing meeting resumed and meeting details saved.')
-      } else {
-        setReview(r)
-        await load(r)
-        setMessage('Daily Review meeting started.')
-      }
+      setReview(r)
+      await load(r)
+      setMessage('New Daily Review meeting started. It is independent of other meetings on the same date.')
       await loadHistory()
     } catch (e: any) {
       setErr(e.message)
