@@ -29,9 +29,20 @@ def upgrade():
     op.create_index("ix_review_meeting_requests_requester_id", "review_meeting_requests", ["requester_id"])
     op.create_index("ix_review_meeting_requests_owner_id", "review_meeting_requests", ["owner_id"])
     op.create_index("ix_review_meeting_requests_status", "review_meeting_requests", ["status"])
+    op.create_table(
+        "review_participant_presence",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("review_session_id", sa.Integer(), sa.ForeignKey("review_sessions.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("last_seen_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
+        sa.UniqueConstraint("review_session_id", "user_id", name="uq_review_participant_presence"),
+    )
+    op.create_index("ix_review_participant_presence_review_session_id", "review_participant_presence", ["review_session_id"])
+    op.create_index("ix_review_participant_presence_user_id", "review_participant_presence", ["user_id"])
 
 
 def downgrade():
+    op.drop_table("review_participant_presence")
     op.drop_table("review_meeting_requests")
     op.drop_constraint("fk_review_sessions_owner_id_users", "review_sessions", type_="foreignkey")
     op.drop_index("ix_review_sessions_owner_id", table_name="review_sessions")
