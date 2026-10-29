@@ -705,7 +705,7 @@ export default function DailyMeeting() {
       {runningMeetings.map((meeting: any) => <div className="data-note" key={meeting.id}>
         <b>MOM-{String(meeting.review_date).slice(0,10)}-{String(meeting.id).padStart(3,'0')}</b> • Owner: {meeting.owner_name || 'Owner not recorded'} • {meeting.owner_online ? 'Online' : 'Offline'}
         <button className="secondary small" onClick={() => openMeeting(meeting)}>Join Running Meeting</button>
-        {!meeting.is_owner && <button className="secondary small" onClick={() => requestOwner(meeting.id)} disabled={meeting.pending_request}>{meeting.pending_request ? 'Request Pending' : 'Request Owner to Join'}</button>}
+        {meeting.owner_id && !meeting.is_owner && <button className="secondary small" onClick={() => requestOwner(meeting.id)} disabled={meeting.pending_request}>{meeting.pending_request ? 'Request Pending' : 'Request Owner to Join'}</button>}
       </div>)}
     </section>}
 
