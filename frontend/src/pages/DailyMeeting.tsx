@@ -537,8 +537,8 @@ export default function DailyMeeting() {
         setErr('No active users are available for ownership recovery.')
         return
       }
-      const choices = candidates.map((u: any) => `${u.id}: ${u.full_name} (${u.username})`).join('\\n')
-      const selected = window.prompt(`Select the verified original meeting owner by entering the user ID:\\n\\n${choices}`)
+      const choices = candidates.map((u: any) => `${u.id}: ${u.full_name} (${u.username})`).join('\n')
+      const selected = window.prompt(`Choose the person who originally owned this MOM.\nEnter ONLY the number before their name.\n\n${choices}\n\nExample: to select user 10, enter 10.`)
       if (selected === null) return
       const ownerId = Number(selected.trim())
       if (!Number.isInteger(ownerId) || !candidates.some((u: any) => u.id === ownerId)) {
