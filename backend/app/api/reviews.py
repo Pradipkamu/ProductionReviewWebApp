@@ -186,7 +186,7 @@ def list_reviews(participant: str | None = None, db: Session = Depends(get_db), 
     if participant:
         stmt = stmt.where(ReviewSession.participants.ilike(f"%{participant.strip()}%"))
     rows = db.scalars(stmt.order_by(ReviewSession.review_date.desc(), ReviewSession.id.desc()).limit(200)).all()
-    return [{**serialize_review(x, db), "is_owner": bool(x.owner_id == user.id)} for x in rows]
+    return [{**serialize_review(x, db), "is_owner": bool(x.owner_id == user.id), "is_admin": user.role == UserRole.ADMIN} for x in rows]
 
 
 @router.get("/collaboration/active")
