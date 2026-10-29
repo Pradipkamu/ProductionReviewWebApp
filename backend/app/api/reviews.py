@@ -543,6 +543,33 @@ def escalate_whywhy(action_id: int, db: Session = Depends(get_db), user: User = 
     return {"id": action.id, "requires_whywhy": True}
 
 
+@router.get("/{review_id}/lookups")
+def meeting_lookups(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return only the active assignment lookups to an owner or approved meeting participant."""
+    meeting = db.get(ReviewSession, review_id)
+    if not meeting or meeting.ended_at is not None:
+        raise HTTPException(404, "Active meeting not found")
+    is_owner = meeting.owner_id == user.id
+    has_presence = db.scalar(select(ReviewParticipantPresence.id).where(
+        ReviewParticipantPresence.review_session_id == review_id,
+        ReviewParticipantPresence.user_id == user.id,
+    )) is not None
+    has_approval = db.scalar(select(ReviewMeetingRequest.id).where(
+        ReviewMeetingRequest.review_session_id == review_id,
+        ReviewMeetingRequest.requester_id == user.id,
+        ReviewMeetingRequest.status == "ACKNOWLEDGED",
+    )) is not None
+    if not (is_owner or has_presence or has_approval):
+        raise HTTPException(403, "Join the meeting before loading its assignment lists")
+    users = db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name)).all()
+    products = db.scalars(select(Product).where(Product.is_active.is_(True)).order_by(Product.sort_order, Product.name)).all()
+    return {
+        "users": [{"id": row.id, "full_name": row.full_name} for row in users],
+        "products": [{"id": row.id, "code": row.code, "name": row.name, "plant": row.plant}
+                     for row in products],
+    }
+
+
 @router.get("/{review_id}/mom")
 def meeting_mom(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     review = db.get(ReviewSession, review_id)
