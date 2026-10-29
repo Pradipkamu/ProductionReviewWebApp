@@ -1,5 +1,5 @@
 from ..time_utils import ist_today, ist_date, UTCTimestamp, format_ist
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 import re
 
@@ -273,7 +273,7 @@ def active_collaboration(review_date: date, db: Session = Depends(get_db), user:
         owner = db.get(User, row.owner_id) if row.owner_id else None
         recent = False
         if owner:
-            recent = bool(db.scalar(select(UserSession.id).where(UserSession.user_id == owner.id, UserSession.revoked_at.is_(None), UserSession.expires_at > now, UserSession.last_seen_at > now - __import__('datetime').timedelta(minutes=30)).limit(1)))
+            recent = bool(db.scalar(select(UserSession.id).where(UserSession.user_id == owner.id, UserSession.revoked_at.is_(None), UserSession.expires_at > now, UserSession.last_seen_at > now - timedelta(minutes=30)).limit(1)))
         result.append({**serialize_review(row, db), "owner_name": owner.full_name if owner else None, "owner_online": recent,
                        "is_owner": bool(row.owner_id == user.id),
                        "pending_request": bool(db.scalar(select(ReviewMeetingRequest.id).where(ReviewMeetingRequest.review_session_id == row.id, ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING").limit(1)))})
@@ -298,7 +298,7 @@ def request_meeting_owner(review_id: int, db: Session = Depends(get_db), user: U
     return {"ok": True, "message": "Meeting owner has been notified in the application."}
 
 
-@router.get("/owner-requests")
+@router.get("/collaboration/owner-requests")
 def list_owner_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.scalars(select(ReviewMeetingRequest).where(ReviewMeetingRequest.owner_id == user.id,
         ReviewMeetingRequest.status == "PENDING").order_by(ReviewMeetingRequest.created_at.desc()).limit(50)).all()
@@ -313,7 +313,7 @@ def list_owner_requests(db: Session = Depends(get_db), user: User = Depends(get_
     return result
 
 
-@router.patch("/owner-requests/{request_id}/acknowledge")
+@router.patch("/collaboration/owner-requests/{request_id}/acknowledge")
 def acknowledge_owner_request(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = db.get(ReviewMeetingRequest, request_id)
     if not item or item.owner_id != user.id:
