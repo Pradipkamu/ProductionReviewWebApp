@@ -1130,7 +1130,7 @@ export default function DailyMeeting() {
         <label>Filter Participants<input value={participantFilter} onChange={e => setParticipantFilter(e.target.value)} placeholder="Name or department" /></label>
       </div>
       <div className="table-wrap"><table>
-        <thead><tr><th>MOM</th><th>Date</th><th>Participants</th><th>Total Points</th><th>Actions</th><th>Closed</th><th>Pending</th><th>Overdue</th><th>Status</th><th>Open</th><th>Meeting Note</th></tr></thead>
+        <thead><tr><th>MOM</th><th>Date</th><th>Participants</th><th>Total Points</th><th>Actions</th><th>Closed</th><th>Pending</th><th>Overdue</th><th>Status</th><th>Access / Owner</th><th>Meeting Note</th></tr></thead>
         <tbody>{meetings
           .filter((m: any) => (!participantFilter.trim() || String(m.participants || '').toLowerCase().includes(participantFilter.trim().toLowerCase()))
             && (!meetingSearch.trim() || (`MOM-${m.review_date}-${String(m.id).padStart(3, '0')}`).toLowerCase().includes(meetingSearch.trim().toLowerCase())))
@@ -1141,7 +1141,7 @@ export default function DailyMeeting() {
               ? <button type="button" className={`overdue-count overdue-level-${Math.min(5, Number(m.max_overdue_days || 1))}`} title={`Open overdue actions; oldest is ${m.max_overdue_days || 1} day(s) overdue`} onClick={() => openOverdueActions(m)}>{m.overdue_action_count}</button>
               : <span className="overdue-zero">0</span>}</td>
             <td>{m.ended_at ? <Status value="CLOSED" /> : <Status value="OPEN" />}</td>
-            <td><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button>{m.ended_at && m.is_owner && <button className="secondary small" onClick={() => reopenHistoryMeeting(m)}>Reopen Meeting</button>}{m.owner_id == null && m.is_admin && <button className="secondary small" onClick={() => recoverOwner(m)}>Recover Ownership</button>}</td>
+            <td>{m.has_meeting_access ? <><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button>{m.ended_at && m.is_owner && <button className="secondary small" onClick={() => reopenHistoryMeeting(m)}>Reopen Meeting</button></> : <span>{m.owner_name ? `Owner: ${m.owner_name}` : 'Owner not recorded'}</span>}{m.owner_id == null && m.is_admin && <button className="secondary small" onClick={() => recoverOwner(m)}>Recover Ownership</button>}</td>
             <td><button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/pdf`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.pdf`)}>PDF</button> <button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/xlsx`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.xlsx`)}>Excel</button></td>
           </tr>)}
         </tbody>
