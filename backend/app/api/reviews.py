@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..enums import ActionStatus, Priority
-from ..models import Action, ActionContext, ActionHistory, ActionWhyWhy, Product, ReviewActionLink, ReviewMeetingRequest, ReviewParticipantPresence, ReviewPoint, ReviewSession, User, UserSession
+from ..enums import ActionStatus, Priority, UserRole
+from ..models import Action, ActionContext, ActionHistory, ActionWhyWhy, GovernanceAudit, Product, ReviewActionLink, ReviewMeetingRequest, ReviewParticipantPresence, ReviewPoint, ReviewSession, User, UserSession
 from ..schemas import ReviewClose, ReviewStart
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -50,6 +50,40 @@ class ReviewPointUpdate(BaseModel):
 class ReviewUpdate(BaseModel):
     participants: str | None = Field(default=None, max_length=5000)
     comments: str | None = Field(default=None, max_length=5000)
+
+class ReviewOwnerRecovery(BaseModel):
+    owner_id: int
+    reason: str = Field(min_length=10, max_length=1000)
+
+
+def require_meeting_access(db: Session, meeting: ReviewSession, user: User, *, write: bool = False):
+    if meeting.owner_id == user.id:
+        return
+    presence = db.scalar(select(ReviewParticipantPresence.id).where(
+        ReviewParticipantPresence.review_session_id == meeting.id,
+        ReviewParticipantPresence.user_id == user.id,
+    )) is not None
+    request_statuses = ["ACKNOWLEDGED", "LEFT"] if not write else ["ACKNOWLEDGED"]
+    approved = db.scalar(select(ReviewMeetingRequest.id).where(
+        ReviewMeetingRequest.review_session_id == meeting.id,
+        ReviewMeetingRequest.requester_id == user.id,
+        ReviewMeetingRequest.status.in_(request_statuses),
+    )) is not None
+    if not (presence or approved):
+        raise HTTPException(403, "You do not have access to this meeting.")
+
+
+def release_meeting_participants(db: Session, review_id: int, now: datetime):
+    for presence in db.scalars(select(ReviewParticipantPresence).where(
+        ReviewParticipantPresence.review_session_id == review_id
+    )).all():
+        db.delete(presence)
+    for request in db.scalars(select(ReviewMeetingRequest).where(
+        ReviewMeetingRequest.review_session_id == review_id
+    )).all():
+        request.status = "LEFT"
+        request.responded_at = now
+
 
 
 def serialize_review(row: ReviewSession, db: Session | None = None) -> dict:
@@ -249,16 +283,19 @@ def get_review(review_id: int, db: Session = Depends(get_db), user: User = Depen
     row = db.get(ReviewSession, review_id)
     if not row:
         raise HTTPException(404, "Review session not found")
+    require_meeting_access(db, row, user)
     result = serialize_review(row, db)
     result["is_owner"] = bool(row.owner_id == user.id)
     return result
 
 
 @router.patch("/{review_id}")
-def update_review(review_id: int, payload: ReviewUpdate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def update_review(review_id: int, payload: ReviewUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(ReviewSession, review_id)
     if not row:
         raise HTTPException(404, "Review session not found")
+    if row.owner_id != user.id:
+        raise HTTPException(403, "Only the meeting owner can edit meeting details.")
     if row.ended_at is not None:
         raise HTTPException(409, "Closed meetings cannot be edited; reopen the meeting first")
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -267,7 +304,47 @@ def update_review(review_id: int, payload: ReviewUpdate, db: Session = Depends(g
         setattr(row, field, value)
     db.commit()
     db.refresh(row)
-    return serialize_review(row, db)
+    result = serialize_review(row, db)
+    result["is_owner"] = True
+    return result
+
+
+@router.get("/{review_id}/recovery-candidates")
+def meeting_recovery_candidates(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(403, "Only administrators can recover meeting ownership.")
+    meeting = db.get(ReviewSession, review_id)
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+    if meeting.owner_id is not None:
+        raise HTTPException(409, "This meeting already has a recorded owner.")
+    return [{"id": row.id, "full_name": row.full_name, "username": row.username}
+            for row in db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name)).all()]
+
+
+@router.patch("/{review_id}/recover-owner")
+def recover_meeting_owner(review_id: int, payload: ReviewOwnerRecovery, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(403, "Only administrators can recover meeting ownership.")
+    meeting = db.scalar(select(ReviewSession).where(ReviewSession.id == review_id).with_for_update())
+    if not meeting:
+        raise HTTPException(404, "Meeting not found")
+    if meeting.owner_id is not None:
+        raise HTTPException(409, "Ownership recovery is only available when the meeting has no recorded owner.")
+    new_owner = db.get(User, payload.owner_id)
+    if not new_owner or not new_owner.is_active:
+        raise HTTPException(422, "Select an active user as the recovered owner.")
+    before = {"owner_id": meeting.owner_id, "owner_name": None}
+    meeting.owner_id = new_owner.id
+    db.add(GovernanceAudit(actor_id=user.id, event="MOM_OWNER_RECOVERED", entity="review_sessions",
+        entity_id=str(meeting.id), reason=payload.reason.strip(),
+        before_json=__import__("json").dumps(before),
+        after_json=__import__("json").dumps({"owner_id": new_owner.id, "owner_name": new_owner.full_name})))
+    db.commit()
+    db.refresh(meeting)
+    result = serialize_review(meeting, db)
+    result["is_owner"] = meeting.owner_id == user.id
+    return result
 
 
 @router.patch("/{review_id}/reopen")
@@ -276,7 +353,9 @@ def reopen_review(review_id: int, db: Session = Depends(get_db), user: User = De
     if not row:
         raise HTTPException(404, "Review session not found")
     if row.owner_id is None or row.owner_id != user.id:
-        raise HTTPException(403, "Only the meeting owner can reopen this MOM.")
+        raise HTTPException(403, "Only the recorded meeting owner can reopen this MOM. An administrator must recover ownership first.")
+    if row.ended_at is None:
+        raise HTTPException(409, "This meeting is already open.")
     # Multiple independent MOMs may be active for the same date. Reopening
     # one historical meeting must not be blocked by another meeting's state.
     row.ended_at = None
@@ -334,17 +413,7 @@ def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get
     # The client polls the meeting state and exits as soon as ended_at is set;
     # deleting presence also prevents participants from starting another MOM
     # while retaining a stale active-session record.
-    presences = db.scalars(select(ReviewParticipantPresence).where(
-        ReviewParticipantPresence.review_session_id == review_id
-    )).all()
-    for presence in presences:
-        db.delete(presence)
-    requests = db.scalars(select(ReviewMeetingRequest).where(
-        ReviewMeetingRequest.review_session_id == review_id
-    )).all()
-    for request in requests:
-        request.status = "LEFT"
-        request.responded_at = datetime.utcnow()
+    release_meeting_participants(db, review_id, datetime.utcnow())
 
     if point_count == 0 and linked_action_count == 0:
         db.delete(row)
@@ -371,6 +440,7 @@ def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(
     review = db.scalar(select(ReviewSession).where(ReviewSession.id == review_id).with_for_update())
     if not review: raise HTTPException(404, "Review session not found")
     if review.ended_at is not None: raise HTTPException(409, "Closed meetings cannot be edited")
+    require_meeting_access(db, review, user, write=True)
     action = None
     product = None
     if payload.product_id is not None:
@@ -416,6 +486,7 @@ def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: 
         raise HTTPException(404, "Review session not found")
     if review.ended_at is not None:
         raise HTTPException(409, "Closed meetings cannot be edited")
+    require_meeting_access(db, review, user, write=True)
     point = db.scalar(select(ReviewPoint).where(ReviewPoint.id == point_id, ReviewPoint.review_session_id == review_id))
     if not point:
         raise HTTPException(404, "MOM point not found")
@@ -571,9 +642,10 @@ def meeting_lookups(review_id: int, db: Session = Depends(get_db), user: User = 
 
 
 @router.get("/{review_id}/mom")
-def meeting_mom(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def meeting_mom(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     review = db.get(ReviewSession, review_id)
     if not review: raise HTTPException(404, "Review session not found")
+    require_meeting_access(db, review, user)
     points = db.scalars(select(ReviewPoint).where(ReviewPoint.review_session_id == review.id).order_by(ReviewPoint.sequence_no)).all()
     point_action_ids = {p.action_id for p in points if p.action_id}
     linked_action_ids = set(db.scalars(
@@ -673,9 +745,10 @@ def _mom_rows(db: Session, review: ReviewSession):
 
 
 @router.get("/{review_id}/pdf")
-def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def download_mom_pdf(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     review=db.get(ReviewSession,review_id)
     if not review: raise HTTPException(404,"Review session not found")
+    require_meeting_access(db, review, user)
     mom_no=f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
     buf=BytesIO(); doc=SimpleDocTemplate(buf,pagesize=landscape(A4),rightMargin=10*mm,leftMargin=10*mm,topMargin=10*mm,bottomMargin=10*mm)
     styles=getSampleStyleSheet()
@@ -761,9 +834,10 @@ def download_mom_pdf(review_id: int, db: Session = Depends(get_db), _: User = De
 
 
 @router.get("/{review_id}/xlsx")
-def download_mom_xlsx(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def download_mom_xlsx(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     review=db.get(ReviewSession,review_id)
     if not review: raise HTTPException(404,"Review session not found")
+    require_meeting_access(db, review, user)
     mom_no=f"MOM-{review.review_date.isoformat()}-{review.id:03d}"
     wb=Workbook(); ws=wb.active; ws.title="MOM"
     ws.append(["Daily Review - Minutes of Meeting"]); ws.append(["MOM No",mom_no]); ws.append(["Date",review.review_date.isoformat()])
