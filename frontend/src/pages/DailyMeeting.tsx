@@ -1142,21 +1142,16 @@ export default function DailyMeeting() {
               : <span className="overdue-zero">0</span>}</td>
             <td>{m.ended_at ? <Status value="CLOSED" /> : <Status value="OPEN" />}</td>
             <td>
-              {m.has_meeting_access ? (
-                <>
-                  <button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button>
-                  {m.ended_at && m.is_owner && (
-                    <button className="secondary small" onClick={() => reopenHistoryMeeting(m)}>Reopen Meeting</button>
-                  )}
-                </>
-              ) : (
-                <span>{m.owner_name ? `Owner: ${m.owner_name}` : 'Owner not recorded'}</span>
+              <button className="secondary small" onClick={() => openMeeting(m)}>View MOM</button>
+              {!m.has_meeting_access && <span className="muted"> Owner: {m.owner_name || 'Not recorded'}</span>}
+              {m.ended_at && m.is_owner && (
+                <button className="secondary small" onClick={() => reopenHistoryMeeting(m)}>Reopen Meeting</button>
               )}
               {m.owner_id == null && m.is_admin && (
                 <button className="secondary small" onClick={() => recoverOwner(m)}>Recover Ownership</button>
               )}
             </td>
-            <td>{m.has_meeting_access ? <><button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/pdf`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.pdf`)}>PDF</button> <button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/xlsx`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.xlsx`)}>Excel</button></> : <span>Owner: {m.owner_name || 'Not recorded'}</span>}</td>
+            <td><button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/pdf`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.pdf`)}>PDF</button> <button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/xlsx`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.xlsx`)}>Excel</button></td>
           </tr>)}
         </tbody>
       </table></div>
