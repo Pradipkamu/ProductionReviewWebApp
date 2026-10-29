@@ -60,6 +60,8 @@ export default function DailyMeeting() {
   const [err, setErr] = useState('')
   const [message, setMessage] = useState('')
   const [meetings, setMeetings] = useState<any[]>([])
+  const [runningMeetings, setRunningMeetings] = useState<any[]>([])
+  const [ownerRequests, setOwnerRequests] = useState<any[]>([])
   const [participantFilter, setParticipantFilter] = useState('')
   const [meetingSearch, setMeetingSearch] = useState('')
   const [overdueMeeting, setOverdueMeeting] = useState<any>(null)
@@ -125,6 +127,8 @@ export default function DailyMeeting() {
         setMom(null)
         setParticipants('')
         setComments('')
+        const active: any[] = await api(`/reviews/collaboration/active?review_date=${forDate}`)
+        if (request === activeLookup.current) setRunningMeetings(active)
       }
     } catch (e: any) {
       if (request === activeLookup.current) setErr(e.message)
@@ -142,6 +146,7 @@ export default function DailyMeeting() {
       setFilterOptions(f)
     }).catch((e: any) => setErr(e.message))
     loadHistory()
+    refreshOwnerRequests()
   }, [])
 
   useEffect(() => {
@@ -286,6 +291,28 @@ export default function DailyMeeting() {
     if (!productionReviewDate || productionReviewDateResolvedKey !== productionReviewScopeKey) return
     loadSnapshot()
   }, [productionReviewDate, productionReviewDateResolvedKey, productionReviewScopeKey, plants.join('|')])
+
+
+  async function refreshOwnerRequests() {
+    try { setOwnerRequests(await api('/reviews/collaboration/owner-requests')) } catch { /* keep the meeting page usable if requests cannot load */ }
+  }
+
+  async function requestOwner(meetingId: number) {
+    try {
+      const result: any = await api(`/reviews/${meetingId}/request-owner`, { method: 'POST', body: JSON.stringify({}) })
+      setMessage(result.message || 'Meeting owner has been notified.')
+      await findActive(date)
+    } catch (e: any) { setErr(e.message) }
+  }
+
+  async function openOwnerRequest(item: any) {
+    try {
+      await api(`/reviews/collaboration/owner-requests/${item.id}/acknowledge`, { method: 'PATCH', body: JSON.stringify({}) })
+      const meeting: any = await api(`/reviews/${item.review_session_id}`)
+      await openMeeting(meeting)
+      await refreshOwnerRequests()
+    } catch (e: any) { setErr(e.message) }
+  }
 
   async function start() {
     try {
@@ -636,6 +663,24 @@ export default function DailyMeeting() {
       title="Daily Management Review"
       subtitle="Review performance, discuss exceptions, assign accountable actions and follow commitments through to closure."
     />
+
+
+    {ownerRequests.length > 0 && <section className="panel">
+      <div className="panel-title"><div><h2>Requests to join your meeting</h2><p>Colleagues are waiting for you to join their discussion.</p></div><button className="secondary small" onClick={refreshOwnerRequests}>Refresh</button></div>
+      {ownerRequests.map((item: any) => <div className="data-note" key={item.id}>
+        <b>{item.requester_name}</b> requested you to join <b>{item.mom_no}</b> ({item.review_date})
+        <button className="secondary small" onClick={() => openOwnerRequest(item)}>Open Meeting</button>
+      </div>)}
+    </section>}
+
+    {!review && runningMeetings.length > 0 && <section className="panel">
+      <div className="panel-title"><div><h2>Meetings already in progress</h2><p>Join an existing discussion, notify its owner, or start an independent MOM.</p></div><button className="secondary small" onClick={() => findActive(date)}>Refresh MOM</button></div>
+      {runningMeetings.map((meeting: any) => <div className="data-note" key={meeting.id}>
+        <b>MOM-{String(meeting.review_date).slice(0,10)}-{String(meeting.id).padStart(3,'0')}</b> • Owner: {meeting.owner_name || 'Owner not recorded'} • {meeting.owner_online ? 'Online' : 'Offline'}
+        <button className="secondary small" onClick={() => openMeeting(meeting)}>Join Running Meeting</button>
+        {!meeting.is_owner && <button className="secondary small" onClick={() => requestOwner(meeting.id)} disabled={meeting.pending_request}>{meeting.pending_request ? 'Request Pending' : 'Request Owner to Join'}</button>}
+      </div>)}
+    </section>}
 
     {err && <div className="error">{err}</div>}
     {message && <div className="notice">{message}</div>}
