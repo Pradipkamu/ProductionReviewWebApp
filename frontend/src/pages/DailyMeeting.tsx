@@ -169,9 +169,9 @@ export default function DailyMeeting() {
         refreshMyMeetingRequests()
         api(`/reviews/collaboration/active?review_date=${date}`).then(setRunningMeetings).catch(() => {})
       }
-    }, 30000)
+    }, 3000)
     return () => clearInterval(timer)
-  }, [date])
+  }, [date]
 
   useEffect(() => {
     if (!review || review.ended_at) return
@@ -334,10 +334,25 @@ export default function DailyMeeting() {
         item.status === 'ACKNOWLEDGED' && !handledApprovedRequests.current.has(Number(item.id))
       )
       if (approved) {
-        handledApprovedRequests.current.add(Number(approved.id))
         const meeting: any = await api(`/reviews/${approved.review_session_id}`)
-        await openMeeting(meeting)
-        setMessage(`The owner approved your request. You have joined ${approved.mom_no}; its MOM points are now loaded.`)
+        if (!meeting || meeting.ended_at) {
+          setErr('The owner approved the request, but this MOM is no longer active. Please contact the owner.')
+          handledApprovedRequests.current.add(Number(approved.id))
+          return
+        }
+        // Load the shared MOM before marking this approval as handled. If the
+        // network request fails, the next poll will retry instead of losing it.
+        const next = await api(`/reviews/${meeting.id}/mom`)
+        setReview(meeting)
+        setParticipants(meeting.participants || '')
+        setComments(meeting.comments || '')
+        setMom(next)
+        if (date !== meeting.review_date) {
+          skipNextDateLookup.current = true
+          setDate(meeting.review_date)
+        }
+        handledApprovedRequests.current.add(Number(approved.id))
+        setMessage(`The owner approved your request. You are now in ${approved.mom_no}; the shared MOM points and actions are loaded.`)
       }
     } catch { /* transient polling errors do not interrupt meeting work */ }
   }
