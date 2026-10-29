@@ -337,6 +337,27 @@ def list_owner_requests(db: Session = Depends(get_db), user: User = Depends(get_
     return result
 
 
+@router.get("/collaboration/my-requests")
+def list_my_meeting_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(ReviewMeetingRequest).where(
+        ReviewMeetingRequest.requester_id == user.id,
+        ReviewMeetingRequest.status.in_(["PENDING", "ACKNOWLEDGED"])
+    ).order_by(ReviewMeetingRequest.created_at.desc()).limit(50)).all()
+    result = []
+    for item in rows:
+        meeting = db.get(ReviewSession, item.review_session_id)
+        if meeting:
+            result.append({
+                "id": item.id,
+                "review_session_id": meeting.id,
+                "review_date": meeting.review_date,
+                "status": item.status,
+                "responded_at": item.responded_at,
+                "mom_no": f"MOM-{meeting.review_date.isoformat()}-{meeting.id:03d}",
+            })
+    return result
+
+
 @router.patch("/collaboration/owner-requests/{request_id}/acknowledge")
 def acknowledge_owner_request(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     item = db.get(ReviewMeetingRequest, request_id)
