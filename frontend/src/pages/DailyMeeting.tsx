@@ -171,7 +171,7 @@ export default function DailyMeeting() {
       }
     }, 3000)
     return () => clearInterval(timer)
-  }, [date]
+  }, [date])
 
   useEffect(() => {
     if (!review || review.ended_at) return
