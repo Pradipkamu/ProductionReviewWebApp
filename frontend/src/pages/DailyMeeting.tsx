@@ -157,6 +157,21 @@ export default function DailyMeeting() {
     findActive(date)
   }, [date])
 
+
+  useEffect(() => {
+    if (!review || review.ended_at) return
+    let timer: ReturnType<typeof setInterval> | undefined
+    const beat = async () => {
+      if (document.visibilityState !== 'visible') return
+      try { await api(`/reviews/${review.id}/presence`, { method: 'POST', body: JSON.stringify({}) }) } catch { /* transient heartbeat errors do not interrupt meeting work */ }
+    }
+    beat()
+    timer = setInterval(beat, 30000)
+    const onVisibility = () => { if (document.visibilityState === 'visible') beat() }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [review?.id, review?.ended_at])
+
   useEffect(() => {
     const lookup = ++calendarLookup.current
     let cancelled = false
@@ -712,7 +727,8 @@ export default function DailyMeeting() {
         <b>MOM Date:</b> {date} • <b>Production Review Date:</b> {productionReviewDate || (productionReviewDateLoading ? 'Calculating…' : 'Not selected')}
       </div>
       {productionReviewDateNote && <div className="data-note">{productionReviewDateNote}</div>}
-      {mom && <div className="data-note"><b>{mom.mom_no}</b> • {review?.ended_at ? 'Closed' : 'Meeting active'} • {review?.participants || 'Participants not entered'}</div>}
+      {mom && <div className="data-note"><b>{mom.mom_no}</b> • {review?.ended_at ? 'Closed' : 'Meeting active'} • Owner: {review?.owner_name || 'Not recorded'} • {review?.participants || 'Participants not entered'}{review?.auto_close_reason ? ` • ${review.auto_close_reason}` : ''}</div>}
+      {runningMeetings.find((x: any) => x.id === review?.id)?.participants_presence?.length > 0 && <div className="data-note"><b>Participant activity:</b> {runningMeetings.find((x: any) => x.id === review?.id).participants_presence.map((p: any) => `${p.name} — ${p.online ? 'Online' : 'Offline'} (last activity ${formatIST(p.last_seen_at)})`).join(' • ')}</div>}
     </section>
 
     <section className="panel">
