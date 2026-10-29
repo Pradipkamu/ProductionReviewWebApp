@@ -187,6 +187,55 @@ export default function DailyMeeting() {
     return () => { if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) }
   }, [review?.id, review?.ended_at])
 
+  // Participants continuously verify the server-side meeting state. When the
+  // owner closes the MOM, the server releases all presence records and this
+  // poll exits the participant's screen, discarding any unsaved form content.
+  useEffect(() => {
+    if (!review || review.is_owner || review.ended_at) return
+    let stopped = false
+    const checkMeetingState = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const latest: any = await api(`/reviews/${review.id}`)
+        if (stopped) return
+        if (!latest || latest.ended_at) {
+          activeLookup.current += 1
+          setReview(null)
+          setMom(null)
+          setParticipants('')
+          setComments('')
+          setRequiresPartForBlocker(false)
+          setForm({
+            category: 'Production', discussion_point: '', action_required: true,
+            action_description: '', owner_id: '', due_at: '', priority: 'HIGH', product_id: '',
+          })
+          setMessage('The meeting owner has closed this MOM. You have been released; unsaved entries were discarded.')
+          await loadHistory()
+          const active: any[] = await api(`/reviews/collaboration/active?review_date=${date}`)
+          if (!stopped) setRunningMeetings(active)
+        }
+      } catch (e: any) {
+        if (stopped) return
+        if (e.status === 404 || /not found/i.test(String(e.message || ''))) {
+          activeLookup.current += 1
+          setReview(null)
+          setMom(null)
+          setParticipants('')
+          setComments('')
+          setRequiresPartForBlocker(false)
+          setForm({
+            category: 'Production', discussion_point: '', action_required: true,
+            action_description: '', owner_id: '', due_at: '', priority: 'HIGH', product_id: '',
+          })
+          setMessage('The meeting was closed without saved MOM points. You have been released; unsaved entries were discarded.')
+        }
+      }
+    }
+    checkMeetingState()
+    const timer = setInterval(checkMeetingState, 3000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [review?.id, review?.ended_at, review?.is_owner, date])
+
   useEffect(() => {
     const lookup = ++calendarLookup.current
     let cancelled = false
