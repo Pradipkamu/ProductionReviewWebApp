@@ -140,6 +140,95 @@ def list_reviews(participant: str | None = None, db: Session = Depends(get_db), 
     return [serialize_review(x, db) for x in rows]
 
 
+@router.get("/collaboration/active")
+def active_collaboration(review_date: date, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None)).order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc())).all()
+    now = datetime.utcnow()
+    result = []
+    for row in rows:
+        owner = db.get(User, row.owner_id) if row.owner_id else None
+        recent = False
+        if owner:
+            recent = bool(db.scalar(select(UserSession.id).where(UserSession.user_id == owner.id, UserSession.revoked_at.is_(None), UserSession.expires_at > now, UserSession.last_seen_at > now - timedelta(minutes=30)).limit(1)))
+        presence_rows = db.scalars(select(ReviewParticipantPresence).where(ReviewParticipantPresence.review_session_id == row.id).order_by(ReviewParticipantPresence.last_seen_at.desc())).all()
+        participant_presence = []
+        for presence in presence_rows:
+            participant = db.get(User, presence.user_id)
+            if participant:
+                participant_presence.append({"user_id": participant.id, "name": participant.full_name,
+                    "last_seen_at": presence.last_seen_at, "online": presence.last_seen_at > now - timedelta(minutes=2)})
+        result.append({**serialize_review(row, db), "owner_name": owner.full_name if owner else None, "owner_online": recent,
+                       "participants_presence": participant_presence,
+                       "is_owner": bool(row.owner_id == user.id),
+                       "pending_request": bool(db.scalar(select(ReviewMeetingRequest.id).where(ReviewMeetingRequest.review_session_id == row.id, ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING").limit(1)))})
+    return result
+
+
+@router.post("/{review_id}/request-owner")
+def request_meeting_owner(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    row = db.get(ReviewSession, review_id)
+    if not row or row.ended_at is not None:
+        raise HTTPException(404, "Active meeting not found")
+    if not row.owner_id:
+        raise HTTPException(409, "This meeting has no recorded owner; ask an administrator to review it.")
+    if row.owner_id == user.id:
+        raise HTTPException(409, "You are the owner of this meeting.")
+    existing = db.scalar(select(ReviewMeetingRequest).where(ReviewMeetingRequest.review_session_id == row.id,
+        ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING"))
+    if not existing:
+        db.add(ReviewMeetingRequest(review_session_id=row.id, requester_id=user.id, owner_id=row.owner_id,
+                                    message=f"{user.full_name} is requesting you to join the meeting."))
+        db.commit()
+    return {"ok": True, "message": "Meeting owner has been notified in the application."}
+
+
+@router.get("/collaboration/owner-requests")
+def list_owner_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(ReviewMeetingRequest).where(ReviewMeetingRequest.owner_id == user.id,
+        ReviewMeetingRequest.status == "PENDING").order_by(ReviewMeetingRequest.created_at.desc()).limit(50)).all()
+    result = []
+    for item in rows:
+        requester = db.get(User, item.requester_id)
+        meeting = db.get(ReviewSession, item.review_session_id)
+        if meeting and meeting.ended_at is None:
+            result.append({"id": item.id, "review_session_id": meeting.id, "review_date": meeting.review_date,
+                           "requester_name": requester.full_name if requester else "User", "created_at": item.created_at,
+                           "mom_no": f"MOM-{meeting.review_date.isoformat()}-{meeting.id:03d}"})
+    return result
+
+
+@router.get("/collaboration/my-requests")
+def list_my_meeting_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(ReviewMeetingRequest).where(
+        ReviewMeetingRequest.requester_id == user.id,
+        ReviewMeetingRequest.status.in_(["PENDING", "ACKNOWLEDGED"])
+    ).order_by(ReviewMeetingRequest.created_at.desc()).limit(50)).all()
+    result = []
+    for item in rows:
+        meeting = db.get(ReviewSession, item.review_session_id)
+        if meeting:
+            result.append({
+                "id": item.id,
+                "review_session_id": meeting.id,
+                "review_date": meeting.review_date,
+                "status": item.status,
+                "responded_at": item.responded_at,
+                "mom_no": f"MOM-{meeting.review_date.isoformat()}-{meeting.id:03d}",
+            })
+    return result
+
+
+@router.patch("/collaboration/owner-requests/{request_id}/acknowledge")
+def acknowledge_owner_request(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    item = db.get(ReviewMeetingRequest, request_id)
+    if not item or item.owner_id != user.id:
+        raise HTTPException(404, "Meeting request not found")
+    item.status = "ACKNOWLEDGED"
+    item.responded_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/{review_id}")
 def get_review(review_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     row = db.get(ReviewSession, review_id)
@@ -278,95 +367,6 @@ def update_meeting_presence(review_id: int, db: Session = Depends(get_db), user:
         db.add(ReviewParticipantPresence(review_session_id=review_id, user_id=user.id, last_seen_at=now))
     db.commit()
     return {"ok": True, "last_seen_at": now}
-
-
-@router.get("/collaboration/active")
-def active_collaboration(review_date: date, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.scalars(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None)).order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc())).all()
-    now = datetime.utcnow()
-    result = []
-    for row in rows:
-        owner = db.get(User, row.owner_id) if row.owner_id else None
-        recent = False
-        if owner:
-            recent = bool(db.scalar(select(UserSession.id).where(UserSession.user_id == owner.id, UserSession.revoked_at.is_(None), UserSession.expires_at > now, UserSession.last_seen_at > now - timedelta(minutes=30)).limit(1)))
-        presence_rows = db.scalars(select(ReviewParticipantPresence).where(ReviewParticipantPresence.review_session_id == row.id).order_by(ReviewParticipantPresence.last_seen_at.desc())).all()
-        participant_presence = []
-        for presence in presence_rows:
-            participant = db.get(User, presence.user_id)
-            if participant:
-                participant_presence.append({"user_id": participant.id, "name": participant.full_name,
-                    "last_seen_at": presence.last_seen_at, "online": presence.last_seen_at > now - timedelta(minutes=2)})
-        result.append({**serialize_review(row, db), "owner_name": owner.full_name if owner else None, "owner_online": recent,
-                       "participants_presence": participant_presence,
-                       "is_owner": bool(row.owner_id == user.id),
-                       "pending_request": bool(db.scalar(select(ReviewMeetingRequest.id).where(ReviewMeetingRequest.review_session_id == row.id, ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING").limit(1)))})
-    return result
-
-
-@router.post("/{review_id}/request-owner")
-def request_meeting_owner(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    row = db.get(ReviewSession, review_id)
-    if not row or row.ended_at is not None:
-        raise HTTPException(404, "Active meeting not found")
-    if not row.owner_id:
-        raise HTTPException(409, "This meeting has no recorded owner; ask an administrator to review it.")
-    if row.owner_id == user.id:
-        raise HTTPException(409, "You are the owner of this meeting.")
-    existing = db.scalar(select(ReviewMeetingRequest).where(ReviewMeetingRequest.review_session_id == row.id,
-        ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING"))
-    if not existing:
-        db.add(ReviewMeetingRequest(review_session_id=row.id, requester_id=user.id, owner_id=row.owner_id,
-                                    message=f"{user.full_name} is requesting you to join the meeting."))
-        db.commit()
-    return {"ok": True, "message": "Meeting owner has been notified in the application."}
-
-
-@router.get("/collaboration/owner-requests")
-def list_owner_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.scalars(select(ReviewMeetingRequest).where(ReviewMeetingRequest.owner_id == user.id,
-        ReviewMeetingRequest.status == "PENDING").order_by(ReviewMeetingRequest.created_at.desc()).limit(50)).all()
-    result = []
-    for item in rows:
-        requester = db.get(User, item.requester_id)
-        meeting = db.get(ReviewSession, item.review_session_id)
-        if meeting and meeting.ended_at is None:
-            result.append({"id": item.id, "review_session_id": meeting.id, "review_date": meeting.review_date,
-                           "requester_name": requester.full_name if requester else "User", "created_at": item.created_at,
-                           "mom_no": f"MOM-{meeting.review_date.isoformat()}-{meeting.id:03d}"})
-    return result
-
-
-@router.get("/collaboration/my-requests")
-def list_my_meeting_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.scalars(select(ReviewMeetingRequest).where(
-        ReviewMeetingRequest.requester_id == user.id,
-        ReviewMeetingRequest.status.in_(["PENDING", "ACKNOWLEDGED"])
-    ).order_by(ReviewMeetingRequest.created_at.desc()).limit(50)).all()
-    result = []
-    for item in rows:
-        meeting = db.get(ReviewSession, item.review_session_id)
-        if meeting:
-            result.append({
-                "id": item.id,
-                "review_session_id": meeting.id,
-                "review_date": meeting.review_date,
-                "status": item.status,
-                "responded_at": item.responded_at,
-                "mom_no": f"MOM-{meeting.review_date.isoformat()}-{meeting.id:03d}",
-            })
-    return result
-
-
-@router.patch("/collaboration/owner-requests/{request_id}/acknowledge")
-def acknowledge_owner_request(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    item = db.get(ReviewMeetingRequest, request_id)
-    if not item or item.owner_id != user.id:
-        raise HTTPException(404, "Meeting request not found")
-    item.status = "ACKNOWLEDGED"
-    item.responded_at = datetime.utcnow()
-    db.commit()
-    return {"ok": True}
 
 
 @router.post("/actions/{action_id}/escalate-whywhy")
