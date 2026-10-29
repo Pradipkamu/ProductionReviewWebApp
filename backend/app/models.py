@@ -812,6 +812,28 @@ class ReviewSession(Base, TimestampMixin):
     participants: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     total_sales_gap: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 2), nullable=True)
     comments: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    auto_close_reason: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+
+
+class ReviewMeetingRequest(Base, TimestampMixin):
+    __tablename__ = "review_meeting_requests"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_session_id: Mapped[int] = mapped_column(ForeignKey("review_sessions.id", ondelete="CASCADE"), index=True)
+    requester_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING", server_default="PENDING", index=True)
+    message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class ReviewParticipantPresence(Base):
+    __tablename__ = "review_participant_presence"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_session_id: Mapped[int] = mapped_column(ForeignKey("review_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("review_session_id", "user_id", name="uq_review_participant_presence"),)
 
 
 class ReviewPoint(Base, TimestampMixin):

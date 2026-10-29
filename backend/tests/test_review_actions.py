@@ -38,12 +38,14 @@ def test_review_sync_close_and_action_link():
     assert r.status_code == 200, r.text
     rid = r.json()['id']
 
-    # A second start on the same date reuses the active session.
+    # An explicit second Start creates an independent MOM for the same date.
+    # The owner may own multiple meetings; only an active participant is blocked.
     r2 = client.post('/api/reviews', headers=h, json={
         'review_date':'2026-09-29', 'participants':'', 'comments':'Daily review'
     })
     assert r2.status_code == 200
-    assert r2.json()['id'] == rid
+    assert r2.json()['id'] != rid
+    assert r2.json()['is_owner'] is True
     assert r2.json()['existing'] is True
 
     active = client.get('/api/reviews/active?review_date=2026-09-29', headers=h)
@@ -109,9 +111,9 @@ def test_review_history_carries_only_earlier_meeting_actions_and_counts_all_link
     h = auth_headers(client)
     with SessionLocal() as db:
         owner = db.scalar(select(User).where(User.username == "admin"))
-        old_review = ReviewSession(review_date=date(2026, 10, 14), started_at=datetime.utcnow(), participants="Production")
-        current_review = ReviewSession(review_date=date(2026, 10, 15), started_at=datetime.utcnow(), participants="Production")
-        future_review = ReviewSession(review_date=date(2026, 10, 16), started_at=datetime.utcnow(), participants="Production")
+        old_review = ReviewSession(review_date=date(2026, 10, 14), started_at=datetime.utcnow(), participants="Production", owner_id=owner.id)
+        current_review = ReviewSession(review_date=date(2026, 10, 15), started_at=datetime.utcnow(), participants="Production", owner_id=owner.id)
+        future_review = ReviewSession(review_date=date(2026, 10, 16), started_at=datetime.utcnow(), participants="Production", owner_id=owner.id)
         db.add_all([old_review, current_review, future_review])
         db.flush()
 

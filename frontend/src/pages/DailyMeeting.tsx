@@ -60,6 +60,9 @@ export default function DailyMeeting() {
   const [err, setErr] = useState('')
   const [message, setMessage] = useState('')
   const [meetings, setMeetings] = useState<any[]>([])
+  const [runningMeetings, setRunningMeetings] = useState<any[]>([])
+  const [ownerRequests, setOwnerRequests] = useState<any[]>([])
+  const handledApprovedRequests = useRef(new Set<number>())
   const [participantFilter, setParticipantFilter] = useState('')
   const [meetingSearch, setMeetingSearch] = useState('')
   const [overdueMeeting, setOverdueMeeting] = useState<any>(null)
@@ -120,11 +123,15 @@ export default function DailyMeeting() {
         setParticipants(r.participants || '')
         setComments(r.comments || '')
         await load(r, request)
+        const active: any[] = await api(`/reviews/collaboration/active?review_date=${forDate}`)
+        if (request === activeLookup.current) setRunningMeetings(active)
       } else {
         setReview(null)
         setMom(null)
         setParticipants('')
         setComments('')
+        const active: any[] = await api(`/reviews/collaboration/active?review_date=${forDate}`)
+        if (request === activeLookup.current) setRunningMeetings(active)
       }
     } catch (e: any) {
       if (request === activeLookup.current) setErr(e.message)
@@ -132,17 +139,36 @@ export default function DailyMeeting() {
   }
 
   useEffect(() => {
-    Promise.all([
-      api('/masters/users'),
-      api('/masters/products'),
-      api('/masters/filter-options'),
-    ]).then(([u, p, f]: any[]) => {
-      setUsers(u)
-      setProducts(p)
-      setFilterOptions(f)
-    }).catch((e: any) => setErr(e.message))
+    api('/masters/filter-options').then(setFilterOptions).catch(() => {
+      // Meeting participants use the meeting-scoped lookup below.
+    })
     loadHistory()
+    refreshOwnerRequests()
+    refreshMyMeetingRequests()
   }, [])
+
+  // Global master endpoints may be restricted for non-admin participants.
+  // Load assignment choices through the active meeting after the user joins.
+  useEffect(() => {
+    if (!review || review.ended_at) {
+      setUsers([])
+      setProducts([])
+      return
+    }
+    let cancelled = false
+    api(`/reviews/${review.id}/lookups`).then((data: any) => {
+      if (cancelled) return
+      setUsers(Array.isArray(data.users) ? data.users : [])
+      setProducts(Array.isArray(data.products) ? data.products : [])
+    }).catch((e: any) => {
+      if (!cancelled) {
+        setUsers([])
+        setProducts([])
+        setErr(`Unable to load Responsible Owner list: ${e.message}`)
+      }
+    })
+    return () => { cancelled = true }
+  }, [review?.id, review?.ended_at])
 
   useEffect(() => {
     if (skipNextDateLookup.current) {
@@ -151,6 +177,81 @@ export default function DailyMeeting() {
     }
     findActive(date)
   }, [date])
+
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshOwnerRequests()
+        refreshMyMeetingRequests()
+        api(`/reviews/collaboration/active?review_date=${date}`).then(setRunningMeetings).catch(() => {})
+      }
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [date])
+
+  useEffect(() => {
+    if (!review || review.ended_at) return
+    let timer: ReturnType<typeof setInterval> | undefined
+    const beat = async () => {
+      if (document.visibilityState !== 'visible') return
+      try { await api(`/reviews/${review.id}/presence`, { method: 'POST', body: JSON.stringify({}) }) } catch { /* transient heartbeat errors do not interrupt meeting work */ }
+    }
+    beat()
+    timer = setInterval(beat, 30000)
+    const onVisibility = () => { if (document.visibilityState === 'visible') beat() }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { if (timer) clearInterval(timer); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [review?.id, review?.ended_at])
+
+  // Participants continuously verify the server-side meeting state. When the
+  // owner closes the MOM, the server releases all presence records and this
+  // poll exits the participant's screen, discarding any unsaved form content.
+  useEffect(() => {
+    if (!review || review.is_owner || review.ended_at) return
+    let stopped = false
+    const checkMeetingState = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const latest: any = await api(`/reviews/${review.id}`)
+        if (stopped) return
+        if (!latest || latest.ended_at) {
+          activeLookup.current += 1
+          setReview(null)
+          setMom(null)
+          setParticipants('')
+          setComments('')
+          setRequiresPartForBlocker(false)
+          setForm({
+            category: 'Production', discussion_point: '', action_required: true,
+            action_description: '', owner_id: '', due_at: '', priority: 'HIGH', product_id: '',
+          })
+          setMessage('The meeting owner has closed this MOM. You have been released; unsaved entries were discarded.')
+          await loadHistory()
+          const active: any[] = await api(`/reviews/collaboration/active?review_date=${date}`)
+          if (!stopped) setRunningMeetings(active)
+        }
+      } catch (e: any) {
+        if (stopped) return
+        if (e.status === 404 || /not found/i.test(String(e.message || ''))) {
+          activeLookup.current += 1
+          setReview(null)
+          setMom(null)
+          setParticipants('')
+          setComments('')
+          setRequiresPartForBlocker(false)
+          setForm({
+            category: 'Production', discussion_point: '', action_required: true,
+            action_description: '', owner_id: '', due_at: '', priority: 'HIGH', product_id: '',
+          })
+          setMessage('The meeting was closed without saved MOM points. You have been released; unsaved entries were discarded.')
+        }
+      }
+    }
+    checkMeetingState()
+    const timer = setInterval(checkMeetingState, 3000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [review?.id, review?.ended_at, review?.is_owner, date])
 
   useEffect(() => {
     const lookup = ++calendarLookup.current
@@ -287,6 +388,57 @@ export default function DailyMeeting() {
     loadSnapshot()
   }, [productionReviewDate, productionReviewDateResolvedKey, productionReviewScopeKey, plants.join('|')])
 
+
+  async function refreshOwnerRequests() {
+    try { setOwnerRequests(await api('/reviews/collaboration/owner-requests')) } catch { /* keep the meeting page usable if requests cannot load */ }
+  }
+
+  async function refreshMyMeetingRequests() {
+    try {
+      const requests: any[] = await api('/reviews/collaboration/my-requests')
+      const approved = requests.find(item =>
+        item.status === 'ACKNOWLEDGED' && !handledApprovedRequests.current.has(Number(item.id))
+      )
+      if (approved) {
+        const meeting: any = await api(`/reviews/${approved.review_session_id}`)
+        if (!meeting || meeting.ended_at) {
+          setErr('The owner approved the request, but this MOM is no longer active. Please contact the owner.')
+          handledApprovedRequests.current.add(Number(approved.id))
+          return
+        }
+        // Load the shared MOM before marking this approval as handled. If the
+        // network request fails, the next poll will retry instead of losing it.
+        const next = await api(`/reviews/${meeting.id}/mom`)
+        setReview(meeting)
+        setParticipants(meeting.participants || '')
+        setComments(meeting.comments || '')
+        setMom(next)
+        if (date !== meeting.review_date) {
+          skipNextDateLookup.current = true
+          setDate(meeting.review_date)
+        }
+        handledApprovedRequests.current.add(Number(approved.id))
+        setMessage(`The owner approved your request. You are now in ${approved.mom_no}; the shared MOM points and actions are loaded.`)
+      }
+    } catch { /* transient polling errors do not interrupt meeting work */ }
+  }
+
+  async function requestOwner(meetingId: number) {
+    try {
+      const result: any = await api(`/reviews/${meetingId}/request-owner`, { method: 'POST', body: JSON.stringify({}) })
+      setMessage(result.message || 'Meeting owner has been notified.')
+      await findActive(date)
+    } catch (e: any) { setErr(e.message) }
+  }
+
+  async function openOwnerRequest(item: any) {
+    try {
+      await api(`/reviews/collaboration/owner-requests/${item.id}/acknowledge`, { method: 'PATCH', body: JSON.stringify({}) })
+      setOwnerRequests(items => items.map(x => x.id === item.id ? { ...x, status: 'ACKNOWLEDGED' } : x))
+      setMessage(`${item.requester_name} approved to join ${item.mom_no}. They will open the shared meeting automatically.`)
+    } catch (e: any) { setErr(e.message) }
+  }
+
   async function start() {
     try {
       setErr('')
@@ -294,19 +446,9 @@ export default function DailyMeeting() {
         method: 'POST',
         body: JSON.stringify({ review_date: date, participants: participants || null, comments: comments || null }),
       })
-      if (r.existing) {
-        const updated: any = await api(`/reviews/${r.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ participants: participants || null, comments: comments || null }),
-        })
-        setReview(updated)
-        await load(updated)
-        setMessage('Existing meeting resumed and meeting details saved.')
-      } else {
-        setReview(r)
-        await load(r)
-        setMessage('Daily Review meeting started.')
-      }
+      setReview(r)
+      await load(r)
+      setMessage('New Daily Review meeting started. It is independent of other meetings on the same date.')
       await loadHistory()
     } catch (e: any) {
       setErr(e.message)
@@ -371,6 +513,54 @@ export default function DailyMeeting() {
     }
   }
 
+  async function reopenHistoryMeeting(meeting: any) {
+    if (!confirm(`Reopen MOM #${meeting.id} to add more points? Existing saved points and actions will be retained.`)) return
+    try {
+      const r: any = await api(`/reviews/${meeting.id}/reopen`, { method: 'PATCH', body: JSON.stringify({}) })
+      activeLookup.current += 1
+      setReview(r)
+      setParticipants(r.participants || '')
+      setComments(r.comments || '')
+      await load(r)
+      await loadHistory()
+      setMessage(`MOM #${meeting.id} reopened. Saved points and actions have been retained.`)
+      document.getElementById('add-mom-point')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (e: any) {
+      setErr(e.message)
+    }
+  }
+
+  async function recoverOwner(meeting: any) {
+    try {
+      const candidates: any[] = await api(`/reviews/${meeting.id}/recovery-candidates`)
+      if (!candidates.length) {
+        setErr('No active users are available for ownership recovery.')
+        return
+      }
+      const choices = candidates.map((u: any) => `${u.id}: ${u.full_name} (${u.username})`).join('\n')
+      const selected = window.prompt(`Choose the person who originally owned this MOM.\nEnter ONLY the number before their name.\n\n${choices}\n\nExample: to select user 10, enter 10.`)
+      if (selected === null) return
+      const ownerId = Number(selected.trim())
+      if (!Number.isInteger(ownerId) || !candidates.some((u: any) => u.id === ownerId)) {
+        setErr('Enter a valid user ID from the displayed active-user list.')
+        return
+      }
+      const reason = window.prompt('Enter the evidence / reason for recovering this meeting owner (minimum 10 characters):')
+      if (reason === null || reason.trim().length < 10) {
+        setErr('Ownership recovery requires a reason of at least 10 characters.')
+        return
+      }
+      await api(`/reviews/${meeting.id}/recover-owner`, {
+        method: 'PATCH',
+        body: JSON.stringify({ owner_id: ownerId, reason: reason.trim() }),
+      })
+      await loadHistory()
+      setMessage(`Ownership recovered for MOM #${meeting.id}. Open the meeting and use Reopen Meeting.`)
+    } catch (e: any) {
+      setErr(e.message)
+    }
+  }
+
   async function reopen() {
     if (!review) return
     if (!confirm('Reopen this closed meeting to add more MOM points?')) return
@@ -383,6 +573,51 @@ export default function DailyMeeting() {
     } catch (e: any) {
       setErr(e.message)
     }
+  }
+
+  async function leaveMeeting() {
+    if (!review || review.is_owner) return
+    if (!confirm('Leave this meeting? You will need owner approval to join it again.')) return
+    try {
+      await api(`/reviews/${review.id}/presence`, { method: 'DELETE' })
+      activeLookup.current += 1
+      setReview(null)
+      setMom(null)
+      setParticipants('')
+      setComments('')
+      setMessage('You have left the meeting. You can now join or start another meeting.')
+      await loadHistory()
+      await findActive(date)
+      const active: any[] = await api(`/reviews/collaboration/active?review_date=${date}`)
+      setRunningMeetings(active)
+    } catch (e: any) { setErr(e.message) }
+  }
+
+  async function editPoint(point: any) {
+    if (!review || review.ended_at) return
+    const discussion = window.prompt('Edit discussion / MOM point:', point.discussion_point || '')
+    if (discussion === null || discussion.trim().length < 2) return
+    const actionDescription = point.action
+      ? window.prompt('Edit action required:', point.action.description || '')
+      : null
+    if (point.action && (actionDescription === null || !actionDescription.trim())) return
+    try {
+      await api(`/reviews/${review.id}/points/${point.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          category: point.category || 'Production',
+          discussion_point: discussion.trim(),
+          product_id: point.product_id || null,
+          action_required: Boolean(point.action),
+          action_description: point.action ? actionDescription?.trim() : null,
+          owner_id: point.action?.owner_id || null,
+          due_at: point.action?.due_at || null,
+          priority: point.action?.priority || 'MEDIUM',
+        }),
+      })
+      await load(review)
+      setMessage('MOM point updated successfully.')
+    } catch (e: any) { setErr(e.message) }
   }
 
   async function addPoint(e: React.FormEvent) {
@@ -647,6 +882,23 @@ export default function DailyMeeting() {
       subtitle="Review performance, discuss exceptions, assign accountable actions and follow commitments through to closure."
     />
 
+
+    {ownerRequests.length > 0 && <section className="panel">
+      <div className="panel-title"><div><h2>Requests to join your meeting</h2><p>Approve a colleague’s request to join your active MOM. Their screen will open the shared discussion automatically.</p></div><button className="secondary small" onClick={refreshOwnerRequests}>Refresh</button></div>
+      {ownerRequests.map((item: any) => <div className="data-note" key={item.id}>
+        <b>{item.requester_name}</b> requested you to join <b>{item.mom_no}</b> ({item.review_date})
+        <button className="secondary small" disabled={item.status === 'ACKNOWLEDGED'} onClick={() => openOwnerRequest(item)}>{item.status === 'ACKNOWLEDGED' ? 'Approved' : 'Approve'}</button>
+      </div>)}
+    </section>}
+
+    {!review && runningMeetings.length > 0 && <section className="panel">
+      <div className="panel-title"><div><h2>Meetings already in progress</h2><p>Notify the owner to join an existing discussion, or start an independent MOM.</p></div><button className="secondary small" onClick={() => findActive(date)}>Refresh MOM</button></div>
+      {runningMeetings.map((meeting: any) => <div className="data-note" key={meeting.id}>
+        <b>MOM-{String(meeting.review_date).slice(0,10)}-{String(meeting.id).padStart(3,'0')}</b> • Owner: {meeting.owner_name || 'Owner not recorded'} • {meeting.owner_online ? 'Online' : 'Offline'}
+        {meeting.owner_id && !meeting.is_owner && <button className="secondary small" onClick={() => requestOwner(meeting.id)} disabled={meeting.pending_request}>{meeting.pending_request ? 'Request Pending' : 'Request Owner to Join'}</button>}
+      </div>)}
+    </section>}
+
     {err && <div className="error">{err}</div>}
     {message && <div className="notice">{message}</div>}
 
@@ -660,13 +912,15 @@ export default function DailyMeeting() {
         {!review
           ? <button onClick={start}>Start Meeting</button>
           : <>
-            {review.ended_at
+            {review.is_owner && (review.ended_at
               ? <button onClick={reopen}>Reopen Meeting</button>
               : <>
                 <button className="secondary" onClick={saveMeetingDetails}>Save Details</button>
                 <button onClick={close}>Close Meeting</button>
               </>
-            }
+            )}
+            {review.is_owner && <button className="secondary" type="button" onClick={start}>Start Another MOM</button>}
+            {!review.is_owner && !review.ended_at && <button className="secondary" type="button" onClick={leaveMeeting}>Leave Meeting</button>}
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/pdf`, `${mom?.mom_no || 'MOM'}.pdf`)}>Download MOM PDF</button>
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/xlsx`, `${mom?.mom_no || 'MOM'}.xlsx`)}>Download Excel</button>
           </>
@@ -676,8 +930,41 @@ export default function DailyMeeting() {
         <b>MOM Date:</b> {date} • <b>Production Review Date:</b> {productionReviewDate || (productionReviewDateLoading ? 'Calculating…' : 'Not selected')}
       </div>
       {productionReviewDateNote && <div className="data-note">{productionReviewDateNote}</div>}
-      {mom && <div className="data-note"><b>{mom.mom_no}</b> • {review?.ended_at ? 'Closed' : 'Meeting active'} • {review?.participants || 'Participants not entered'}</div>}
+      {mom && <div className="data-note"><b>{mom.mom_no}</b> • {review?.ended_at ? 'Closed' : 'Meeting active'} • Owner: {review?.owner_name || 'Not recorded'} • {review?.participants || 'Participants not entered'}{review?.auto_close_reason ? ` • ${review.auto_close_reason}` : ''}</div>}
+      {runningMeetings.find((x: any) => x.id === review?.id)?.participants_presence?.length > 0 && <div className="data-note"><b>Participant activity:</b> {runningMeetings.find((x: any) => x.id === review?.id).participants_presence.map((p: any) => `${p.name} — ${p.online ? 'Online' : 'Offline'} (last activity ${formatIST(p.last_seen_at)})`).join(' • ')}</div>}
     </section>
+
+    {review && !review.ended_at && <section className="panel" id="add-mom-point">
+      <h2>Add discussion / MOM point</h2>
+      <form onSubmit={addPoint}>
+        <div className="form-row">
+          <label>Category<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+            {['Production', 'Quality', 'Delivery', 'Process', 'Maintenance', 'Capacity', 'Vendor', 'Customer', 'Safety', 'Cost', 'Planning', 'Actions', 'Other'].map(x => <option key={x}>{x}</option>)}
+          </select></label>
+          <label>{requiresPartForBlocker ? 'Affected Part Number *' : 'Product context'}<select required={requiresPartForBlocker} value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
+            <option value="">{requiresPartForBlocker ? 'Select Part Number' : 'No product context'}</option>
+            {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
+          </select></label>
+          {requiresPartForBlocker && <div className="data-note">This Blocking / Critical item has no Part Number linked yet. Select the affected Part Number before adding it to the MOM so it appears against the correct part in the dispatch report.</div>}
+          <label>Action Required<select value={form.action_required ? 'YES' : 'NO'} onChange={e => setForm({ ...form, action_required: e.target.value === 'YES' })}>
+            <option>YES</option><option>NO</option>
+          </select></label>
+          <label>Priority<select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
+            <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
+          </select></label>
+        </div>
+        <label>Discussion / MOM Point<textarea required value={form.discussion_point} onChange={e => setForm({ ...form, discussion_point: e.target.value })} /></label>
+        {form.action_required && <>
+          <label>Action Required<textarea required value={form.action_description} onChange={e => setForm({ ...form, action_description: e.target.value })} /></label>
+          <div className="form-row">
+            <label>Responsible Owner<MultiSelect className="manual-search-select" value={form.owner_id ? [String(form.owner_id)] : []} onChange={v => setForm({ ...form, owner_id: v.at(-1) || '' })} placeholder="Select owner" options={users.map(u => ({ value: String(u.id), label: u.full_name }))} /></label>
+            <label>Target Date / Time (IST)<input type="datetime-local" value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} /></label>
+          </div>
+          <div className="data-note">Owner and target date are required when creating an action. This keeps each commitment accountable.</div>
+        </>}
+        <button type="submit">Add MOM Point</button>
+      </form>
+    </section>}
 
     <section className="panel">
       <div className="panel-title">
@@ -767,37 +1054,7 @@ export default function DailyMeeting() {
       {(!review || review.ended_at) && <div className="data-note">Start or reopen a meeting to add a rejection exception to the MOM.</div>}
     </section>
 
-    {review && !review.ended_at && <section className="panel" id="add-mom-point">
-      <h2>Add discussion / MOM point</h2>
-      <form onSubmit={addPoint}>
-        <div className="form-row">
-          <label>Category<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-            {['Production', 'Quality', 'Delivery', 'Process', 'Maintenance', 'Capacity', 'Vendor', 'Customer', 'Safety', 'Cost', 'Planning', 'Actions', 'Other'].map(x => <option key={x}>{x}</option>)}
-          </select></label>
-          <label>{requiresPartForBlocker ? 'Affected Part Number *' : 'Product context'}<select required={requiresPartForBlocker} value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
-            <option value="">{requiresPartForBlocker ? 'Select Part Number' : 'No product context'}</option>
-            {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
-          </select></label>
-          {requiresPartForBlocker && <div className="data-note">This Blocking / Critical item has no Part Number linked yet. Select the affected Part Number before adding it to the MOM so it appears against the correct part in the dispatch report.</div>}
-          <label>Action Required<select value={form.action_required ? 'YES' : 'NO'} onChange={e => setForm({ ...form, action_required: e.target.value === 'YES' })}>
-            <option>YES</option><option>NO</option>
-          </select></label>
-          <label>Priority<select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
-            <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
-          </select></label>
-        </div>
-        <label>Discussion / MOM Point<textarea required value={form.discussion_point} onChange={e => setForm({ ...form, discussion_point: e.target.value })} /></label>
-        {form.action_required && <>
-          <label>Action Required<textarea required value={form.action_description} onChange={e => setForm({ ...form, action_description: e.target.value })} /></label>
-          <div className="form-row">
-            <label>Responsible Owner<MultiSelect className="manual-search-select" value={form.owner_id ? [String(form.owner_id)] : []} onChange={v => setForm({ ...form, owner_id: v.at(-1) || '' })} placeholder="Select owner" options={users.map(u => ({ value: String(u.id), label: u.full_name }))} /></label>
-            <label>Target Date / Time (IST)<input type="datetime-local" value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} /></label>
-          </div>
-          <div className="data-note">Owner and target date are required when creating an action. This keeps each commitment accountable.</div>
-        </>}
-        <button type="submit">Add MOM Point</button>
-      </form>
-    </section>}
+
 
     {mom && <div className="kpi-grid">
       <Kpi label="Discussion points" value={num(mom.points?.length || 0)} />
@@ -810,11 +1067,11 @@ export default function DailyMeeting() {
     </div>}
 
     {mom && <section className="panel">
-      <div className="panel-title"><h2>Today's MOM Points</h2><span>{mom.points.length} point(s)</span></div>
+      <div className="panel-title"><div><h2>Today's MOM Points</h2><p>Multiple participants can add separate points to this meeting. Refresh to load contributions added by other users.</p></div><div><span>{mom.points.length} point(s) </span><button className="secondary small" type="button" onClick={() => load(review)}>Refresh MOM</button></div></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Sr.</th><th>Category</th><th>Product</th><th>Discussion</th><th>Action / Owner</th><th>Target</th><th>Priority</th><th>Status</th><th>Follow-up</th></tr></thead>
+        <thead><tr><th>Sr.</th><th>Category</th><th>Product</th><th>Discussion</th><th>Added By</th><th>Action / Owner</th><th>Target</th><th>Priority</th><th>Status</th><th>Follow-up</th></tr></thead>
         <tbody>{mom.points.map((p: any) => <tr key={p.id}>
-          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product_code ? `${p.product_code} - ${p.product || ''}` : (p.product || '—')}</td><td>{p.discussion_point}</td>
+          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product_code ? `${p.product_code} - ${p.product || ''}` : (p.product || '—')}</td><td>{p.discussion_point}{!review?.ended_at && <><br /><button className="secondary small" type="button" onClick={() => editPoint(p)}>Edit MOM Point</button></>}</td><td>{p.created_by || '—'}</td>
           <td>{p.action ? <><b>{p.action.action_no}</b><br />{p.action.description}<br /><small>{p.action.owner || 'Unassigned'}</small></> : 'No action'}</td>
           <td>{p.action ? formatIST(p.action.due_at) : '—'}</td>
           <td>{p.action ? <Status value={p.action.priority} /> : '—'}</td>
@@ -873,7 +1130,7 @@ export default function DailyMeeting() {
         <label>Filter Participants<input value={participantFilter} onChange={e => setParticipantFilter(e.target.value)} placeholder="Name or department" /></label>
       </div>
       <div className="table-wrap"><table>
-        <thead><tr><th>MOM</th><th>Date</th><th>Participants</th><th>Total Points</th><th>Actions</th><th>Closed</th><th>Pending</th><th>Overdue</th><th>Status</th><th>Open</th><th>Meeting Note</th></tr></thead>
+        <thead><tr><th>MOM</th><th>Date</th><th>Participants</th><th>Total Points</th><th>Actions</th><th>Closed</th><th>Pending</th><th>Overdue</th><th>Status</th><th>Access / Owner</th><th>Meeting Note</th></tr></thead>
         <tbody>{meetings
           .filter((m: any) => (!participantFilter.trim() || String(m.participants || '').toLowerCase().includes(participantFilter.trim().toLowerCase()))
             && (!meetingSearch.trim() || (`MOM-${m.review_date}-${String(m.id).padStart(3, '0')}`).toLowerCase().includes(meetingSearch.trim().toLowerCase())))
@@ -884,7 +1141,16 @@ export default function DailyMeeting() {
               ? <button type="button" className={`overdue-count overdue-level-${Math.min(5, Number(m.max_overdue_days || 1))}`} title={`Open overdue actions; oldest is ${m.max_overdue_days || 1} day(s) overdue`} onClick={() => openOverdueActions(m)}>{m.overdue_action_count}</button>
               : <span className="overdue-zero">0</span>}</td>
             <td>{m.ended_at ? <Status value="CLOSED" /> : <Status value="OPEN" />}</td>
-            <td><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button></td>
+            <td>
+              <button className="secondary small" onClick={() => openMeeting(m)}>View MOM</button>
+              {!m.has_meeting_access && <span className="muted"> Owner: {m.owner_name || 'Not recorded'}</span>}
+              {m.ended_at && m.is_owner && (
+                <button className="secondary small" onClick={() => reopenHistoryMeeting(m)}>Reopen Meeting</button>
+              )}
+              {m.owner_id == null && m.is_admin && (
+                <button className="secondary small" onClick={() => recoverOwner(m)}>Recover Ownership</button>
+              )}
+            </td>
             <td><button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/pdf`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.pdf`)}>PDF</button> <button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/xlsx`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.xlsx`)}>Excel</button></td>
           </tr>)}
         </tbody>

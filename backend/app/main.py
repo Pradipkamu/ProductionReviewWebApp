@@ -12,6 +12,7 @@ from .db import Base, SessionLocal, engine
 from .migrate import upgrade_database
 from .seed import seed_defaults
 from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, quality_salvage, governance, insights, import_preview, flows, diagnostics, capacity, special_quality
+from .api.reviews import release_meeting_participants
 
 settings = get_settings()
 
@@ -36,14 +37,48 @@ async def lifespan(app: FastAPI):
     def run_reminders():
         with SessionLocal() as db:
             refresh_reminders(db)
+    def close_inactive_meetings():
+        from datetime import datetime, timedelta
+        from sqlalchemy import select
+        from .models import ReviewSession, UserSession
+        now = datetime.utcnow()
+        cutoff = now - timedelta(minutes=30)
+        with SessionLocal() as db:
+            # Lock rows while evaluating so concurrent app workers cannot close a MOM twice.
+            rows = db.scalars(select(ReviewSession).where(ReviewSession.ended_at.is_(None),
+                ReviewSession.owner_id.is_not(None)).with_for_update(skip_locked=True)).all()
+            changed = False
+            for meeting in rows:
+                owner_active = db.scalar(select(UserSession.id).where(UserSession.user_id == meeting.owner_id,
+                    UserSession.revoked_at.is_(None), UserSession.expires_at > now,
+                    UserSession.last_seen_at > cutoff).limit(1))
+                if not owner_active:
+                    meeting.ended_at = now
+                    meeting.auto_close_reason = 'Automatically closed due to owner inactivity for more than 30 minutes.'
+                    release_meeting_participants(db, meeting.id, now)
+                    changed = True
+            if changed:
+                db.commit()
+    async def maintain_meetings():
+        while True:
+            try:
+                await asyncio.to_thread(close_inactive_meetings)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('Meeting inactivity sweep failed')
+            await asyncio.sleep(60)
     task = asyncio.create_task(remind())
+    meeting_task = asyncio.create_task(maintain_meetings())
     try:
         yield
     finally:
         task.cancel()
+        meeting_task.cancel()
         from contextlib import suppress
         with suppress(asyncio.CancelledError):
             await task
+        with suppress(asyncio.CancelledError):
+            await meeting_task
 
 
 app = FastAPI(
