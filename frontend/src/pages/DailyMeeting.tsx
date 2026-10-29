@@ -62,6 +62,7 @@ export default function DailyMeeting() {
   const [meetings, setMeetings] = useState<any[]>([])
   const [runningMeetings, setRunningMeetings] = useState<any[]>([])
   const [ownerRequests, setOwnerRequests] = useState<any[]>([])
+  const handledApprovedRequests = useRef(new Set<number>())
   const [participantFilter, setParticipantFilter] = useState('')
   const [meetingSearch, setMeetingSearch] = useState('')
   const [overdueMeeting, setOverdueMeeting] = useState<any>(null)
@@ -149,6 +150,7 @@ export default function DailyMeeting() {
     }).catch((e: any) => setErr(e.message))
     loadHistory()
     refreshOwnerRequests()
+    refreshMyMeetingRequests()
   }, [])
 
   useEffect(() => {
@@ -164,6 +166,7 @@ export default function DailyMeeting() {
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') {
         refreshOwnerRequests()
+        refreshMyMeetingRequests()
         api(`/reviews/collaboration/active?review_date=${date}`).then(setRunningMeetings).catch(() => {})
       }
     }, 30000)
@@ -322,6 +325,21 @@ export default function DailyMeeting() {
 
   async function refreshOwnerRequests() {
     try { setOwnerRequests(await api('/reviews/collaboration/owner-requests')) } catch { /* keep the meeting page usable if requests cannot load */ }
+  }
+
+  async function refreshMyMeetingRequests() {
+    try {
+      const requests: any[] = await api('/reviews/collaboration/my-requests')
+      const approved = requests.find(item =>
+        item.status === 'ACKNOWLEDGED' && !handledApprovedRequests.current.has(Number(item.id))
+      )
+      if (approved) {
+        handledApprovedRequests.current.add(Number(approved.id))
+        const meeting: any = await api(`/reviews/${approved.review_session_id}`)
+        await openMeeting(meeting)
+        setMessage(`The owner approved your request. You have joined ${approved.mom_no}; its MOM points are now loaded.`)
+      }
+    } catch { /* transient polling errors do not interrupt meeting work */ }
   }
 
   async function requestOwner(meetingId: number) {
