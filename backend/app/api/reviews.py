@@ -175,14 +175,17 @@ def reopen_review(review_id: int, db: Session = Depends(get_db), _: User = Depen
 
 @router.post("")
 def start_review(payload: ReviewStart, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    existing = db.scalar(select(ReviewSession).where(ReviewSession.review_date == payload.review_date, ReviewSession.ended_at.is_(None))
-                         .order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc()).limit(1))
-    if existing:
-        result = serialize_review(existing, db); result["existing"] = True; return result
+    # Each explicit Start action creates an independent MOM, even when another
+    # meeting for the same date is already active. Collaboration happens inside
+    # a selected meeting; it must not silently merge separate meetings.
     row = ReviewSession(review_date=payload.review_date, started_at=datetime.utcnow(),
                         participants=payload.participants, comments=payload.comments)
-    db.add(row); db.commit(); db.refresh(row)
-    result = serialize_review(row, db); result["existing"] = False; return result
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    result = serialize_review(row, db)
+    result["existing"] = False
+    return result
 
 
 @router.patch("/{review_id}/close")
@@ -211,7 +214,11 @@ def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get
 
 @router.post("/{review_id}/points")
 def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    review = db.get(ReviewSession, review_id)
+    # Lock the parent MOM row for the duration of this transaction. Concurrent
+    # contributors to the same meeting are serialized while allocating the next
+    # sequence number, preventing duplicate point numbers without locking other
+    # meetings or blocking independent MOMs.
+    review = db.scalar(select(ReviewSession).where(ReviewSession.id == review_id).with_for_update())
     if not review: raise HTTPException(404, "Review session not found")
     if review.ended_at is not None: raise HTTPException(409, "Closed meetings cannot be edited")
     action = None
