@@ -368,9 +368,8 @@ export default function DailyMeeting() {
   async function openOwnerRequest(item: any) {
     try {
       await api(`/reviews/collaboration/owner-requests/${item.id}/acknowledge`, { method: 'PATCH', body: JSON.stringify({}) })
-      const meeting: any = await api(`/reviews/${item.review_session_id}`)
-      await openMeeting(meeting)
-      await refreshOwnerRequests()
+      setOwnerRequests(items => items.map(x => x.id === item.id ? { ...x, status: 'ACKNOWLEDGED' } : x))
+      setMessage(`${item.requester_name} approved to join ${item.mom_no}. They will open the shared meeting automatically.`)
     } catch (e: any) { setErr(e.message) }
   }
 
@@ -460,6 +459,47 @@ export default function DailyMeeting() {
     } catch (e: any) {
       setErr(e.message)
     }
+  }
+
+  async function leaveMeeting() {
+    if (!review || review.is_owner) return
+    if (!confirm('Leave this meeting? You will need owner approval to join it again.')) return
+    try {
+      await api(`/reviews/${review.id}/presence`, { method: 'DELETE' })
+      activeLookup.current += 1
+      setReview(null)
+      setMom(null)
+      setParticipants('')
+      setComments('')
+      setMessage('You have left the meeting. You can now join or start another meeting.')
+      await loadHistory()
+      await findActive(date)
+      const active: any[] = await api(`/reviews/collaboration/active?review_date=${date}`)
+      setRunningMeetings(active)
+    } catch (e: any) { setErr(e.message) }
+  }
+
+  async function editPoint(point: any) {
+    if (!review || review.ended_at) return
+    const discussion = window.prompt('Edit discussion / MOM point:', point.discussion_point || '')
+    if (discussion === null || discussion.trim().length < 2) return
+    try {
+      await api(`/reviews/${review.id}/points/${point.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          category: point.category || 'Production',
+          discussion_point: discussion.trim(),
+          product_id: point.product_id || null,
+          action_required: Boolean(point.action),
+          action_description: point.action?.description || null,
+          owner_id: point.action?.owner_id || null,
+          due_at: point.action?.due_at || null,
+          priority: point.action?.priority || 'MEDIUM',
+        }),
+      })
+      await load(review)
+      setMessage('MOM point updated successfully.')
+    } catch (e: any) { setErr(e.message) }
   }
 
   async function addPoint(e: React.FormEvent) {
@@ -729,7 +769,7 @@ export default function DailyMeeting() {
       <div className="panel-title"><div><h2>Requests to join your meeting</h2><p>Approve a colleague’s request to join your active MOM. Their screen will open the shared discussion automatically.</p></div><button className="secondary small" onClick={refreshOwnerRequests}>Refresh</button></div>
       {ownerRequests.map((item: any) => <div className="data-note" key={item.id}>
         <b>{item.requester_name}</b> requested you to join <b>{item.mom_no}</b> ({item.review_date})
-        <button className="secondary small" onClick={() => openOwnerRequest(item)}>Approve &amp; Open Meeting</button>
+        <button className="secondary small" disabled={item.status === 'ACKNOWLEDGED'} onClick={() => openOwnerRequest(item)}>{item.status === 'ACKNOWLEDGED' ? 'Approved' : 'Approve'}</button>
       </div>)}
     </section>}
 
@@ -761,7 +801,8 @@ export default function DailyMeeting() {
                 <button onClick={close}>Close Meeting</button>
               </>
             )}
-            <button className="secondary" type="button" onClick={start}>Start Another MOM</button>
+            {review.is_owner && <button className="secondary" type="button" onClick={start}>Start Another MOM</button>}
+            {!review.is_owner && !review.ended_at && <button className="secondary" type="button" onClick={leaveMeeting}>Leave Meeting</button>}
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/pdf`, `${mom?.mom_no || 'MOM'}.pdf`)}>Download MOM PDF</button>
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/xlsx`, `${mom?.mom_no || 'MOM'}.xlsx`)}>Download Excel</button>
           </>
@@ -912,7 +953,7 @@ export default function DailyMeeting() {
       <div className="table-wrap"><table>
         <thead><tr><th>Sr.</th><th>Category</th><th>Product</th><th>Discussion</th><th>Added By</th><th>Action / Owner</th><th>Target</th><th>Priority</th><th>Status</th><th>Follow-up</th></tr></thead>
         <tbody>{mom.points.map((p: any) => <tr key={p.id}>
-          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product_code ? `${p.product_code} - ${p.product || ''}` : (p.product || '—')}</td><td>{p.discussion_point}</td><td>{p.created_by || '—'}</td>
+          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product_code ? `${p.product_code} - ${p.product || ''}` : (p.product || '—')}</td><td>{p.discussion_point}{!review?.ended_at && <><br /><button className="secondary small" type="button" onClick={() => editPoint(p)}>Edit MOM Point</button></>}</td><td>{p.created_by || '—'}</td>
           <td>{p.action ? <><b>{p.action.action_no}</b><br />{p.action.description}<br /><small>{p.action.owner || 'Unassigned'}</small></> : 'No action'}</td>
           <td>{p.action ? formatIST(p.action.due_at) : '—'}</td>
           <td>{p.action ? <Status value={p.action.priority} /> : '—'}</td>
