@@ -407,7 +407,8 @@ def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(
 
 @router.patch("/{review_id}/points/{point_id}")
 def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    review = db.get(ReviewSession, review_id)
+    # Use the same parent-row lock as meeting closure and point creation.
+    review = db.scalar(select(ReviewSession).where(ReviewSession.id == review_id).with_for_update())
     if not review:
         raise HTTPException(404, "Review session not found")
     if review.ended_at is not None:
