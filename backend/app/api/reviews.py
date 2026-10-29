@@ -320,10 +320,33 @@ def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get
     linked_action_count = db.scalar(
         select(func.count(ReviewActionLink.id)).where(ReviewActionLink.review_session_id == review_id)
     ) or 0
+    # Serialize closure against point creation so no participant can commit
+    # another point after the owner has closed the meeting.
+    row = db.scalar(select(ReviewSession).where(ReviewSession.id == review_id).with_for_update())
+    if not row:
+        raise HTTPException(404, "Review session not found")
+
+    # Release every participant and invalidate outstanding join approvals.
+    # The client polls the meeting state and exits as soon as ended_at is set;
+    # deleting presence also prevents participants from starting another MOM
+    # while retaining a stale active-session record.
+    presences = db.scalars(select(ReviewParticipantPresence).where(
+        ReviewParticipantPresence.review_session_id == review_id
+    )).all()
+    for presence in presences:
+        db.delete(presence)
+    requests = db.scalars(select(ReviewMeetingRequest).where(
+        ReviewMeetingRequest.review_session_id == review_id
+    )).all()
+    for request in requests:
+        request.status = "LEFT"
+        request.responded_at = datetime.utcnow()
+
     if point_count == 0 and linked_action_count == 0:
         db.delete(row)
         db.commit()
-        return {"id": review_id, "discarded": True, "message": "Meeting closed with no discussion points and was not saved."}
+        return {"id": review_id, "discarded": True, "closed": True,
+                "message": "Meeting closed with no saved discussion points; all participants were released."}
 
     if row.ended_at is None: row.ended_at = datetime.utcnow()
     row.auto_close_reason = None
