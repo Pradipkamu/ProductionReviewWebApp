@@ -283,7 +283,9 @@ def reopen_review(review_id: int, db: Session = Depends(get_db), user: User = De
     row.auto_close_reason = None
     db.commit()
     db.refresh(row)
-    return serialize_review(row, db)
+    result = serialize_review(row, db)
+    result["is_owner"] = True
+    return result
 
 
 @router.post("")
@@ -355,6 +357,7 @@ def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get
     if payload.comments is not None: row.comments = payload.comments
     db.commit(); db.refresh(row)
     result = serialize_review(row, db)
+    result["is_owner"] = True
     result["discarded"] = False
     return result
 
