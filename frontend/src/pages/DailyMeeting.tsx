@@ -657,6 +657,7 @@ export default function DailyMeeting() {
                 <button onClick={close}>Close Meeting</button>
               </>
             }
+            <button className="secondary" type="button" onClick={start}>Start Another MOM</button>
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/pdf`, `${mom?.mom_no || 'MOM'}.pdf`)}>Download MOM PDF</button>
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/xlsx`, `${mom?.mom_no || 'MOM'}.xlsx`)}>Download Excel</button>
           </>
