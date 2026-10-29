@@ -701,10 +701,9 @@ export default function DailyMeeting() {
     </section>}
 
     {!review && runningMeetings.length > 0 && <section className="panel">
-      <div className="panel-title"><div><h2>Meetings already in progress</h2><p>Join an existing discussion, notify its owner, or start an independent MOM.</p></div><button className="secondary small" onClick={() => findActive(date)}>Refresh MOM</button></div>
+      <div className="panel-title"><div><h2>Meetings already in progress</h2><p>Notify the owner to join an existing discussion, or start an independent MOM.</p></div><button className="secondary small" onClick={() => findActive(date)}>Refresh MOM</button></div>
       {runningMeetings.map((meeting: any) => <div className="data-note" key={meeting.id}>
         <b>MOM-{String(meeting.review_date).slice(0,10)}-{String(meeting.id).padStart(3,'0')}</b> • Owner: {meeting.owner_name || 'Owner not recorded'} • {meeting.owner_online ? 'Online' : 'Offline'}
-        <button className="secondary small" onClick={() => openMeeting(meeting)}>Join Running Meeting</button>
         {meeting.owner_id && !meeting.is_owner && <button className="secondary small" onClick={() => requestOwner(meeting.id)} disabled={meeting.pending_request}>{meeting.pending_request ? 'Request Pending' : 'Request Owner to Join'}</button>}
       </div>)}
     </section>}
@@ -742,6 +741,38 @@ export default function DailyMeeting() {
       {mom && <div className="data-note"><b>{mom.mom_no}</b> • {review?.ended_at ? 'Closed' : 'Meeting active'} • Owner: {review?.owner_name || 'Not recorded'} • {review?.participants || 'Participants not entered'}{review?.auto_close_reason ? ` • ${review.auto_close_reason}` : ''}</div>}
       {runningMeetings.find((x: any) => x.id === review?.id)?.participants_presence?.length > 0 && <div className="data-note"><b>Participant activity:</b> {runningMeetings.find((x: any) => x.id === review?.id).participants_presence.map((p: any) => `${p.name} — ${p.online ? 'Online' : 'Offline'} (last activity ${formatIST(p.last_seen_at)})`).join(' • ')}</div>}
     </section>
+
+    {review && !review.ended_at && <section className="panel" id="add-mom-point">
+      <h2>Add discussion / MOM point</h2>
+      <form onSubmit={addPoint}>
+        <div className="form-row">
+          <label>Category<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+            {['Production', 'Quality', 'Delivery', 'Process', 'Maintenance', 'Capacity', 'Vendor', 'Customer', 'Safety', 'Cost', 'Planning', 'Actions', 'Other'].map(x => <option key={x}>{x}</option>)}
+          </select></label>
+          <label>{requiresPartForBlocker ? 'Affected Part Number *' : 'Product context'}<select required={requiresPartForBlocker} value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
+            <option value="">{requiresPartForBlocker ? 'Select Part Number' : 'No product context'}</option>
+            {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
+          </select></label>
+          {requiresPartForBlocker && <div className="data-note">This Blocking / Critical item has no Part Number linked yet. Select the affected Part Number before adding it to the MOM so it appears against the correct part in the dispatch report.</div>}
+          <label>Action Required<select value={form.action_required ? 'YES' : 'NO'} onChange={e => setForm({ ...form, action_required: e.target.value === 'YES' })}>
+            <option>YES</option><option>NO</option>
+          </select></label>
+          <label>Priority<select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
+            <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
+          </select></label>
+        </div>
+        <label>Discussion / MOM Point<textarea required value={form.discussion_point} onChange={e => setForm({ ...form, discussion_point: e.target.value })} /></label>
+        {form.action_required && <>
+          <label>Action Required<textarea required value={form.action_description} onChange={e => setForm({ ...form, action_description: e.target.value })} /></label>
+          <div className="form-row">
+            <label>Responsible Owner<MultiSelect className="manual-search-select" value={form.owner_id ? [String(form.owner_id)] : []} onChange={v => setForm({ ...form, owner_id: v.at(-1) || '' })} placeholder="Select owner" options={users.map(u => ({ value: String(u.id), label: u.full_name }))} /></label>
+            <label>Target Date / Time (IST)<input type="datetime-local" value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} /></label>
+          </div>
+          <div className="data-note">Owner and target date are required when creating an action. This keeps each commitment accountable.</div>
+        </>}
+        <button type="submit">Add MOM Point</button>
+      </form>
+    </section>}
 
     <section className="panel">
       <div className="panel-title">
@@ -831,37 +862,7 @@ export default function DailyMeeting() {
       {(!review || review.ended_at) && <div className="data-note">Start or reopen a meeting to add a rejection exception to the MOM.</div>}
     </section>
 
-    {review && !review.ended_at && <section className="panel" id="add-mom-point">
-      <h2>Add discussion / MOM point</h2>
-      <form onSubmit={addPoint}>
-        <div className="form-row">
-          <label>Category<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-            {['Production', 'Quality', 'Delivery', 'Process', 'Maintenance', 'Capacity', 'Vendor', 'Customer', 'Safety', 'Cost', 'Planning', 'Actions', 'Other'].map(x => <option key={x}>{x}</option>)}
-          </select></label>
-          <label>{requiresPartForBlocker ? 'Affected Part Number *' : 'Product context'}<select required={requiresPartForBlocker} value={form.product_id} onChange={e => setForm({ ...form, product_id: e.target.value })}>
-            <option value="">{requiresPartForBlocker ? 'Select Part Number' : 'No product context'}</option>
-            {productOptions.map((p: any) => <option key={p.id} value={String(p.id)}>{p.code ? `${p.code} - ${p.name}` : p.name}</option>)}
-          </select></label>
-          {requiresPartForBlocker && <div className="data-note">This Blocking / Critical item has no Part Number linked yet. Select the affected Part Number before adding it to the MOM so it appears against the correct part in the dispatch report.</div>}
-          <label>Action Required<select value={form.action_required ? 'YES' : 'NO'} onChange={e => setForm({ ...form, action_required: e.target.value === 'YES' })}>
-            <option>YES</option><option>NO</option>
-          </select></label>
-          <label>Priority<select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
-            <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
-          </select></label>
-        </div>
-        <label>Discussion / MOM Point<textarea required value={form.discussion_point} onChange={e => setForm({ ...form, discussion_point: e.target.value })} /></label>
-        {form.action_required && <>
-          <label>Action Required<textarea required value={form.action_description} onChange={e => setForm({ ...form, action_description: e.target.value })} /></label>
-          <div className="form-row">
-            <label>Responsible Owner<MultiSelect className="manual-search-select" value={form.owner_id ? [String(form.owner_id)] : []} onChange={v => setForm({ ...form, owner_id: v.at(-1) || '' })} placeholder="Select owner" options={users.map(u => ({ value: String(u.id), label: u.full_name }))} /></label>
-            <label>Target Date / Time (IST)<input type="datetime-local" value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} /></label>
-          </div>
-          <div className="data-note">Owner and target date are required when creating an action. This keeps each commitment accountable.</div>
-        </>}
-        <button type="submit">Add MOM Point</button>
-      </form>
-    </section>}
+
 
     {mom && <div className="kpi-grid">
       <Kpi label="Discussion points" value={num(mom.points?.length || 0)} />
