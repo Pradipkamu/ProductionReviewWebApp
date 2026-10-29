@@ -513,6 +513,37 @@ export default function DailyMeeting() {
     }
   }
 
+  async function recoverOwner(meeting: any) {
+    try {
+      const candidates: any[] = await api(`/reviews/${meeting.id}/recovery-candidates`)
+      if (!candidates.length) {
+        setErr('No active users are available for ownership recovery.')
+        return
+      }
+      const choices = candidates.map((u: any) => `${u.id}: ${u.full_name} (${u.username})`).join('\\n')
+      const selected = window.prompt(`Select the verified original meeting owner by entering the user ID:\\n\\n${choices}`)
+      if (selected === null) return
+      const ownerId = Number(selected.trim())
+      if (!Number.isInteger(ownerId) || !candidates.some((u: any) => u.id === ownerId)) {
+        setErr('Enter a valid user ID from the displayed active-user list.')
+        return
+      }
+      const reason = window.prompt('Enter the evidence / reason for recovering this meeting owner (minimum 10 characters):')
+      if (reason === null || reason.trim().length < 10) {
+        setErr('Ownership recovery requires a reason of at least 10 characters.')
+        return
+      }
+      await api(`/reviews/${meeting.id}/recover-owner`, {
+        method: 'PATCH',
+        body: JSON.stringify({ owner_id: ownerId, reason: reason.trim() }),
+      })
+      await loadHistory()
+      setMessage(`Ownership recovered for MOM #${meeting.id}. Open the meeting and use Reopen Meeting.`)
+    } catch (e: any) {
+      setErr(e.message)
+    }
+  }
+
   async function reopen() {
     if (!review) return
     if (!confirm('Reopen this closed meeting to add more MOM points?')) return
@@ -1093,7 +1124,7 @@ export default function DailyMeeting() {
               ? <button type="button" className={`overdue-count overdue-level-${Math.min(5, Number(m.max_overdue_days || 1))}`} title={`Open overdue actions; oldest is ${m.max_overdue_days || 1} day(s) overdue`} onClick={() => openOverdueActions(m)}>{m.overdue_action_count}</button>
               : <span className="overdue-zero">0</span>}</td>
             <td>{m.ended_at ? <Status value="CLOSED" /> : <Status value="OPEN" />}</td>
-            <td><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button></td>
+            <td><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button>{m.owner_id == null && m.is_admin && <button className="secondary small" onClick={() => recoverOwner(m)}>Recover Ownership</button>}</td>
             <td><button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/pdf`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.pdf`)}>PDF</button> <button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/xlsx`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.xlsx`)}>Excel</button></td>
           </tr>)}
         </tbody>
