@@ -314,17 +314,19 @@ def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get
     if row.owner_id is None or row.owner_id != user.id:
         raise HTTPException(403, "Only the meeting owner can close this MOM.")
 
+    # Lock the parent MOM before counting or changing anything. Point creation
+    # takes the same lock, so a concurrent save either completes before closure
+    # and is counted, or sees the closed meeting and is rejected.
+    row = db.scalar(select(ReviewSession).where(ReviewSession.id == review_id).with_for_update())
+    if not row:
+        raise HTTPException(404, "Review session not found")
+
     point_count = db.scalar(
         select(func.count(ReviewPoint.id)).where(ReviewPoint.review_session_id == review_id)
     ) or 0
     linked_action_count = db.scalar(
         select(func.count(ReviewActionLink.id)).where(ReviewActionLink.review_session_id == review_id)
     ) or 0
-    # Serialize closure against point creation so no participant can commit
-    # another point after the owner has closed the meeting.
-    row = db.scalar(select(ReviewSession).where(ReviewSession.id == review_id).with_for_update())
-    if not row:
-        raise HTTPException(404, "Review session not found")
 
     # Release every participant and invalidate outstanding join approvals.
     # The client polls the meeting state and exits as soon as ended_at is set;
