@@ -166,9 +166,8 @@ def reopen_review(review_id: int, db: Session = Depends(get_db), _: User = Depen
     row = db.get(ReviewSession, review_id)
     if not row:
         raise HTTPException(404, "Review session not found")
-    other = db.scalar(select(ReviewSession).where(ReviewSession.review_date == row.review_date, ReviewSession.ended_at.is_(None), ReviewSession.id != row.id).limit(1))
-    if other:
-        raise HTTPException(409, f"Review #{other.id} is already active for {row.review_date}")
+    # Multiple independent MOMs may be active for the same date. Reopening
+    # one historical meeting must not be blocked by another meeting's state.
     row.ended_at = None
     db.commit()
     db.refresh(row)
