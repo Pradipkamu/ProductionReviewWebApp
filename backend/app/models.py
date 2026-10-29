@@ -827,6 +827,15 @@ class ReviewMeetingRequest(Base, TimestampMixin):
     responded_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class ReviewParticipantPresence(Base):
+    __tablename__ = "review_participant_presence"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    review_session_id: Mapped[int] = mapped_column(ForeignKey("review_sessions.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("review_session_id", "user_id", name="uq_review_participant_presence"),)
+
+
 class ReviewPoint(Base, TimestampMixin):
     __tablename__ = "review_points"
     id: Mapped[int] = mapped_column(primary_key=True)
