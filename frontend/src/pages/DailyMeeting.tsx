@@ -802,9 +802,9 @@ export default function DailyMeeting() {
     {mom && <section className="panel">
       <div className="panel-title"><h2>Today's MOM Points</h2><span>{mom.points.length} point(s)</span></div>
       <div className="table-wrap"><table>
-        <thead><tr><th>Sr.</th><th>Category</th><th>Product</th><th>Discussion</th><th>Action / Owner</th><th>Target</th><th>Priority</th><th>Status</th><th>Follow-up</th></tr></thead>
+        <thead><tr><th>Sr.</th><th>Category</th><th>Product</th><th>Discussion</th><th>Added By</th><th>Action / Owner</th><th>Target</th><th>Priority</th><th>Status</th><th>Follow-up</th></tr></thead>
         <tbody>{mom.points.map((p: any) => <tr key={p.id}>
-          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product_code ? `${p.product_code} - ${p.product || ''}` : (p.product || '—')}</td><td>{p.discussion_point}</td>
+          <td>{p.sequence_no}</td><td>{p.category || '—'}</td><td>{p.product_code ? `${p.product_code} - ${p.product || ''}` : (p.product || '—')}</td><td>{p.discussion_point}</td><td>{p.created_by || '—'}</td>
           <td>{p.action ? <><b>{p.action.action_no}</b><br />{p.action.description}<br /><small>{p.action.owner || 'Unassigned'}</small></> : 'No action'}</td>
           <td>{p.action ? formatIST(p.action.due_at) : '—'}</td>
           <td>{p.action ? <Status value={p.action.priority} /> : '—'}</td>
