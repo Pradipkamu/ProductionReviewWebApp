@@ -513,6 +513,23 @@ export default function DailyMeeting() {
     }
   }
 
+  async function reopenHistoryMeeting(meeting: any) {
+    if (!confirm(`Reopen MOM #${meeting.id} to add more points? Existing saved points and actions will be retained.`)) return
+    try {
+      const r: any = await api(`/reviews/${meeting.id}/reopen`, { method: 'PATCH', body: JSON.stringify({}) })
+      activeLookup.current += 1
+      setReview(r)
+      setParticipants(r.participants || '')
+      setComments(r.comments || '')
+      await load(r)
+      await loadHistory()
+      setMessage(`MOM #${meeting.id} reopened. Saved points and actions have been retained.`)
+      document.getElementById('add-mom-point')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } catch (e: any) {
+      setErr(e.message)
+    }
+  }
+
   async function recoverOwner(meeting: any) {
     try {
       const candidates: any[] = await api(`/reviews/${meeting.id}/recovery-candidates`)
@@ -1124,7 +1141,7 @@ export default function DailyMeeting() {
               ? <button type="button" className={`overdue-count overdue-level-${Math.min(5, Number(m.max_overdue_days || 1))}`} title={`Open overdue actions; oldest is ${m.max_overdue_days || 1} day(s) overdue`} onClick={() => openOverdueActions(m)}>{m.overdue_action_count}</button>
               : <span className="overdue-zero">0</span>}</td>
             <td>{m.ended_at ? <Status value="CLOSED" /> : <Status value="OPEN" />}</td>
-            <td><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button>{m.owner_id == null && m.is_admin && <button className="secondary small" onClick={() => recoverOwner(m)}>Recover Ownership</button>}</td>
+            <td><button className="secondary small" onClick={() => openMeeting(m)}>Open Meeting</button>{m.ended_at && m.is_owner && <button className="secondary small" onClick={() => reopenHistoryMeeting(m)}>Reopen Meeting</button>}{m.owner_id == null && m.is_admin && <button className="secondary small" onClick={() => recoverOwner(m)}>Recover Ownership</button>}</td>
             <td><button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/pdf`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.pdf`)}>PDF</button> <button className="secondary small" onClick={() => downloadApi(`/reviews/${m.id}/xlsx`, `MOM-${m.review_date}-${String(m.id).padStart(3, '0')}.xlsx`)}>Excel</button></td>
           </tr>)}
         </tbody>
