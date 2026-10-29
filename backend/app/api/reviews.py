@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db import get_db
 from ..enums import ActionStatus, Priority
-from ..models import Action, ActionContext, ActionHistory, ActionWhyWhy, Product, ReviewActionLink, ReviewPoint, ReviewSession, User
+from ..models import Action, ActionContext, ActionHistory, ActionWhyWhy, Product, ReviewActionLink, ReviewMeetingRequest, ReviewPoint, ReviewSession, User, UserSession
 from ..schemas import ReviewClose, ReviewStart
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -45,7 +45,9 @@ def serialize_review(row: ReviewSession, db: Session | None = None) -> dict:
     result = {"id": row.id, "review_date": row.review_date, "started_at": row.started_at,
               "ended_at": row.ended_at, "participants": row.participants,
               "total_sales_gap": float(row.total_sales_gap) if row.total_sales_gap is not None else None,
-              "comments": row.comments}
+              "comments": row.comments, "owner_id": row.owner_id,
+              "owner_name": (db.get(User, row.owner_id).full_name if db is not None and row.owner_id and db.get(User, row.owner_id) else None),
+              "auto_close_reason": row.auto_close_reason}
     if db is not None:
         action_ids = select(ReviewPoint.action_id).where(
             ReviewPoint.review_session_id == row.id,
@@ -122,8 +124,9 @@ def point_data(db: Session, p: ReviewPoint) -> dict:
 
 
 @router.get("/active")
-def get_active_review(review_date: date, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    row = db.scalar(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None))
+def get_active_review(review_date: date, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    row = db.scalar(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None),
+                    ReviewSession.owner_id == user.id)
                     .order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc()).limit(1))
     return serialize_review(row, db) if row else None
 
@@ -169,17 +172,18 @@ def reopen_review(review_id: int, db: Session = Depends(get_db), _: User = Depen
     # Multiple independent MOMs may be active for the same date. Reopening
     # one historical meeting must not be blocked by another meeting's state.
     row.ended_at = None
+    row.auto_close_reason = None
     db.commit()
     db.refresh(row)
     return serialize_review(row, db)
 
 
 @router.post("")
-def start_review(payload: ReviewStart, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def start_review(payload: ReviewStart, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # Each explicit Start action creates an independent MOM, even when another
     # meeting for the same date is already active. Collaboration happens inside
     # a selected meeting; it must not silently merge separate meetings.
-    row = ReviewSession(review_date=payload.review_date, started_at=datetime.utcnow(),
+    row = ReviewSession(review_date=payload.review_date, started_at=datetime.utcnow(), owner_id=user.id,
                         participants=payload.participants, comments=payload.comments)
     db.add(row)
     db.commit()
@@ -206,6 +210,7 @@ def close_review(review_id: int, payload: ReviewClose, db: Session = Depends(get
         return {"id": review_id, "discarded": True, "message": "Meeting closed with no discussion points and was not saved."}
 
     if row.ended_at is None: row.ended_at = datetime.utcnow()
+    row.auto_close_reason = None
     if payload.comments is not None: row.comments = payload.comments
     db.commit(); db.refresh(row)
     result = serialize_review(row, db)
@@ -257,6 +262,66 @@ def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(
                         action_id=action.id if action else None, created_by_id=user.id)
     db.add(point); db.commit(); db.refresh(point)
     return point_data(db, point)
+
+
+@router.get("/collaboration/active")
+def active_collaboration(review_date: date, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None)).order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc())).all()
+    now = datetime.utcnow()
+    result = []
+    for row in rows:
+        owner = db.get(User, row.owner_id) if row.owner_id else None
+        recent = False
+        if owner:
+            recent = bool(db.scalar(select(UserSession.id).where(UserSession.user_id == owner.id, UserSession.revoked_at.is_(None), UserSession.expires_at > now, UserSession.last_seen_at > now - __import__('datetime').timedelta(minutes=30)).limit(1)))
+        result.append({**serialize_review(row, db), "owner_name": owner.full_name if owner else None, "owner_online": recent,
+                       "is_owner": bool(row.owner_id == user.id),
+                       "pending_request": bool(db.scalar(select(ReviewMeetingRequest.id).where(ReviewMeetingRequest.review_session_id == row.id, ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING").limit(1)))})
+    return result
+
+
+@router.post("/{review_id}/request-owner")
+def request_meeting_owner(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    row = db.get(ReviewSession, review_id)
+    if not row or row.ended_at is not None:
+        raise HTTPException(404, "Active meeting not found")
+    if not row.owner_id:
+        raise HTTPException(409, "This meeting has no recorded owner; ask an administrator to review it.")
+    if row.owner_id == user.id:
+        raise HTTPException(409, "You are the owner of this meeting.")
+    existing = db.scalar(select(ReviewMeetingRequest).where(ReviewMeetingRequest.review_session_id == row.id,
+        ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING"))
+    if not existing:
+        db.add(ReviewMeetingRequest(review_session_id=row.id, requester_id=user.id, owner_id=row.owner_id,
+                                    message=f"{user.full_name} is requesting you to join the meeting."))
+        db.commit()
+    return {"ok": True, "message": "Meeting owner has been notified in the application."}
+
+
+@router.get("/owner-requests")
+def list_owner_requests(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(ReviewMeetingRequest).where(ReviewMeetingRequest.owner_id == user.id,
+        ReviewMeetingRequest.status == "PENDING").order_by(ReviewMeetingRequest.created_at.desc()).limit(50)).all()
+    result = []
+    for item in rows:
+        requester = db.get(User, item.requester_id)
+        meeting = db.get(ReviewSession, item.review_session_id)
+        if meeting and meeting.ended_at is None:
+            result.append({"id": item.id, "review_session_id": meeting.id, "review_date": meeting.review_date,
+                           "requester_name": requester.full_name if requester else "User", "created_at": item.created_at,
+                           "mom_no": f"MOM-{meeting.review_date.isoformat()}-{meeting.id:03d}"})
+    return result
+
+
+@router.patch("/owner-requests/{request_id}/acknowledge")
+def acknowledge_owner_request(request_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    item = db.get(ReviewMeetingRequest, request_id)
+    if not item or item.owner_id != user.id:
+        raise HTTPException(404, "Meeting request not found")
+    item.status = "ACKNOWLEDGED"
+    item.responded_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/actions/{action_id}/escalate-whywhy")
