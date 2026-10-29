@@ -128,16 +128,20 @@ def get_active_review(review_date: date, db: Session = Depends(get_db), user: Us
     row = db.scalar(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None),
                     ReviewSession.owner_id == user.id)
                     .order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc()).limit(1))
-    return serialize_review(row, db) if row else None
+    if not row:
+        return None
+    result = serialize_review(row, db)
+    result["is_owner"] = True
+    return result
 
 
 @router.get("")
-def list_reviews(participant: str | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def list_reviews(participant: str | None = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     stmt = select(ReviewSession)
     if participant:
         stmt = stmt.where(ReviewSession.participants.ilike(f"%{participant.strip()}%"))
     rows = db.scalars(stmt.order_by(ReviewSession.review_date.desc(), ReviewSession.id.desc()).limit(200)).all()
-    return [serialize_review(x, db) for x in rows]
+    return [{**serialize_review(x, db), "is_owner": bool(x.owner_id == user.id)} for x in rows]
 
 
 @router.get("/collaboration/active")
