@@ -754,13 +754,13 @@ export default function DailyMeeting() {
         {!review
           ? <button onClick={start}>Start Meeting</button>
           : <>
-            {review.ended_at
+            {review.is_owner && (review.ended_at
               ? <button onClick={reopen}>Reopen Meeting</button>
               : <>
                 <button className="secondary" onClick={saveMeetingDetails}>Save Details</button>
                 <button onClick={close}>Close Meeting</button>
               </>
-            }
+            )}
             <button className="secondary" type="button" onClick={start}>Start Another MOM</button>
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/pdf`, `${mom?.mom_no || 'MOM'}.pdf`)}>Download MOM PDF</button>
             <button className="secondary" onClick={() => downloadApi(`/reviews/${review.id}/xlsx`, `${mom?.mom_no || 'MOM'}.xlsx`)}>Download Excel</button>
