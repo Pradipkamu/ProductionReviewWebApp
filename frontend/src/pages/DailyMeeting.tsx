@@ -122,6 +122,8 @@ export default function DailyMeeting() {
         setParticipants(r.participants || '')
         setComments(r.comments || '')
         await load(r, request)
+        const active: any[] = await api(`/reviews/collaboration/active?review_date=${forDate}`)
+        if (request === activeLookup.current) setRunningMeetings(active)
       } else {
         setReview(null)
         setMom(null)
@@ -157,6 +159,16 @@ export default function DailyMeeting() {
     findActive(date)
   }, [date])
 
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshOwnerRequests()
+        api(`/reviews/collaboration/active?review_date=${date}`).then(setRunningMeetings).catch(() => {})
+      }
+    }, 30000)
+    return () => clearInterval(timer)
+  }, [date])
 
   useEffect(() => {
     if (!review || review.ended_at) return
