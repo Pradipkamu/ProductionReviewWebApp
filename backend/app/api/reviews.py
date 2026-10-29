@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db import get_db
 from ..enums import ActionStatus, Priority
-from ..models import Action, ActionContext, ActionHistory, ActionWhyWhy, Product, ReviewActionLink, ReviewMeetingRequest, ReviewPoint, ReviewSession, User, UserSession
+from ..models import Action, ActionContext, ActionHistory, ActionWhyWhy, Product, ReviewActionLink, ReviewMeetingRequest, ReviewParticipantPresence, ReviewPoint, ReviewSession, User, UserSession
 from ..schemas import ReviewClose, ReviewStart
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
@@ -264,6 +264,22 @@ def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(
     return point_data(db, point)
 
 
+@router.post("/{review_id}/presence")
+def update_meeting_presence(review_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    meeting = db.get(ReviewSession, review_id)
+    if not meeting or meeting.ended_at is not None:
+        raise HTTPException(409, "Meeting is not active")
+    now = datetime.utcnow()
+    row = db.scalar(select(ReviewParticipantPresence).where(ReviewParticipantPresence.review_session_id == review_id,
+        ReviewParticipantPresence.user_id == user.id).with_for_update())
+    if row:
+        row.last_seen_at = now
+    else:
+        db.add(ReviewParticipantPresence(review_session_id=review_id, user_id=user.id, last_seen_at=now))
+    db.commit()
+    return {"ok": True, "last_seen_at": now}
+
+
 @router.get("/collaboration/active")
 def active_collaboration(review_date: date, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     rows = db.scalars(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None)).order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc())).all()
@@ -274,7 +290,15 @@ def active_collaboration(review_date: date, db: Session = Depends(get_db), user:
         recent = False
         if owner:
             recent = bool(db.scalar(select(UserSession.id).where(UserSession.user_id == owner.id, UserSession.revoked_at.is_(None), UserSession.expires_at > now, UserSession.last_seen_at > now - timedelta(minutes=30)).limit(1)))
+        presence_rows = db.scalars(select(ReviewParticipantPresence).where(ReviewParticipantPresence.review_session_id == row.id).order_by(ReviewParticipantPresence.last_seen_at.desc())).all()
+        participant_presence = []
+        for presence in presence_rows:
+            participant = db.get(User, presence.user_id)
+            if participant:
+                participant_presence.append({"user_id": participant.id, "name": participant.full_name,
+                    "last_seen_at": presence.last_seen_at, "online": presence.last_seen_at > now - timedelta(minutes=2)})
         result.append({**serialize_review(row, db), "owner_name": owner.full_name if owner else None, "owner_online": recent,
+                       "participants_presence": participant_presence,
                        "is_owner": bool(row.owner_id == user.id),
                        "pending_request": bool(db.scalar(select(ReviewMeetingRequest.id).where(ReviewMeetingRequest.review_session_id == row.id, ReviewMeetingRequest.requester_id == user.id, ReviewMeetingRequest.status == "PENDING").limit(1)))})
     return result
