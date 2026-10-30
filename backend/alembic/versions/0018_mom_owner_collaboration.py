@@ -12,7 +12,13 @@ def upgrade():
     op.add_column("review_sessions", sa.Column("owner_id", sa.Integer(), nullable=True))
     op.add_column("review_sessions", sa.Column("auto_close_reason", sa.String(length=250), nullable=True))
     op.create_index("ix_review_sessions_owner_id", "review_sessions", ["owner_id"])
-    op.create_foreign_key("fk_review_sessions_owner_id_users", "review_sessions", "users", ["owner_id"], ["id"], ondelete="SET NULL")
+    # SQLite cannot add a foreign-key constraint with ALTER TABLE directly.
+    # Use batch mode so fresh databases and legacy adoption tests follow the
+    # same supported table-rebuild path; PostgreSQL retains native ALTER DDL.
+    with op.batch_alter_table("review_sessions") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_review_sessions_owner_id_users", "users", ["owner_id"], ["id"], ondelete="SET NULL"
+        )
     op.create_table(
         "review_meeting_requests",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -44,7 +50,8 @@ def upgrade():
 def downgrade():
     op.drop_table("review_participant_presence")
     op.drop_table("review_meeting_requests")
-    op.drop_constraint("fk_review_sessions_owner_id_users", "review_sessions", type_="foreignkey")
+    with op.batch_alter_table("review_sessions") as batch_op:
+        batch_op.drop_constraint("fk_review_sessions_owner_id_users", type_="foreignkey")
     op.drop_index("ix_review_sessions_owner_id", table_name="review_sessions")
     op.drop_column("review_sessions", "auto_close_reason")
     op.drop_column("review_sessions", "owner_id")
