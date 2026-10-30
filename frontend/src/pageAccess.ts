@@ -1,6 +1,7 @@
 export type NavItem = { key:string, to:string, label:string, required?:boolean }
 
 export const navItems:NavItem[] = [
+  {key:'control_tower',to:'/control-tower',label:'Executive Control Tower'},
   {key:'insights',to:'/insights',label:'Exceptions / Data Quality'},
   {key:'diagnostics',to:'/diagnostics',label:'System Diagnostics'},
   {key:'account',to:'/account',label:'Security / Users',required:true},
