@@ -4,6 +4,7 @@ export const navItems:NavItem[] = [
   {key:'control_tower',to:'/control-tower',label:'Executive Control Tower'},
   {key:'dispatch_intelligence',to:'/dispatch-intelligence',label:'Dispatch vs Actual'},
   {key:'capacity_intelligence',to:'/capacity-intelligence',label:'Machine Load Intelligence'},
+  {key:'operations_intelligence',to:'/operations-intelligence',label:'Operations Intelligence'},
   {key:'insights',to:'/insights',label:'Exceptions / Data Quality'},
   {key:'diagnostics',to:'/diagnostics',label:'System Diagnostics'},
   {key:'account',to:'/account',label:'Security / Users',required:true},
