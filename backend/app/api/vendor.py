@@ -61,6 +61,52 @@ def list_movements(product_id: int | None = None, pending_only: bool = False,
     return rows
 
 
+@router.get("/performance")
+def vendor_performance(as_of: date | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Read-only vendor scorecard derived from the outward/receipt ledger."""
+    cutoff = as_of or ist_today()
+    q = (
+        select(VendorMovement, Product, Operation, Vendor)
+        .join(Product, Product.id == VendorMovement.product_id)
+        .join(RouteOperation, RouteOperation.id == VendorMovement.route_operation_id)
+        .join(Operation, Operation.id == RouteOperation.operation_id)
+        .join(Vendor, Vendor.id == VendorMovement.vendor_id)
+        .order_by(Vendor.name, VendorMovement.outward_date)
+    )
+    movements = [_serialize(*row) for row in db.execute(q).all()]
+    pending = [row for row in movements if row["pending_qty"] > 0]
+    vendor_rows: dict[int, dict] = {}
+    buckets = {"0-7 days": 0.0, "8-15 days": 0.0, "16-30 days": 0.0, "Over 30 days": 0.0}
+    for row in pending:
+        item = vendor_rows.setdefault(row["vendor_id"], {
+            "vendor_id": row["vendor_id"], "vendor": row["vendor"],
+            "open_lots": 0, "pending_qty": 0.0, "overdue_lots": 0,
+            "overdue_qty": 0.0, "oldest_age_days": 0,
+        })
+        age = max(0, (cutoff - row["outward_date"]).days)
+        item["open_lots"] += 1
+        item["pending_qty"] += row["pending_qty"]
+        item["oldest_age_days"] = max(item["oldest_age_days"], age)
+        if row["expected_return_date"] and row["expected_return_date"] < cutoff:
+            item["overdue_lots"] += 1
+            item["overdue_qty"] += row["pending_qty"]
+        bucket = "0-7 days" if age <= 7 else "8-15 days" if age <= 15 else "16-30 days" if age <= 30 else "Over 30 days"
+        buckets[bucket] += row["pending_qty"]
+    return {
+        "as_of": cutoff,
+        "summary": {
+            "open_lots": len(pending),
+            "pending_qty": sum(row["pending_qty"] for row in pending),
+            "overdue_lots": sum(1 for row in pending if row["expected_return_date"] and row["expected_return_date"] < cutoff),
+            "overdue_qty": sum(row["pending_qty"] for row in pending if row["expected_return_date"] and row["expected_return_date"] < cutoff),
+            "vendors_with_pending": len(vendor_rows),
+        },
+        "aging_buckets": [{"bucket": key, "pending_qty": value} for key, value in buckets.items()],
+        "vendors": sorted(vendor_rows.values(), key=lambda item: (-item["overdue_qty"], -item["pending_qty"], item["vendor"].casefold())),
+        "movements": sorted(pending, key=lambda row: (row["expected_return_date"] or date.max, -row["age_days"])),
+    }
+
+
 @router.post("/movements")
 def create_movement(payload: VendorMovementCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     route = db.get(RouteOperation, payload.route_operation_id)
