@@ -57,7 +57,10 @@ Existing implementation status documents schedule revision/compliance reporting,
 - Do not change established PPM formulas without reconciliation tests and explicit release notes.
 
 ### 6. Vendor Performance
-- Extend existing vendor WIP/receipt/aging workflows with supplier scorecards, overdue trends, rejection and delivery compliance where source data exists.
+- [x] Add a read-only `GET /vendor/performance?as_of=YYYY-MM-DD` scorecard from the outward/receipt ledger: open lots, pending quantity, overdue lots/quantity, vendor exposure and pending-quantity aging buckets.
+- [x] Surface the scorecard and vendor exposure table on the Vendor WIP page.
+- [ ] Add regression tests and verify scorecard totals against ledger examples in PostgreSQL and Windows.
+- [ ] Add rejection/delivery compliance only where reliable supplier-level source records support it.
 - Clearly distinguish unavailable supplier commitments from late receipts.
 - Avoid fabricated lead times or supplier ratings.
 
