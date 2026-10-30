@@ -74,6 +74,9 @@ def vendor_performance(as_of: date | None = None, db: Session = Depends(get_db),
         .order_by(Vendor.name, VendorMovement.outward_date)
     )
     movements = [_serialize(*row) for row in db.execute(q).all()]
+    for row in movements:
+        row["age_days"] = max(0, (cutoff - row["outward_date"]).days) if row["pending_qty"] > 0 else 0
+        row["overdue"] = bool(row["pending_qty"] > 0 and row["expected_return_date"] and row["expected_return_date"] < cutoff)
     pending = [row for row in movements if row["pending_qty"] > 0]
     vendor_rows: dict[int, dict] = {}
     buckets = {"0-7 days": 0.0, "8-15 days": 0.0, "16-30 days": 0.0, "Over 30 days": 0.0}
