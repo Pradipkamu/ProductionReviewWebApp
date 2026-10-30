@@ -4,7 +4,7 @@ import { clearToken, logout } from '../api'
 import { canViewPage, navItems } from '../pageAccess'
 
 const groups=[
-  {label:'Executive & Review',keys:['control_tower','daily_review','daily_meeting','insights','actions','admin_action_review']},
+  {label:'Executive & Review',keys:['control_tower','dispatch_intelligence','daily_review','daily_meeting','insights','actions','admin_action_review']},
   {label:'Planning & Production',keys:['mis','schedule','capacity','machine_master','product_master','process','process_actuals','vendor']},
   {label:'Quality & OEE',keys:['quality','casting_quality','customer_quality','oee']},
   {label:'Reports',keys:['reports','management_reports','analytics']},
