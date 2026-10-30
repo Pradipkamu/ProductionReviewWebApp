@@ -609,6 +609,10 @@ class QualityHistoricalPpmProduction(Base, TimestampMixin):
     remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     __table_args__ = (
         UniqueConstraint("month", "product_id", name="uq_quality_historical_ppm_month_product"),
+        # Keep the explicitly-created migration indexes represented in ORM
+        # metadata so Alembic autogenerate does not propose dropping them.
+        Index("ix_quality_historical_ppm_month", "month"),
+        Index("ix_quality_historical_ppm_product_id", "product_id"),
     )
 
 
