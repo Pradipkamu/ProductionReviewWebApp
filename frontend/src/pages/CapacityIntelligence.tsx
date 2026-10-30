@@ -1,0 +1,16 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { api } from '../api'
+import { Kpi, PageHeader, Status, num } from '../components/UI'
+import { monthIST } from '../time'
+export default function CapacityIntelligence(){
+ const navigate=useNavigate(),[month,setMonth]=useState(monthIST()+'-01'),[data,setData]=useState<any>(null),[busy,setBusy]=useState(false),[error,setError]=useState('')
+ async function load(){setBusy(true);try{setData(await api('/capacity/machine-loading?month='+month));setError('')}catch(e:any){setError(e.message)}finally{setBusy(false)}}
+ useEffect(()=>{load()},[month])
+ const rows=data?.machines||data?.rows||data?.items||[],over=rows.filter((r:any)=>Number(r.overload_percent)>0),near=rows.filter((r:any)=>Number(r.allocated_load_percent)>=85&&Number(r.overload_percent)<=0)
+ const operators=rows.reduce((s:number,r:any)=>s+Number(r.required_operator_equivalent||0),0),hours=rows.reduce((s:number,r:any)=>s+Number(r.operator_hours||0),0)
+ return <><PageHeader title="Machine Capacity Intelligence" subtitle="Physical-machine loading, overload exposure and operator demand from approved monthly allocations." actions={<div className="button-row"><input type="date" aria-label="Planning month" value={month} onChange={e=>setMonth(e.target.value.slice(0,7)+'-01')}/><button className="secondary" onClick={load} disabled={busy}>{busy?'Refreshing…':'Refresh'}</button><button onClick={()=>navigate('/capacity')}>Capacity planning</button></div>}/>{error&&<div className="error">{error}</div>}
+ <div className="kpi-grid"><Kpi label="Active machines" value={rows.length}/><Kpi label="Overloaded machines" value={over.length} tone={over.length?'bad':'good'}/><Kpi label="Near capacity (≥85%)" value={near.length} tone={near.length?'watch':'good'}/><Kpi label="Operator equivalents" value={operators.toFixed(1)}/><Kpi label="Estimated operator hours" value={num(hours)}/></div>
+ <section className="panel"><div className="panel-title"><div><h2>Machine loading by physical asset</h2><p>Load percentages are summed as time fractions across product allocations; quantities across different parts are not added.</p></div></div>
+ {!rows.length?<div className="empty">No saved allocations found for this month. Use Capacity Planning to preview and approve monthly allocations.</div>:<div className="table-wrap"><table><thead><tr><th>Machine</th><th>Plant</th><th>Department</th><th>Load</th><th>Available</th><th>Overload</th><th>Operator eq.</th><th>Operator hours</th><th>Status</th><th>Products / operations</th></tr></thead><tbody>{rows.map((r:any)=><tr key={r.machine_id}><td><b>{r.machine_code}</b><br/>{r.machine_name}</td><td>{r.plant||'—'}</td><td>{r.department||'—'}</td><td>{Number(r.allocated_load_percent||0).toFixed(1)}%</td><td>{Number(r.available_load_percent||0).toFixed(1)}%</td><td>{Number(r.overload_percent||0).toFixed(1)}%</td><td>{Number(r.required_operator_equivalent||0).toFixed(2)}</td><td>{num(r.operator_hours||0)}</td><td><Status value={r.status||'UNALLOCATED'}/></td><td>{(r.allocations||[]).map((a:any)=><div key={a.route_operation_id+'-'+a.product_id}>{a.product} · {a.operation}: {num(a.allocated_qty)}</div>)}</td></tr>)}</tbody></table></div>}</section></>
+}
