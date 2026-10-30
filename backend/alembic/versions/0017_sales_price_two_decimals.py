@@ -9,17 +9,27 @@ depends_on = None
 
 
 def upgrade():
-    # PostgreSQL rounds existing values to the nearest paisa.
-    op.alter_column(
-        "sales_price_history", "price",
-        existing_type=sa.Numeric(14, 4), type_=sa.Numeric(14, 2),
-        existing_nullable=False,
-    )
-    op.alter_column(
-        "daily_mis", "sales_price",
-        existing_type=sa.Numeric(14, 4), type_=sa.Numeric(14, 2),
-        existing_nullable=False,
-    )
+    # SQLite requires batch table recreation for type changes; PostgreSQL
+    # performs the native ALTER COLUMN and rounds existing values to paisa.
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("sales_price_history") as batch:
+            batch.alter_column("price", existing_type=sa.Numeric(14, 4),
+                               type_=sa.Numeric(14, 2), existing_nullable=False)
+        with op.batch_alter_table("daily_mis") as batch:
+            batch.alter_column("sales_price", existing_type=sa.Numeric(14, 4),
+                               type_=sa.Numeric(14, 2), existing_nullable=False)
+    else:
+        op.alter_column(
+            "sales_price_history", "price",
+            existing_type=sa.Numeric(14, 4), type_=sa.Numeric(14, 2),
+            existing_nullable=False,
+        )
+        op.alter_column(
+            "daily_mis", "sales_price",
+            existing_type=sa.Numeric(14, 4), type_=sa.Numeric(14, 2),
+            existing_nullable=False,
+        )
 
 
 def downgrade():
