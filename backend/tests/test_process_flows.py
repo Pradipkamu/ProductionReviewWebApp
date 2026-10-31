@@ -233,3 +233,36 @@ def test_process_monitor_range_returns_daily_plan_actual_working_days_only():
   {'date':'2026-10-06','plan':100.0,'actual':90.0,'reject':0.0},
   {'date':'2026-10-07','plan':120.0,'actual':None,'reject':None},
  ]
+
+def test_dispatch_compliance_prefers_parent_disp_done_schedule_over_legacy_plans(tmp_path):
+ ids=setup();c=TestClient(app);h=headers(c);product_id=ids['Kubota Head']
+ with SessionLocal() as db:
+  commit(db,file(tmp_path,'stage-schedules',[schedule(allocated_qty=103)]),'stage-schedules')
+  stage=db.scalar(select(ProcessFlowStage).join(ProcessFlowVersion).where(
+   ProcessFlowVersion.product_id==product_id,
+   ProcessFlowStage.parent_dispatch.is_(True),
+   ProcessFlowStage.is_active.is_(True),
+  ).order_by(ProcessFlowVersion.effective_from.desc()))
+  assert stage and stage.route_operation_id
+  day=date(2026,10,2)
+  parent_req=db.scalar(select(DailyRequirement).where(
+   DailyRequirement.req_date==day,
+   DailyRequirement.product_id==product_id,
+   DailyRequirement.route_operation_id==stage.route_operation_id,
+  ))
+  assert parent_req is not None
+  db.add(DailyRequirement(
+   req_date=day,product_id=product_id,route_operation_id=None,
+   baseline_plan_qty=777,revised_plan_qty=777,
+  ))
+  db.add(DailyMIS(
+   mis_date=day,product_id=product_id,plan_qty=602,actual_qty=90,
+   sales_price=1,plan_sales=602,actual_sales=90,
+  ))
+  expected=float(parent_req.revised_plan_qty)
+  db.commit()
+ response=c.get(f'/api/reports/compliance?as_of={day.isoformat()}&product_id={product_id}',headers=h)
+ assert response.status_code==200,response.text
+ row=next(x for x in response.json()['daily'] if x['start']==day.isoformat())
+ assert row['plan']==expected
+ assert row['actual']==90
