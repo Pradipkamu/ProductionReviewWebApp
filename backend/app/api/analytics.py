@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
+from ..models import ProcessFlowStage, ProcessFlowVersion
+
 from ..auth import get_current_user
 from ..db import get_db
 from ..enums import ActionStatus
@@ -46,12 +48,42 @@ def monthly(
     next_after_end = first_end + relativedelta(months=1)
     month_expr = func.strftime('%Y-%m', DailyMIS.mis_date) if db.bind.dialect.name == 'sqlite' else func.to_char(DailyMIS.mis_date, 'YYYY-MM')
 
-    # History must use the current/revised dispatch plan when one exists.
-    # Schedule revisions intentionally update DailyRequirement rather than
-    # overwriting the historical DailyMIS baseline plan. Aggregate the single
-    # dispatch-level requirement per product/date and fall back to DailyMIS only
-    # where no revised requirement exists.
-    req_plan = (
+    # Schedule precedence:
+    # 1) DailyRequirement attached to the effective parent-dispatch stage
+    #    (the explicit Disp_Done stage for the active process-flow revision);
+    # 2) legacy dispatch-level DailyRequirement (route_operation_id IS NULL);
+    # 3) imported DailyMIS plan as the final compatibility fallback.
+    # Upstream stage requirements must never be added to the customer dispatch plan.
+    active_dispatch_route_id = (
+        select(ProcessFlowStage.route_operation_id)
+        .join(ProcessFlowVersion, ProcessFlowVersion.id == ProcessFlowStage.flow_id)
+        .where(
+            ProcessFlowVersion.product_id == DailyRequirement.product_id,
+            ProcessFlowVersion.effective_from <= DailyRequirement.req_date,
+            ProcessFlowStage.parent_dispatch.is_(True),
+            ProcessFlowStage.is_active.is_(True),
+            ProcessFlowStage.route_operation_id.is_not(None),
+        )
+        .order_by(ProcessFlowVersion.effective_from.desc(), ProcessFlowVersion.revision_no.desc())
+        .limit(1)
+        .correlate(DailyRequirement)
+        .scalar_subquery()
+    )
+    stage_dispatch_plan = (
+        select(
+            DailyRequirement.req_date.label("req_date"),
+            DailyRequirement.product_id.label("product_id"),
+            func.max(DailyRequirement.revised_plan_qty).label("revised_plan_qty"),
+        )
+        .where(
+            DailyRequirement.route_operation_id == active_dispatch_route_id,
+            DailyRequirement.req_date >= start,
+            DailyRequirement.req_date < next_after_end,
+        )
+        .group_by(DailyRequirement.req_date, DailyRequirement.product_id)
+        .subquery()
+    )
+    legacy_dispatch_plan = (
         select(
             DailyRequirement.req_date.label("req_date"),
             DailyRequirement.product_id.label("product_id"),
@@ -65,7 +97,11 @@ def monthly(
         .group_by(DailyRequirement.req_date, DailyRequirement.product_id)
         .subquery()
     )
-    plan_qty = func.coalesce(req_plan.c.revised_plan_qty, DailyMIS.plan_qty)
+    plan_qty = func.coalesce(
+        stage_dispatch_plan.c.revised_plan_qty,
+        legacy_dispatch_plan.c.revised_plan_qty,
+        DailyMIS.plan_qty,
+    )
     plan_sales = plan_qty * DailyMIS.sales_price
     q = (
         select(
@@ -79,10 +115,17 @@ def monthly(
         )
         .join(Product, Product.id == DailyMIS.product_id)
         .outerjoin(
-            req_plan,
+            stage_dispatch_plan,
             and_(
-                req_plan.c.req_date == DailyMIS.mis_date,
-                req_plan.c.product_id == DailyMIS.product_id,
+                stage_dispatch_plan.c.req_date == DailyMIS.mis_date,
+                stage_dispatch_plan.c.product_id == DailyMIS.product_id,
+            ),
+        )
+        .outerjoin(
+            legacy_dispatch_plan,
+            and_(
+                legacy_dispatch_plan.c.req_date == DailyMIS.mis_date,
+                legacy_dispatch_plan.c.product_id == DailyMIS.product_id,
             ),
         )
         .where(DailyMIS.mis_date >= start, DailyMIS.mis_date < next_after_end)
