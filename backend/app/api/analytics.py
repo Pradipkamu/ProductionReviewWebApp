@@ -5,13 +5,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
-from ..models import ProcessFlowStage, ProcessFlowVersion
-
 from ..auth import get_current_user
 from ..db import get_db
 from ..enums import ActionStatus
 from ..services.filtering import csv_ints, csv_strings
-from ..models import Action, ActionContext, DailyMIS, DailyRequirement, Product, User
+from ..models import (
+    Action, ActionContext, DailyMIS, DailyRequirement, Product, User,
+    ProcessFlowStage, ProcessFlowVersion,
+)
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
