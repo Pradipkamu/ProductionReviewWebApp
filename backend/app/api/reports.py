@@ -149,14 +149,72 @@ def compliance_report(
     )
     mis_rows = db.scalars(mis_q.order_by(DailyMIS.mis_date, DailyMIS.product_id)).all()
 
+    # Resolve the customer dispatch requirement from the active parent-dispatch
+    # stage (normally Disp_Done) before consulting legacy dispatch-level plans.
+    # Requirements belonging to upstream production stages must never be used
+    # as the customer dispatch target.
     req_q = select(DailyRequirement).where(
         DailyRequirement.req_date >= query_start,
         DailyRequirement.req_date <= as_of,
-        DailyRequirement.route_operation_id.is_(None),
         DailyRequirement.product_id.in_(product_ids),
     )
     req_rows = db.scalars(req_q.order_by(DailyRequirement.updated_at, DailyRequirement.id)).all()
-    revised: dict[tuple[date, int], Decimal] = {(r.req_date, r.product_id): _value(r.revised_plan_qty) for r in req_rows}
+    dispatch_level_revised: dict[tuple[date, int], Decimal] = {}
+    stage_revised: dict[tuple[date, int, int], Decimal] = {}
+    for requirement in req_rows:
+        key = (requirement.req_date, requirement.product_id)
+        if requirement.route_operation_id is None:
+            dispatch_level_revised[key] = _value(requirement.revised_plan_qty)
+        else:
+            stage_revised[(requirement.req_date, requirement.product_id, requirement.route_operation_id)] = _value(requirement.revised_plan_qty)
+
+    flow_rows = db.scalars(
+        select(ProcessFlowVersion)
+        .where(
+            ProcessFlowVersion.product_id.in_(product_ids),
+            ProcessFlowVersion.effective_from <= as_of,
+        )
+        .order_by(
+            ProcessFlowVersion.product_id,
+            ProcessFlowVersion.effective_from,
+            ProcessFlowVersion.revision_no,
+            ProcessFlowVersion.id,
+        )
+    ).all()
+    flows_by_product: dict[int, list[ProcessFlowVersion]] = defaultdict(list)
+    for flow in flow_rows:
+        flows_by_product[flow.product_id].append(flow)
+    parent_stages = db.scalars(
+        select(ProcessFlowStage)
+        .where(
+            ProcessFlowStage.flow_id.in_([flow.id for flow in flow_rows] or [-1]),
+            ProcessFlowStage.parent_dispatch.is_(True),
+            ProcessFlowStage.is_active.is_(True),
+            ProcessFlowStage.route_operation_id.is_not(None),
+        )
+    ).all()
+    parent_stage_by_flow = {stage.flow_id: stage for stage in parent_stages}
+    parent_dispatch_revised: dict[tuple[date, int], Decimal] = {}
+    for pid, (product_flows) in flows_by_product.items():
+        flow_index = 0
+        active_flow = None
+        for day in sorted({row.mis_date for row in mis_rows if row.product_id == pid}):
+            while flow_index < len(product_flows) and product_flows[flow_index].effective_from <= day:
+                active_flow = product_flows[flow_index]
+                flow_index += 1
+            stage = parent_stage_by_flow.get(active_flow.id) if active_flow is not None else None
+            if stage and stage.route_operation_id is not None:
+                key = (day, pid, stage.route_operation_id)
+                if key in stage_revised:
+                    parent_dispatch_revised[(day, pid)] = stage_revised[key]
+
+    revised: dict[tuple[date, int], Decimal] = {}
+    for row in mis_rows:
+        key = (row.mis_date, row.product_id)
+        if key in parent_dispatch_revised:
+            revised[key] = parent_dispatch_revised[key]
+        elif key in dispatch_level_revised:
+            revised[key] = dispatch_level_revised[key]
 
     missing_weight = set()
     missing_value_addition = set()
