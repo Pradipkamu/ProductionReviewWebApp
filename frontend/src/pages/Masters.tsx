@@ -27,7 +27,7 @@ export default function Masters(){
   if(!Number.isFinite(value)||value<0){alert('Enter a non-negative value');return}
   const effective_from=prompt('Effective from (YYYY-MM-DD). Backdated dates are allowed.',today());
   if(!effective_from)return;
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(effective_from)){alert('Enter the date in YYYY-MM-DD format.');return}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(effective_from)){alert('Enter the date in YYYY-MM-DD format.');return}
   const reason=prompt('Reason for this revision');
   if(!reason||!reason.trim()){alert('A reason is required to maintain the audit trail.');return}
   try{
