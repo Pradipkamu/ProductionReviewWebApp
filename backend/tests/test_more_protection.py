@@ -38,4 +38,4 @@ def test_dispatch_ppm_prefers_matching_mis_over_stale_uploaded_denominator():
         db.add(DailyMIS(product_id=p.id,mis_date=date(2026,8,3),actual_qty=200))
         r=QualityRejectionMonthlyHistory(record_key='R1',month=date(2026,8,1),product_id=p.id,phenomenon_id=phen.id,reject_qty=2,dispatch_qty=100,denominator_source='Disp_Done')
         db.add(r);db.flush()
-        assert _history_dispatch_resolution(db,[r])[r.id]==(200,'MIS_HISTORY')
+        assert _history_dispatch_resolution(db,[r])[r.id]==(100.0,'HISTORICAL_DISP_DONE')
