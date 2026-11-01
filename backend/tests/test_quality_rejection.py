@@ -12,7 +12,7 @@ from app.models import (
     Customer, DailyMIS, Operation, Product, QualityPhenomenon, QualityRejectionDaily,
     QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, ProcessDailySummary, RouteOperation, RouteVersion,
 )
-from app.services.quality_import import import_daily_rejection_workbook, import_historical_ppm_production_workbook, upsert_phenomenon
+from app.services.quality_import import denominator_for_rejection, import_daily_rejection_workbook, import_historical_ppm_production_workbook, upsert_phenomenon
 from app.api.quality import _daily_context, _serialize_daily, _history_dispatch_resolution
 from app.api.import_preview import preview_error_message
 
@@ -23,9 +23,9 @@ def _headers_for_quality(client):
     return {'Authorization': f"Bearer {login.json()['access_token']}"}
 
 
-def _seed_quality_context(db):
+def _seed_quality_context(db, plant='2020'):
     c=Customer(code='Q-C',name='Quality Customer');db.add(c);db.flush()
-    p=Product(code='Q-P',name='K70 Cylinder block',customer_id=c.id,plant='2020',product_group='CI');db.add(p);db.flush()
+    p=Product(code='Q-P',name='K70 Cylinder block',customer_id=c.id,plant=plant,product_group='CI');db.add(p);db.flush()
     op=Operation(code='DISP_DONE',name='Disp_Done',operation_type=OperationType.DISPATCH);db.add(op);db.flush()
     rv=RouteVersion(product_id=p.id,revision_no=0,effective_from=date(2026,9,1),is_active=True);db.add(rv);db.flush()
     ro=RouteOperation(route_version_id=rv.id,operation_id=op.id,sequence_no=10,is_dispatch=True,standard_yield=Decimal('1'));db.add(ro)
@@ -48,17 +48,17 @@ def _seed_daily_ppm_production(db, product, on_date=date(2026,9,30)):
     db.commit()
 
 
-def _make_daily_xlsx(path:Path,reject=15):
+def _make_daily_xlsx(path:Path,reject=15,plant='2020'):
     wb=Workbook();ws=wb.active;ws.title='Daily_Rejection_Data'
     ws.append(['Date','Shift','Product','Plant','Customer','Type','Detection Process','Responsible Process','Machine','Phenomenon','Reject Qty','Rework Qty','Scrap Qty','Remark','Raise Action'])
-    ws.append([date(2026,9,30),'A','K70 Cylinder block','2020','Quality Customer','CI','Disp_Done','',None,'BORE O/S',reject,5,10,'Daily check','Yes'])
+    ws.append([date(2026,9,30),'A','K70 Cylinder block',plant,'Quality Customer','CI','Disp_Done','',None,'BORE O/S',reject,5,10,'Daily check','Yes'])
     wb.save(path)
 
 
 def test_daily_rejection_uses_dispatch_done_denominator(tmp_path):
-    path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15)
+    path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15,plant='2070')
     with SessionLocal() as db:
-        p, _, _ = _seed_quality_context(db)
+        p, _, _ = _seed_quality_context(db, plant='2070')
         _seed_daily_ppm_production(db, p)
         stats=import_daily_rejection_workbook(db,path)
         db.commit()
@@ -70,17 +70,36 @@ def test_daily_rejection_uses_dispatch_done_denominator(tmp_path):
         assert row.action_required is True
 
 
+def test_plant_2020_daily_ppm_uses_effective_disp_done_not_siddharth_silver():
+    with SessionLocal() as db:
+        product, dispatch_route, _ = _seed_quality_context(db, plant='2020')
+        _seed_daily_ppm_production(db, product)
+        db.add(ProcessDailySummary(
+            summary_date=date(2026,9,30), product_id=product.id,
+            route_operation_id=dispatch_route.id, plan_qty=Decimal('3000'),
+            actual_qty=Decimal('3000'), good_qty=Decimal('3000'),
+            reject_qty=Decimal('0'), opening_wip=Decimal('0'),
+            closing_wip=Decimal('0'), source=SourceType.MANUAL,
+        ))
+        db.commit()
+        source, denominator = denominator_for_rejection(
+            db, on_date=date(2026,9,30), shift='A', product=product,
+            detection_ro=dispatch_route, machine=None,
+        )
+        assert source == 'DISP_DONE'
+        assert denominator == Decimal('3000')
+
 def test_monthly_daily_ppm_uses_full_period_process_production_not_stored_rejection_denominator():
     from fastapi.testclient import TestClient
     from app.main import app
 
     with SessionLocal() as db:
-        p, ro, ph = _seed_quality_context(db)
+        p, ro, ph = _seed_quality_context(db, plant='2070')
         _seed_daily_ppm_production(db, p, date(2026,9,29))
         # Simulate an old rejection row carrying a legacy per-record denominator.
         db.add(QualityRejectionDaily(
             record_key='period-ppm-regression', rejection_date=date(2026,9,29), shift='A',
-            product_id=p.id, plant='2020', detection_route_operation_id=ro.id,
+            product_id=p.id, plant='2070', detection_route_operation_id=ro.id,
             phenomenon_id=ph.id, reject_qty=Decimal('20'), denominator_source='DISP_DONE',
             denominator_qty=Decimal('100'), ppm=Decimal('200000'), source=SourceType.MANUAL,
         ))
@@ -111,12 +130,46 @@ def test_monthly_daily_ppm_uses_full_period_process_production_not_stored_reject
     assert row['ppm_pending_rows'] == 0
 
 
+def test_plant_2020_monthly_ppm_uses_disp_done_and_ignores_siddharth_silver():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with SessionLocal() as db:
+        product, dispatch_route, phenomenon = _seed_quality_context(db, plant='2020')
+        _seed_daily_ppm_production(db, product)
+        db.add(ProcessDailySummary(
+            summary_date=date(2026,9,30), product_id=product.id,
+            route_operation_id=dispatch_route.id, plan_qty=Decimal('3000'),
+            actual_qty=Decimal('3000'), good_qty=Decimal('3000'),
+            reject_qty=Decimal('0'), opening_wip=Decimal('0'),
+            closing_wip=Decimal('0'), source=SourceType.MANUAL,
+        ))
+        db.add(QualityRejectionDaily(
+            record_key='plant-2020-period-ppm', rejection_date=date(2026,9,30),
+            shift='A', product_id=product.id, plant='2020',
+            detection_route_operation_id=dispatch_route.id, phenomenon_id=phenomenon.id,
+            reject_qty=Decimal('20'), denominator_source='DISP_DONE',
+            denominator_qty=Decimal('2000'), ppm=Decimal('10000'), source=SourceType.MANUAL,
+        ))
+        db.commit()
+
+    client = TestClient(app)
+    response = client.get(
+        '/api/quality/monthly-trend?from_month=2026-09-01&to_month=2026-09-01',
+        headers=_headers_for_quality(client),
+    )
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row['denominator_qty'] == 3000.0
+    assert row['ppm'] == 20 / 3000 * 1_000_000
+    assert row['ppm_pending_rows'] == 0
+
 def test_monthly_daily_ppm_ignores_process_rows_from_superseded_route_revision():
     from fastapi.testclient import TestClient
     from app.main import app
 
     with SessionLocal() as db:
-        p, old_dispatch, ph = _seed_quality_context(db)
+        p, old_dispatch, ph = _seed_quality_context(db, plant='2070')
         old_route = db.get(RouteVersion, old_dispatch.route_version_id)
         # Keep the old revision open to reproduce legacy overlapping route data.
         new_route = RouteVersion(product_id=p.id, revision_no=1, effective_from=date(2026,9,30), is_active=True)
@@ -139,7 +192,7 @@ def test_monthly_daily_ppm_ignores_process_rows_from_superseded_route_revision()
                                        plan_qty=qty, actual_qty=qty, good_qty=qty, reject_qty=Decimal('0'),
                                        opening_wip=Decimal('0'), closing_wip=Decimal('0'), source=SourceType.MANUAL))
         db.add(QualityRejectionDaily(record_key='route-revision-ppm', rejection_date=date(2026,9,30), shift='A',
-                                     product_id=p.id, plant='2020', detection_route_operation_id=old_dispatch.id,
+                                     product_id=p.id, plant='2070', detection_route_operation_id=old_dispatch.id,
                                      phenomenon_id=ph.id, reject_qty=Decimal('20'), denominator_source='DISP_DONE',
                                      denominator_qty=Decimal('100'), ppm=Decimal('200000'), source=SourceType.MANUAL))
         db.commit()
@@ -152,13 +205,13 @@ def test_monthly_daily_ppm_ignores_process_rows_from_superseded_route_revision()
 
 
 def test_daily_rejection_business_key_updates_instead_of_duplicate(tmp_path):
-    path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15)
+    path=tmp_path/'daily_quality.xlsx';_make_daily_xlsx(path,15,plant='2070')
     with SessionLocal() as db:
-        p, _, _ = _seed_quality_context(db)
+        p, _, _ = _seed_quality_context(db, plant='2070')
         _seed_daily_ppm_production(db, p)
         first=import_daily_rejection_workbook(db,path);db.commit()
         assert first['created']==1
-        _make_daily_xlsx(path,18)
+        _make_daily_xlsx(path,18,plant='2070')
         second=import_daily_rejection_workbook(db,path);db.commit()
         assert second['updated']==1
         assert db.query(QualityRejectionDaily).count()==1
@@ -425,7 +478,7 @@ def test_historical_rejection_does_not_use_company_mis_as_ppm_fallback():
     row = client.get('/api/quality/history?from_date=2026-06-01&to_date=2026-06-30', headers=h).json()[0]
     assert row['reject_qty'] == 25.0
     assert row['dispatch_qty'] is None
-    assert row['dispatch_qty_source'] == 'SIDDHARTH_SILVER_PENDING'
+    assert row['dispatch_qty_source'] == 'HISTORICAL_DISP_DONE_PENDING'
     assert row['ppm'] is None
 
 
@@ -507,13 +560,13 @@ def test_historical_ppm_plant_filter_does_not_reuse_product_total_mis_for_split_
                 record_key='OLD2020|2026-06|BORE O/S', month=date(2026,6,1), source='TEST',
                 source_sheet='Plant 2020', record_scope='PRODUCT_TOTAL', include_in_aggregate=True,
                 product_id=p.id, plant='2020', phenomenon_id=ph.id, reject_qty=Decimal('20'),
-                denominator_source='DISP_DONE', dispatch_qty=Decimal('5000'), ppm=Decimal('4000'),
+                denominator_source='DISP_DONE', dispatch_qty=None, ppm=None,
             ),
             QualityRejectionMonthlyHistory(
                 record_key='OLD2050|2026-06|BORE O/S', month=date(2026,6,1), source='TEST',
                 source_sheet='Plant 2050', record_scope='PRODUCT_TOTAL', include_in_aggregate=True,
                 product_id=p.id, plant='2050', phenomenon_id=ph.id, reject_qty=Decimal('30'),
-                denominator_source='DISP_DONE', dispatch_qty=Decimal('5000'), ppm=Decimal('6000'),
+                denominator_source='DISP_DONE', dispatch_qty=None, ppm=None,
             ),
         ])
         db.commit()
@@ -531,7 +584,7 @@ def test_historical_ppm_plant_filter_does_not_reuse_product_total_mis_for_split_
 
 def test_historical_ppm_never_falls_back_to_company_dispatch_and_rejection_stays_available():
     with SessionLocal() as db:
-        p, _, ph = _seed_quality_context(db)
+        p, _, ph = _seed_quality_context(db, plant='2070')
         row = QualityRejectionMonthlyHistory(
             record_key='P0-NONBLOCKING', month=date(2026,9,1), source='TEST',
             source_sheet='Quality', record_scope='AGGREGATE_TOTAL', include_in_aggregate=True,
@@ -546,7 +599,7 @@ def test_historical_ppm_never_falls_back_to_company_dispatch_and_rejection_stays
 
 def test_historical_ppm_uses_only_siddharth_plus_silver():
     with SessionLocal() as db:
-        p, _, ph = _seed_quality_context(db)
+        p, _, ph = _seed_quality_context(db, plant='2070')
         prod = QualityHistoricalPpmProduction(
             month=date(2026,9,1), product_id=p.id,
             siddharth_machining_qty=Decimal('1500'), silver_production_qty=Decimal('500'),
@@ -616,7 +669,7 @@ def test_daily_rejection_trend_keeps_reject_qty_when_ppm_denominator_pending():
     assert payload["summary"]["reject_qty"] == 78.0
 
 
-def test_daily_rejection_saves_when_siddharth_or_silver_is_missing(tmp_path):
+def test_daily_rejection_saves_when_dispatch_production_is_missing(tmp_path):
     path=tmp_path/'daily_quality_pending.xlsx'; _make_daily_xlsx(path,15)
     with SessionLocal() as db:
         _seed_quality_context(db)
@@ -626,7 +679,7 @@ def test_daily_rejection_saves_when_siddharth_or_silver_is_missing(tmp_path):
         assert stats['created'] == 1
         assert stats['ppm_pending'] == 1
         assert row.reject_qty == Decimal('15')
-        assert row.denominator_source == 'SIDDHARTH_SILVER_PENDING'
+        assert row.denominator_source == 'DISP_DONE_PENDING'
         assert row.denominator_qty is None
         assert row.ppm is None
 
@@ -688,7 +741,7 @@ def test_quality_report_pack_exposes_phenomenon_criticality_for_review_exception
             phenomenon_id=phenomenon.id,
             reject_qty=Decimal("2"),
             denominator_qty=Decimal("2000"),
-            denominator_source="SIDDHARTH_MACHINING_PLUS_SILVER",
+            denominator_source="DISP_DONE",
             ppm=Decimal("1000"),
             source=SourceType.MANUAL,
         ))

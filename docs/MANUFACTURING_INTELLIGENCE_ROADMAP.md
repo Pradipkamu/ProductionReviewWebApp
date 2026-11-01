@@ -52,6 +52,8 @@ Existing implementation status documents schedule revision/compliance reporting,
 - Preserve current MOM owner/participant controls and action closure requirements.
 
 ### 5. Quality Intelligence
+- Confirmed plant-specific denominator rule: Plant 2070 uses Siddharth Machining + Silver Production; every other plant uses the effective Disp_Done / dispatch-operation actual.
+- Keep rejection capture available when production denominator data is missing; show PPM as Pending rather than substituting company-wide MIS.
 - Enhance existing rejection/PPM analytics with recurring phenomenon, part/process trends, Why-Why linkage and effectiveness follow-up.
 - Show denominator source and data completeness for each PPM result.
 - Do not change established PPM formulas without reconciliation tests and explicit release notes.

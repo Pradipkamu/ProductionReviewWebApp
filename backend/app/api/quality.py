@@ -224,19 +224,39 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
 
     Plant 2070: Siddharth Machining + Silver Production.
     Every other plant: effective route Disp_Done / dispatch operation actual.
-    Rejection capture remains independent when production is unavailable.
+    Only the route revision effective on each production date is eligible;
+    historical rows from superseded revisions are retained for audit but never
+    added into the denominator.
     """
     product_ids = sorted({x.product_id for x in rows})
     if not product_ids:
         return {"denominator_qty": 0.0, "ppm_pending_rows": 0}
 
     products = _by_id(db, Product, set(product_ids))
-    special_ids = {pid for pid in product_ids if str((products.get(pid).plant if products.get(pid) else "") or "").strip() == "2070"}
-    dispatch_ids = set(product_ids) - special_ids
+    special_ids = {
+        pid for pid in product_ids
+        if str((products.get(pid).plant if products.get(pid) else "") or "").strip() == "2070"
+    }
+
+    route_versions = db.scalars(
+        select(RouteVersion)
+        .where(RouteVersion.product_id.in_(product_ids))
+        .order_by(
+            RouteVersion.product_id,
+            RouteVersion.revision_no,
+            RouteVersion.effective_from,
+            RouteVersion.id,
+        )
+    ).all()
+    routes_by_product: dict[int, list[RouteVersion]] = defaultdict(list)
+    for route in route_versions:
+        routes_by_product[route.product_id].append(route)
+
     q = (
         select(
             ProcessDailySummary.summary_date,
             ProcessDailySummary.product_id,
+            RouteOperation.route_version_id,
             Operation.name,
             ProcessDailySummary.actual_qty,
             RouteOperation.is_dispatch,
@@ -251,11 +271,31 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
     )
     candidates = db.execute(q).all()
 
-    # Route revisions remain for audit. For the same Product + Date + logical
-    # denominator operation, retain one production value rather than adding
-    # overlapping revision rows. A populated row wins over zero/partial carry-over.
-    daily_actual: dict[tuple[date, int, str], float] = {}
-    for summary_date, product_id, operation_name, actual_qty, is_dispatch in candidates:
+    # Resolve one effective route for each Product + production date. This
+    # mirrors quality_import._route_for_date, including its legacy fallback.
+    active_route_by_day: dict[tuple[date, int], int] = {}
+    for summary_date, product_id in {(r[0], r[1]) for r in candidates}:
+        product_routes = routes_by_product.get(product_id, [])
+        eligible = [
+            route for route in product_routes
+            if route.effective_from <= summary_date
+            and (route.effective_to is None or route.effective_to >= summary_date)
+        ]
+        chosen = max(
+            eligible or product_routes,
+            key=lambda route: (route.revision_no, route.effective_from, route.id),
+            default=None,
+        )
+        if chosen is not None:
+            active_route_by_day[(summary_date, product_id)] = chosen.id
+
+    # Sum denominator operations only from the effective route. Old and new
+    # route revisions may both retain daily actual rows for audit purposes.
+    daily_actual: dict[tuple[date, int, str], float] = defaultdict(float)
+    found: set[tuple[int, str]] = set()
+    for summary_date, product_id, route_version_id, operation_name, actual_qty, is_dispatch in candidates:
+        if active_route_by_day.get((summary_date, product_id)) != route_version_id:
+            continue
         label = _label_key(operation_name)
         kind = None
         if product_id in special_ids:
@@ -263,20 +303,17 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
                 kind = "siddharth"
             elif label == "silver production":
                 kind = "silver"
-        elif product_id in dispatch_ids and is_dispatch:
+        elif is_dispatch:
             kind = "dispatch"
         if not kind:
             continue
         key = (summary_date, product_id, kind)
-        qty = _num(actual_qty)
-        if key not in daily_actual or qty > daily_actual[key]:
-            daily_actual[key] = qty
+        daily_actual[key] += _num(actual_qty)
+        found.add((product_id, kind))
 
     totals: dict[tuple[int, str], float] = defaultdict(float)
-    found: set[tuple[int, str]] = set()
     for (_summary_date, product_id, kind), qty in daily_actual.items():
         totals[(product_id, kind)] += qty
-        found.add((product_id, kind))
 
     denominator = sum(totals.values())
     missing = 0
@@ -285,7 +322,6 @@ def _daily_ppm_production(db: Session, rows: list[QualityRejectionDaily], from_d
         if any((product_id, kind) not in found for kind in required):
             missing += 1
     return {"denominator_qty": denominator, "ppm_pending_rows": missing}
-
 
 def _month_start(value: date) -> date:
     return value.replace(day=1)
