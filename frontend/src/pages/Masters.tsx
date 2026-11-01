@@ -20,7 +20,24 @@ export default function Masters(){
  async function saveMachineMap(){if(!map.route_operation_id||!map.machine_id)return;const reason=prompt('Reason for machine / cycle master revision','Approved machine setup');if(!reason)return;await api('/masters/machine-maps',{method:'POST',body:JSON.stringify({route_operation_id:Number(map.route_operation_id),machine_id:Number(map.machine_id),effective_from:map.effective_from,effective_to:null,priority:Number(map.priority),reason})});if(map.ideal_cycle_time_sec)await api('/masters/cycle-times',{method:'POST',body:JSON.stringify({route_operation_id:Number(map.route_operation_id),machine_id:Number(map.machine_id),effective_from:map.effective_from,effective_to:null,ideal_cycle_time_sec:Number(map.ideal_cycle_time_sec),standard_cycle_time_sec:null,cavities:1,pieces_per_cycle:1,remark:'Created from Masters',reason})});alert('Machine map / cycle time saved')}
  async function editProductMaster(p:any){const plant=prompt(`Plant for ${p.name}`,p.plant||'')??p.plant;const product_group=prompt('Type / Product Group / Category',p.product_group||'')??p.product_group;const wt=prompt('Finish Weight (Kg/pc)',p.finish_weight_kg==null?'':String(p.finish_weight_kg));if(wt===null)return;await api(`/masters/products/${p.id}`,{method:'PATCH',body:JSON.stringify({plant:plant||null,product_group:product_group||null,finish_weight_kg:wt===''?null:Number(wt)})});await refresh()}
  async function showValueHistory(p:any){setValueProduct(p);setValueHistory(await api(`/masters/products/${p.id}/value-addition-history`))}
- async function reviseValueAddition(p:any){const raw=prompt(`Value addition for ${p.name} (₹/piece)`,p.value_addition_per_piece==null?'':String(p.value_addition_per_piece));if(raw===null)return;const value=Number(raw);if(!Number.isFinite(value)||value<0){alert('Enter a non-negative value');return}const effective_from=prompt('Effective from (YYYY-MM-DD)',today());if(!effective_from)return;const reason=prompt('Reason for this revision');if(!reason)return;await api(`/masters/products/${p.id}/value-addition-revisions`,{method:'POST',body:JSON.stringify({effective_from,value_addition_per_piece:value,reason})});await refresh();await showValueHistory(p)}
+ async function reviseValueAddition(p:any){
+  const raw=prompt(`Value addition for ${p.name} (₹/piece)`,p.value_addition_per_piece==null?'':String(p.value_addition_per_piece));
+  if(raw===null)return;
+  const value=Number(raw);
+  if(!Number.isFinite(value)||value<0){alert('Enter a non-negative value');return}
+  const effective_from=prompt('Effective from (YYYY-MM-DD). Backdated dates are allowed.',today());
+  if(!effective_from)return;
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(effective_from)){alert('Enter the date in YYYY-MM-DD format.');return}
+  const reason=prompt('Reason for this revision');
+  if(!reason||!reason.trim()){alert('A reason is required to maintain the audit trail.');return}
+  try{
+    await api(`/masters/products/${p.id}/value-addition-revisions`,{method:'POST',body:JSON.stringify({effective_from,value_addition_per_piece:value,reason:reason.trim()})});
+    await refresh();
+    await showValueHistory(p);
+  }catch(error:any){
+    alert(`Value addition was not saved: ${error?.message||'Unexpected server error'}`);
+  }
+ }
  const currentOps=route[0]?.operations||[]
  return <><PageHeader title="Masters & Route Setup" subtitle="Product reporting attributes and effective-dated value addition are maintained with an audit trail." actions={<div className="button-row"><button className="secondary" onClick={addUser}>Add user</button><button onClick={()=>location.href='/machine-master'}>Open Machine Master</button></div>}/>
  <section className="panel"><div className="panel-title"><h2>Product reporting master</h2><span>Imported from PBI_Products · editable here</span></div><div className="table-wrap"><table><thead><tr><th>Product</th><th>Customer</th><th>Plant</th><th>Type / Product Group</th><th>Finish Weight</th><th>Value Addition</th><th></th></tr></thead><tbody>{products.map((p:any)=><tr key={p.id}><td><b>{p.name}</b></td><td>{p.customer||'—'}</td><td>{p.plant||'—'}</td><td>{p.product_group||'—'}</td><td>{p.finish_weight_kg==null?'—':`${p.finish_weight_kg} kg/pc`}</td><td>{p.value_addition_per_piece==null?'—':`₹${Number(p.value_addition_per_piece).toLocaleString('en-IN')}/pc`}</td><td><div className="button-row"><button className="small secondary" onClick={()=>editProductMaster(p)}>Edit attributes</button><button className="small" onClick={()=>reviseValueAddition(p)}>Revise value</button><button className="small secondary" onClick={()=>showValueHistory(p)}>History</button></div></td></tr>)}</tbody></table></div></section>
