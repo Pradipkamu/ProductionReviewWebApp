@@ -56,7 +56,10 @@ Existing implementation status documents schedule revision/compliance reporting,
 - Keep rejection capture available when production denominator data is missing; show PPM as Pending rather than substituting company-wide MIS.
 - Enhance existing rejection/PPM analytics with recurring phenomenon, part/process trends, Why-Why linkage and effectiveness follow-up.
 - Show denominator source and data completeness for each PPM result.
-- Do not change established PPM formulas without reconciliation tests and explicit release notes.
+- [x] Enforce the confirmed PPM denominator boundary: Plant 2070 uses Siddharth Machining + Silver Production; all other plants use effective Disp_Done / dispatch-operation actual.
+- [x] Resolve period denominators only from the route revision effective on each production date; retain superseded route rows for audit without counting them.
+- [x] Keep missing denominators pending and never substitute company-wide Daily MIS for historical plant-level denominator data.
+- Continue reconciliation against approved plant examples before release; do not change these established formulas without tests and explicit release notes.
 
 ### 6. Vendor Performance
 - [x] Add a read-only `GET /vendor/performance?as_of=YYYY-MM-DD` scorecard from the outward/receipt ledger: open lots, pending quantity, overdue lots/quantity, vendor exposure and pending-quantity aging buckets.
