@@ -1027,7 +1027,10 @@ def report_pack(from_date: date, to_date: date, plant: str | None = None, produc
         summary["reject_qty"] / summary["denominator_qty"] * 1_000_000
         if summary["denominator_qty"] > 0 else None
     )
-    summary["ppm_is_partial"] = bool(summary["ppm_pending_rows"] > 0 and summary["ppm"] is not None)
+    if summary["ppm_pending_rows"] > 0 and summary["ppm"] is not None:
+        summary["ppm_is_partial"] = True
+    else:
+        summary.pop("ppm_is_partial", None)
     summary["historical_records"] = len(aggregate_history)
     summary["daily_records"] = len(aggregate_daily)
     if aggregate_history:
