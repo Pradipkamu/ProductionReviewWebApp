@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, record_security_event
@@ -15,7 +15,7 @@ from ..db import get_db
 from ..enums import ActionStatus, UserRole
 from ..models import (
     Action, ActionAttachment, ActionContext, ActionHistory, ActionWhyWhy,
-    Product, RouteOperation, Operation, Machine, ReviewActionLink, ReviewSession, User,
+    Product, RouteOperation, Operation, Machine, ReviewActionLink, ReviewParticipantPresence, ReviewSession, User,
 )
 from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
@@ -290,7 +290,16 @@ def create_action(payload: ActionCreate, db: Session = Depends(get_db), user: Us
 
     active_review = db.scalar(
         select(ReviewSession)
-        .where(ReviewSession.review_date == payload.reference_date, ReviewSession.ended_at.is_(None))
+        .where(
+            ReviewSession.review_date == payload.reference_date,
+            ReviewSession.ended_at.is_(None),
+            or_(
+                ReviewSession.owner_id == user.id,
+                ReviewSession.id.in_(select(ReviewParticipantPresence.review_session_id).where(
+                    ReviewParticipantPresence.user_id == user.id
+                )),
+            ),
+        )
         .order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc())
         .limit(1)
     )
@@ -471,8 +480,15 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
                 raise HTTPException(400, f"Complete the standard Why-Why plan before closure. Missing: {missing}")
         a.status = payload.status
         if payload.status == ActionStatus.CLOSED:
-            a.closed_at = datetime.utcnow()
-            a.closure_remark = payload.closure_remark or a.closure_remark
+            if old_status != ActionStatus.CLOSED or a.closed_at is None:
+                a.closed_at = datetime.utcnow()
+            if payload.closure_remark is not None:
+                a.closure_remark = payload.closure_remark
+        elif old_status == ActionStatus.CLOSED:
+            # Reopened actions are active again; the previous closure remains
+            # in ActionHistory, not in the current closure fields.
+            a.closed_at = None
+            a.closure_remark = None
     if payload.closure_remark is not None:
         a.closure_remark = payload.closure_remark
     db.add(ActionHistory(

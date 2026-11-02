@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.enums import ActionStatus, Priority
+from app.enums import ActionStatus, Priority, UserRole
 from app.main import app
 from app.models import (
     Action, ActionContext, ActionHistory, Customer, Product, ReviewActionLink,
@@ -28,64 +28,166 @@ def test_review_sync_close_and_action_link():
         db.add(c); db.flush()
         p = Product(code='REV-P', name='Review Part', customer_id=c.id, plant='P1', product_group='CI')
         db.add(p); db.commit(); pid = p.id
-
     client = TestClient(app)
     h = auth_headers(client)
-
-    r = client.post('/api/reviews', headers=h, json={
+    created = client.post('/api/reviews', headers=h, json={
         'review_date':'2026-09-29', 'participants':'Production, Sales', 'comments':'Daily review'
     })
-    assert r.status_code == 200, r.text
-    rid = r.json()['id']
-
-    # An explicit second Start creates an independent MOM for the same date.
-    # The owner may own multiple meetings; only an active participant is blocked.
-    r2 = client.post('/api/reviews', headers=h, json={
-        'review_date':'2026-09-29', 'participants':'', 'comments':'Daily review'
-    })
-    assert r2.status_code == 200
-    assert r2.json()['id'] != rid
-    assert r2.json()['is_owner'] is True
-    assert r2.json()['existing'] is True
-
+    assert created.status_code == 200, created.text
+    assert created.json()['existing'] is False
+    rid = created.json()['id']
     active = client.get('/api/reviews/active?review_date=2026-09-29', headers=h)
     assert active.status_code == 200
     assert active.json()['id'] == rid
-
-    a = client.post('/api/actions', headers=h, json={
-        'reference_date':'2026-09-29',
-        'problem_category':'Production',
-        'problem_description':'Daily review shortfall',
-        'action_description':'Recover in next shift',
-        'priority':'HIGH',
-        'contexts':[{'context_date':'2026-09-29','product_id':pid}]
+    action = client.post('/api/actions', headers=h, json={
+        'reference_date':'2026-09-29', 'problem_category':'Production',
+        'problem_description':'Daily review shortfall', 'action_description':'Recover in next shift',
+        'priority':'HIGH', 'contexts':[{'context_date':'2026-09-29','product_id':pid}]
     })
-    assert a.status_code == 200, a.text
-    assert rid in a.json()['review_session_ids']
-
+    assert action.status_code == 200, action.text
+    assert rid in action.json()['review_session_ids']
     with SessionLocal() as db:
         links = db.query(ReviewActionLink).all()
         assert len(links) == 1
         assert links[0].review_session_id == rid
-
-    # A meeting with a recorded discussion point must be retained on closure.
     point = client.post(f'/api/reviews/{rid}/points', headers=h, json={
-        'category': 'Production', 'discussion_point': 'Review recovery of daily production shortfall',
-        'action_required': False,
+        'category':'Production', 'discussion_point':'Review recovery of daily production shortfall',
+        'action_required':False,
     })
     assert point.status_code == 200, point.text
-
+    mom = client.get(f'/api/reviews/{rid}/mom', headers=h)
+    assert mom.status_code == 200, mom.text
+    assert action.json()['id'] in {x['id'] for x in mom.json()['linked_actions']}
+    assert len(mom.json()['points']) == 1
     close = client.patch(f'/api/reviews/{rid}/close', headers=h, json={'comments':'Closed after assigning actions'})
     assert close.status_code == 200, close.text
     assert close.json()['ended_at'] is not None
-
     active_after = client.get('/api/reviews/active?review_date=2026-09-29', headers=h)
     assert active_after.status_code == 200
     assert active_after.json() is None
+    assert client.patch(f'/api/reviews/{rid}/close', headers=h, json={'comments':'Closed'}).status_code == 200
 
-    # Closing again is safe/idempotent.
-    close_again = client.patch(f'/api/reviews/{rid}/close', headers=h, json={'comments':'Closed'})
-    assert close_again.status_code == 200
+
+def test_action_linking_is_scoped_to_the_current_users_active_mom():
+    client = TestClient(app)
+    h = auth_headers(client)
+    with SessionLocal() as db:
+        admin = db.scalar(select(User).where(User.username == 'admin'))
+        other = User(username=f'mom-other-{uuid4().hex[:8]}', full_name='Other Meeting Owner',
+                     password_hash='not-used-in-this-test', role=UserRole.PRODUCTION, is_active=True,
+                     must_change_password=False)
+        db.add(other); db.flush()
+        own = ReviewSession(review_date=date(2026,10,22), started_at=datetime.utcnow()-timedelta(minutes=5),
+                            participants='Production', owner_id=admin.id)
+        foreign = ReviewSession(review_date=date(2026,10,22), started_at=datetime.utcnow(),
+                                participants='Quality', owner_id=other.id)
+        db.add_all([own, foreign]); db.commit()
+        own_id, foreign_id = own.id, foreign.id
+    active = client.get('/api/reviews/active?review_date=2026-10-22', headers=h)
+    assert active.status_code == 200, active.text
+    assert active.json()['id'] == own_id
+    created = client.post('/api/actions', headers=h, json={
+        'reference_date':'2026-10-22', 'problem_category':'Production',
+        'problem_description':'Scoped action link test',
+        'action_description':'Link only to the caller\'s meeting', 'priority':'HIGH', 'contexts':[],
+    })
+    assert created.status_code == 200, created.text
+    assert created.json()['review_session_ids'] == [own_id]
+    assert foreign_id not in created.json()['review_session_ids']
+
+
+def test_mom_point_and_action_stay_synchronised_in_both_directions():
+    client = TestClient(app)
+    h = auth_headers(client)
+    with SessionLocal() as db:
+        admin = db.scalar(select(User).where(User.username == 'admin'))
+        second_owner = User(username=f'mom-owner-{uuid4().hex[:8]}', full_name='Updated Action Owner',
+                            password_hash='not-used-in-this-test', role=UserRole.QUALITY, is_active=True,
+                            must_change_password=False)
+        customer = Customer(code=f'MOM-SYNC-C-{uuid4().hex[:8]}', name='MOM Sync Customer')
+        db.add_all([second_owner, customer]); db.flush()
+        product_a = Product(code=f'MOM-SYNC-A-{uuid4().hex[:8]}', name='MOM Sync Product A',
+                            customer_id=customer.id, plant='P1', product_group='CI')
+        product_b = Product(code=f'MOM-SYNC-B-{uuid4().hex[:8]}', name='MOM Sync Product B',
+                            customer_id=customer.id, plant='P1', product_group='CI')
+        db.add_all([product_a, product_b]); db.commit()
+        admin_id, new_owner_id = admin.id, second_owner.id
+        product_a_id, product_b_id = product_a.id, product_b.id
+    review = client.post('/api/reviews', headers=h, json={
+        'review_date':'2026-10-23', 'participants':'Production, Quality', 'comments':'MOM action sync test',
+    })
+    assert review.status_code == 200, review.text
+    rid = review.json()['id']
+    point = client.post(f'/api/reviews/{rid}/points', headers=h, json={
+        'category':'Quality', 'discussion_point':'Investigate bore rejection on Product A',
+        'action_required':True, 'action_description':'Contain Product A and verify the defect cause',
+        'owner_id':admin_id, 'due_at':'2026-10-25T10:00:00+05:30', 'priority':'HIGH', 'product_id':product_a_id,
+    })
+    assert point.status_code == 200, point.text
+    point_id, action_id = point.json()['id'], point.json()['action']['id']
+    with SessionLocal() as db:
+        db.add(ActionContext(action_id=action_id, context_date=date(2026,10,22), product_id=product_a_id))
+        db.commit()
+    edited = client.patch(f'/api/reviews/{rid}/points/{point_id}', headers=h, json={
+        'category':'Production', 'discussion_point':'Updated problem: inspect Product B bore rejection',
+        'action_required':True,
+        'action_description':'Contain Product B, complete root cause and verify effectiveness',
+        'owner_id':new_owner_id, 'due_at':'2026-10-27T12:30:00+05:30',
+        'priority':'CRITICAL', 'product_id':product_b_id,
+    })
+    assert edited.status_code == 200, edited.text
+    with SessionLocal() as db:
+        action = db.get(Action, action_id)
+        assert action.problem_category == 'Production'
+        assert action.problem_description == 'Updated problem: inspect Product B bore rejection'
+        assert action.action_description == 'Contain Product B, complete root cause and verify effectiveness'
+        assert action.owner_id == new_owner_id and action.priority == Priority.CRITICAL
+        contexts = db.scalars(select(ActionContext).where(ActionContext.action_id == action_id)).all()
+        assert len(contexts) == 2
+        assert any(x.context_date == date(2026,10,23) and x.product_id == product_b_id for x in contexts)
+        assert any(x.context_date == date(2026,10,22) and x.product_id == product_a_id for x in contexts)
+        links = db.scalars(select(ReviewActionLink).where(ReviewActionLink.review_session_id == rid,
+                                  ReviewActionLink.action_id == action_id)).all()
+        assert len(links) == 1
+        history = db.scalars(select(ActionHistory).where(ActionHistory.action_id == action_id).order_by(ActionHistory.id)).all()
+        assert any('problem category' in (x.comment or '') and 'owner' in (x.comment or '') and 'priority' in (x.comment or '') for x in history)
+    mom = client.get(f'/api/reviews/{rid}/mom', headers=h)
+    assert mom.status_code == 200, mom.text
+    mom_point = next(x for x in mom.json()['points'] if x['id'] == point_id)
+    assert mom_point['action']['id'] == action_id
+    assert mom_point['action']['owner_id'] == new_owner_id and mom_point['action']['priority'] == 'CRITICAL'
+    assert mom_point['product_id'] == product_b_id
+    assert action_id not in {x['id'] for x in mom.json()['linked_actions']}
+    progress = client.patch(f'/api/actions/{action_id}', headers=h, json={'status':'IN_PROGRESS','comment':'Owner started investigation'})
+    assert progress.status_code == 200, progress.text
+    refreshed = client.get(f'/api/reviews/{rid}/mom', headers=h).json()
+    refreshed_point = next(x for x in refreshed['points'] if x['id'] == point_id)
+    assert refreshed_point['action']['status'] == 'IN_PROGRESS'
+    assert refreshed['meeting']['action_count'] == 1
+    closed = client.patch(f'/api/actions/{action_id}', headers=h, json={
+        'status':'CLOSED', 'comment':'Verified and closed', 'closure_remark':'Inspection passed',
+    })
+    assert closed.status_code == 200, closed.text
+    with SessionLocal() as db:
+        assert db.get(Action, action_id).closed_at is not None
+    blocked = client.patch(f'/api/reviews/{rid}/points/{point_id}', headers=h, json={
+        'category':'Production', 'discussion_point':'Try to change a closed action',
+        'action_required':True, 'action_description':'Change after closure',
+        'owner_id':new_owner_id, 'due_at':'2026-10-28T10:00:00+05:30',
+        'priority':'HIGH', 'product_id':product_b_id,
+    })
+    assert blocked.status_code == 409, blocked.text
+    reopened = client.patch(f'/api/actions/{action_id}', headers=h, json={
+        'status':'IN_PROGRESS', 'comment':'Reopened for additional verification',
+    })
+    assert reopened.status_code == 200, reopened.text
+    with SessionLocal() as db:
+        saved = db.get(Action, action_id)
+        assert saved.status == ActionStatus.IN_PROGRESS and saved.closed_at is None
+        assert saved.closure_remark is None
+    final_mom = client.get(f'/api/reviews/{rid}/mom', headers=h).json()
+    final_point = next(x for x in final_mom['points'] if x['id'] == point_id)
+    assert final_point['action']['status'] == 'IN_PROGRESS'
 
 
 def test_empty_meeting_is_discarded_on_close():

@@ -19,7 +19,7 @@ Actions can be raised in three ways:
 
 The form captures Date, Product, Operation, optional Machine, Problem Category, Problem, Action, Owner, Due Date/Time, and Priority.
 
-If a Daily Review session is active for the same action date, the new action is automatically linked to that review. Closing the review does not close its actions; they continue through OPEN → IN_PROGRESS / BLOCKED → CLOSED in the Actions screen.
+If a Daily Review session is active for the same action date and the current user owns or has joined it, the new action is automatically linked to that meeting only. Actions created by other users are not silently attached to a meeting the caller cannot access. Closing the review does not close its actions; they continue through OPEN → IN_PROGRESS / BLOCKED → CLOSED in the Actions screen. MOM and Actions read the same live Action record, so owner, due date, priority, status and closure updates are reflected in the meeting without creating a copied status.
 
 
 ## Daily Management Review enhancements — Phase 1 and Phase 2
@@ -27,7 +27,8 @@ If a Daily Review session is active for the same action date, the new action is 
 - The Daily Management Review page displays a live business snapshot for the selected date and plant scope.
 - Production, sales, tonnage and action KPIs are month-to-date through the selected date. Quality and OEE are selected-date views. Vendor WIP is a rolling 36-month view. The UI identifies the different periods.
 - The exception agenda combines daily-control blockers/warnings with month-to-date dispatch exceptions. An exception can be prefilled into a MOM point and linked to its Product Master context.
-- When an action is required, the page requires a responsible active user and target date/time. Product context is stored with the MOM point and copied to Action Context when an action is created.
+- When an action is required, the page requires a responsible active user and target date/time. Product context is stored with the MOM point and copied to Action Context when an action is created. Editing a MOM point synchronizes problem category, problem text, action text, owner, due date, priority and the meeting-date product context to the linked Action; all other Action contexts are retained and the change is recorded in Action History.
+- Actions updated from the Actions page are reflected live in the linked MOM point and meeting counts. Closed Action details cannot be changed through the MOM point until the Action is reopened; reopening clears current closure metadata while preserving the Action History record.
 - Previous pending actions are sourced from earlier review-session links, with a fallback for legacy Daily Review actions. Later-dated meetings are not included in an earlier meeting's carry-forward list.
 - Meeting participants and remarks can be saved while the meeting is open. Closed meetings remain selectable from history and are no longer replaced by the active-meeting lookup for the selected date.
 - MOM action counts include actions linked through either a MOM point or the action-link workflow. An empty meeting is retained if an action was linked through the Actions page.

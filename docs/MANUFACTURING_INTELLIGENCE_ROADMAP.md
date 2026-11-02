@@ -46,6 +46,9 @@ Existing implementation status documents schedule revision/compliance reporting,
 - Any allocation approval remains an explicit authorized action with revision snapshots.
 
 ### 4. MOM Action Intelligence
+- [x] Synchronize MOM point edits to linked Action problem/category, description, owner, due date, priority and meeting-date product context; preserve unrelated contexts and record the change in Action History.
+- [x] Scope automatic action-to-MOM links to the caller's own or joined active meeting.
+- [x] Reflect Action-page status/closure/reopen changes in the live MOM register; prevent edits to a closed linked Action until it is reopened.
 - Build part-wise issue/action timeline across MOM, quality, production loss and dispatch risks.
 - Add aging, overdue and repeat-issue views using existing action history and ownership.
 - Integrate escalation only with configured ownership and notification rules.

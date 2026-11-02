@@ -13,7 +13,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -157,6 +157,16 @@ def action_data(db: Session, a: Action | None, followup: dict | None = None) -> 
             "requires_whywhy": a.requires_whywhy}
 
 
+def ensure_review_action_link(db: Session, review_id: int, action_id: int) -> None:
+    """Keep the cross-module action register linked without duplicate rows."""
+    linked = db.scalar(select(ReviewActionLink.id).where(
+        ReviewActionLink.review_session_id == review_id,
+        ReviewActionLink.action_id == action_id,
+    ))
+    if linked is None:
+        db.add(ReviewActionLink(review_session_id=review_id, action_id=action_id))
+
+
 def point_data(db: Session, p: ReviewPoint) -> dict:
     product = db.get(Product, p.product_id) if p.product_id else None
     creator = db.get(User, p.created_by_id) if p.created_by_id else None
@@ -170,9 +180,16 @@ def point_data(db: Session, p: ReviewPoint) -> dict:
 
 @router.get("/active")
 def get_active_review(review_date: date, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    row = db.scalar(select(ReviewSession).where(ReviewSession.review_date == review_date, ReviewSession.ended_at.is_(None),
-                    ReviewSession.owner_id == user.id)
-                    .order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc()).limit(1))
+    row = db.scalar(select(ReviewSession).where(
+        ReviewSession.review_date == review_date,
+        ReviewSession.ended_at.is_(None),
+        or_(
+            ReviewSession.owner_id == user.id,
+            ReviewSession.id.in_(select(ReviewParticipantPresence.review_session_id).where(
+                ReviewParticipantPresence.user_id == user.id
+            )),
+        ),
+    ).order_by(ReviewSession.started_at.desc(), ReviewSession.id.desc()).limit(1))
     if not row:
         return None
     result = serialize_review(row, db)
@@ -480,7 +497,7 @@ def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(
         db.add(action); db.flush()
         db.add(ActionHistory(action_id=action.id, changed_by_id=user.id, new_status=action.status,
                              comment=f"Created from Daily Review #{review.id}; simple follow-up action"))
-        db.add(ReviewActionLink(review_session_id=review.id, action_id=action.id))
+        ensure_review_action_link(db, review.id, action.id)
         if product:
             db.add(ActionContext(action_id=action.id, context_date=review.review_date, product_id=product.id))
     seq = (db.scalar(select(func.max(ReviewPoint.sequence_no)).where(ReviewPoint.review_session_id == review.id)) or 0) + 1
@@ -501,17 +518,26 @@ def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: 
     if review.ended_at is not None:
         raise HTTPException(409, "Closed meetings cannot be edited")
     require_meeting_access(db, review, user, write=True)
-    point = db.scalar(select(ReviewPoint).where(ReviewPoint.id == point_id, ReviewPoint.review_session_id == review_id))
+
+    point = db.scalar(select(ReviewPoint).where(
+        ReviewPoint.id == point_id,
+        ReviewPoint.review_session_id == review_id,
+    ).with_for_update())
     if not point:
         raise HTTPException(404, "MOM point not found")
+
     product = db.get(Product, payload.product_id) if payload.product_id is not None else None
     if payload.product_id is not None and (not product or not product.is_active):
         raise HTTPException(422, "Selected product is not available in the active Product Master")
-    point.category = payload.category
-    point.discussion_point = payload.discussion_point.strip()
-    point.product_id = product.id if product else None
-    point.action_required = payload.action_required
-    action = db.get(Action, point.action_id) if point.action_id else None
+
+    action = db.scalar(select(Action).where(Action.id == point.action_id).with_for_update()) if point.action_id else None
+    if not payload.action_required and action:
+        raise HTTPException(422, "An existing action cannot be removed by editing the MOM point. Close or cancel the action separately.")
+
+    new_discussion = payload.discussion_point.strip()
+    action_changes: list[str] = []
+    context_changed = False
+
     if payload.action_required:
         if not (payload.action_description or "").strip():
             raise HTTPException(422, "Action description is required when Action Required is Yes")
@@ -522,40 +548,90 @@ def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: 
             raise HTTPException(422, "Selected action owner is not active")
         if payload.due_at is None:
             raise HTTPException(422, "Enter a target date and time before assigning this action")
+        if action and action.status == ActionStatus.CLOSED:
+            raise HTTPException(409, "Reopen the linked Action before editing its MOM point. Closed action records are preserved.")
+
+        proposed = {
+            "problem_category": payload.category or "Daily Review",
+            "problem_description": new_discussion,
+            "action_description": payload.action_description.strip(),
+            "owner_id": payload.owner_id,
+            "due_at": payload.due_at,
+            "priority": payload.priority,
+        }
         if action:
-            old_description = action.action_description
-            action.action_description = payload.action_description.strip()
-            action.problem_description = point.discussion_point
-            action.owner_id = payload.owner_id
-            action.due_at = payload.due_at
-            action.priority = payload.priority
-            if old_description != action.action_description:
-                db.add(ActionHistory(action_id=action.id, changed_by_id=user.id, old_status=action.status,
-                    new_status=action.status, comment="Action details updated from MOM point"))
-            contexts = db.scalars(select(ActionContext).where(ActionContext.action_id == action.id)).all()
-            if contexts:
-                contexts[0].product_id = product.id if product else None
-                contexts[0].context_date = review.review_date
-                for extra in contexts[1:]:
-                    db.delete(extra)
-            elif product:
-                db.add(ActionContext(action_id=action.id, context_date=review.review_date, product_id=product.id))
+            for field, value in proposed.items():
+                if getattr(action, field) != value:
+                    setattr(action, field, value)
+                    action_changes.append(field.replace("_", " "))
         else:
             count = db.query(Action).count() + 1
-            action = Action(action_no=f"ACT-{review.review_date.year}-{count:05d}", reference_date=review.review_date,
-                problem_category=payload.category or "Daily Review", problem_description=point.discussion_point,
-                action_description=payload.action_description.strip(), owner_id=payload.owner_id,
-                due_at=payload.due_at, priority=payload.priority, action_type="DAILY_REVIEW", requires_whywhy=False)
-            db.add(action); db.flush()
-            db.add(ActionHistory(action_id=action.id, changed_by_id=user.id, new_status=action.status,
-                comment=f"Created from edited Daily Review point #{point.id}"))
-            db.add(ReviewActionLink(review_session_id=review.id, action_id=action.id))
-            if product:
-                db.add(ActionContext(action_id=action.id, context_date=review.review_date, product_id=product.id))
+            action = Action(
+                action_no=f"ACT-{review.review_date.year}-{count:05d}",
+                reference_date=review.review_date,
+                problem_category=proposed["problem_category"],
+                problem_description=proposed["problem_description"],
+                action_description=proposed["action_description"],
+                owner_id=proposed["owner_id"],
+                due_at=proposed["due_at"],
+                priority=proposed["priority"],
+                action_type="DAILY_REVIEW",
+                requires_whywhy=False,
+            )
+            db.add(action)
+            db.flush()
+            action_changes.extend(["action created", "category", "problem", "action description", "owner", "due date", "priority"])
+            db.add(ActionHistory(
+                action_id=action.id,
+                changed_by_id=user.id,
+                new_status=action.status,
+                comment=f"Created from edited Daily Review point #{point.id}",
+            ))
             point.action_id = action.id
-    elif action:
-        raise HTTPException(422, "An existing action cannot be removed by editing the MOM point. Close or cancel the action separately.")
-    db.commit(); db.refresh(point)
+
+        # A MOM point owns one context for its meeting date. Preserve other
+        # action contexts created by upstream modules or earlier reviews.
+        contexts = db.scalars(select(ActionContext).where(
+            ActionContext.action_id == action.id
+        ).order_by(ActionContext.id)).all()
+        meeting_contexts = [ctx for ctx in contexts if ctx.context_date == review.review_date]
+        if meeting_contexts:
+            primary_context = meeting_contexts[0]
+            if primary_context.product_id != (product.id if product else None):
+                primary_context.product_id = product.id if product else None
+                context_changed = True
+        elif product:
+            db.add(ActionContext(action_id=action.id, context_date=review.review_date, product_id=product.id))
+            context_changed = True
+
+        ensure_review_action_link(db, review.id, action.id)
+        if action_changes and "action created" not in action_changes:
+            changed_fields = ", ".join(action_changes)
+            db.add(ActionHistory(
+                action_id=action.id,
+                changed_by_id=user.id,
+                old_status=action.status,
+                new_status=action.status,
+                comment=f"Updated from MOM point #{point.id}: {changed_fields}",
+            ))
+        elif context_changed and "action created" not in action_changes:
+            db.add(ActionHistory(
+                action_id=action.id,
+                changed_by_id=user.id,
+                old_status=action.status,
+                new_status=action.status,
+                comment=f"Product context updated from MOM point #{point.id}",
+            ))
+
+    point.category = payload.category
+    point.discussion_point = new_discussion
+    point.product_id = product.id if product else None
+    point.action_required = payload.action_required
+    if not payload.action_required:
+        point.action_id = None
+
+    db.commit()
+    db.refresh(point)
     return point_data(db, point)
 
 
