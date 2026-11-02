@@ -38,8 +38,25 @@ jobs:
       - run: npm ci && npm run build && npm audit --audit-level=moderate
         working-directory: frontend
 
+  windows-script-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Pradipweb restore helper
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'Restore_Windows_From_Pradipweb_Simple_v6.ps1'
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error "$($_.Extent.StartLineNumber): $($_.Message)" }
+            throw "PowerShell syntax validation failed."
+          }
+          Write-Host "PowerShell restore helper syntax is valid."
+
   package:
-    needs: [backend, frontend]
+    needs: [backend, frontend, windows-script-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
