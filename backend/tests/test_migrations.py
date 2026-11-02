@@ -24,8 +24,6 @@ def test_new_database_and_legacy_adoption_preserve_rows(tmp_path):
         assert conn.scalar(text('SELECT must_change_password FROM users WHERE id=1'))==1
         assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0019_value_addition_same_date'
         assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))==0
-        diffs=compare_metadata(MigrationContext.configure(conn),Base.metadata)
-        assert not diffs,diffs
         conn.execute(text("""
             INSERT INTO product_value_addition_history
                 (product_id, effective_from, value_addition_per_piece, reason, created_at, updated_at)
@@ -36,6 +34,8 @@ def test_new_database_and_legacy_adoption_preserve_rows(tmp_path):
         assert conn.scalar(text(
             "SELECT count(*) FROM product_value_addition_history WHERE product_id=1 AND effective_from='2026-01-15'"
         )) == 2
+        diffs=compare_metadata(MigrationContext.configure(conn),Base.metadata)
+        assert not diffs,diffs
     with engine.begin() as conn:
         config.attributes['connection']=conn;command.upgrade(config,'head')
         assert conn.scalar(text('SELECT count(*) FROM products'))==1
@@ -64,7 +64,6 @@ def test_postgresql_migrations_when_service_available():
             config.attributes['connection']=conn;command.upgrade(config,'head')
             assert conn.scalar(text('SELECT name FROM products WHERE id=1'))=='Original Part'
             assert conn.scalar(text('SELECT must_change_password FROM users WHERE id=1')) is True
-            assert not compare_metadata(MigrationContext.configure(conn),Base.metadata)
             conn.execute(text("""
                 INSERT INTO product_value_addition_history
                     (product_id, effective_from, value_addition_per_piece, reason, created_at, updated_at)
@@ -75,6 +74,7 @@ def test_postgresql_migrations_when_service_available():
             assert conn.scalar(text(
                 "SELECT count(*) FROM product_value_addition_history WHERE product_id=1 AND effective_from='2026-01-15'"
             )) == 2
+            assert not compare_metadata(MigrationContext.configure(conn),Base.metadata)
             initial=conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))
             conn.execute(text("UPDATE products SET name='Updated Part' WHERE id=1"))
             assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))>initial
