@@ -1,4 +1,82 @@
-ssh -i "$HOME\\.ssh\\ssh-key-2026-10-05.key" ubuntu@92.4.90.35
+ssh -i "$HOME\\.ssh\\productionreview.key" ubuntu@92.4.90.35
+cd ~/ProductionReviewWebApp
+ssh -i "$HOME\\.ssh\\pradipweb.key" ubuntu@137.23.40.188
+cd ~/ProductionReviewWebApp
+
+
+ubuntu@92.4.90.35:~/ProductionReviewWebApp/database/backups/pms_migration_20261027.dump `
+"$env:USERPROFILE\Downloads\pms_migration_20261027.dump"
+ubuntu@137.23.40.188:~/pms_migration_20261027.dump
+
+****FRESH BACK UP TO TAKE*****
+cd ~/ProductionReviewWebApp
+
+echo "===== CREATE FRESH PRODUCTION BACKUP ====="
+
+set -o pipefail
+
+sudo docker compose exec -T db \
+  pg_dump -U pms -d pms -Fc \
+  | sudo tee database/backups/pms_migration_20261027.dump >/dev/null
+
+echo "===== VERIFY BACKUP FILE ====="
+
+sudo ls -lh database/backups/pms_migration_20261027.dump
+
+echo "===== GENERATE SHA256 CHECKSUM ====="
+
+sudo sha256sum database/backups/pms_migration_20261027.dump \
+  | sudo tee database/backups/pms_migration_20261027.dump.sha256
+
+echo "===== VERIFY POSTGRESQL BACKUP ARCHIVE ====="
+
+sudo docker compose exec -T db \
+  pg_restore -l < database/backups/pms_migration_20261027.dump \
+  | head -20
+
+
+******------UPdate Github main ---****
+
+cd ~/ProductionReviewWebApp
+
+set -Eeuo pipefail
+
+echo "========== 1. CHECK CURRENT VERSION =========="
+git status --short
+git log -1 --oneline
+
+echo "========== 2. CHECK FOR LOCAL CHANGES =========="
+if [ -n "$(git status --porcelain)" ]; then
+    echo "STOP: Local changes detected. Do not overwrite them."
+    exit 1
+fi
+
+echo "========== 3. DOWNLOAD LATEST GITHUB MAIN =========="
+git fetch origin main
+
+echo "========== 4. UPDATE LOCAL MAIN =========="
+git pull --ff-only origin main
+
+echo "========== 5. BUILD UPDATED APPLICATION =========="
+sudo docker compose build backend frontend
+
+echo "========== 6. RESTART APPLICATION =========="
+sudo docker compose up -d --remove-orphans
+
+echo "========== 7. VERIFY RUNNING SERVICES =========="
+sudo docker compose ps
+
+echo "========== 8. VERIFY LATEST COMMIT =========="
+git log -1 --format="Commit: %H%nDate: %ci%nMessage: %s"
+
+echo "========== 9. VERIFY APPLICATION HEALTH =========="
+curl -fsS https://machineshop.duckdns.org/api/health
+
+echo
+echo "========== UPDATE COMPLETED =========="
+
+
+
 
 **Next block**
 cd /home/ubuntu/ProductionReviewWebApp || exit 1
@@ -96,6 +174,16 @@ echo "Frontend   : $NEW\_IMAGE"
 
 
 
+**Back end rebuild from latest update**
+
+
+
+cd /home/ubuntu/ProductionReviewWebApp
+
+sudo docker compose build backend
+
+sudo docker compose up -d --no-deps backend
+
 
 
 **BACK UP FROM ORACLE and install in windows**
@@ -104,7 +192,12 @@ cd "D:\\Machine Shop MIS"
 powershell -NoProfile -ExecutionPolicy Bypass `
 -File ".\\Backup\_Oracle\_Review\_To\_Windows.ps1"
 
+** OR USE BELOW **
 
+cd "D:\Machine Shop MIS"
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\Backup_Oracle_Review_To_Windows.ps1
 
 
 
