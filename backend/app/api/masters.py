@@ -106,11 +106,6 @@ def add_product_value_addition_revision(product_id: int, payload: ProductValueAd
         raise HTTPException(404, "Product not found")
     if payload.effective_from > ist_today():
         raise HTTPException(422, "Value-addition revisions cannot be future-dated")
-    if db.scalar(select(ProductValueAdditionHistory.id).where(
-        ProductValueAdditionHistory.product_id == product_id,
-        ProductValueAdditionHistory.effective_from == payload.effective_from,
-    )):
-        raise HTTPException(409, "A value-addition revision already exists for this product and effective date")
     row = ProductValueAdditionHistory(product_id=product_id, effective_from=payload.effective_from,
         value_addition_per_piece=payload.value_addition_per_piece, reason=payload.reason.strip(), changed_by_id=user.id)
     db.add(row); db.flush()

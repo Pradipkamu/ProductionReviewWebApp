@@ -114,7 +114,8 @@ class ProductValueAdditionHistory(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(Text)
     changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     __table_args__ = (
-        UniqueConstraint("product_id", "effective_from", name="uq_product_value_addition_effective"),
+        # Multiple audited corrections may share an effective date. The newest
+        # recorded revision (highest id) wins for that date.
         Index("ix_product_value_addition_product_effective", "product_id", "effective_from"),
     )
 
