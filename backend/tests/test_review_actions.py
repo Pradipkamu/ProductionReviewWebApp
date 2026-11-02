@@ -12,7 +12,7 @@ from app.enums import ActionStatus, Priority, UserRole
 from app.main import app
 from app.models import (
     Action, ActionContext, ActionHistory, Customer, Product, ReviewActionLink,
-    ReviewPoint, ReviewSession, User,
+    ReviewParticipantPresence, ReviewPoint, ReviewSession, User,
 )
 
 
@@ -94,6 +94,28 @@ def test_action_linking_is_scoped_to_the_current_users_active_mom():
     assert created.status_code == 200, created.text
     assert created.json()['review_session_ids'] == [own_id]
     assert foreign_id not in created.json()['review_session_ids']
+
+
+def test_joined_participant_active_mom_is_not_reported_as_owner():
+    client = TestClient(app)
+    h = auth_headers(client)
+    with SessionLocal() as db:
+        admin = db.scalar(select(User).where(User.username == 'admin'))
+        owner = User(username=f'mom-presence-owner-{uuid4().hex[:8]}', full_name='MOM Owner',
+                     password_hash='not-used-in-this-test', role=UserRole.PRODUCTION, is_active=True,
+                     must_change_password=False)
+        db.add(owner); db.flush()
+        meeting = ReviewSession(review_date=date(2026,10,24), started_at=datetime.utcnow(),
+                                participants='Production, Quality', owner_id=owner.id)
+        db.add(meeting); db.flush()
+        db.add(ReviewParticipantPresence(review_session_id=meeting.id, user_id=admin.id))
+        db.commit()
+        meeting_id = meeting.id
+    response = client.get('/api/reviews/active?review_date=2026-10-24', headers=h)
+    assert response.status_code == 200, response.text
+    assert response.json()['id'] == meeting_id
+    assert response.json()['is_owner'] is False
+    assert response.json()['is_participant'] is True
 
 
 def test_mom_point_and_action_stay_synchronised_in_both_directions():

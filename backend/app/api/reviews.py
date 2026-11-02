@@ -193,7 +193,8 @@ def get_active_review(review_date: date, db: Session = Depends(get_db), user: Us
     if not row:
         return None
     result = serialize_review(row, db)
-    result["is_owner"] = True
+    result["is_owner"] = bool(row.owner_id == user.id)
+    result["is_participant"] = not result["is_owner"]
     return result
 
 
@@ -605,6 +606,8 @@ def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: 
             context_changed = True
 
         ensure_review_action_link(db, review.id, action.id)
+        if context_changed:
+            action_changes.append("product context")
         if action_changes and "action created" not in action_changes:
             changed_fields = ", ".join(action_changes)
             db.add(ActionHistory(
