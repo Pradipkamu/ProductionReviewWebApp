@@ -412,7 +412,8 @@ class MainActivity : ComponentActivity() {
                     gesturesEnabled = account != null,
                     drawerContent = {
                         ModalDrawerSheet {
-                            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.fillMaxSize()) {
+                                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                 Text("PRODUCTION REVIEW", color=Teal, fontSize=11.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
                                 Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(), color=Navy, fontSize=18.sp, fontWeight=FontWeight.Bold)
                                 Text(account?.role.orEmpty(), color=Muted, fontSize=12.sp)
@@ -467,7 +468,6 @@ class MainActivity : ComponentActivity() {
                                         Text("Welcome, ${account!!.fullName.ifBlank{account!!.username}}",color=Navy,fontSize=15.sp,fontWeight=FontWeight.Bold,maxLines=1)
                                         Text("${account!!.role}",color=Muted,fontSize=10.sp)
                                     }
-                                    TextButton(onClick={showLogoutConfirm=true},enabled=!busy){Text("LOG OUT",fontSize=11.sp,fontWeight=FontWeight.Bold)}
                                 }
                                 if(homeTab=="ACTIONS") {
                                     if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
