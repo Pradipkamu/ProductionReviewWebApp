@@ -58,7 +58,11 @@ private object ApiClient {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {\n                val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull().orEmpty()\n                throw IllegalStateException(detail.ifBlank { "Server returned HTTP $code" })\n            }\n            return text
+            if (code !in 200..299) {
+                val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull().orEmpty()
+                throw IllegalStateException(detail.ifBlank { "Server returned HTTP $code" })
+            }
+            return text
         } finally { connection.disconnect() }
     }
 
