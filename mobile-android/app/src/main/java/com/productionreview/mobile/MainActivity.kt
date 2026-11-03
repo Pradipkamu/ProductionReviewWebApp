@@ -130,6 +130,7 @@ private object ApiClient {
         request("/quality/daily", "POST", payload, token)
 
     fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
+        val uploadFile = PhotoCompressor.prepare(file)
         val boundary = "----ProductionMobile${System.currentTimeMillis()}"
         val connection = (URL("$API_BASE/quality/daily/$rejectionId/attachments").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -144,10 +145,10 @@ private object ApiClient {
         try {
             connection.outputStream.use { output ->
                 val header = "--$boundary\r\n" +
-                    "Content-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\r\n" +
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"${uploadFile.name}\"\r\n" +
                     "Content-Type: image/jpeg\r\n\r\n"
                 output.write(header.toByteArray(Charsets.UTF_8))
-                file.inputStream().use { input -> input.copyTo(output) }
+                uploadFile.inputStream().use { input -> input.copyTo(output) }
                 output.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
             }
             val code = connection.responseCode
@@ -158,7 +159,10 @@ private object ApiClient {
                 throw IllegalStateException(detail.ifBlank { "Photo upload failed (HTTP $code)" })
             }
             return JSONObject(text)
-        } finally { connection.disconnect() }
+        } finally {
+            if (uploadFile != file) uploadFile.delete()
+            connection.disconnect()
+        }
     }
 }
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
