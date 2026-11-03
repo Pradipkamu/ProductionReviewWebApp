@@ -172,10 +172,14 @@ def my_pending_actions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Admin and Management can monitor every open action. All other roles
+    # remain restricted to actions assigned to their own account.
+    statement = select(Action).where(Action.status != ActionStatus.CLOSED)
+    if user.role not in (UserRole.ADMIN, UserRole.MANAGEMENT):
+        statement = statement.where(Action.owner_id == user.id)
+
     rows = db.scalars(
-        select(Action)
-        .where(Action.owner_id == user.id, Action.status != ActionStatus.CLOSED)
-        .order_by(Action.due_at, Action.priority.desc(), Action.reference_date)
+        statement.order_by(Action.due_at, Action.priority.desc(), Action.reference_date)
     ).all()
     return [serialize_action(db, row) for row in rows]
 
