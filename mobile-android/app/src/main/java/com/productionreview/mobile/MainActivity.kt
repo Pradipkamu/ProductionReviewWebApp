@@ -17,6 +17,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.AssignmentLate
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -290,6 +299,8 @@ class MainActivity : ComponentActivity() {
                 pendingPhotoFile = null
             }
             val scope = rememberCoroutineScope()
+            val drawerState = rememberDrawerState(DrawerValue.Closed)
+            var showLogoutConfirm by remember { mutableStateOf(false) }
 
             fun refreshPendingActions(auth:String) {
                 scope.launch {
@@ -383,16 +394,51 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val normalizedRole = account?.role?.uppercase().orEmpty()
+            val isAdminOrManagement = normalizedRole in listOf("ADMIN", "MANAGEMENT")
+            val isQualityRole = normalizedRole.contains("QUALITY") || normalizedRole.contains("QA")
+            val isProductionRole = normalizedRole.contains("PRODUCTION") || normalizedRole.contains("PROD")
+            val bottomDestinations = buildList {
+                add("ACTIONS")
+                if (isQualityRole || isAdminOrManagement) add("REJECTION")
+                if (isProductionRole || isAdminOrManagement) add("OEE")
+                if (isQualityRole && isProductionRole) { /* both operational shortcuts are permitted */ }
+                add("MORE")
+            }.distinct().take(4)
+
             MaterialTheme(colorScheme=lightColorScheme(primary=Teal,secondary=Navy,background=Canvas,surface=Color.White)) {
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    gesturesEnabled = account != null,
+                    drawerContent = {
+                        ModalDrawerSheet {
+                            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                Text("PRODUCTION REVIEW", color=Teal, fontSize=11.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
+                                Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(), color=Navy, fontSize=18.sp, fontWeight=FontWeight.Bold)
+                                Text(account?.role.orEmpty(), color=Muted, fontSize=12.sp)
+                            }
+                            Divider()
+                            NavigationDrawerItem(label={Text("Pending Actions")}, selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL", icon={Icon(Icons.Filled.Assignment, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }})
+                            if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(label={Text("Rejection Entry")}, selected=homeTab=="REJECTION", icon={Icon(Icons.Filled.AssignmentLate, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="REJECTION" }})
+                            if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(label={Text("OEE")}, selected=homeTab=="OEE", icon={Icon(Icons.Filled.Speed, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="OEE" }})
+                            NavigationDrawerItem(label={Text("My Action History")}, selected=homeTab=="HISTORY", icon={Icon(Icons.Filled.History, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="HISTORY" }})
+                            Spacer(Modifier.weight(1f))
+                            Divider()
+                            NavigationDrawerItem(label={Text("Account")}, selected=false, icon={Icon(Icons.Filled.Person, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="ACCOUNT" }})
+                            NavigationDrawerItem(label={Text("Logout")}, selected=false, icon={Icon(Icons.Filled.Logout, contentDescription=null)}, onClick={scope.launch { drawerState.close(); showLogoutConfirm=true }})
+                        }
+                    }
+                ) {
                 Surface(Modifier.fillMaxSize(),color=Canvas) {
                     Column(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxWidth().background(Navy).padding(horizontal=18.dp,vertical=10.dp)) {
-                            Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                            Spacer(Modifier.height(2.dp))
-                            Text("Mobile Operations",color=Color.White,fontSize=21.sp,fontWeight=FontWeight.Bold)
-                            Text("Shop-floor quality capture",color=Color(0xFFD7E2EC),fontSize=12.sp)
+                        Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=10.dp,vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
+                            if (account != null) IconButton(onClick={scope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
+                            Column(Modifier.weight(1f)) {
+                                Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                            }
                         }
-                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=14.dp, vertical=10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=14.dp, vertical=10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                             if (account == null) {
                                 Text("SECURE ACCESS",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White)) {
@@ -421,19 +467,7 @@ class MainActivity : ComponentActivity() {
                                         Text("Welcome, ${account!!.fullName.ifBlank{account!!.username}}",color=Navy,fontSize=15.sp,fontWeight=FontWeight.Bold,maxLines=1)
                                         Text("${account!!.role}",color=Muted,fontSize=10.sp)
                                     }
-                                    TextButton(onClick={
-                                        val old=token
-                                        scope.launch {
-                                            busy=true
-                                            try{if(old!=null)withContext(Dispatchers.IO){ApiClient.logout(old)}}catch(_:Exception){}
-                                            withContext(Dispatchers.IO){sessionStore.clear()}
-                                            token=null;account=null;masters=null;message="Signed out.";busy=false
-                                        }
-                                    },enabled=!busy){Text("LOG OUT",fontSize=11.sp,fontWeight=FontWeight.Bold)}
-                                }
-                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                    FilterChip(selected=homeTab=="ACTIONS",onClick={homeTab="ACTIONS";token?.let{refreshPendingActions(it)}},label={Text("PENDING ACTIONS")})
-                                    FilterChip(selected=homeTab=="REJECTION",onClick={homeTab="REJECTION"},label={Text("NEW REJECTION")})
+                                    TextButton(onClick={showLogoutConfirm=true},enabled=!busy){Text("LOG OUT",fontSize=11.sp,fontWeight=FontWeight.Bold)}
                                 }
                                 if(homeTab=="ACTIONS") {
                                     if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
@@ -544,6 +578,30 @@ class MainActivity : ComponentActivity() {
                                             finally{busy=false}
                                         }
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
+                                }
+                                if(homeTab=="OEE") {
+                                    Text("OEE",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                                    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                        Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            Icon(Icons.Filled.Speed,contentDescription=null,tint=Teal)
+                                            Text("OEE mobile dashboard",color=Navy,fontSize=17.sp,fontWeight=FontWeight.Bold)
+                                            Text("The OEE shortcut is ready in navigation. The mobile OEE data screen will be connected after its authorized API and web permission configuration are available.",color=Muted,fontSize=14.sp)
+                                            Text("No production figures are simulated or displayed here.",color=Muted,fontSize=12.sp)
+                                        }
+                                    }
+                                } else if(homeTab=="HISTORY") {
+                                    Text("Action History",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                                    Text("Action history view will be connected in a follow-up mobile module. Your existing action updates continue to be saved through the current workflow.",color=Muted)
+                                } else if(homeTab=="ACCOUNT") {
+                                    Text("Account",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                                    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                            Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(),color=Navy,fontWeight=FontWeight.Bold,fontSize=18.sp)
+                                            Text("Username: ${account?.username.orEmpty()}",color=Muted)
+                                            Text("Role: ${account?.role.orEmpty()}",color=Muted)
+                                            OutlinedButton(onClick={showLogoutConfirm=true},modifier=Modifier.fillMaxWidth()) { Text("LOG OUT") }
+                                        }
+                                    }
                                 }
                                 if(homeTab=="REJECTION") {
                                 Text("NEW REJECTION",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
@@ -690,6 +748,40 @@ class MainActivity : ComponentActivity() {
                             Text("Secure access • Existing production records",color=Muted,fontSize=11.sp,modifier=Modifier.align(Alignment.CenterHorizontally))
                         }
                     }
+                    if (account != null) {
+                        NavigationBar(containerColor=Color.White, tonalElevation=8.dp) {
+                            bottomDestinations.forEach { destination ->
+                                val selected = homeTab==destination || (destination=="ACTIONS" && homeTab in listOf("USER_ACTIONS","DETAIL"))
+                                NavigationBarItem(
+                                    selected=selected,
+                                    onClick={
+                                        if(destination=="MORE") scope.launch { drawerState.open() }
+                                        else { homeTab=destination; if(destination=="ACTIONS") { selectedOwner=null; token?.let{refreshPendingActions(it)} } }
+                                    },
+                                    icon={ when(destination) { "ACTIONS"->Icon(Icons.Filled.Assignment,contentDescription=null); "REJECTION"->Icon(Icons.Filled.AssignmentLate,contentDescription=null); "OEE"->Icon(Icons.Filled.Speed,contentDescription=null); else->Icon(Icons.Filled.MoreHoriz,contentDescription=null) } },
+                                    label={Text(when(destination) { "ACTIONS"->"Actions"; "REJECTION"->"Rejection"; "OEE"->"OEE"; else->"More" },maxLines=1)}
+                                )
+                            }
+                        }
+                    }
+                }
+                if (showLogoutConfirm) {
+                    AlertDialog(
+                        onDismissRequest={showLogoutConfirm=false},
+                        title={Text("Log out?")},
+                        text={Text("You will need to sign in again to access Production Review.")},
+                        confirmButton={TextButton(onClick={
+                            showLogoutConfirm=false
+                            val old=token
+                            scope.launch {
+                                busy=true
+                                try{if(old!=null)withContext(Dispatchers.IO){ApiClient.logout(old)}}catch(_:Exception){}
+                                withContext(Dispatchers.IO){sessionStore.clear()}
+                                token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;homeTab="ACTIONS";message="Signed out.";busy=false
+                            }
+                        }){Text("LOG OUT",color=Color(0xFFB3261E))}},
+                        dismissButton={TextButton(onClick={showLogoutConfirm=false}){Text("CANCEL")}}
+                    )
                 }
             }
         }
