@@ -417,7 +417,7 @@ class MainActivity : ComponentActivity() {
                                 Text("PRODUCTION REVIEW", color=Teal, fontSize=11.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
                                 Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(), color=Navy, fontSize=18.sp, fontWeight=FontWeight.Bold)
                                 Text(account?.role.orEmpty(), color=Muted, fontSize=12.sp)
-                            }
+                                }
                             Divider()
                             NavigationDrawerItem(label={Text("Pending Actions")}, selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL", icon={Icon(Icons.Filled.Assignment, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }})
                             if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(label={Text("Rejection Entry")}, selected=homeTab=="REJECTION", icon={Icon(Icons.Filled.AssignmentLate, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="REJECTION" }})
