@@ -433,6 +433,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                 Surface(Modifier.fillMaxSize(),color=Canvas) {
                     Column(Modifier.fillMaxSize()) {
+                    Column(Modifier.weight(1f).fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=10.dp,vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
                             if (account != null) IconButton(onClick={scope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
@@ -764,6 +765,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
+                    }
                     }
                 }
                 if (showLogoutConfirm) {
