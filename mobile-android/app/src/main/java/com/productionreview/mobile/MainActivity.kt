@@ -133,6 +133,19 @@ private object ApiClient {
             ActionItem(x.optInt("id"),x.optString("action_no"),x.optString("problem_description").ifBlank{x.optString("action_description")},x.optString("action_type"),x.optString("status"),x.optString("priority"),x.optString("due_at"),x.optBoolean("overdue"),x.optBoolean("requires_whywhy"),x.optInt("whywhy_completion_percent"))
         }
     }
+    fun loadPendingActionGroups(token: String): List<ActionOwnerGroup> {
+        val rows = array("/actions/admin/pending-by-user", token)
+        return (0 until rows.length()).map { i ->
+            val x = rows.getJSONObject(i)
+            val actions = x.optJSONArray("actions") ?: JSONArray()
+            val parsed = (0 until actions.length()).map { j ->
+                val a = actions.getJSONObject(j)
+                ActionItem(a.optInt("id"), a.optString("action_no"), a.optString("problem_description").ifBlank { a.optString("action_description") }, a.optString("action_type"), a.optString("status"), a.optString("priority"), a.optString("due_at"), a.optBoolean("overdue"), a.optBoolean("requires_whywhy"), a.optInt("whywhy_completion_percent"))
+            }
+            ActionOwnerGroup(x.optInt("user_id", -1).takeIf { it > 0 }, x.optString("full_name").ifBlank { "Unassigned" }, x.optString("role"), x.optInt("open_count"), x.optInt("overdue_count"), x.optInt("due_today_count"), parsed)
+        }
+    }
+
     fun loadActionPlan(id:Int,token:String): JSONObject = request("/actions/$id/plan","GET",token=token)
     fun updateAction(id:Int,comment:String,status:String,token:String): JSONObject {
         val body=JSONObject().put("comment",comment).put("status",status)
@@ -205,6 +218,7 @@ private object ApiClient {
     }
 }
 private data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
+private data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
 
 class MainActivity : ComponentActivity() {
@@ -235,6 +249,8 @@ class MainActivity : ComponentActivity() {
             var resultMessage by remember { mutableStateOf<String?>(null) }
             var homeTab by remember { mutableStateOf("ACTIONS") }
             var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
+            var pendingActionGroups by remember { mutableStateOf<List<ActionOwnerGroup>>(emptyList()) }
+            var selectedOwner by remember { mutableStateOf<ActionOwnerGroup?>(null) }
             var selectedAction by remember { mutableStateOf<ActionItem?>(null) }
             var actionPlan by remember { mutableStateOf<JSONObject?>(null) }
             var followupComment by remember { mutableStateOf("") }
@@ -277,8 +293,15 @@ class MainActivity : ComponentActivity() {
 
             fun refreshPendingActions(auth:String) {
                 scope.launch {
-                    try { pendingActions=withContext(Dispatchers.IO){ApiClient.loadPendingActions(auth)} }
-                    catch(e:Exception){ message="Unable to load pending actions: ${e.message}" }
+                    try {
+                        if (account?.role?.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
+                            pendingActionGroups = withContext(Dispatchers.IO) { ApiClient.loadPendingActionGroups(auth) }
+                            pendingActions = emptyList()
+                        } else {
+                            pendingActions = withContext(Dispatchers.IO) { ApiClient.loadPendingActions(auth) }
+                            pendingActionGroups = emptyList()
+                        }
+                    } catch(e:Exception){ message="Unable to load pending actions: ${e.message}" }
                 }
             }
             fun openAction(item:ActionItem,auth:String) {
