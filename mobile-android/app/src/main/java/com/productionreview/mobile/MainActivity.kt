@@ -436,12 +436,52 @@ class MainActivity : ComponentActivity() {
                                     FilterChip(selected=homeTab=="REJECTION",onClick={homeTab="REJECTION"},label={Text("NEW REJECTION")})
                                 }
                                 if(homeTab=="ACTIONS") {
-                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                                        Text("My pending actions",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
-                                        Text("${pendingActions.size} open",color=Muted,fontSize=12.sp)
+                                    if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
+                                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                            Text("Pending actions by user",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                            Text("${pendingActionGroups.sumOf { it.openCount }} open",color=Muted,fontSize=12.sp)
+                                        }
+                                        if (pendingActionGroups.isEmpty()) Text("No open actions found.",color=Muted)
+                                        pendingActionGroups.forEach { group ->
+                                            Card(Modifier.fillMaxWidth().clickable { selectedOwner=group;homeTab="USER_ACTIONS" },colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                                Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                                                        Text(group.name,color=Navy,fontWeight=FontWeight.Bold)
+                                                        Text("${group.openCount} OPEN",color=Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                    }
+                                                    Text(group.role.replace("_"," "),color=Muted,fontSize=11.sp)
+                                                    Text("${group.overdueCount} overdue  •  ${group.dueTodayCount} due today",color=if(group.overdueCount>0) Color(0xFFB3261E) else Muted,fontSize=12.sp)
+                                                    Text("VIEW USER ACTIONS →",color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                            Text("My pending actions",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                            Text("${pendingActions.size} open",color=Muted,fontSize=12.sp)
+                                        }
+                                        if(pendingActions.isEmpty()) Text("No pending actions assigned to you.",color=Muted)
                                     }
-                                    if(pendingActions.isEmpty()) Text("No pending actions assigned to you.",color=Muted)
                                     pendingActions.forEach { item ->
+                                        Card(Modifier.fillMaxWidth().clickable { token?.let{openAction(item,it)} },colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                                                    Text(item.number,color=Navy,fontWeight=FontWeight.Bold)
+                                                    Text(if(item.overdue)"OVERDUE" else item.status.replace("_"," "),color=if(item.overdue)Color(0xFFB3261E) else Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                }
+                                                Text(item.description,color=Navy)
+                                                Text("${if(item.whyWhy) "WHY-WHY ESCALATION" else "ACTION REQUIRED"} • ${item.priority}",color=Muted,fontSize=11.sp)
+                                                if(item.whyWhy) LinearProgressIndicator(progress={item.completion/100f},modifier=Modifier.fillMaxWidth())
+                                                Text("Tap to update action →",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                            }
+                                        }
+                                    }
+                                } else if (homeTab=="USER_ACTIONS" && selectedOwner!=null) {
+                                    val owner=selectedOwner!!
+                                    TextButton(onClick={selectedOwner=null;homeTab="ACTIONS";token?.let{refreshPendingActions(it)}}){Text("← BACK TO USERS")}
+                                    Text(owner.name,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
+                                    Text("${owner.openCount} open • ${owner.overdueCount} overdue • ${owner.dueTodayCount} due today",color=Muted,fontSize=12.sp)
+                                    owner.actions.forEach { item ->
                                         Card(Modifier.fillMaxWidth().clickable { token?.let{openAction(item,it)} },colors=CardDefaults.cardColors(containerColor=Color.White)) {
                                             Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
@@ -457,7 +497,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 } else if(homeTab=="DETAIL" && selectedAction!=null) {
                                     val item=selectedAction!!
-                                    TextButton(onClick={homeTab="ACTIONS";token?.let{refreshPendingActions(it)}}){Text("← BACK TO PENDING ACTIONS")}
+                                    TextButton(onClick={homeTab=if(account?.role?.uppercase() in listOf("ADMIN","MANAGEMENT")) "USER_ACTIONS" else "ACTIONS";token?.let{refreshPendingActions(it)}}){Text("← BACK TO ACTIONS")}
                                     Text(item.number,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
                                     Text(item.description,color=Muted)
                                     Text(if(item.whyWhy)"WHY-WHY ESCALATION" else "ACTION REQUIRED",color=Teal,fontWeight=FontWeight.Bold)
