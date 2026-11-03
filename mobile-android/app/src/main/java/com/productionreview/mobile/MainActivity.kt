@@ -4,9 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,9 +23,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDate
 
 private const val API_BASE = "https://machineshop.duckdns.org/api"
 private val Navy = Color(0xFF142B45)
@@ -31,15 +36,17 @@ private val Canvas = Color(0xFFF2F5F8)
 private val Muted = Color(0xFF627386)
 
 private data class Account(val username: String, val fullName: String, val role: String)
+private data class Choice(val id: Int, val label: String, val extra: String = "")
+private data class RouteChoice(val id: Int, val label: String)
 
 private object ApiClient {
     private fun request(path: String, method: String, body: JSONObject? = null, token: String? = null): JSONObject {
         val connection = (URL(API_BASE + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 15000
-            readTimeout = 20000
+            readTimeout = 25000
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "ProductionMobile/0.1.0")
+            setRequestProperty("User-Agent", "ProductionMobile/0.2.0")
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -52,35 +59,68 @@ private object ApiClient {
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             val json = if (text.isBlank()) JSONObject() else JSONObject(text)
-            if (code !in 200..299) {
-                val detail = json.optString("detail").ifBlank { "Server returned HTTP $code" }
-                throw IllegalStateException(detail)
-            }
+            if (code !in 200..299) throw IllegalStateException(json.optString("detail").ifBlank { "Server returned HTTP $code" })
             return json
-        } finally {
-            connection.disconnect()
-        }
+        } finally { connection.disconnect() }
+    }
+
+    private fun array(path: String, token: String): JSONArray {
+        val text = request(path, "GET", token=token).toString()
+        return JSONArray(text)
     }
 
     fun login(username: String, password: String): Pair<String, Account> {
-        val body = JSONObject().put("username", username).put("password", password)
-        val response = request("/auth/login", "POST", body)
+        val response = request("/auth/login", "POST", JSONObject().put("username", username).put("password", password))
         val token = response.getString("access_token")
-        val me = request("/auth/me", "GET", token = token)
-        return token to Account(
-            username = me.optString("username", username),
-            fullName = me.optString("full_name", username),
-            role = me.optString("role", "USER")
-        )
+        return token to currentAccount(token)
     }
-
-    fun logout(token: String) { request("/auth/logout", "POST", token = token) }
-
+    fun logout(token: String) { request("/auth/logout", "POST", token=token) }
     fun currentAccount(token: String): Account {
-        val me = request("/auth/me", "GET", token = token)
+        val me = request("/auth/me", "GET", token=token)
         return Account(me.optString("username"), me.optString("full_name"), me.optString("role"))
     }
+    fun loadMasters(token: String): Masters {
+        val productsJson = array("/masters/products", token)
+        val products = (0 until productsJson.length()).map { i ->
+            val x=productsJson.getJSONObject(i)
+            Choice(x.getInt("id"), "${x.optString("code")} • ${x.optString("name")}", x.optString("plant"))
+        }
+        val machinesJson = array("/masters/machines", token)
+        val machines = (0 until machinesJson.length()).mapNotNull { i ->
+            val x=machinesJson.getJSONObject(i)
+            if (x.has("active") && !x.optBoolean("active")) null
+            else if (x.has("is_active") && !x.optBoolean("is_active")) null
+            else Choice(x.getInt("id"), "${x.optString("code")} • ${x.optString("name")}")
+        }
+        val phenomenaJson = array("/quality/phenomena", token)
+        val phenomena = (0 until phenomenaJson.length()).map { i ->
+            val x=phenomenaJson.getJSONObject(i)
+            Choice(x.getInt("id"), x.optString("name"), x.optString("group"))
+        }
+        return Masters(products, machines, phenomena)
+    }
+    fun loadRoutes(productId: Int, date: String, token: String): List<RouteChoice> {
+        val routes = array("/masters/routes/$productId?on_date=$date", token)
+        val candidates = mutableListOf<Pair<String, List<RouteChoice>>>()
+        for (i in 0 until routes.length()) {
+            val route=routes.getJSONObject(i)
+            val from=route.optString("effective_from")
+            val to=route.optString("effective_to").takeIf { it.isNotBlank() && it!="null" }
+            if (from.isNotBlank() && from <= date && (to == null || to >= date)) {
+                val ops=route.optJSONArray("operations") ?: JSONArray()
+                val list=(0 until ops.length()).map { j ->
+                    val op=ops.getJSONObject(j)
+                    RouteChoice(op.getInt("route_operation_id"), "${op.optInt("sequence_no")}. ${op.optString("operation")}")
+                }
+                candidates.add(from to list)
+            }
+        }
+        return candidates.maxByOrNull { it.first }?.second ?: emptyList()
+    }
+    fun saveRejection(payload: JSONObject, token: String): JSONObject =
+        request("/quality/daily", "POST", payload, token)
 }
+private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,102 +133,185 @@ class MainActivity : ComponentActivity() {
             var token by remember { mutableStateOf<String?>(null) }
             var busy by remember { mutableStateOf(false) }
             var message by remember { mutableStateOf("Connect securely to your production account.") }
+            var masters by remember { mutableStateOf<Masters?>(null) }
+            var routes by remember { mutableStateOf<List<RouteChoice>>(emptyList()) }
+            var date by remember { mutableStateOf(LocalDate.now().toString()) }
+            var shift by remember { mutableStateOf("A") }
+            var product by remember { mutableStateOf<Choice?>(null) }
+            var detection by remember { mutableStateOf<RouteChoice?>(null) }
+            var responsible by remember { mutableStateOf<RouteChoice?>(null) }
+            var machine by remember { mutableStateOf<Choice?>(null) }
+            var phenomenon by remember { mutableStateOf<Choice?>(null) }
+            var rejectQty by remember { mutableStateOf("") }
+            var reworkQty by remember { mutableStateOf("0") }
+            var scrapQty by remember { mutableStateOf("0") }
+            var remark by remember { mutableStateOf("") }
+            var actionRequired by remember { mutableStateOf(false) }
+            var resultMessage by remember { mutableStateOf<String?>(null) }
             val scope = rememberCoroutineScope()
 
-            LaunchedEffect(Unit) {
-                val saved = withContext(Dispatchers.IO) { sessionStore.read() }
-                if (!saved.isNullOrBlank()) {
-                    busy = true
+            fun refreshMasters(auth: String) {
+                scope.launch {
+                    busy=true; message="Loading production masters…"
                     try {
-                        val current = withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
-                        token = saved
-                        account = current
-                        message = "Connected to Production Review."
-                    } catch (_: Exception) {
-                        withContext(Dispatchers.IO) { sessionStore.clear() }
-                        message = "Your saved session has expired. Please sign in again."
-                    } finally { busy = false }
+                        val loaded=withContext(Dispatchers.IO) { ApiClient.loadMasters(auth) }
+                        masters=loaded
+                        message="Connected. Production masters loaded."
+                    } catch(e:Exception) { message=e.message ?: "Unable to load masters." }
+                    finally { busy=false }
+                }
+            }
+            fun refreshRoutes(productId: Int, onDate: String, auth: String) {
+                scope.launch {
+                    detection=null; responsible=null; routes=emptyList()
+                    try {
+                        val loaded=withContext(Dispatchers.IO) { ApiClient.loadRoutes(productId,onDate,auth) }
+                        routes=loaded
+                        if (loaded.isEmpty()) message="No active route found for this product and date."
+                    } catch(e:Exception) { message=e.message ?: "Unable to load product route." }
                 }
             }
 
-            MaterialTheme(colorScheme = lightColorScheme(primary=Teal, secondary=Navy, background=Canvas, surface=Color.White)) {
-                Surface(Modifier.fillMaxSize(), color=Canvas) {
+            LaunchedEffect(Unit) {
+                val saved=withContext(Dispatchers.IO) { sessionStore.read() }
+                if (!saved.isNullOrBlank()) {
+                    busy=true
+                    try {
+                        val current=withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
+                        token=saved; account=current; refreshMasters(saved)
+                        message="Connected to Production Review."
+                    } catch(_:Exception) {
+                        withContext(Dispatchers.IO) { sessionStore.clear() }
+                        message="Your saved session has expired. Please sign in again."
+                    } finally { busy=false }
+                }
+            }
+
+            MaterialTheme(colorScheme=lightColorScheme(primary=Teal,secondary=Navy,background=Canvas,surface=Color.White)) {
+                Surface(Modifier.fillMaxSize(),color=Canvas) {
                     Column(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxWidth().background(Navy).padding(horizontal=22.dp, vertical=24.dp)) {
-                            Text("PRODUCTION REVIEW", color=Color(0xFFB9D5E5), fontSize=12.sp, fontWeight=FontWeight.Bold, letterSpacing=1.5.sp)
-                            Spacer(Modifier.height(8.dp))
-                            Text("Mobile Operations", color=Color.White, fontSize=25.sp, fontWeight=FontWeight.Bold)
-                            Text("Shop-floor quality capture", color=Color(0xFFD7E2EC), fontSize=14.sp)
+                        Column(Modifier.fillMaxWidth().background(Navy).padding(horizontal=22.dp,vertical=20.dp)) {
+                            Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
+                            Spacer(Modifier.height(6.dp))
+                            Text("Mobile Operations",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
+                            Text("Shop-floor quality capture",color=Color(0xFFD7E2EC),fontSize=14.sp)
                         }
-                        Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) {
-                            Text("SECURE ACCESS", color=Muted, fontSize=12.sp, fontWeight=FontWeight.Bold, letterSpacing=1.2.sp)
-                            Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), colors=CardDefaults.cardColors(containerColor=Color.White), elevation=CardDefaults.cardElevation(2.dp)) {
-                                Column(Modifier.padding(20.dp), verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                                    if (account == null) {
-                                        Text("Sign in", color=Navy, fontSize=21.sp, fontWeight=FontWeight.Bold)
-                                        Text("Use your existing Production Review username and password.", color=Muted, fontSize=14.sp)
-                                        OutlinedTextField(value=username, onValueChange={username=it}, label={Text("Username")}, singleLine=true, modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(value=password, onValueChange={password=it}, label={Text("Password")}, singleLine=true, visualTransformation=PasswordVisualTransformation(), keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Password), modifier=Modifier.fillMaxWidth())
-                                        Button(
-                                            onClick={
-                                                if (username.isBlank() || password.isBlank()) {
-                                                    message = "Enter both username and password."
-                                                } else {
-                                                    busy = true
-                                                    message = "Signing in securely…"
+                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                            if (account == null) {
+                                Text("SECURE ACCESS",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                    Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                                        Text("Sign in",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                                        Text("Use your existing Production Review account.",color=Muted,fontSize=14.sp)
+                                        OutlinedTextField(username,{username=it},label={Text("Username")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(password,{password=it},label={Text("Password")},singleLine=true,visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+                                        Button(onClick={
+                                            if(username.isBlank()||password.isBlank()) message="Enter both username and password."
+                                            else { busy=true; message="Signing in…"; scope.launch {
+                                                try {
+                                                    val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
+                                                    withContext(Dispatchers.IO){sessionStore.save(result.first)}
+                                                    token=result.first; account=result.second; password=""
+                                                    refreshMasters(result.first); message="Signed in. Loading masters…"
+                                                } catch(e:Exception){message=e.message ?: "Unable to sign in."}
+                                                finally{busy=false}
+                                            }}
+                                        },enabled=!busy,modifier=Modifier.fillMaxWidth().height(50.dp),colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text(if(busy)"PLEASE WAIT…" else "SIGN IN") }
+                                    }
+                                }
+                            } else {
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                    Column {
+                                        Text("Welcome, ${account!!.fullName.ifBlank{account!!.username}}",color=Navy,fontSize=18.sp,fontWeight=FontWeight.Bold)
+                                        Text("Role: ${account!!.role}",color=Muted,fontSize=12.sp)
+                                    }
+                                    TextButton(onClick={
+                                        val old=token
+                                        scope.launch {
+                                            busy=true
+                                            try{if(old!=null)withContext(Dispatchers.IO){ApiClient.logout(old)}}catch(_:Exception){}
+                                            withContext(Dispatchers.IO){sessionStore.clear()}
+                                            token=null;account=null;masters=null;message="Signed out.";busy=false
+                                        }
+                                    },enabled=!busy){Text("SIGN OUT")}
+                                }
+                                Text("NEW REJECTION",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
+                                    Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                        Text("Rejection details",color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
+                                        OutlinedTextField(date,{date=it; product?.let{p->token?.let{t->refreshRoutes(p.id,it,t)}}},label={Text("Rejection date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                        ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C"),Choice(4,"General")),null,{shift=it.label},shift)
+                                        ChoiceDropdown("Product",masters?.products.orEmpty(),product,{product=it;token?.let{t->refreshRoutes(it.id,date,t)};detection=null;responsible=null})
+                                        if(product!=null) {
+                                            ChoiceDropdown("Detection process",routes.map{Choice(it.id,it.label)},detection?.let{x->Choice(x.id,x.label)},{detection=RouteChoice(it.id,it.label)})
+                                            ChoiceDropdown("Responsible process (optional)",routes.map{Choice(it.id,it.label)},responsible?.let{x->Choice(x.id,x.label)},{responsible=RouteChoice(it.id,it.label)},allowNone=true)
+                                        }
+                                        ChoiceDropdown("Machine (optional)",masters?.machines.orEmpty(),machine,{machine=it},allowNone=true)
+                                        ChoiceDropdown("Rejection phenomenon",masters?.phenomena.orEmpty(),phenomenon,{phenomenon=it})
+                                        OutlinedTextField(rejectQty,{rejectQty=it},label={Text("Reject quantity *")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(reworkQty,{reworkQty=it},label={Text("Rework quantity")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(scrapQty,{scrapQty=it},label={Text("Scrap quantity")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(remark,{remark=it},label={Text("Remarks (optional)")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        Row(verticalAlignment=Alignment.CenterVertically) {
+                                            Checkbox(actionRequired,{actionRequired=it})
+                                            Text("Action required",color=Navy)
+                                        }
+                                        Button(onClick={
+                                            val auth=token
+                                            val qty=rejectQty.toBigDecimalOrNull()
+                                            val rework=reworkQty.toBigDecimalOrNull()
+                                            val scrap=scrapQty.toBigDecimalOrNull()
+                                            val selectedProduct=product
+                                            val selectedDetection=detection
+                                            val selectedPhenomenon=phenomenon
+                                            when {
+                                                auth==null -> message="Please sign in again."
+                                                runCatching{LocalDate.parse(date)}.isFailure -> message="Enter a valid date as YYYY-MM-DD."
+                                                selectedProduct==null -> message="Select a product."
+                                                selectedDetection==null -> message="Select a detection process."
+                                                selectedPhenomenon==null -> message="Select a rejection phenomenon."
+                                                qty==null||qty<=java.math.BigDecimal.ZERO -> message="Reject quantity must be greater than zero."
+                                                rework==null||rework<java.math.BigDecimal.ZERO -> message="Enter a valid non-negative rework quantity."
+                                                scrap==null||scrap<java.math.BigDecimal.ZERO -> message="Enter a valid non-negative scrap quantity."
+                                                else -> {
+                                                    val payload=JSONObject()
+                                                        .put("rejection_date",date).put("shift",shift)
+                                                        .put("product_id",selectedProduct.id)
+                                                        .put("detection_route_operation_id",selectedDetection.id)
+                                                        .put("phenomenon_id",selectedPhenomenon.id)
+                                                        .put("reject_qty",qty.toPlainString())
+                                                        .put("rework_qty",rework.toPlainString()).put("scrap_qty",scrap.toPlainString())
+                                                        .put("action_required",actionRequired)
+                                                    responsible?.let{payload.put("responsible_route_operation_id",it.id)}
+                                                    machine?.let{payload.put("machine_id",it.id)}
+                                                    if(remark.isNotBlank())payload.put("remark",remark.trim())
+                                                    busy=true;message="Submitting rejection…";resultMessage=null
                                                     scope.launch {
                                                         try {
-                                                            val result = withContext(Dispatchers.IO) { ApiClient.login(username.trim(), password) }
-                                                            withContext(Dispatchers.IO) { sessionStore.save(result.first) }
-                                                            token = result.first
-                                                            account = result.second
-                                                            password = ""
-                                                            message = "Signed in. Server access verified."
-                                                        } catch (e: Exception) {
-                                                            message = e.message ?: "Unable to connect. Check your internet connection."
-                                                        } finally { busy = false }
+                                                            val saved=withContext(Dispatchers.IO){ApiClient.saveRejection(payload,auth)}
+                                                            val id=saved.optInt("id")
+                                                            val ppmPending=saved.optBoolean("ppm_pending")
+                                                            resultMessage=if(ppmPending)"Saved successfully • Record #$id • PPM pending production data." else "Saved successfully • Record #$id • PPM calculated by server."
+                                                            rejectQty="";reworkQty="0";scrapQty="0";remark="";actionRequired=false
+                                                            message="Rejection record saved to Production Review."
+                                                        }catch(e:Exception){message=e.message ?: "Submission failed. Check the server before retrying."}
+                                                        finally{busy=false}
                                                     }
                                                 }
-                                            },
-                                            enabled=!busy,
-                                            modifier=Modifier.fillMaxWidth().height(52.dp),
-                                            shape=RoundedCornerShape(10.dp),
-                                            colors=ButtonDefaults.buttonColors(containerColor=Teal)
-                                        ) { Text(if (busy) "PLEASE WAIT…" else "SIGN IN", fontWeight=FontWeight.Bold) }
-                                    } else {
-                                        Text("Welcome", color=Navy, fontSize=21.sp, fontWeight=FontWeight.Bold)
-                                        Text(account!!.fullName.ifBlank { account!!.username }, color=Navy, fontSize=17.sp)
-                                        Text("Username: ${account!!.username}", color=Muted, fontSize=14.sp)
-                                        Text("Role: ${account!!.role}", color=Muted, fontSize=14.sp)
-                                        Text("Your access is controlled by the production server.", color=Muted, fontSize=14.sp)
-                                        OutlinedButton(onClick={
-                                            val oldToken = token
-                                            scope.launch {
-                                                busy = true
-                                                try {
-                                                    if (oldToken != null) withContext(Dispatchers.IO) { ApiClient.logout(oldToken) }
-                                                } catch (_: Exception) { }
-                                                withContext(Dispatchers.IO) { sessionStore.clear() }
-                                                token = null
-                                                account = null
-                                                message = "Signed out."
-                                                busy = false
                                             }
-                                        }, enabled=!busy, modifier=Modifier.fillMaxWidth()) { Text("SIGN OUT") }
+                                        },enabled=!busy && masters!=null,modifier=Modifier.fillMaxWidth().height(52.dp),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(10.dp)) { Text(if(busy)"PLEASE WAIT…" else "SAVE REJECTION",fontWeight=FontWeight.Bold) }
+                                        resultMessage?.let{Text(it,color=Teal,fontWeight=FontWeight.SemiBold)}
                                     }
                                 }
                             }
-                            Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), colors=CardDefaults.cardColors(containerColor=Color.White)) {
-                                Column(Modifier.padding(18.dp)) {
-                                    Text("Connection", color=Navy, fontSize=16.sp, fontWeight=FontWeight.Bold)
-                                    Spacer(Modifier.height(6.dp))
-                                    Text(message, color=Muted, fontSize=14.sp)
-                                    Spacer(Modifier.height(4.dp))
-                                    Text("Server: machineshop.duckdns.org • HTTPS", color=Teal, fontSize=12.sp, fontWeight=FontWeight.Medium)
+                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                Column(Modifier.padding(16.dp)) {
+                                    Text("Connection",color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
+                                    Text(message,color=Muted,fontSize=14.sp)
+                                    Text("machineshop.duckdns.org • HTTPS",color=Teal,fontSize=12.sp,fontWeight=FontWeight.Medium)
                                 }
                             }
-                            Spacer(Modifier.weight(1f))
-                            Text("Secure access • Existing production records", color=Muted, fontSize=11.sp, modifier=Modifier.align(Alignment.CenterHorizontally))
+                            Text("Secure access • Existing production records",color=Muted,fontSize=11.sp,modifier=Modifier.align(Alignment.CenterHorizontally))
                         }
                     }
                 }
@@ -197,3 +320,27 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+private fun ChoiceDropdown(
+    label: String,
+    choices: List<Choice>,
+    selected: Choice?,
+    onSelected: (Choice) -> Unit,
+    selectedText: String? = null,
+    allowNone: Boolean = false
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(label,color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
+        Box {
+            OutlinedButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(8.dp)) {
+                Text(selectedText ?: selected?.label ?: if(allowNone)"Not selected" else "Select…",modifier=Modifier.weight(1f),maxLines=1)
+                Text("▾")
+            }
+            DropdownMenu(expanded=expanded,onDismissRequest={expanded=false},modifier=Modifier.heightIn(max=320.dp)) {
+                if(allowNone) DropdownMenuItem(text={Text("Not selected")},onClick={onSelected(Choice(-1,""));expanded=false})
+                choices.forEach { item -> DropdownMenuItem(text={Text(item.label)},onClick={onSelected(item);expanded=false}) }
+            }
+        }
+    }
+}
