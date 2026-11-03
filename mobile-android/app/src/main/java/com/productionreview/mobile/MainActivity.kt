@@ -30,6 +30,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -411,22 +413,37 @@ class MainActivity : ComponentActivity() {
                     drawerState = drawerState,
                     gesturesEnabled = account != null,
                     drawerContent = {
-                        ModalDrawerSheet(modifier=Modifier.fillMaxHeight().fillMaxWidth(0.40f)) {
+                        ModalDrawerSheet(
+                            modifier=Modifier.fillMaxHeight().fillMaxWidth(0.40f),
+                            drawerContainerColor=Color(0xFFF1F4F7),
+                            drawerTonalElevation=4.dp
+                        ) {
                             Column(Modifier.fillMaxSize()) {
-                                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                                Text("PRODUCTION REVIEW", color=Teal, fontSize=11.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
-                                Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(), color=Navy, fontSize=18.sp, fontWeight=FontWeight.Bold)
-                                Text(account?.role.orEmpty(), color=Muted, fontSize=12.sp)
+                                Column(
+                                    Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFF173B5E),Color(0xFF071D33)))).padding(horizontal=10.dp,vertical=18.dp),
+                                    horizontalAlignment=Alignment.Start,
+                                    verticalArrangement=Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF0B6BA8)),contentAlignment=Alignment.Center) {
+                                        Icon(Icons.Filled.Settings,contentDescription="Machine shop",tint=Color.White,modifier=Modifier.size(30.dp))
+                                    }
+                                    Text("MACHINE SHOP",color=Color.White,fontSize=12.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=0.5.sp,maxLines=1)
+                                    Text("OPERATIONS",color=Color(0xFFFFA726),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,maxLines=1)
+                                    Divider(color=Color(0xFFFFA726),thickness=2.dp,modifier=Modifier.width(62.dp).padding(top=3.dp))
+                                    Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(),color=Color.White,fontSize=11.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
+                                    Text(account?.role.orEmpty(),color=Color(0xFFB9D5E5),fontSize=9.sp,maxLines=1)
                                 }
-                            Divider()
-                            NavigationDrawerItem(label={Text("Pending Actions")}, selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL", icon={Icon(Icons.Filled.Assignment, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }})
-                            if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(label={Text("Rejection Entry")}, selected=homeTab=="REJECTION", icon={Icon(Icons.Filled.AssignmentLate, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="REJECTION" }})
-                            if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(label={Text("OEE")}, selected=homeTab=="OEE", icon={Icon(Icons.Filled.Speed, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="OEE" }})
-                            NavigationDrawerItem(label={Text("My Action History")}, selected=homeTab=="HISTORY", icon={Icon(Icons.Filled.History, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="HISTORY" }})
-                            Spacer(Modifier.weight(1f))
-                            Divider()
-                            NavigationDrawerItem(label={Text("Account")}, selected=false, icon={Icon(Icons.Filled.Person, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="ACCOUNT" }})
-                            NavigationDrawerItem(label={Text("Logout")}, selected=false, icon={Icon(Icons.Filled.Logout, contentDescription=null)}, onClick={scope.launch { drawerState.close(); showLogoutConfirm=true }})
+                                Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=11.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(18.dp))},onClick={scope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=11.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(18.dp))},onClick={scope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=11.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(18.dp))},onClick={scope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("History",fontSize=11.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HISTORY",icon={Icon(Icons.Filled.History,contentDescription=null,modifier=Modifier.size(18.dp))},onClick={scope.launch { drawerState.close(); homeTab="HISTORY" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                }
+                                Divider(color=Color(0xFFCBD5DF))
+                                Column(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=6.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Account",fontSize=11.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACCOUNT",icon={Icon(Icons.Filled.Person,contentDescription=null,modifier=Modifier.size(18.dp))},onClick={scope.launch { drawerState.close(); homeTab="ACCOUNT" }})
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Logout",fontSize=11.sp,fontWeight=FontWeight.Bold,maxLines=1)},selected=false,icon={Icon(Icons.Filled.Logout,contentDescription=null,tint=Color(0xFFB3261E),modifier=Modifier.size(18.dp))},onClick={scope.launch { drawerState.close(); showLogoutConfirm=true }},colors=NavigationDrawerItemDefaults.colors(unselectedTextColor=Color(0xFFB3261E),unselectedIconColor=Color(0xFFB3261E)))
+                                }
                             }
                         }
                     }
