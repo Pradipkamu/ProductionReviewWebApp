@@ -143,12 +143,12 @@ private object ApiClient {
         }
         try {
             connection.outputStream.use { output ->
-                val header = "--$boundary\\r\\n" +
-                    "Content-Disposition: form-data; name=\\"file\\"; filename=\\"${file.name}\\"\\r\\n" +
-                    "Content-Type: image/jpeg\\r\\n\\r\\n"
+                val header = "--$boundary\r\n" +
+                    "Content-Disposition: form-data; name=\\"file\\"; filename=\\"${file.name}\\"\r\n" +
+                    "Content-Type: image/jpeg\r\n\r\n"
                 output.write(header.toByteArray(Charsets.UTF_8))
                 file.inputStream().use { input -> input.copyTo(output) }
-                output.write("\\r\\n--$boundary--\\r\\n".toByteArray(Charsets.UTF_8))
+                output.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
             }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
