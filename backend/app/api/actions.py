@@ -189,8 +189,8 @@ def pending_actions_by_user(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if user.role != UserRole.ADMIN:
-        raise HTTPException(403, "Admin access required")
+    if user.role not in (UserRole.ADMIN, UserRole.MANAGEMENT):
+        raise HTTPException(403, "Admin or Management access required")
 
     users = db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name, User.username)).all()
     actions = db.scalars(
