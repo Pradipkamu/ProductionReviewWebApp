@@ -62,10 +62,10 @@ private object ApiClient {
         } finally { connection.disconnect() }
     }
 
-    private fun array(path: String, token: String): JSONArray {
-        val text = request(path, "GET", token=token).toString()
-        return JSONArray(text)
-    }
+    private fun request(path: String, method: String, body: JSONObject? = null, token: String? = null): JSONObject =
+        JSONObject(requestText(path, method, body, token))
+
+    private fun array(path: String, token: String): JSONArray = JSONArray(requestText(path, "GET", token=token))
 
     fun login(username: String, password: String): Pair<String, Account> {
         val response = request("/auth/login", "POST", JSONObject().put("username", username).put("password", password))
