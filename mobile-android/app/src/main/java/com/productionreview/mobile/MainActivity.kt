@@ -40,7 +40,7 @@ private data class Choice(val id: Int, val label: String, val extra: String = ""
 private data class RouteChoice(val id: Int, val label: String)
 
 private object ApiClient {
-    private fun request(path: String, method: String, body: JSONObject? = null, token: String? = null): JSONObject {
+    private fun requestText(path: String, method: String, body: JSONObject? = null, token: String? = null): String {
         val connection = (URL(API_BASE + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 15000
@@ -58,9 +58,7 @@ private object ApiClient {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            val json = if (text.isBlank()) JSONObject() else JSONObject(text)
-            if (code !in 200..299) throw IllegalStateException(json.optString("detail").ifBlank { "Server returned HTTP $code" })
-            return json
+            if (code !in 200..299) {\n                val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull().orEmpty()\n                throw IllegalStateException(detail.ifBlank { "Server returned HTTP $code" })\n            }\n            return text
         } finally { connection.disconnect() }
     }
 
@@ -244,9 +242,9 @@ class MainActivity : ComponentActivity() {
                                         ChoiceDropdown("Product",masters?.products.orEmpty(),product,{product=it;token?.let{t->refreshRoutes(it.id,date,t)};detection=null;responsible=null})
                                         if(product!=null) {
                                             ChoiceDropdown("Detection process",routes.map{Choice(it.id,it.label)},detection?.let{x->Choice(x.id,x.label)},{detection=RouteChoice(it.id,it.label)})
-                                            ChoiceDropdown("Responsible process (optional)",routes.map{Choice(it.id,it.label)},responsible?.let{x->Choice(x.id,x.label)},{responsible=RouteChoice(it.id,it.label)},allowNone=true)
+                                            ChoiceDropdown("Responsible process (optional)",routes.map{Choice(it.id,it.label)},responsible?.let{x->Choice(x.id,x.label)},{responsible=if(it.id<0)null else RouteChoice(it.id,it.label)},allowNone=true)
                                         }
-                                        ChoiceDropdown("Machine (optional)",masters?.machines.orEmpty(),machine,{machine=it},allowNone=true)
+                                        ChoiceDropdown("Machine (optional)",masters?.machines.orEmpty(),machine,{machine=if(it.id<0)null else it},allowNone=true)
                                         ChoiceDropdown("Rejection phenomenon",masters?.phenomena.orEmpty(),phenomenon,{phenomenon=it})
                                         OutlinedTextField(rejectQty,{rejectQty=it},label={Text("Reject quantity *")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(reworkQty,{reworkQty=it},label={Text("Rework quantity")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
