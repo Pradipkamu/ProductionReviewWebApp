@@ -427,6 +427,7 @@ class MainActivity : ComponentActivity() {
                             Divider()
                             NavigationDrawerItem(label={Text("Account")}, selected=false, icon={Icon(Icons.Filled.Person, contentDescription=null)}, onClick={scope.launch { drawerState.close(); homeTab="ACCOUNT" }})
                             NavigationDrawerItem(label={Text("Logout")}, selected=false, icon={Icon(Icons.Filled.Logout, contentDescription=null)}, onClick={scope.launch { drawerState.close(); showLogoutConfirm=true }})
+                            }
                         }
                     }
                 ) {
