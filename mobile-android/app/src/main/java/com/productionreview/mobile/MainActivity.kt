@@ -241,6 +241,9 @@ class MainActivity : ComponentActivity() {
             var actionStatus by remember { mutableStateOf("IN_PROGRESS") }
             var why1 by remember { mutableStateOf("") }
             var why2 by remember { mutableStateOf("") }
+            var why3 by remember { mutableStateOf("") }
+            var why4 by remember { mutableStateOf("") }
+            var why5 by remember { mutableStateOf("") }
             var rootCause by remember { mutableStateOf("") }
             var correctiveAction by remember { mutableStateOf("") }
             var preventiveAction by remember { mutableStateOf("") }
@@ -250,7 +253,9 @@ class MainActivity : ComponentActivity() {
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if(uri!=null) {
                     try {
-                        val target=File(cacheDir,"action_evidence_${System.currentTimeMillis()}_${uri.lastPathSegment?.substringAfterLast('/')?.take(40) ?: "file"}")
+                        val mime=contentResolver.getType(uri).orEmpty()
+                        val ext=when(mime){"image/jpeg"->".jpg";"image/png"->".png";"image/webp"->".webp";"application/pdf"->".pdf";"application/vnd.openxmlformats-officedocument.wordprocessingml.document"->".docx";"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"->".xlsx";else->".jpg"}
+                        val target=File(cacheDir,"action_evidence_${System.currentTimeMillis()}$ext")
                         contentResolver.openInputStream(uri)?.use{input->target.outputStream().use{input.copyTo(it)}}
                         if(target.exists() && target.length()>0)evidenceFile=target else message="Unable to read selected evidence file."
                     } catch(e:Exception){message=e.message ?: "Unable to select evidence."}
@@ -285,6 +290,9 @@ class MainActivity : ComponentActivity() {
                         val p=actionPlan
                         why1=p?.optString("why1").orEmpty().takeUnless{it=="null"}.orEmpty()
                         why2=p?.optString("why2").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        why3=p?.optString("why3").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        why4=p?.optString("why4").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        why5=p?.optString("why5").orEmpty().takeUnless{it=="null"}.orEmpty()
                         rootCause=p?.optString("root_cause").orEmpty().takeUnless{it=="null"}.orEmpty()
                         correctiveAction=p?.optString("corrective_action").orEmpty().takeUnless{it=="null"}.orEmpty()
                         preventiveAction=p?.optString("preventive_action").orEmpty().takeUnless{it=="null"}.orEmpty()
@@ -441,6 +449,9 @@ class MainActivity : ComponentActivity() {
                                         Text("Why-Why investigation",color=Navy,fontWeight=FontWeight.Bold)
                                         OutlinedTextField(why1,{why1=it},label={Text("Why 1")},modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(why2,{why2=it},label={Text("Why 2")},modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(why3,{why3=it},label={Text("Why 3")},modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(why4,{why4=it},label={Text("Why 4")},modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(why5,{why5=it},label={Text("Why 5")},modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(rootCause,{rootCause=it},label={Text("Root cause")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         OutlinedTextField(correctiveAction,{correctiveAction=it},label={Text("Corrective action")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         OutlinedTextField(preventiveAction,{preventiveAction=it},label={Text("Preventive action")},modifier=Modifier.fillMaxWidth(),minLines=2)
@@ -461,7 +472,7 @@ class MainActivity : ComponentActivity() {
                                                     evidence.delete();evidenceFile=null
                                                 }
                                                 if(item.whyWhy) {
-                                                    val plan=JSONObject().put("why1",why1).put("why2",why2).put("root_cause",rootCause).put("corrective_action",correctiveAction).put("preventive_action",preventiveAction).put("verification_method",verificationMethod).put("verification_result",verificationResult)
+                                                    val plan=JSONObject().put("why1",why1).put("why2",why2).put("why3",why3).put("why4",why4).put("why5",why5).put("root_cause",rootCause).put("corrective_action",correctiveAction).put("preventive_action",preventiveAction).put("verification_method",verificationMethod).put("verification_result",verificationResult)
                                                     withContext(Dispatchers.IO){ApiClient.updateWhyWhy(item.id,plan,auth)}
                                                 }
                                                 message="Action update submitted successfully."
