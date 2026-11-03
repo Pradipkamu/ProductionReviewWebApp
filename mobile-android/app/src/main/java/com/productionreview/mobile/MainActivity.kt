@@ -261,13 +261,13 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme=lightColorScheme(primary=Teal,secondary=Navy,background=Canvas,surface=Color.White)) {
                 Surface(Modifier.fillMaxSize(),color=Canvas) {
                     Column(Modifier.fillMaxSize()) {
-                        Column(Modifier.fillMaxWidth().background(Navy).padding(horizontal=22.dp,vertical=20.dp)) {
-                            Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
-                            Spacer(Modifier.height(6.dp))
-                            Text("Mobile Operations",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
-                            Text("Shop-floor quality capture",color=Color(0xFFD7E2EC),fontSize=14.sp)
+                        Column(Modifier.fillMaxWidth().background(Navy).padding(horizontal=18.dp,vertical=10.dp)) {
+                            Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                            Spacer(Modifier.height(2.dp))
+                            Text("Mobile Operations",color=Color.White,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                            Text("Shop-floor quality capture",color=Color(0xFFD7E2EC),fontSize=12.sp)
                         }
-                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal=14.dp, vertical=10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                             if (account == null) {
                                 Text("SECURE ACCESS",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White)) {
@@ -293,8 +293,8 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                                     Column {
-                                        Text("Welcome, ${account!!.fullName.ifBlank{account!!.username}}",color=Navy,fontSize=18.sp,fontWeight=FontWeight.Bold)
-                                        Text("Role: ${account!!.role}",color=Muted,fontSize=12.sp)
+                                        Text("Welcome, ${account!!.fullName.ifBlank{account!!.username}}",color=Navy,fontSize=15.sp,fontWeight=FontWeight.Bold,maxLines=1)
+                                        Text("${account!!.role}",color=Muted,fontSize=10.sp)
                                     }
                                     TextButton(onClick={
                                         val old=token
@@ -304,11 +304,11 @@ class MainActivity : ComponentActivity() {
                                             withContext(Dispatchers.IO){sessionStore.clear()}
                                             token=null;account=null;masters=null;message="Signed out.";busy=false
                                         }
-                                    },enabled=!busy){Text("SIGN OUT")}
+                                    },enabled=!busy){Text("LOG OUT",fontSize=11.sp,fontWeight=FontWeight.Bold)}
                                 }
                                 Text("NEW REJECTION",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
-                                    Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                    Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                         Text("Rejection details",color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
                                         OutlinedTextField(date,{date=it; product?.let{p->token?.let{t->refreshRoutes(p.id,it,t)}}},label={Text("Rejection date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
                                         ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C"),Choice(4,"General")),null,{shift=it.label},shift)
