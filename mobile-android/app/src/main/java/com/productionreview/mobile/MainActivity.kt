@@ -1,8 +1,12 @@
 package com.productionreview.mobile
 
 import android.os.Bundle
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -27,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDate
@@ -123,6 +128,38 @@ private object ApiClient {
     }
     fun saveRejection(payload: JSONObject, token: String): JSONObject =
         request("/quality/daily", "POST", payload, token)
+
+    fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
+        val boundary = "----ProductionMobile${System.currentTimeMillis()}"
+        val connection = (URL("$API_BASE/quality/daily/$rejectionId/attachments").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 15000
+            readTimeout = 45000
+            doOutput = true
+            setChunkedStreamingMode(64 * 1024)
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+        try {
+            connection.outputStream.use { output ->
+                val header = "--$boundary\\r\\n" +
+                    "Content-Disposition: form-data; name=\\"file\\"; filename=\\"${file.name}\\"\\r\\n" +
+                    "Content-Type: image/jpeg\\r\\n\\r\\n"
+                output.write(header.toByteArray(Charsets.UTF_8))
+                file.inputStream().use { input -> input.copyTo(output) }
+                output.write("\\r\\n--$boundary--\\r\\n".toByteArray(Charsets.UTF_8))
+            }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull().orEmpty()
+                throw IllegalStateException(detail.ifBlank { "Photo upload failed (HTTP $code)" })
+            }
+            return JSONObject(text)
+        } finally { connection.disconnect() }
+    }
 }
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
 
@@ -152,6 +189,16 @@ class MainActivity : ComponentActivity() {
             var remark by remember { mutableStateOf("") }
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
+            val defectPhotos = remember { mutableStateListOf<File>() }
+            var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
+            var savedRejectionId by remember { mutableStateOf<Int?>(null) }
+            val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { captured ->
+                val photo = pendingPhotoFile
+                if (captured && photo != null && photo.exists() && photo.length() > 0) {
+                    if (defectPhotos.size < 5) defectPhotos.add(photo) else photo.delete()
+                } else photo?.delete()
+                pendingPhotoFile = null
+            }
             val scope = rememberCoroutineScope()
 
             fun refreshMasters(auth: String) {
@@ -260,6 +307,52 @@ class MainActivity : ComponentActivity() {
                                             Checkbox(actionRequired,{actionRequired=it})
                                             Text("Action required",color=Navy)
                                         }
+                                        Divider()
+                                        Text("Defect photographs (${defectPhotos.size}/5)",color=Navy,fontWeight=FontWeight.SemiBold)
+                                        Text("Capture clear overall and close-up views. Photos upload after the rejection is saved.",color=Muted,fontSize=12.sp)
+                                        OutlinedButton(
+                                            onClick={
+                                                if(defectPhotos.size>=5) message="Maximum 5 photographs per rejection."
+                                                else try {
+                                                    val photo=File.createTempFile("defect_${System.currentTimeMillis()}_", ".jpg", cacheDir)
+                                                    pendingPhotoFile=photo
+                                                    val uri=FileProvider.getUriForFile(this@MainActivity,"${packageName}.fileprovider",photo)
+                                                    cameraLauncher.launch(uri)
+                                                } catch(e:Exception) { message=e.message ?: "Unable to open camera." }
+                                            },
+                                            enabled=!busy && defectPhotos.size<5,
+                                            modifier=Modifier.fillMaxWidth()
+                                        ) { Text("TAKE DEFECT PHOTO") }
+                                        defectPhotos.forEachIndexed { index, photo ->
+                                            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
+                                                Text("Photo ${index+1} • ${(photo.length()/1024).coerceAtLeast(1)} KB",color=Muted,fontSize=12.sp)
+                                                TextButton(onClick={photo.delete();defectPhotos.remove(photo)}) { Text("REMOVE") }
+                                            }
+                                        }
+                                        if(savedRejectionId!=null && defectPhotos.isNotEmpty()) {
+                                            OutlinedButton(
+                                                onClick={
+                                                    val auth=token
+                                                    val recordId=savedRejectionId
+                                                    if(auth!=null && recordId!=null) scope.launch {
+                                                        busy=true
+                                                        try {
+                                                            defectPhotos.toList().forEach { photo ->
+                                                                withContext(Dispatchers.IO){ApiClient.uploadRejectionPhoto(recordId,photo,auth)}
+                                                                photo.delete()
+                                                                defectPhotos.remove(photo)
+                                                            }
+                                                            resultMessage="Rejection #$recordId and all defect photographs uploaded successfully."
+                                                            savedRejectionId=null
+                                                        } catch(e:Exception) {
+                                                            message="Rejection #$recordId is saved. Photo upload is still pending: ${e.message}"
+                                                        } finally { busy=false }
+                                                    }
+                                                },
+                                                enabled=!busy,
+                                                modifier=Modifier.fillMaxWidth()
+                                            ) { Text("RETRY PHOTO UPLOAD") }
+                                        }
                                         Button(onClick={
                                             val auth=token
                                             val qty=rejectQty.toBigDecimalOrNull()
@@ -295,8 +388,24 @@ class MainActivity : ComponentActivity() {
                                                             val saved=withContext(Dispatchers.IO){ApiClient.saveRejection(payload,auth)}
                                                             val id=saved.optInt("id")
                                                             val ppmPending=saved.optBoolean("ppm_pending")
-                                                            resultMessage=if(ppmPending)"Saved successfully • Record #$id • PPM pending production data." else "Saved successfully • Record #$id • PPM calculated by server."
                                                             rejectQty="";reworkQty="0";scrapQty="0";remark="";actionRequired=false
+                                                            if(defectPhotos.isNotEmpty()) {
+                                                                savedRejectionId=id
+                                                                try {
+                                                                    defectPhotos.toList().forEach { photo ->
+                                                                        withContext(Dispatchers.IO){ApiClient.uploadRejectionPhoto(id,photo,auth)}
+                                                                        photo.delete()
+                                                                        defectPhotos.remove(photo)
+                                                                    }
+                                                                    savedRejectionId=null
+                                                                    resultMessage="Rejection #$id saved with all defect photographs."
+                                                                } catch(photoError:Exception) {
+                                                                    resultMessage="Rejection #$id saved. Photo upload pending; use Retry Photo Upload."
+                                                                    message=photoError.message ?: "Photo upload failed."
+                                                                }
+                                                            } else {
+                                                                resultMessage=if(ppmPending)"Saved successfully • Record #$id • PPM pending production data." else "Saved successfully • Record #$id • PPM calculated by server."
+                                                            }
                                                             message="Rejection record saved to Production Review."
                                                         }catch(e:Exception){message=e.message ?: "Submission failed. Check the server before retrying."}
                                                         finally{busy=false}
