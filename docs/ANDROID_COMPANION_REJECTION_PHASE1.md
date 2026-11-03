@@ -2,7 +2,7 @@
 
 ## Decision
 
-Build a dedicated native Android companion app inside this repository at `mobile-android/`. The existing ProductionReviewWebApp remains the sole system of record. The app is a fast, role-aware shop-floor capture client; it is not a second production database and does not replace the web Quality page.
+Build a dedicated native Android companion app inside this repository at `mobile-android/`. All Android work, APK tooling and mobile-specific backend changes for this initiative must stay on the dedicated `productionmobile` branch; do not commit them to `main` or another feature branch. The existing ProductionReviewWebApp remains the sole system of record. The app is a fast, role-aware shop-floor capture client; it is not a second production database and does not replace the web Quality page.
 
 Initial release scope: **Rejection entry only**. OEE and machine-loss capture are deliberately deferred until rejection capture is proven in production.
 
@@ -36,14 +36,14 @@ ProductionReviewWebApp FastAPI
        Existing PostgreSQL
 ```
 
-### Technology choices
+### Corporate visual direction (required from the first build)\n\nUse an executive corporate visual system from the first installable build, not a generic Android demo screen: deep navy app bar and section headers, restrained teal/blue action accents, white or very light cool-grey surfaces, consistent spacing, clear typography hierarchy, compact KPI cards, strong contrast, and large touch targets suitable for a factory floor. Use a consistent app icon, branded splash screen and named design tokens. Avoid excessive gradients, decorative illustrations, crowded tables and tiny controls. The rejection form must prioritize legibility, one-handed use and minimal taps. All screens must support loading, empty, validation, offline and error states.\n\n## Technology choices
 
 - Kotlin, Android Studio/Gradle, Jetpack Compose and Material 3.
 - Retrofit + OkHttp for HTTPS API calls; no direct database access.
 - Room for local drafts, cached dropdown masters and pending submissions.
 - WorkManager for constrained background synchronization.
 - Android Keystore-backed encryption for session secrets and sensitive local data.
-- Build and signed release artifacts through GitHub Actions; signing secrets remain in GitHub Actions secrets and are never committed.
+- Build artifacts through the project-local `mobile-android/build_apk.sh` tool and GitHub Actions. The shell tool should work in Termux using the Android SDK and Java already installed on the phone, prefer the Gradle wrapper when present, build a reproducible APK, verify the APK, and copy it to shared Downloads. Local signing keystores and passwords must remain outside Git and never be uploaded; unsigned/debug builds are for development, while release signing uses local environment variables or protected CI secrets.
 
 The first build should target a practical minimum Android API level supported by the existing fleet; confirm the oldest shop-floor handset before setting `minSdk`. Support portrait phones, large touch targets, readable text, and low-bandwidth operation.
 
