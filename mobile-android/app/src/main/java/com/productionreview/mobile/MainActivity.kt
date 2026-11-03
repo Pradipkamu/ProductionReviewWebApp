@@ -141,6 +141,30 @@ private object ApiClient {
     fun updateWhyWhy(id:Int,fields:JSONObject,token:String): JSONObject =
         request("/actions/$id/plan","PUT",fields,token)
 
+    fun uploadActionEvidence(actionId:Int,file:File,token:String):JSONObject {
+        val boundary="----ProductionMobile${System.currentTimeMillis()}"
+        val connection=(URL("$API_BASE/actions/$actionId/attachments").openConnection() as HttpURLConnection).apply {
+            requestMethod="POST";connectTimeout=15000;readTimeout=45000;doOutput=true
+            setRequestProperty("Accept","application/json")
+            setRequestProperty("Authorization","Bearer $token")
+            setRequestProperty("Content-Type","multipart/form-data; boundary=$boundary")
+        }
+        try {
+            connection.outputStream.use { out ->
+                out.write("--$boundary\r\n".toByteArray())
+                out.write("Content-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\r\n".toByteArray())
+                out.write("Content-Type: application/octet-stream\r\n\r\n".toByteArray())
+                file.inputStream().use{it.copyTo(out)}
+                out.write("\r\n--$boundary--\r\n".toByteArray())
+            }
+            val code=connection.responseCode
+            val stream=if(code in 200..299)connection.inputStream else connection.errorStream
+            val body=stream?.bufferedReader()?.use{it.readText()}.orEmpty()
+            if(code !in 200..299)throw IllegalStateException(runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty().ifBlank{"Evidence upload failed (HTTP $code)"})
+            return JSONObject(body)
+        } finally { connection.disconnect() }
+    }
+
     fun saveRejection(payload: JSONObject, token: String): JSONObject =
         request("/quality/daily", "POST", payload, token)
 
@@ -222,6 +246,17 @@ class MainActivity : ComponentActivity() {
             var preventiveAction by remember { mutableStateOf("") }
             var verificationMethod by remember { mutableStateOf("") }
             var verificationResult by remember { mutableStateOf("") }
+            var evidenceFile by remember { mutableStateOf<File?>(null) }
+            val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                if(uri!=null) {
+                    try {
+                        val target=File(cacheDir,"action_evidence_${System.currentTimeMillis()}_${uri.lastPathSegment?.substringAfterLast('/')?.take(40) ?: "file"}")
+                        contentResolver.openInputStream(uri)?.use{input->target.outputStream().use{input.copyTo(it)}}
+                        if(target.exists() && target.length()>0)evidenceFile=target else message="Unable to read selected evidence file."
+                    } catch(e:Exception){message=e.message ?: "Unable to select evidence."}
+                }
+            }
+
 
             val defectPhotos = remember { mutableStateListOf<File>() }
             var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
@@ -396,6 +431,8 @@ class MainActivity : ComponentActivity() {
                                     Text(item.description,color=Muted)
                                     Text(if(item.whyWhy)"WHY-WHY ESCALATION" else "ACTION REQUIRED",color=Teal,fontWeight=FontWeight.Bold)
                                     OutlinedTextField(followupComment,{followupComment=it},label={Text("Action taken / progress update *")},modifier=Modifier.fillMaxWidth(),minLines=3)
+                                    OutlinedButton(onClick={evidencePicker.launch("*/*")},enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(evidenceFile==null)"ADD EVIDENCE PHOTO / DOCUMENT" else "CHANGE EVIDENCE FILE") }
+                                    evidenceFile?.let { Text("Selected: ${it.name} • ${(it.length()/1024).coerceAtLeast(1)} KB",color=Muted,fontSize=12.sp) }
                                     Text("Update status",color=Muted,fontSize=12.sp)
                                     Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                                         listOf("OPEN","IN_PROGRESS","BLOCKED").forEach { st -> FilterChip(selected=actionStatus==st,onClick={actionStatus=st},label={Text(st.replace("_"," "))}) }
@@ -419,6 +456,10 @@ class MainActivity : ComponentActivity() {
                                             busy=true
                                             try {
                                                 withContext(Dispatchers.IO){ApiClient.updateAction(item.id,followupComment.trim(),actionStatus,auth)}
+                                                evidenceFile?.let { evidence ->
+                                                    withContext(Dispatchers.IO){ApiClient.uploadActionEvidence(item.id,evidence,auth)}
+                                                    evidence.delete();evidenceFile=null
+                                                }
                                                 if(item.whyWhy) {
                                                     val plan=JSONObject().put("why1",why1).put("why2",why2).put("root_cause",rootCause).put("corrective_action",correctiveAction).put("preventive_action",preventiveAction).put("verification_method",verificationMethod).put("verification_result",verificationResult)
                                                     withContext(Dispatchers.IO){ApiClient.updateWhyWhy(item.id,plan,auth)}
