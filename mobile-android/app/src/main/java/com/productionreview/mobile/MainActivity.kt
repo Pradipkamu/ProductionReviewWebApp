@@ -126,6 +126,21 @@ private object ApiClient {
         }
         return candidates.maxByOrNull { it.first }?.second ?: emptyList()
     }
+    fun loadPendingActions(token: String): List<ActionItem> {
+        val rows = array("/actions/my-pending", token)
+        return (0 until rows.length()).map { i ->
+            val x=rows.getJSONObject(i)
+            ActionItem(x.optInt("id"),x.optString("action_no"),x.optString("problem_description").ifBlank{x.optString("action_description")},x.optString("action_type"),x.optString("status"),x.optString("priority"),x.optString("due_at"),x.optBoolean("overdue"),x.optBoolean("requires_whywhy"),x.optInt("whywhy_completion_percent"))
+        }
+    }
+    fun loadActionPlan(id:Int,token:String): JSONObject = request("/actions/$id/plan","GET",token=token)
+    fun updateAction(id:Int,comment:String,status:String,token:String): JSONObject {
+        val body=JSONObject().put("comment",comment).put("status",status)
+        return request("/actions/$id","PATCH",body,token)
+    }
+    fun updateWhyWhy(id:Int,fields:JSONObject,token:String): JSONObject =
+        request("/actions/$id/plan","PUT",fields,token)
+
     fun saveRejection(payload: JSONObject, token: String): JSONObject =
         request("/quality/daily", "POST", payload, token)
 
@@ -165,6 +180,7 @@ private object ApiClient {
         }
     }
 }
+private data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
 
 class MainActivity : ComponentActivity() {
@@ -193,6 +209,20 @@ class MainActivity : ComponentActivity() {
             var remark by remember { mutableStateOf("") }
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
+            var homeTab by remember { mutableStateOf("ACTIONS") }
+            var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
+            var selectedAction by remember { mutableStateOf<ActionItem?>(null) }
+            var actionPlan by remember { mutableStateOf<JSONObject?>(null) }
+            var followupComment by remember { mutableStateOf("") }
+            var actionStatus by remember { mutableStateOf("IN_PROGRESS") }
+            var why1 by remember { mutableStateOf("") }
+            var why2 by remember { mutableStateOf("") }
+            var rootCause by remember { mutableStateOf("") }
+            var correctiveAction by remember { mutableStateOf("") }
+            var preventiveAction by remember { mutableStateOf("") }
+            var verificationMethod by remember { mutableStateOf("") }
+            var verificationResult by remember { mutableStateOf("") }
+
             val defectPhotos = remember { mutableStateListOf<File>() }
             var pendingPhotoFile by remember { mutableStateOf<File?>(null) }
             var savedRejectionId by remember { mutableStateOf<Int?>(null) }
@@ -204,6 +234,35 @@ class MainActivity : ComponentActivity() {
                 pendingPhotoFile = null
             }
             val scope = rememberCoroutineScope()
+
+            fun refreshPendingActions(auth:String) {
+                scope.launch {
+                    try { pendingActions=withContext(Dispatchers.IO){ApiClient.loadPendingActions(auth)} }
+                    catch(e:Exception){ message="Unable to load pending actions: ${e.message}" }
+                }
+            }
+            fun openAction(item:ActionItem,auth:String) {
+                scope.launch {
+                    busy=true; message="Loading action…"; selectedAction=item
+                    try {
+                        val data=withContext(Dispatchers.IO){ApiClient.loadActionPlan(item.id,auth)}
+                        actionPlan=data.optJSONObject("plan")
+                        val p=actionPlan
+                        why1=p?.optString("why1").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        why2=p?.optString("why2").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        rootCause=p?.optString("root_cause").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        correctiveAction=p?.optString("corrective_action").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        preventiveAction=p?.optString("preventive_action").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        verificationMethod=p?.optString("verification_method").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        verificationResult=p?.optString("verification_result").orEmpty().takeUnless{it=="null"}.orEmpty()
+                        followupComment=""
+                        actionStatus=item.status
+                        homeTab="DETAIL"
+                        message="Action details loaded."
+                    } catch(e:Exception){selectedAction=null;message=e.message ?: "Unable to load action."}
+                    finally{busy=false}
+                }
+            }
 
             fun resetRejectionForm() {
                 date = LocalDate.now().toString()
@@ -249,7 +308,7 @@ class MainActivity : ComponentActivity() {
                     busy=true
                     try {
                         val current=withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
-                        token=saved; account=current; refreshMasters(saved)
+                        token=saved; account=current; refreshMasters(saved); refreshPendingActions(saved)
                         message="Connected to Production Review."
                     } catch(_:Exception) {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
@@ -282,7 +341,7 @@ class MainActivity : ComponentActivity() {
                                                 try {
                                                     val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
-                                                    token=result.first; account=result.second; password=""
+                                                    token=result.first; account=result.second; password=""; refreshPendingActions(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
                                                 } catch(e:Exception){message=e.message ?: "Unable to sign in."}
                                                 finally{busy=false}
@@ -306,6 +365,72 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },enabled=!busy){Text("LOG OUT",fontSize=11.sp,fontWeight=FontWeight.Bold)}
                                 }
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected=homeTab=="ACTIONS",onClick={homeTab="ACTIONS";token?.let{refreshPendingActions(it)}},label={Text("PENDING ACTIONS")})
+                                    FilterChip(selected=homeTab=="REJECTION",onClick={homeTab="REJECTION"},label={Text("NEW REJECTION")})
+                                }
+                                if(homeTab=="ACTIONS") {
+                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                        Text("My pending actions",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                        Text("${pendingActions.size} open",color=Muted,fontSize=12.sp)
+                                    }
+                                    if(pendingActions.isEmpty()) Text("No pending actions assigned to you.",color=Muted)
+                                    pendingActions.forEach { item ->
+                                        Card(Modifier.fillMaxWidth().clickable { token?.let{openAction(item,it)} },colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                                                    Text(item.number,color=Navy,fontWeight=FontWeight.Bold)
+                                                    Text(if(item.overdue)"OVERDUE" else item.status.replace("_"," "),color=if(item.overdue)Color(0xFFB3261E) else Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                }
+                                                Text(item.description,color=Navy)
+                                                Text("${if(item.whyWhy) "WHY-WHY ESCALATION" else "ACTION REQUIRED"} • ${item.priority}",color=Muted,fontSize=11.sp)
+                                                if(item.whyWhy) LinearProgressIndicator(progress={item.completion/100f},modifier=Modifier.fillMaxWidth())
+                                                Text("Tap to update action →",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                            }
+                                        }
+                                    }
+                                } else if(homeTab=="DETAIL" && selectedAction!=null) {
+                                    val item=selectedAction!!
+                                    TextButton(onClick={homeTab="ACTIONS";token?.let{refreshPendingActions(it)}}){Text("← BACK TO PENDING ACTIONS")}
+                                    Text(item.number,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
+                                    Text(item.description,color=Muted)
+                                    Text(if(item.whyWhy)"WHY-WHY ESCALATION" else "ACTION REQUIRED",color=Teal,fontWeight=FontWeight.Bold)
+                                    OutlinedTextField(followupComment,{followupComment=it},label={Text("Action taken / progress update *")},modifier=Modifier.fillMaxWidth(),minLines=3)
+                                    Text("Update status",color=Muted,fontSize=12.sp)
+                                    Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                        listOf("OPEN","IN_PROGRESS","BLOCKED").forEach { st -> FilterChip(selected=actionStatus==st,onClick={actionStatus=st},label={Text(st.replace("_"," "))}) }
+                                    }
+                                    if(item.whyWhy) {
+                                        Text("Why-Why investigation",color=Navy,fontWeight=FontWeight.Bold)
+                                        OutlinedTextField(why1,{why1=it},label={Text("Why 1")},modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(why2,{why2=it},label={Text("Why 2")},modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(rootCause,{rootCause=it},label={Text("Root cause")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        OutlinedTextField(correctiveAction,{correctiveAction=it},label={Text("Corrective action")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        OutlinedTextField(preventiveAction,{preventiveAction=it},label={Text("Preventive action")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        OutlinedTextField(verificationMethod,{verificationMethod=it},label={Text("Verification method")},modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(verificationResult,{verificationResult=it},label={Text("Verification result")},modifier=Modifier.fillMaxWidth())
+                                        Text("Why-Why completion: ${item.completion}%",color=Muted,fontSize=12.sp)
+                                    }
+                                    Button(onClick={
+                                        val auth=token
+                                        if(auth==null) message="Please sign in again."
+                                        else if(followupComment.isBlank()) message="Enter action taken / progress before submitting."
+                                        else scope.launch {
+                                            busy=true
+                                            try {
+                                                withContext(Dispatchers.IO){ApiClient.updateAction(item.id,followupComment.trim(),actionStatus,auth)}
+                                                if(item.whyWhy) {
+                                                    val plan=JSONObject().put("why1",why1).put("why2",why2).put("root_cause",rootCause).put("corrective_action",correctiveAction).put("preventive_action",preventiveAction).put("verification_method",verificationMethod).put("verification_result",verificationResult)
+                                                    withContext(Dispatchers.IO){ApiClient.updateWhyWhy(item.id,plan,auth)}
+                                                }
+                                                message="Action update submitted successfully."
+                                                selectedAction=null;homeTab="ACTIONS";refreshPendingActions(auth)
+                                            } catch(e:Exception){message=e.message ?: "Unable to submit action update."}
+                                            finally{busy=false}
+                                        }
+                                    },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
+                                }
+                                if(homeTab=="REJECTION") {
                                 Text("NEW REJECTION",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
                                     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -437,6 +562,7 @@ class MainActivity : ComponentActivity() {
                                         },enabled=!busy && masters!=null,modifier=Modifier.fillMaxWidth().height(52.dp),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(10.dp)) { Text(if(busy)"PLEASE WAIT…" else "SAVE REJECTION",fontWeight=FontWeight.Bold) }
                                         resultMessage?.let{Text(it,color=Teal,fontWeight=FontWeight.SemiBold)}
                                     }
+                                }
                                 }
                             }
                             Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White)) {
