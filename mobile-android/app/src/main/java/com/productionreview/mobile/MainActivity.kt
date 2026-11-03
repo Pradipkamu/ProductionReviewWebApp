@@ -144,7 +144,7 @@ private object ApiClient {
         try {
             connection.outputStream.use { output ->
                 val header = "--$boundary\r\n" +
-                    "Content-Disposition: form-data; name=\\"file\\"; filename=\\"${file.name}\\"\r\n" +
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\r\n" +
                     "Content-Type: image/jpeg\r\n\r\n"
                 output.write(header.toByteArray(Charsets.UTF_8))
                 file.inputStream().use { input -> input.copyTo(output) }
