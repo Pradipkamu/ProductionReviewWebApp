@@ -788,6 +788,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+}
 
 @Composable
 private fun ChoiceDropdown(
