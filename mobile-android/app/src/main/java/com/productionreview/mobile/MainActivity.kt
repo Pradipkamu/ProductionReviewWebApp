@@ -74,6 +74,8 @@ private object ApiClient {
         )
     }
 
+    fun logout(token: String) { request("/auth/logout", "POST", token = token) }
+
     fun currentAccount(token: String): Account {
         val me = request("/auth/me", "GET", token = token)
         return Account(me.optString("username"), me.optString("full_name"), me.optString("role"))
@@ -164,7 +166,7 @@ class MainActivity : ComponentActivity() {
                                             scope.launch {
                                                 busy = true
                                                 try {
-                                                    if (oldToken != null) withContext(Dispatchers.IO) { ApiClient.requestLogout(oldToken) }
+                                                    if (oldToken != null) withContext(Dispatchers.IO) { ApiClient.logout(oldToken) }
                                                 } catch (_: Exception) { }
                                                 withContext(Dispatchers.IO) { sessionStore.clear() }
                                                 token = null
@@ -195,6 +197,3 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun ApiClient.requestLogout(token: String) {
-    request("/auth/logout", "POST", token = token)
-}
