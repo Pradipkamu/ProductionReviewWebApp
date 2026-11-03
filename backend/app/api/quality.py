@@ -860,7 +860,9 @@ def upload_rejection_attachment(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    rejection = db.get(QualityRejectionDaily, rejection_id)
+    rejection = db.scalar(
+        select(QualityRejectionDaily).where(QualityRejectionDaily.id == rejection_id).with_for_update()
+    )
     if not rejection:
         raise HTTPException(404, "Rejection record not found")
     count = db.scalar(
