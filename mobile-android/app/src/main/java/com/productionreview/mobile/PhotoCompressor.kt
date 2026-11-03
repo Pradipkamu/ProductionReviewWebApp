@@ -34,7 +34,7 @@ internal object PhotoCompressor {
                 ExifInterface.ORIENTATION_FLIP_VERTICAL -> postScale(1f, -1f)
             }
         }
-        val bitmap = if (!matrix.isIdentity) {
+        val bitmap = if (orientation != ExifInterface.ORIENTATION_NORMAL) {
             Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also {
                 if (it !== decoded) decoded.recycle()
             }
