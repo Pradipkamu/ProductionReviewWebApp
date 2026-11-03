@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -332,17 +334,77 @@ private fun ChoiceDropdown(
     allowNone: Boolean = false
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var search by remember { mutableStateOf("") }
+    val filtered = remember(choices, search) {
+        if (search.isBlank()) choices
+        else choices.filter { it.label.contains(search.trim(), ignoreCase = true) }
+    }
+
     Column {
-        Text(label,color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
-        Box {
-            OutlinedButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(8.dp)) {
-                Text(selectedText ?: selected?.label ?: if(allowNone)"Not selected" else "Select…",modifier=Modifier.weight(1f),maxLines=1)
-                Text("▾")
-            }
-            DropdownMenu(expanded=expanded,onDismissRequest={expanded=false},modifier=Modifier.heightIn(max=320.dp)) {
-                if(allowNone) DropdownMenuItem(text={Text("Not selected")},onClick={onSelected(Choice(-1,""));expanded=false})
-                choices.forEach { item -> DropdownMenuItem(text={Text(item.label)},onClick={onSelected(item);expanded=false}) }
-            }
+        Text(label, color=Muted, fontSize=12.sp, fontWeight=FontWeight.Medium)
+        OutlinedButton(
+            onClick = { search = ""; expanded = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text(
+                selectedText ?: selected?.label ?: if (allowNone) "Not selected" else "Select…",
+                modifier = Modifier.weight(1f),
+                maxLines = 1
+            )
+            Text("⌕")
         }
+    }
+
+    if (expanded) {
+        AlertDialog(
+            onDismissRequest = { expanded = false },
+            title = { Text("Select $label", color=Navy, fontWeight=FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value=search,
+                        onValueChange={search=it},
+                        modifier=Modifier.fillMaxWidth(),
+                        singleLine=true,
+                        label={Text("Search")},
+                        placeholder={Text("Type to filter…")}
+                    )
+                    Text("${filtered.size} item(s)", color=Muted, fontSize=12.sp)
+                    LazyColumn(
+                        modifier=Modifier.fillMaxWidth().heightIn(max=360.dp),
+                        verticalArrangement=Arrangement.spacedBy(2.dp)
+                    ) {
+                        if (allowNone) {
+                            item {
+                                TextButton(
+                                    onClick={onSelected(Choice(-1, "")); expanded=false},
+                                    modifier=Modifier.fillMaxWidth()
+                                ) { Text("Not selected", modifier=Modifier.fillMaxWidth()) }
+                            }
+                        }
+                        items(filtered, key={it.id}) { item ->
+                            TextButton(
+                                onClick={onSelected(item); expanded=false},
+                                modifier=Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    item.label,
+                                    modifier=Modifier.fillMaxWidth(),
+                                    color=if (selected?.id == item.id) Teal else Navy
+                                )
+                            }
+                        }
+                        if (filtered.isEmpty()) {
+                            item { Text("No matching items found.", color=Muted, modifier=Modifier.padding(12.dp)) }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick={expanded=false}) { Text("CLOSE") }
+            },
+            containerColor=Color.White
+        )
     }
 }
