@@ -411,7 +411,7 @@ class MainActivity : ComponentActivity() {
                     drawerState = drawerState,
                     gesturesEnabled = account != null,
                     drawerContent = {
-                        ModalDrawerSheet {
+                        ModalDrawerSheet(modifier=Modifier.fillMaxHeight().fillMaxWidth(0.40f)) {
                             Column(Modifier.fillMaxSize()) {
                                 Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                 Text("PRODUCTION REVIEW", color=Teal, fontSize=11.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
