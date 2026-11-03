@@ -5,7 +5,7 @@ plugins {
 }
 android {
  namespace = "com.productionreview.mobile"
- compileSdk = 34
+ compileSdk = 35
  defaultConfig { applicationId = "com.productionreview.mobile"; minSdk = 26; targetSdk = 34; versionCode = 2; versionName = "0.2.0" }
  buildTypes { debug { applicationIdSuffix = ".debug"; versionNameSuffix = "-debug" }; release { isMinifyEnabled = false } }
  compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
