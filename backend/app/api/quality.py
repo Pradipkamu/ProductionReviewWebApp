@@ -18,6 +18,7 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, record_security_event
@@ -911,6 +912,18 @@ def upload_rejection_attachment(
     try:
         db.commit()
         db.refresh(row)
+    except IntegrityError:
+        db.rollback()
+        target.unlink(missing_ok=True)
+        duplicate = db.scalar(
+            select(QualityRejectionAttachment).where(
+                QualityRejectionAttachment.daily_rejection_id == rejection_id,
+                QualityRejectionAttachment.sha256 == sha,
+            )
+        )
+        if duplicate:
+            return _serialize_rejection_attachment(duplicate)
+        raise
     except Exception:
         db.rollback()
         target.unlink(missing_ok=True)
