@@ -205,6 +205,22 @@ class MainActivity : ComponentActivity() {
             }
             val scope = rememberCoroutineScope()
 
+            fun resetRejectionForm() {
+                date = LocalDate.now().toString()
+                shift = "A"
+                product = null
+                detection = null
+                responsible = null
+                machine = null
+                phenomenon = null
+                rejectQty = ""
+                reworkQty = "0"
+                scrapQty = "0"
+                remark = ""
+                actionRequired = false
+                routes = emptyList()
+            }
+
             fun refreshMasters(auth: String) {
                 scope.launch {
                     busy=true; message="Loading production masters…"
@@ -392,7 +408,9 @@ class MainActivity : ComponentActivity() {
                                                             val saved=withContext(Dispatchers.IO){ApiClient.saveRejection(payload,auth)}
                                                             val id=saved.optInt("id")
                                                             val ppmPending=saved.optBoolean("ppm_pending")
-                                                            rejectQty="";reworkQty="0";scrapQty="0";remark="";actionRequired=false
+                                                            // The server has confirmed the rejection. Reset the entry form immediately
+                                                            // so the operator can clearly start the next record.
+                                                            resetRejectionForm()
                                                             if(defectPhotos.isNotEmpty()) {
                                                                 savedRejectionId=id
                                                                 try {
