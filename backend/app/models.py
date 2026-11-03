@@ -552,6 +552,23 @@ class QualityRejectionDaily(Base, TimestampMixin):
     )
 
 
+class QualityRejectionAttachment(Base, TimestampMixin):
+    """Reusable file metadata for defect evidence linked to a daily rejection."""
+    __tablename__ = "quality_rejection_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    daily_rejection_id: Mapped[int] = mapped_column(
+        ForeignKey("quality_rejection_daily.id", ondelete="CASCADE"), index=True
+    )
+    file_name: Mapped[str] = mapped_column(String(260))
+    stored_name: Mapped[str] = mapped_column(String(260))
+    relative_path: Mapped[str] = mapped_column(String(500))
+    mime_type: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    sha256: Mapped[str] = mapped_column(String(64), index=True)
+    caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class QualityRejectionSalvageRequest(Base, TimestampMixin):
     __tablename__ = "quality_rejection_salvage_requests"
     id: Mapped[int] = mapped_column(primary_key=True)
