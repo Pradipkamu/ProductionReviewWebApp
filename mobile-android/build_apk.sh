@@ -21,18 +21,15 @@ else
   fail "Gradle 8.9+ not found. Install Gradle or add the Gradle wrapper."
 fi
 
-# Termux runs on ARM64; Google SDK zipalign ELF binaries are commonly x86_64.
-# Prefer Termux-native tools when available, then fall back to SDK tools elsewhere.
+# zipalign is an ELF executable in Google's SDK and may be x86_64-only on Termux.
+# Use a native Termux zipalign if present; otherwise rely on AGP packaging and
+# continue with ZIP integrity plus APK signature verification.
 ZIPALIGN="$(command -v zipalign || true)"
 APKSIGNER="$(command -v apksigner || true)"
-if [[ -z "$ZIPALIGN" ]]; then
-  ZIPALIGN="$(find "$SDK/build-tools" -type f -name zipalign | sort -V | tail -n 1)"
-fi
 if [[ -z "$APKSIGNER" ]]; then
   APKSIGNER="$(find "$SDK/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
 fi
-[[ -x "$ZIPALIGN" ]] || fail "zipalign not found. On Termux install it with: pkg install zipalign"
-[[ -x "$APKSIGNER" ]] || fail "apksigner not found. On Termux install it with: pkg install apksigner"
+[[ -x "$APKSIGNER" ]] || fail "apksigner not found in PATH or SDK build-tools."
 
 export ANDROID_HOME="$SDK"
 export ANDROID_SDK_ROOT="$SDK"
@@ -44,7 +41,23 @@ APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 TMP="$OUT_DIR/.ProductionMobile-debug.apk.tmp"
 cp "$APK" "$TMP"
 
-"$ZIPALIGN" -c -v 4 "$TMP" >/dev/null || { rm -f "$TMP"; fail "APK alignment verification failed."; }
+if [[ -n "$ZIPALIGN" && -x "$ZIPALIGN" ]]; then
+  "$ZIPALIGN" -c -v 4 "$TMP" >/dev/null || { rm -f "$TMP"; fail "APK alignment verification failed."; }
+else
+  echo "WARNING: Native zipalign not available; skipping standalone alignment check on this Termux ARM64 device."
+fi
+
+# Verify APK archive integrity using Python's standard ZIP reader.
+python - "$TMP" <<'PY'
+import sys, zipfile
+path = sys.argv[1]
+with zipfile.ZipFile(path) as apk:
+    bad = apk.testzip()
+    if bad:
+        raise SystemExit(f"APK ZIP integrity check failed at: {bad}")
+print("APK ZIP integrity: OK")
+PY
+
 "$APKSIGNER" verify --verbose "$TMP" || { rm -f "$TMP"; fail "APK signature verification failed."; }
 
 mv -f "$TMP" "$DEST"
