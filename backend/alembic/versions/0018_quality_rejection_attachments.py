@@ -26,9 +26,11 @@ def upgrade():
     )
     op.create_index("ix_quality_rejection_attachments_daily_rejection_id", "quality_rejection_attachments", ["daily_rejection_id"])
     op.create_index("ix_quality_rejection_attachments_sha256", "quality_rejection_attachments", ["sha256"])
+    op.create_index("uq_quality_rejection_attachment_hash", "quality_rejection_attachments", ["daily_rejection_id", "sha256"], unique=True)
 
 
 def downgrade():
+    op.drop_index("uq_quality_rejection_attachment_hash", table_name="quality_rejection_attachments")
     op.drop_index("ix_quality_rejection_attachments_sha256", table_name="quality_rejection_attachments")
     op.drop_index("ix_quality_rejection_attachments_daily_rejection_id", table_name="quality_rejection_attachments")
     op.drop_table("quality_rejection_attachments")
