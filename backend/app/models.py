@@ -567,6 +567,9 @@ class QualityRejectionAttachment(Base, TimestampMixin):
     sha256: Mapped[str] = mapped_column(String(64), index=True)
     caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("daily_rejection_id", "sha256", name="uq_quality_rejection_attachment_hash"),
+    )
 
 
 class QualityRejectionSalvageRequest(Base, TimestampMixin):
