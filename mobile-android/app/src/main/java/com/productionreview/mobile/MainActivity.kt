@@ -758,13 +758,6 @@ class MainActivity : ComponentActivity() {
                                 }
                                 }
                             }
-                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White)) {
-                                Column(Modifier.padding(16.dp)) {
-                                    Text("Connection",color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
-                                    Text(message,color=Muted,fontSize=14.sp)
-                                    Text("machineshop.duckdns.org • HTTPS",color=Teal,fontSize=12.sp,fontWeight=FontWeight.Medium)
-                                }
-                            }
                             Text("Secure access • Existing production records",color=Muted,fontSize=11.sp,modifier=Modifier.align(Alignment.CenterHorizontally))
                         }
                     }
