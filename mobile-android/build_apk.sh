@@ -10,13 +10,19 @@ elif [[ -n "${ANDROID_HOME:-}" ]]; then
 fi
 
 OUT_DIR="$HOME/storage/downloads"
-DEST="$OUT_DIR/ProductionMobile-debug.apk"
 SIGNING_DIR="$HOME/.android"
 KEYSTORE="$SIGNING_DIR/production-mobile.jks"
 KEY_ALIAS="productionmobile"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 step() { printf '\n==> %s\n' "$*"; }
+
+# Read the app's versionName so the APK filename always follows the project version.
+GRADLE_FILE="$SCRIPT_DIR/app/build.gradle.kts"
+[[ -f "$GRADLE_FILE" ]] || fail "Missing Android app Gradle file: $GRADLE_FILE"
+VERSION_NAME="$(sed -nE 's/.*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$GRADLE_FILE" | head -n 1)"
+[[ -n "$VERSION_NAME" ]] || fail "Could not read versionName from $GRADLE_FILE."
+DEST="$OUT_DIR/ProductionMobile-v${VERSION_NAME}.apk"
 
 command -v java >/dev/null 2>&1 || fail "Java 17+ is required."
 command -v keytool >/dev/null 2>&1 || fail "keytool is required (install a Java 17+ JDK)."
@@ -66,7 +72,7 @@ fi
 export ANDROID_HOME="$SDK"
 export ANDROID_SDK_ROOT="$SDK"
 
-step "Build Production Mobile debug APK"
+step "Build Production Mobile APK version $VERSION_NAME"
 "${GRADLE[@]}" -p "$SCRIPT_DIR" --no-daemon assembleDebug
 
 APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
@@ -75,8 +81,8 @@ APK="$SCRIPT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 WORK_DIR="$(mktemp -d "$OUT_DIR/.production-mobile-sign.XXXXXX")"
 cleanup() { rm -rf "$WORK_DIR"; }
 trap cleanup EXIT
-ALIGNED="$WORK_DIR/ProductionMobile-debug-aligned.apk"
-SIGNED="$WORK_DIR/ProductionMobile-debug-signed.apk"
+ALIGNED="$WORK_DIR/ProductionMobile-aligned.apk"
+SIGNED="$WORK_DIR/ProductionMobile-signed.apk"
 
 step "Align APK"
 "$ZIPALIGN" -f -p 4 "$APK" "$ALIGNED"
@@ -114,8 +120,9 @@ PY
 mv -f "$SIGNED" "$DEST"
 echo
 echo "Build and signing completed successfully."
+echo "Version: $VERSION_NAME"
 echo "APK: $DEST"
 ls -lh "$DEST"
 echo "Signing keystore: $KEYSTORE"
 echo "Alias: $KEY_ALIAS"
-echo "Development/debug application build. Keep the keystore and its password safe; future updates must use the same key."
+echo "Development/debug build variant; filename uses the app version. Keep the keystore and its password safe; future updates must use the same key."
