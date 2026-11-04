@@ -748,12 +748,18 @@ class MainActivity : ComponentActivity() {
                                     }
                                 } else if(homeTab=="ACCOUNT") {
                                     ScreenTitle("Account", "Your Production Review profile")
-                                    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
-                                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                                            Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(),color=Navy,fontWeight=FontWeight.Bold,fontSize=18.sp)
-                                            Text("Username: ${account?.username.orEmpty()}",color=Muted)
-                                            Text("Role: ${account?.role.orEmpty()}",color=Muted)
-                                            OutlinedButton(onClick={showLogoutConfirm=true},modifier=Modifier.fillMaxWidth()) { Text("LOG OUT") }
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                                            Box(Modifier.size(56.dp).clip(RoundedCornerShape(17.dp)).background(Color(0xFFE7F1F8)),contentAlignment=Alignment.Center) {
+                                                Icon(Icons.Filled.Person,contentDescription=null,tint=Navy,modifier=Modifier.size(32.dp))
+                                            }
+                                            Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(),color=Navy,fontWeight=FontWeight.Bold,fontSize=19.sp)
+                                            Divider(color=Border)
+                                            SectionLabel("Username")
+                                            Text(account?.username.orEmpty(),color=Navy,fontSize=14.sp)
+                                            SectionLabel("Access role")
+                                            StatusPill(account?.role.orEmpty().replace("_"," "), Teal)
+                                            OutlinedButton(onClick={showLogoutConfirm=true},modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)) { Text("LOG OUT") }
                                         }
                                     }
                                 }
