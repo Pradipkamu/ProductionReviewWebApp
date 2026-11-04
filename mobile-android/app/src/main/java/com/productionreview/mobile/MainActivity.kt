@@ -726,17 +726,26 @@ class MainActivity : ComponentActivity() {
                                 }
                                 if(homeTab=="OEE") {
                                     ScreenTitle("OEE", "Machine effectiveness and production performance")
-                                    Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
-                                        Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                            Icon(Icons.Filled.Speed,contentDescription=null,tint=Teal)
-                                            Text("OEE mobile dashboard",color=Navy,fontSize=17.sp,fontWeight=FontWeight.Bold)
-                                            Text("The OEE shortcut is ready in navigation. The mobile OEE data screen will be connected after its authorized API and web permission configuration are available.",color=Muted,fontSize=14.sp)
-                                            Text("No production figures are simulated or displayed here.",color=Muted,fontSize=12.sp)
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFFE6F2F4)),contentAlignment=Alignment.Center) { Icon(Icons.Filled.Speed,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp)) }
+                                            Text("OEE mobile dashboard",color=Navy,fontSize=18.sp,fontWeight=FontWeight.Bold)
+                                            Text("The screen is prepared for machine availability, performance, quality and overall equipment effectiveness indicators.",color=Muted,fontSize=14.sp)
+                                            Divider(color=Border)
+                                            StatusPill("LIVE DATA CONNECTION PENDING", Warning)
+                                            Text("No production figures are simulated. Values will appear after the authorized API and role permissions are connected.",color=Muted,fontSize=12.sp)
                                         }
                                     }
                                 } else if(homeTab=="HISTORY") {
                                     ScreenTitle("Action history", "Review previous action updates")
-                                    Text("Action history view will be connected in a follow-up mobile module. Your existing action updates continue to be saved through the current workflow.",color=Muted)
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.fillMaxWidth().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFFE7F1F8)),contentAlignment=Alignment.Center) { Icon(Icons.Filled.History,contentDescription=null,tint=Navy,modifier=Modifier.size(30.dp)) }
+                                            Text("History module not connected",color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
+                                            Text("The action history API is not yet connected to this mobile screen. No records are simulated or hidden.",color=Muted,fontSize=13.sp,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+                                            StatusPill("AWAITING API INTEGRATION", Warning)
+                                        }
+                                    }
                                 } else if(homeTab=="ACCOUNT") {
                                     ScreenTitle("Account", "Your Production Review profile")
                                     Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
@@ -788,9 +797,9 @@ class MainActivity : ComponentActivity() {
                                             Checkbox(actionRequired,{actionRequired=it})
                                             Text("Action required",color=Navy)
                                         }
-                                        Divider()
-                                        Text("Defect photographs (${defectPhotos.size}/5)",color=Navy,fontWeight=FontWeight.SemiBold)
-                                        Text("Capture clear overall and close-up views. Photos upload after the rejection is saved.",color=Muted,fontSize=12.sp)
+                                        Divider(color=Border, thickness=1.dp)
+                                        SectionLabel("Evidence photographs", "Capture clear overall and close-up views. Photos upload after the rejection is saved.")
+                                        Text("Photos added: ${defectPhotos.size} / 5",color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
                                         OutlinedButton(
                                             onClick={
                                                 if(defectPhotos.size>=5) message="Maximum 5 photographs per rejection."
@@ -802,7 +811,8 @@ class MainActivity : ComponentActivity() {
                                                 } catch(e:Exception) { message=e.message ?: "Unable to open camera." }
                                             },
                                             enabled=!busy && defectPhotos.size<5,
-                                            modifier=Modifier.fillMaxWidth()
+                                            modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),
+                                            shape=RoundedCornerShape(12.dp)
                                         ) { Text("TAKE DEFECT PHOTO") }
                                         defectPhotos.forEachIndexed { index, photo ->
                                             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
