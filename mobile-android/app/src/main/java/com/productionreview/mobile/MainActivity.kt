@@ -56,6 +56,10 @@ private val Navy = Color(0xFF142B45)
 private val Teal = Color(0xFF087F8C)
 private val Canvas = Color(0xFFF2F5F8)
 private val Muted = Color(0xFF627386)
+private val Border = Color(0xFFE1E8EF)
+private val Success = Color(0xFF16836B)
+private val Warning = Color(0xFFE58A18)
+private val Danger = Color(0xFFB3261E)
 
 private data class Account(val username: String, val fullName: String, val role: String)
 private data class Choice(val id: Int, val label: String, val extra: String = "")
@@ -245,6 +249,48 @@ private data class ActionOwnerGroup(val userId:Int?,val name:String,val role:Str
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
 private data class RejectionTrendPoint(val date: LocalDate, val quantity: Float)
 
+@Composable
+private fun ScreenTitle(title: String, subtitle: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(title, color = Navy, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        if (!subtitle.isNullOrBlank()) Text(subtitle, color = Muted, fontSize = 13.sp)
+    }
+}
+@Composable
+private fun SectionLabel(title: String, subtitle: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title.uppercase(), color = Navy, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
+        if (!subtitle.isNullOrBlank()) Text(subtitle, color = Muted, fontSize = 12.sp)
+    }
+}
+@Composable
+private fun MetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+    Card(modifier = modifier, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Box(Modifier.width(28.dp).height(3.dp).clip(RoundedCornerShape(3.dp)).background(accent))
+            Text(value, color = Navy, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Text(label, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+        }
+    }
+}
+@Composable
+private fun EmptyState(title: String, description: String, icon: @Composable () -> Unit = {}) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
+        Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            icon()
+            Text(title, color = Navy, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(description, color = Muted, fontSize = 13.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+    }
+}
+@Composable
+private fun StatusPill(label: String, color: Color) {
+    Surface(color = color.copy(alpha = 0.10f), shape = RoundedCornerShape(50)) {
+        Text(label, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp), maxLines = 1)
+    }
+}
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -446,7 +492,16 @@ class MainActivity : ComponentActivity() {
                 add("MORE")
             }.distinct().take(4)
 
-            MaterialTheme(colorScheme=lightColorScheme(primary=Teal,secondary=Navy,background=Canvas,surface=Color.White)) {
+            MaterialTheme(
+                colorScheme = lightColorScheme(primary = Teal, onPrimary = Color.White, secondary = Navy, background = Canvas, surface = Color.White, error = Danger),
+                typography = Typography(
+                    bodyLarge = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, color = Navy),
+                    bodyMedium = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, color = Navy),
+                    bodySmall = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, color = Muted),
+                    titleLarge = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold),
+                    titleMedium = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                )
+            ) {
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     gesturesEnabled = account != null,
@@ -479,8 +534,8 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Divider(color=Color(0xFFCBD5DF))
                                 Column(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=6.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Account",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACCOUNT",icon={Icon(Icons.Filled.Person,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="ACCOUNT" }})
-                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Logout",fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)},selected=false,icon={Icon(Icons.Filled.Logout,contentDescription=null,tint=Color(0xFFB3261E),modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); showLogoutConfirm=true }},colors=NavigationDrawerItemDefaults.colors(unselectedTextColor=Color(0xFFB3261E),unselectedIconColor=Color(0xFFB3261E)))
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Account",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACCOUNT",icon={Icon(Icons.Filled.Person,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="ACCOUNT" }})
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Logout",fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)},selected=false,icon={Icon(Icons.Filled.Logout,contentDescription=null,tint=Color(0xFFB3261E),modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); showLogoutConfirm=true }},colors=NavigationDrawerItemDefaults.colors(unselectedTextColor=Color(0xFFB3261E),unselectedIconColor=Color(0xFFB3261E)))
                                 }
                             }
                         }
@@ -489,17 +544,22 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(),color=Canvas) {
                     Column(Modifier.fillMaxSize()) {
                     Column(Modifier.weight(1f).fillMaxWidth()) {
-                        Row(Modifier.fillMaxWidth().background(Navy).padding(horizontal=10.dp,vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Color(0xFF102A43), Navy, Color(0xFF1D4568)))).padding(horizontal=12.dp,vertical=12.dp), verticalAlignment=Alignment.CenterVertically) {
                             if (account != null) IconButton(onClick={scope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
                                 Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
                                 Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
-                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=14.dp, vertical=10.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=16.dp, vertical=14.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
                             if (account == null) {
-                                Text("SECURE ACCESS",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Brush.linearGradient(listOf(Navy, Color(0xFF245477)))).padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("MACHINE SHOP OPERATIONS", color = Color(0xFFFFB74D), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.1.sp)
+                                    Text("Production Review", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                                    Text("Secure access to production, quality and action workflows.", color = Color(0xFFD9E6F0), fontSize = 13.sp)
+                                }
+                                Text("SECURE SIGN IN",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border),elevation=CardDefaults.cardElevation(2.dp)) {
                                     Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                                         Text("Sign in",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
                                         Text("Use your existing Production Review account.",color=Muted,fontSize=14.sp)
@@ -520,11 +580,26 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             } else {
-                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                                    Column {
-                                        Text("Welcome, ${account!!.fullName.ifBlank{account!!.username}}",color=Navy,fontSize=15.sp,fontWeight=FontWeight.Bold,maxLines=1)
-                                        Text("${account!!.role}",color=Muted,fontSize=10.sp)
+                                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
+                                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Text("Welcome back", color = Muted, fontSize = 12.sp)
+                                            Text(account!!.fullName.ifBlank { account!!.username }, color = Navy, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                            Text(account!!.role.replace("_", " "), color = Teal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFE7F1F8)), contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Filled.Person, contentDescription = null, tint = Navy, modifier = Modifier.size(24.dp))
+                                        }
                                     }
+                                }
+                                val isManager = account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")
+                                val totalOpen = if (isManager) pendingActionGroups.sumOf { it.openCount } else pendingActions.size
+                                val totalOverdue = if (isManager) pendingActionGroups.sumOf { it.overdueCount } else pendingActions.count { it.overdue }
+                                val dueToday = if (isManager) pendingActionGroups.sumOf { it.dueTodayCount } else pendingActions.count { it.due.substringBefore("T") == LocalDate.now().toString() }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    MetricTile("OPEN ACTIONS", totalOpen.toString(), Teal, Modifier.weight(1f))
+                                    MetricTile("OVERDUE", totalOverdue.toString(), Danger, Modifier.weight(1f))
+                                    MetricTile("DUE TODAY", dueToday.toString(), Warning, Modifier.weight(1f))
                                 }
                                 if(homeTab=="ACTIONS") {
                                     if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
@@ -532,9 +607,9 @@ class MainActivity : ComponentActivity() {
                                             Text("Pending actions by user",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
                                             Text("${pendingActionGroups.sumOf { it.openCount }} open",color=Muted,fontSize=12.sp)
                                         }
-                                        if (pendingActionGroups.isEmpty()) Text("No open actions found.",color=Muted)
+                                        if (pendingActionGroups.isEmpty()) EmptyState("No open actions", "There are no open actions assigned across the team.", { Icon(Icons.Filled.Assignment, contentDescription = null, tint = Teal, modifier = Modifier.size(30.dp)) })
                                         pendingActionGroups.forEach { group ->
-                                            Card(Modifier.fillMaxWidth().clickable { selectedOwner=group;homeTab="USER_ACTIONS" },colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                            Card(Modifier.fillMaxWidth().clickable { selectedOwner=group;homeTab="USER_ACTIONS" },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border),elevation=CardDefaults.cardElevation(1.dp)) {
                                                 Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                                         Text(group.name,color=Navy,fontWeight=FontWeight.Bold)
@@ -551,14 +626,14 @@ class MainActivity : ComponentActivity() {
                                             Text("My pending actions",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
                                             Text("${pendingActions.size} open",color=Muted,fontSize=12.sp)
                                         }
-                                        if(pendingActions.isEmpty()) Text("No pending actions assigned to you.",color=Muted)
+                                        if(pendingActions.isEmpty()) EmptyState("You're all caught up", "No pending actions are currently assigned to you.", { Icon(Icons.Filled.Assignment, contentDescription = null, tint = Teal, modifier = Modifier.size(30.dp)) })
                                     }
                                     pendingActions.forEach { item ->
-                                        Card(Modifier.fillMaxWidth().clickable { token?.let{openAction(item,it)} },colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                        Card(Modifier.fillMaxWidth().clickable { token?.let{openAction(item,it)} },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border),elevation=CardDefaults.cardElevation(1.dp)) {
                                             Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                                     Text(item.number,color=Navy,fontWeight=FontWeight.Bold)
-                                                    Text(if(item.overdue)"OVERDUE" else item.status.replace("_"," "),color=if(item.overdue)Color(0xFFB3261E) else Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                    StatusPill(if(item.overdue) "OVERDUE" else item.status.replace("_"," "), if(item.overdue) Danger else Success)
                                                 }
                                                 Text(item.description,color=Navy)
                                                 Text("${if(item.whyWhy) "WHY-WHY ESCALATION" else "ACTION REQUIRED"} • ${item.priority}",color=Muted,fontSize=11.sp)
@@ -577,7 +652,7 @@ class MainActivity : ComponentActivity() {
                                             Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                                     Text(item.number,color=Navy,fontWeight=FontWeight.Bold)
-                                                    Text(if(item.overdue)"OVERDUE" else item.status.replace("_"," "),color=if(item.overdue)Color(0xFFB3261E) else Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                    StatusPill(if(item.overdue) "OVERDUE" else item.status.replace("_"," "), if(item.overdue) Danger else Success)
                                                 }
                                                 Text(item.description,color=Navy)
                                                 Text("${if(item.whyWhy) "WHY-WHY ESCALATION" else "ACTION REQUIRED"} • ${item.priority}",color=Muted,fontSize=11.sp)
@@ -595,12 +670,12 @@ class MainActivity : ComponentActivity() {
                                     OutlinedTextField(followupComment,{followupComment=it},label={Text("Action taken / progress update *")},modifier=Modifier.fillMaxWidth(),minLines=3)
                                     OutlinedButton(onClick={evidencePicker.launch("*/*")},enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(evidenceFile==null)"ADD EVIDENCE PHOTO / DOCUMENT" else "CHANGE EVIDENCE FILE") }
                                     evidenceFile?.let { Text("Selected: ${it.name} • ${(it.length()/1024).coerceAtLeast(1)} KB",color=Muted,fontSize=12.sp) }
-                                    Text("Update status",color=Muted,fontSize=12.sp)
+                                    SectionLabel("Update status", "Choose the current action state")
                                     Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                                         listOf("OPEN","IN_PROGRESS","BLOCKED").forEach { st -> FilterChip(selected=actionStatus==st,onClick={actionStatus=st},label={Text(st.replace("_"," "))}) }
                                     }
                                     if(item.whyWhy) {
-                                        Text("Why-Why investigation",color=Navy,fontWeight=FontWeight.Bold)
+                                        SectionLabel("Why-Why investigation", "Record the cause and actions in sequence")
                                         OutlinedTextField(why1,{why1=it},label={Text("Why 1")},modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(why2,{why2=it},label={Text("Why 2")},modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(why3,{why3=it},label={Text("Why 3")},modifier=Modifier.fillMaxWidth())
@@ -611,7 +686,13 @@ class MainActivity : ComponentActivity() {
                                         OutlinedTextField(preventiveAction,{preventiveAction=it},label={Text("Preventive action")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         OutlinedTextField(verificationMethod,{verificationMethod=it},label={Text("Verification method")},modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(verificationResult,{verificationResult=it},label={Text("Verification result")},modifier=Modifier.fillMaxWidth())
-                                        Text("Why-Why completion: ${item.completion}%",color=Muted,fontSize=12.sp)
+                                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                 Text("WHY-WHY COMPLETION", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                 Text("${item.completion}%", color = Teal, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                             }
+                                             LinearProgressIndicator(progress = { (item.completion / 100f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().height(7.dp), color = Teal, trackColor = Border)
+                                         }
                                     }
                                     Button(onClick={
                                         val auth=token
@@ -661,10 +742,10 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 if(homeTab=="REJECTION") {
-                                Text("NEW REJECTION",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                                ScreenTitle("New rejection", "Capture a defect with process and quantity details")
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
                                     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        Text("Rejection details",color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
+                                        SectionLabel("Production details", "Date, shift, part and process information")
                                         OutlinedTextField(date,{date=it; product?.let{p->token?.let{t->refreshRoutes(p.id,it,t)}}},label={Text("Rejection date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
                                         ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C"),Choice(4,"General")),null,{shift=it.label},shift)
                                         ChoiceDropdown("Product",masters?.products.orEmpty(),product,{selected ->
@@ -688,9 +769,11 @@ class MainActivity : ComponentActivity() {
                                             ChoiceDropdown("Detection process",routes.map{Choice(it.id,it.label)},detection?.let{x->Choice(x.id,x.label)},{detection=RouteChoice(it.id,it.label)})
                                             ChoiceDropdown("Responsible process (optional)",routes.map{Choice(it.id,it.label)},responsible?.let{x->Choice(x.id,x.label)},{responsible=if(it.id<0)null else RouteChoice(it.id,it.label)},allowNone=true)
                                         }
-                                        ChoiceDropdown("Machine (optional)",masters?.machines.orEmpty(),machine,{machine=if(it.id<0)null else it},allowNone=true)
+                                        SectionLabel("Defect classification", "Identify the defect and where it was detected")
+                                         ChoiceDropdown("Machine (optional)",masters?.machines.orEmpty(),machine,{machine=if(it.id<0)null else it},allowNone=true)
                                         ChoiceDropdown("Rejection phenomenon *",masters?.phenomena.orEmpty(),phenomenon,{phenomenon=it})
-                                        OutlinedTextField(rejectQty,{rejectQty=it},label={Text("Reject quantity *")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        SectionLabel("Quantity details", "Enter rejected, rework and scrap quantities")
+                                         OutlinedTextField(rejectQty,{rejectQty=it},label={Text("Reject quantity *")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(reworkQty,{reworkQty=it},label={Text("Rework quantity")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(scrapQty,{scrapQty=it},label={Text("Scrap quantity")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(remark,{remark=it},label={Text("Remarks (optional)")},modifier=Modifier.fillMaxWidth(),minLines=2)
@@ -815,7 +898,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (account != null) {
-                        NavigationBar(containerColor=Color.White, tonalElevation=8.dp) {
+                        NavigationBar(containerColor=Color.White, tonalElevation=10.dp, windowInsets = NavigationBarDefaults.windowInsets) {
                             bottomDestinations.forEach { destination ->
                                 val selected = homeTab==destination || (destination=="ACTIONS" && homeTab in listOf("USER_ACTIONS","DETAIL"))
                                 NavigationBarItem(
