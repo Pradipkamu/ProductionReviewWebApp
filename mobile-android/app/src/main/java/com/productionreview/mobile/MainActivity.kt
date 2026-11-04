@@ -664,11 +664,18 @@ class MainActivity : ComponentActivity() {
                                 } else if(homeTab=="DETAIL" && selectedAction!=null) {
                                     val item=selectedAction!!
                                     TextButton(onClick={homeTab=if(account?.role?.uppercase() in listOf("ADMIN","MANAGEMENT")) "USER_ACTIONS" else "ACTIONS";token?.let{refreshPendingActions(it)}}){Text("← BACK TO ACTIONS")}
-                                    Text(item.number,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
-                                    Text(item.description,color=Muted)
-                                    Text(if(item.whyWhy)"WHY-WHY ESCALATION" else "ACTION REQUIRED",color=Teal,fontWeight=FontWeight.Bold)
-                                    OutlinedTextField(followupComment,{followupComment=it},label={Text("Action taken / progress update *")},modifier=Modifier.fillMaxWidth(),minLines=3)
-                                    OutlinedButton(onClick={evidencePicker.launch("*/*")},enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(evidenceFile==null)"ADD EVIDENCE PHOTO / DOCUMENT" else "CHANGE EVIDENCE FILE") }
+                                    TextButton(onClick={homeTab=if(account?.role?.uppercase() in listOf("ADMIN","MANAGEMENT")) "USER_ACTIONS" else "ACTIONS";token?.let{refreshPendingActions(it)}}) { Text("← BACK TO ACTIONS") }
+                                    Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), colors=CardDefaults.cardColors(containerColor=Color.White), border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            Text(item.number,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
+                                            Text(item.description,color=Muted,fontSize=14.sp)
+                                            StatusPill(if(item.overdue) "OVERDUE" else item.status.replace("_"," "), if(item.overdue) Danger else Success)
+                                            Text(if(item.whyWhy) "WHY-WHY ESCALATION" else "ACTION REQUIRED",color=Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                        }
+                                    }
+                                    SectionLabel("Progress update", "Describe the work completed or action taken")
+                                    OutlinedTextField(followupComment,{followupComment=it},label={Text("Action taken / progress update *")},modifier=Modifier.fillMaxWidth(),minLines=3,shape=RoundedCornerShape(12.dp))
+                                    OutlinedButton(onClick={evidencePicker.launch("*/*")},enabled=!busy,modifier=Modifier.fillMaxWidth().heightIn(min=50.dp),shape=RoundedCornerShape(12.dp)) { Text(if(evidenceFile==null)"ADD EVIDENCE PHOTO / DOCUMENT" else "CHANGE EVIDENCE FILE") }
                                     evidenceFile?.let { Text("Selected: ${it.name} • ${(it.length()/1024).coerceAtLeast(1)} KB",color=Muted,fontSize=12.sp) }
                                     SectionLabel("Update status", "Choose the current action state")
                                     Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -718,7 +725,7 @@ class MainActivity : ComponentActivity() {
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
                                 }
                                 if(homeTab=="OEE") {
-                                    Text("OEE",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                                    ScreenTitle("OEE", "Machine effectiveness and production performance")
                                     Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
                                         Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                             Icon(Icons.Filled.Speed,contentDescription=null,tint=Teal)
@@ -728,10 +735,10 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else if(homeTab=="HISTORY") {
-                                    Text("Action History",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                                    ScreenTitle("Action history", "Review previous action updates")
                                     Text("Action history view will be connected in a follow-up mobile module. Your existing action updates continue to be saved through the current workflow.",color=Muted)
                                 } else if(homeTab=="ACCOUNT") {
-                                    Text("Account",color=Navy,fontSize=21.sp,fontWeight=FontWeight.Bold)
+                                    ScreenTitle("Account", "Your Production Review profile")
                                     Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
                                         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                             Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(),color=Navy,fontWeight=FontWeight.Bold,fontSize=18.sp)
@@ -888,8 +895,12 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 }
                                             }
-                                        },enabled=!busy && masters!=null,modifier=Modifier.fillMaxWidth().height(52.dp),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(10.dp)) { Text(if(busy)"PLEASE WAIT…" else "SAVE REJECTION",fontWeight=FontWeight.Bold) }
-                                        resultMessage?.let{Text(it,color=Teal,fontWeight=FontWeight.SemiBold)}
+                                        },enabled=!busy && masters!=null,modifier=Modifier.fillMaxWidth().height(54.dp),colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(12.dp),elevation=ButtonDefaults.buttonElevation(defaultElevation=2.dp)) { Text(if(busy)"PLEASE WAIT…" else "SAVE REJECTION",fontWeight=FontWeight.Bold,fontSize=14.sp) }
+                                        resultMessage?.let {
+                                            Card(colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF6F2)),shape=RoundedCornerShape(12.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFCBE8DD))) {
+                                                Text(it,modifier=Modifier.fillMaxWidth().padding(12.dp),color=Success,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                                            }
+                                        }
                                     }
                                 }
                                 }
