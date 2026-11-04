@@ -452,7 +452,7 @@ class MainActivity : ComponentActivity() {
                     gesturesEnabled = account != null,
                     drawerContent = {
                         ModalDrawerSheet(
-                            modifier=Modifier.fillMaxHeight().fillMaxWidth(0.40f),
+                            modifier=Modifier.fillMaxHeight().fillMaxWidth(0.60f),
                             drawerContainerColor=Color(0xFFF1F4F7),
                             drawerTonalElevation=4.dp
                         ) {
