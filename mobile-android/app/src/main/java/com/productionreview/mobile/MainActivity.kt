@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +33,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -193,6 +196,14 @@ private object ApiClient {
     fun saveRejection(payload: JSONObject, token: String): JSONObject =
         request("/quality/daily", "POST", payload, token)
 
+    fun loadRejectionTrend(productId: Int, fromDate: LocalDate, toDate: LocalDate, token: String): List<RejectionTrendPoint> {
+        val rows = array("/quality/trend?from_date=$fromDate&to_date=$toDate&product_id=$productId", token)
+        return (0 until rows.length()).map { index ->
+            val row = rows.getJSONObject(index)
+            RejectionTrendPoint(LocalDate.parse(row.getString("date")), row.optDouble("reject_qty", 0.0).toFloat())
+        }
+    }
+
     fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
         val uploadFile = PhotoCompressor.prepare(file)
         val boundary = "----ProductionMobile${System.currentTimeMillis()}"
@@ -232,6 +243,7 @@ private object ApiClient {
 private data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
 private data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
+private data class RejectionTrendPoint(val date: LocalDate, val quantity: Float)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -249,6 +261,9 @@ class MainActivity : ComponentActivity() {
             var date by remember { mutableStateOf(LocalDate.now().toString()) }
             var shift by remember { mutableStateOf("A") }
             var product by remember { mutableStateOf<Choice?>(null) }
+            var rejectionTrend by remember { mutableStateOf<List<RejectionTrendPoint>>(emptyList()) }
+            var rejectionTrendLoading by remember { mutableStateOf(false) }
+            var rejectionTrendError by remember { mutableStateOf<String?>(null) }
             var detection by remember { mutableStateOf<RouteChoice?>(null) }
             var responsible by remember { mutableStateOf<RouteChoice?>(null) }
             var machine by remember { mutableStateOf<Choice?>(null) }
@@ -348,6 +363,8 @@ class MainActivity : ComponentActivity() {
                 date = LocalDate.now().toString()
                 shift = "A"
                 product = null
+                rejectionTrend = emptyList()
+                rejectionTrendError = null
                 detection = null
                 responsible = null
                 machine = null
@@ -371,6 +388,26 @@ class MainActivity : ComponentActivity() {
                     finally { busy=false }
                 }
             }
+            fun refreshRejectionTrend(productId: Int, auth: String) {
+                val today = LocalDate.now()
+                val fromDate = today.withDayOfMonth(1)
+                val toDate = today.withDayOfMonth(today.lengthOfMonth())
+                scope.launch {
+                    rejectionTrendLoading = true
+                    rejectionTrendError = null
+                    rejectionTrend = emptyList()
+                    try {
+                        rejectionTrend = withContext(Dispatchers.IO) {
+                            ApiClient.loadRejectionTrend(productId, fromDate, toDate, auth)
+                        }
+                    } catch (e: Exception) {
+                        rejectionTrendError = e.message ?: "Unable to load monthly rejection quantities."
+                    } finally {
+                        rejectionTrendLoading = false
+                    }
+                }
+            }
+
             fun refreshRoutes(productId: Int, onDate: String, auth: String) {
                 scope.launch {
                     detection=null; responsible=null; routes=emptyList()
@@ -630,8 +667,24 @@ class MainActivity : ComponentActivity() {
                                         Text("Rejection details",color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
                                         OutlinedTextField(date,{date=it; product?.let{p->token?.let{t->refreshRoutes(p.id,it,t)}}},label={Text("Rejection date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
                                         ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C"),Choice(4,"General")),null,{shift=it.label},shift)
-                                        ChoiceDropdown("Product",masters?.products.orEmpty(),product,{product=it;token?.let{t->refreshRoutes(it.id,date,t)};detection=null;responsible=null})
+                                        ChoiceDropdown("Product",masters?.products.orEmpty(),product,{selected ->
+                                            product=selected
+                                            rejectionTrend=emptyList()
+                                            rejectionTrendError=null
+                                            token?.let { auth ->
+                                                refreshRoutes(selected.id,date,auth)
+                                                refreshRejectionTrend(selected.id,auth)
+                                            }
+                                            detection=null
+                                            responsible=null
+                                        })
                                         if(product!=null) {
+                                            RejectionQuantityTrend(
+                                                productLabel=product!!.label,
+                                                points=rejectionTrend,
+                                                loading=rejectionTrendLoading,
+                                                error=rejectionTrendError
+                                            )
                                             ChoiceDropdown("Detection process",routes.map{Choice(it.id,it.label)},detection?.let{x->Choice(x.id,x.label)},{detection=RouteChoice(it.id,it.label)})
                                             ChoiceDropdown("Responsible process (optional)",routes.map{Choice(it.id,it.label)},responsible?.let{x->Choice(x.id,x.label)},{responsible=if(it.id<0)null else RouteChoice(it.id,it.label)},allowNone=true)
                                         }
@@ -802,6 +855,75 @@ class MainActivity : ComponentActivity() {
     }
 }
 }
+
+
+@Composable
+private fun RejectionQuantityTrend(
+    productLabel: String,
+    points: List<RejectionTrendPoint>,
+    loading: Boolean,
+    error: String?
+) {
+    val today = LocalDate.now()
+    val monthStart = today.withDayOfMonth(1)
+    val monthEnd = today.withDayOfMonth(today.lengthOfMonth())
+    val quantities = points.filter { !it.date.isAfter(today) }.associate { it.date.dayOfMonth to it.quantity }
+    val total = quantities.values.sum()
+    val maxValue = (quantities.values.maxOrNull() ?: 0f).coerceAtLeast(1f)
+    val dayLabels = listOf(1, 5, 10, 15, 20, 25, monthEnd.dayOfMonth)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC))
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Daily Rejection Quantity", color=Navy, fontWeight=FontWeight.Bold, fontSize=16.sp)
+            Text("${monthStart.format(java.time.format.DateTimeFormatter.ofPattern("MMM yyyy"))} • ${productLabel}",
+                color=Muted, fontSize=11.sp, maxLines=1)
+            when {
+                loading -> Text("Loading monthly rejection quantities…", color=Muted, fontSize=12.sp)
+                error != null -> Text(error, color=Color(0xFFB3261E), fontSize=12.sp)
+                else -> {
+                    Text("Month total: ${total.toInt()}", color=Teal, fontWeight=FontWeight.SemiBold, fontSize=13.sp)
+                    Canvas(Modifier.fillMaxWidth().height(145.dp)) {
+                        val left = 4f
+                        val right = size.width - 4f
+                        val top = 8f
+                        val bottom = size.height - 6f
+                        val chartHeight = bottom - top
+                        for (line in 0..3) {
+                            val y = top + chartHeight * line / 3f
+                            drawLine(Muted.copy(alpha=0.20f), Offset(left, y), Offset(right, y), strokeWidth=1f)
+                        }
+                        val count = monthEnd.dayOfMonth
+                        val slot = (right - left) / count
+                        val barWidth = (slot * 0.58f).coerceAtLeast(2f)
+                        for (day in 1..count) {
+                            if (day > today.dayOfMonth) continue
+                            val value = (quantities[day] ?: 0f).coerceAtLeast(0f)
+                            val barHeight = chartHeight * value / maxValue
+                            if (barHeight > 0f) {
+                                val x = left + (day - 1) * slot + (slot - barWidth) / 2f
+                                drawRect(Teal, Offset(x, bottom - barHeight), Size(barWidth, barHeight))
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.SpaceBetween) {
+                        dayLabels.distinct().forEach { day ->
+                            Text(day.toString(), color=Muted, fontSize=10.sp)
+                        }
+                    }
+                    if (total <= 0f) {
+                        Text("No rejection quantity recorded for this part in the current month.", color=Muted, fontSize=11.sp)
+                    }
+                    Text("Daily reject quantity • future dates are not plotted", color=Muted, fontSize=10.sp)
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun ChoiceDropdown(
