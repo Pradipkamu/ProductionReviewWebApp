@@ -2,7 +2,7 @@ from ..time_utils import ist_today, ist_date, ist_day_start_utc
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, and_, extract, func
+from sqlalchemy import select, and_, extract, func, or_
 from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db import get_db
@@ -10,6 +10,7 @@ from ..models import (User, Product, RouteVersion, RouteOperation, StandardCycle
  SalesPriceHistory, DailyMIS, DailyRequirement, QualityRejectionDaily, QualityRejectionMonthlyHistory,
  ImportBatch, QualityRejectionImportBatch, MachineShiftProduction, MachineLossEvent, Action, ActionContext,
  ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory,
+ ReviewPoint, ReviewSession, ReviewParticipantPresence, ReviewMeetingRequest, ReviewActionLink,
  ProcessFlowVersion, ProcessFlowStage, StageScheduleAllocation, Operation,
  OperatorRequirementHistory, MachineCapacitySetting, Machine)
 from ..services.oee import calculate_oee
@@ -164,6 +165,254 @@ def data_quality(db, as_of, products):
         if unclassified>0.01:add('oee_downtime_unclassified',byid[r.product_id],f'{unclassified:g} downtime minutes not classified on shift {r.shift}, machine {r.machine_id}',r.id)
         if unclassified<-0.01:add('oee_loss_overclassified',byid[r.product_id],f'{-unclassified:g} availability-loss minutes exceed downtime on shift {r.shift}, machine {r.machine_id}',r.id)
     return {'counts':dict(Counter(r['kind'] for r in issues)),'issues':issues,'total':len(issues)}
+
+@router.get('/issue-timeline')
+def issue_timeline(
+    from_date: date,
+    to_date: date,
+    product_id: str | None = None,
+    plant: str | None = None,
+    customer_id: str | None = None,
+    product_group: str | None = None,
+    limit: int = Query(300, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Unified, permission-aware issue timeline across manufacturing records.
+
+    This endpoint only composes existing source records. It does not change PPM,
+    OEE, dispatch or action calculations. MOM points are included only for meetings
+    the caller owns or has joined/been approved to view.
+    """
+    if to_date < from_date:
+        raise HTTPException(422, "to_date must be on or after from_date")
+    if (to_date - from_date).days > 92:
+        raise HTTPException(422, "Issue timeline range cannot exceed 93 days")
+
+    products = scope(db, product_id, plant, customer_id, product_group)
+    ids = [p.id for p in products]
+    if not ids:
+        return {
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "summary": {"events": 0, "mom": 0, "actions": 0, "quality": 0, "losses": 0, "dispatch": 0},
+            "events": [],
+        }
+    by_product = {p.id: p for p in products}
+    events: list[dict] = []
+
+    # MOM rows obey the same owner/participant/approved-request access rule
+    # used by the meeting register. Never return another user's private MOM.
+    visible_meetings = select(ReviewSession.id).where(or_(
+        ReviewSession.owner_id == user.id,
+        ReviewSession.id.in_(select(ReviewParticipantPresence.review_session_id).where(
+            ReviewParticipantPresence.user_id == user.id
+        )),
+        ReviewSession.id.in_(select(ReviewMeetingRequest.review_session_id).where(
+            ReviewMeetingRequest.requester_id == user.id,
+            ReviewMeetingRequest.status.in_(["ACKNOWLEDGED", "LEFT"]),
+        )),
+    ))
+    points = db.execute(
+        select(ReviewPoint, ReviewSession, Product)
+        .join(ReviewSession, ReviewSession.id == ReviewPoint.review_session_id)
+        .join(Product, Product.id == ReviewPoint.product_id)
+        .where(
+            ReviewSession.id.in_(visible_meetings),
+            ReviewSession.review_date.between(from_date, to_date),
+            ReviewPoint.product_id.in_(ids),
+        )
+        .order_by(ReviewSession.review_date.desc(), ReviewPoint.sequence_no)
+        .limit(limit)
+    ).all()
+    for point, meeting, product in points:
+        events.append({
+            "event_type": "MOM_POINT",
+            "event_date": meeting.review_date.isoformat(),
+            "product_id": product.id,
+            "product_code": product.code,
+            "product": product.name,
+            "plant": product.plant,
+            "title": point.category or "MOM discussion",
+            "detail": point.discussion_point,
+            "source": "Daily MOM",
+            "source_id": point.id,
+            "review_session_id": meeting.id,
+            "action_id": point.action_id,
+            "status": "ACTION_REQUIRED" if point.action_required else "DISCUSSION",
+            "severity": "WATCH" if point.action_required else "INFO",
+        })
+
+    # Action register events are restricted to the selected product context.
+    action_context_rows = db.execute(
+        select(Action, ActionContext, Product)
+        .join(ActionContext, ActionContext.action_id == Action.id)
+        .join(Product, Product.id == ActionContext.product_id)
+        .where(
+            ActionContext.product_id.in_(ids),
+            ActionContext.context_date.between(from_date, to_date),
+        )
+        .order_by(ActionContext.context_date.desc(), Action.id.desc())
+        .limit(limit)
+    ).all()
+    seen_actions = set()
+    for action, context, product in action_context_rows:
+        if action.id in seen_actions:
+            continue
+        seen_actions.add(action.id)
+        events.append({
+            "event_type": "ACTION",
+            "event_date": context.context_date.isoformat(),
+            "product_id": product.id,
+            "product_code": product.code,
+            "product": product.name,
+            "plant": product.plant,
+            "title": action.action_no,
+            "detail": action.problem_description,
+            "action_description": action.action_description,
+            "source": "Action Register",
+            "source_id": action.id,
+            "action_id": action.id,
+            "status": action.status.value,
+            "priority": action.priority.value,
+            "owner_id": action.owner_id,
+            "due_at": action.due_at.isoformat() if action.due_at else None,
+            "severity": "OVERDUE" if action.due_at and action.status != ActionStatus.CLOSED and action.due_at < datetime.utcnow() else "WATCH",
+        })
+
+    quality_rows = db.execute(
+        select(QualityRejectionDaily, Product, QualityPhenomenon)
+        .join(Product, Product.id == QualityRejectionDaily.product_id)
+        .join(QualityPhenomenon, QualityPhenomenon.id == QualityRejectionDaily.phenomenon_id)
+        .where(
+            QualityRejectionDaily.product_id.in_(ids),
+            QualityRejectionDaily.rejection_date.between(from_date, to_date),
+        )
+        .order_by(QualityRejectionDaily.rejection_date.desc(), QualityRejectionDaily.id.desc())
+        .limit(limit)
+    ).all()
+    for rejection, product, phenomenon in quality_rows:
+        net_reject = max(0.0, float(rejection.reject_qty or 0) - float(rejection.approved_salvage_qty or 0))
+        if net_reject <= 0:
+            continue
+        events.append({
+            "event_type": "QUALITY_REJECTION",
+            "event_date": rejection.rejection_date.isoformat(),
+            "product_id": product.id,
+            "product_code": product.code,
+            "product": product.name,
+            "plant": rejection.plant or product.plant,
+            "title": phenomenon.name,
+            "detail": rejection.remark or f"{net_reject:g} rejected pieces recorded",
+            "source": "Quality Rejection",
+            "source_id": rejection.id,
+            "reject_qty": net_reject,
+            "denominator_qty": float(rejection.denominator_qty) if rejection.denominator_qty is not None else None,
+            "ppm": float(rejection.ppm) if rejection.ppm is not None else None,
+            "ppm_state": "PENDING" if rejection.denominator_qty is None or rejection.denominator_qty <= 0 else "AVAILABLE",
+            "route_operation_id": rejection.detection_route_operation_id,
+            "machine_id": rejection.machine_id,
+            "severity": "CRITICAL" if phenomenon.criticality == "CRITICAL" else "WATCH",
+        })
+
+    loss_rows = db.execute(
+        select(MachineLossEvent, Product, Machine, LossCategory)
+        .join(Product, Product.id == MachineLossEvent.product_id)
+        .join(Machine, Machine.id == MachineLossEvent.machine_id)
+        .join(LossCategory, LossCategory.id == MachineLossEvent.loss_category_id)
+        .where(
+            MachineLossEvent.product_id.in_(ids),
+            MachineLossEvent.loss_date.between(from_date, to_date),
+        )
+        .order_by(MachineLossEvent.loss_date.desc(), MachineLossEvent.id.desc())
+        .limit(limit)
+    ).all()
+    for loss, product, machine, category in loss_rows:
+        events.append({
+            "event_type": "PRODUCTION_LOSS",
+            "event_date": loss.loss_date.isoformat(),
+            "product_id": product.id,
+            "product_code": product.code,
+            "product": product.name,
+            "plant": product.plant or machine.plant,
+            "title": category.name,
+            "detail": loss.remark or f"{float(loss.duration_min):g} minutes recorded",
+            "source": "Machine Loss",
+            "source_id": loss.id,
+            "duration_min": float(loss.duration_min),
+            "qty_loss": float(loss.qty_loss or 0),
+            "route_operation_id": loss.route_operation_id,
+            "machine_id": machine.id,
+            "machine_code": machine.code,
+            "shift": loss.shift,
+            "severity": "WATCH" if float(loss.duration_min or 0) > 0 else "INFO",
+        })
+
+    # Dispatch signals: revised requirements are preferred per date; Daily MIS
+    # is the fallback. Missing actual uploads are separate from saved zeroes.
+    requirements = db.scalars(select(DailyRequirement).where(
+        DailyRequirement.product_id.in_(ids),
+        DailyRequirement.route_operation_id.is_(None),
+        DailyRequirement.req_date.between(from_date, to_date),
+    )).all()
+    mis_rows = db.scalars(select(DailyMIS).where(
+        DailyMIS.product_id.in_(ids),
+        DailyMIS.mis_date.between(from_date, to_date),
+    )).all()
+    req_by_key = {(row.product_id, row.req_date): row for row in requirements}
+    mis_by_key = {(row.product_id, row.mis_date): row for row in mis_rows}
+    for pid, event_day in sorted(set(req_by_key) | set(mis_by_key), key=lambda k: (k[1], k[0]), reverse=True):
+        requirement = req_by_key.get((pid, event_day))
+        mis = mis_by_key.get((pid, event_day))
+        plan_qty = (
+            float(requirement.revised_plan_qty or 0) if requirement is not None
+            else float(mis.plan_qty or 0) if mis is not None else None
+        )
+        actual_qty = float(mis.actual_qty or 0) if mis is not None else None
+        if plan_qty is None:
+            continue
+        if actual_qty is not None and actual_qty >= plan_qty:
+            continue
+        product = by_product[pid]
+        events.append({
+            "event_type": "DISPATCH_GAP" if actual_qty is not None else "DISPATCH_ACTUAL_PENDING",
+            "event_date": event_day.isoformat(),
+            "product_id": product.id,
+            "product_code": product.code,
+            "product": product.name,
+            "plant": product.plant,
+            "title": "Dispatch below plan" if actual_qty is not None else "Dispatch actual pending",
+            "detail": f"Plan {plan_qty:g}; actual {actual_qty:g}" if actual_qty is not None else f"Plan {plan_qty:g}; actual not uploaded",
+            "source": "Revised Schedule" if requirement is not None else "Daily MIS",
+            "source_id": requirement.id if requirement is not None else mis.id if mis is not None else None,
+            "schedule_revision_id": requirement.schedule_revision_id if requirement is not None else mis.schedule_revision_id if mis is not None else None,
+            "plan_qty": plan_qty,
+            "actual_qty": actual_qty,
+            "gap_qty": plan_qty - actual_qty if actual_qty is not None else None,
+            "severity": "WATCH",
+        })
+
+    events.sort(key=lambda row: (row["event_date"], row["event_type"], row["source_id"] or 0), reverse=True)
+    events = events[:limit]
+    counts = Counter(row["event_type"] for row in events)
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "scope": {
+            "products": len(products),
+            "plants": sorted({p.plant for p in products if p.plant}),
+        },
+        "summary": {
+            "events": len(events),
+            "mom": counts.get("MOM_POINT", 0),
+            "actions": counts.get("ACTION", 0),
+            "quality": counts.get("QUALITY_REJECTION", 0),
+            "losses": counts.get("PRODUCTION_LOSS", 0),
+            "dispatch": counts.get("DISPATCH_GAP", 0) + counts.get("DISPATCH_ACTUAL_PENDING", 0),
+        },
+        "events": events,
+    }
+
 
 @router.get('/data-quality')
 def quality(as_of:date,product_id:str|None=None,plant:str|None=None,customer_id:str|None=None,product_group:str|None=None,db:Session=Depends(get_db),user:User=Depends(get_current_user)):
