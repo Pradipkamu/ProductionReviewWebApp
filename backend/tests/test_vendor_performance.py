@@ -17,7 +17,7 @@ def _seed_vendor_ledger():
         product = Product(code="VPERF-P1", name="Vendor Performance Part", plant="Plant 1")
         operation = Operation(
             code="VPERF-OP", name="Heat Treatment",
-            operation_type=OperationType.VENDOR,
+            operation_type=OperationType.VENDOR_PROCESS,
         )
         vendor_a = Vendor(code="VPERF-A", name="Vendor A")
         vendor_b = Vendor(code="VPERF-B", name="Vendor B")
