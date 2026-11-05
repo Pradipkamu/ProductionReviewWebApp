@@ -12,6 +12,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..models import Product, RouteOperation, Operation, User, Vendor, VendorMovement, VendorReceipt, RouteVersion
 from ..schemas import VendorMovementCreate
+from ..services.filtering import csv_ints, csv_strings
 
 router = APIRouter(prefix="/vendor", tags=["vendor"])
 
@@ -62,7 +63,15 @@ def list_movements(product_id: int | None = None, pending_only: bool = False,
 
 
 @router.get("/performance")
-def vendor_performance(as_of: date | None = None, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def vendor_performance(
+    as_of: date | None = None,
+    plant: str | None = None,
+    product_group: str | None = None,
+    customer_id: str | None = None,
+    product_id: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     """Read-only vendor scorecard derived from the outward/receipt ledger."""
     cutoff = as_of or ist_today()
     q = (
@@ -71,8 +80,20 @@ def vendor_performance(as_of: date | None = None, db: Session = Depends(get_db),
         .join(RouteOperation, RouteOperation.id == VendorMovement.route_operation_id)
         .join(Operation, Operation.id == RouteOperation.operation_id)
         .join(Vendor, Vendor.id == VendorMovement.vendor_id)
-        .order_by(Vendor.name, VendorMovement.outward_date)
     )
+    plants = csv_strings(plant)
+    groups = csv_strings(product_group)
+    customer_ids = csv_ints(customer_id)
+    product_ids = csv_ints(product_id)
+    if plants:
+        q = q.where(Product.plant.in_(plants))
+    if groups:
+        q = q.where(Product.product_group.in_(groups))
+    if customer_ids:
+        q = q.where(Product.customer_id.in_(customer_ids))
+    if product_ids:
+        q = q.where(Product.id.in_(product_ids))
+    q = q.order_by(Vendor.name, VendorMovement.outward_date)
     movements = [_serialize(*row) for row in db.execute(q).all()]
     for row in movements:
         row["age_days"] = max(0, (cutoff - row["outward_date"]).days) if row["pending_qty"] > 0 else 0
