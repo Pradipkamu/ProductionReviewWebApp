@@ -38,6 +38,9 @@ def upgrade():
         sa.UniqueConstraint("policy_id", "event_key", "channel", name="uq_alert_delivery_event"),
     )
 
+    op.create_index("ix_alert_policies_code", "alert_policies", ["code"], unique=True)
+    op.create_index("ix_alert_delivery_log_policy_id", "alert_delivery_log", ["policy_id"])
+
     seed_rows = [
         ("dispatch_compliance", "Dispatch compliance minimum", 0.9, "MANAGEMENT,ADMIN"),
         ("high_ppm", "High PPM threshold", 1000.0, "QUALITY,MANAGEMENT,ADMIN"),
@@ -61,5 +64,7 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_index("ix_alert_delivery_log_policy_id", table_name="alert_delivery_log")
+    op.drop_index("ix_alert_policies_code", table_name="alert_policies")
     op.drop_table("alert_delivery_log")
     op.drop_table("alert_policies")
