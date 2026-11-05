@@ -933,6 +933,35 @@ class ActionReminder(Base):
     __table_args__ = (UniqueConstraint('action_id', 'reminder_date', 'kind', name='uq_action_reminder_day'),)
 
 
+class AlertPolicy(Base, TimestampMixin):
+    __tablename__ = 'alert_policies'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    threshold: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6), nullable=True)
+    quiet_start: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+    quiet_end: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+    recipient_roles: Mapped[Optional[str]] = mapped_column(String(180), nullable=True)
+    updated_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey('users.id'), nullable=True)
+
+
+class AlertDeliveryLog(Base):
+    __tablename__ = 'alert_delivery_log'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    policy_id: Mapped[Optional[int]] = mapped_column(ForeignKey('alert_policies.id'), nullable=True, index=True)
+    event_key: Mapped[str] = mapped_column(String(180))
+    channel: Mapped[str] = mapped_column(String(40), default='IN_APP')
+    status: Mapped[str] = mapped_column(String(40))
+    recipient_role: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    message: Mapped[str] = mapped_column(Text)
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (
+        UniqueConstraint('policy_id', 'event_key', 'channel', name='uq_alert_delivery_event'),
+    )
+
+
 class ProcessFlowVersion(Base, TimestampMixin):
     __tablename__ = 'process_flow_versions'
     id: Mapped[int] = mapped_column(primary_key=True)
