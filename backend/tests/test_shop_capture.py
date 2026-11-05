@@ -26,5 +26,5 @@ def test_existing_capture_database_remains_compatible(tmp_path):
         command.upgrade(config, 'head')
         assert conn.scalar(text('SELECT original_text FROM shop_captures WHERE id=1')) == 'Original report'
         assert conn.scalar(text('SELECT image_path FROM shop_captures WHERE id=1')) == 'preserved.png'
-        assert conn.scalar(text('SELECT version_num FROM alembic_version')) == '0019_value_addition_same_date'
+        assert conn.scalar(text('SELECT version_num FROM alembic_version')) == '0020_quality_ppm_indexes'
     engine.dispose()
