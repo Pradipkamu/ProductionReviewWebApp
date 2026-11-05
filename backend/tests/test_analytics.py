@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.db import SessionLocal
 from app.main import app
-from app.models import Customer, DailyMIS, DailyRequirement, Product
+from app.models import Customer, DailyMIS, DailyRequirement, Product, ScheduleRevision
 from test_governance_security import headers
 
 
@@ -135,6 +135,16 @@ def test_dispatch_detail_uses_revised_plan_then_daily_mis_fallback_and_flags_mis
         )
         db.add(product)
         db.flush()
+        revision = ScheduleRevision(
+            product_id=product.id,
+            month=date(2026, 5, 1),
+            revision_no=3,
+            effective_from=date(2026, 5, 1),
+            monthly_target_qty=Decimal("200"),
+            reason="approved May dispatch revision",
+        )
+        db.add(revision)
+        db.flush()
         db.add_all([
             DailyMIS(
                 mis_date=date(2026, 5, 2), product_id=product.id,
@@ -150,8 +160,8 @@ def test_dispatch_detail_uses_revised_plan_then_daily_mis_fallback_and_flags_mis
             ),
             DailyRequirement(
                 req_date=date(2026, 5, 2), product_id=product.id,
-                route_operation_id=None, baseline_plan_qty=Decimal("10"),
-                revised_plan_qty=Decimal("12"),
+                route_operation_id=None, schedule_revision_id=revision.id,
+                baseline_plan_qty=Decimal("10"), revised_plan_qty=Decimal("12"),
             ),
             DailyRequirement(
                 req_date=date(2026, 5, 4), product_id=product.id,
@@ -179,6 +189,8 @@ def test_dispatch_detail_uses_revised_plan_then_daily_mis_fallback_and_flags_mis
     assert by_date["2026-05-02"]["plan_qty"] == 12.0
     assert by_date["2026-05-02"]["actual_qty"] == 8.0
     assert by_date["2026-05-02"]["plan_source"] == "REVISED_REQUIREMENT"
+    assert by_date["2026-05-02"]["schedule_revision_no"] == 3
+    assert by_date["2026-05-02"]["schedule_effective_from"] == "2026-05-01"
     assert by_date["2026-05-03"]["plan_qty"] == 20.0
     assert by_date["2026-05-03"]["actual_qty"] == 0.0
     assert by_date["2026-05-03"]["plan_source"] == "DAILY_MIS_BASELINE"
