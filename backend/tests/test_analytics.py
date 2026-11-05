@@ -84,6 +84,12 @@ def test_forecast_uses_reported_working_days_and_plant_calendar():
                 sales_price=Decimal("1"), plan_sales=Decimal("100"),
                 actual_sales=Decimal("70"),
             ),
+            DailyMIS(
+                mis_date=date(2026, 5, 6), product_id=product.id,
+                plan_qty=Decimal("40"), actual_qty=Decimal("0"),
+                sales_price=Decimal("1"), plan_sales=Decimal("40"),
+                actual_sales=Decimal("0"),
+            ),
         ])
         db.add_all([
             DailyRequirement(
@@ -116,5 +122,6 @@ def test_forecast_uses_reported_working_days_and_plant_calendar():
     assert item["elapsed_working_days"] == 4
     assert item["coverage_pct"] == 50.0
     assert item["run_rate_per_reported_working_day"] == 60.0
-    assert item["plan_qty"] == 200.0
+    assert item["plan_qty"] == 240.0
+    assert item["plan_source"] == "REVISED_REQUIREMENT_WITH_DAILY_MIS_FALLBACK"
     assert item["projected_month_end_qty"] == 1680.0
