@@ -170,12 +170,25 @@ def production_forecast(
             DailyRequirement.req_date <= last,
         )
     ).all()
+    # Fetch MIS plan values for the full month, including dates still in the
+    # future. Revised dispatch requirements take precedence per date, while
+    # imported MIS plans remain the fallback for dates without a revision.
+    mis_plan_rows = db.scalars(
+        select(DailyMIS).where(
+            DailyMIS.product_id.in_(product_ids),
+            DailyMIS.mis_date >= first,
+            DailyMIS.mis_date <= last,
+        )
+    ).all()
     actual_by_product: dict[int, list[DailyMIS]] = defaultdict(list)
-    requirement_by_product: dict[int, list[DailyRequirement]] = defaultdict(list)
+    requirement_by_product: dict[int, dict[date, DailyRequirement]] = defaultdict(dict)
+    mis_plan_by_product: dict[int, dict[date, DailyMIS]] = defaultdict(dict)
     for row in actual_rows:
         actual_by_product[row.product_id].append(row)
     for row in requirement_rows:
-        requirement_by_product[row.product_id].append(row)
+        requirement_by_product[row.product_id][row.req_date] = row
+    for row in mis_plan_rows:
+        mis_plan_by_product[row.product_id][row.mis_date] = row
 
     all_days = []
     day = first
@@ -203,13 +216,29 @@ def production_forecast(
         mis = [row for row in actual_by_product.get(product.id, []) if row.mis_date in working_set]
         reported_dates = {row.mis_date for row in mis}
         actual_qty = sum(float(row.actual_qty or 0) for row in mis)
-        requirements = [row for row in requirement_by_product.get(product.id, []) if row.req_date in working_set]
-        if requirements:
-            plan_qty = sum(float(row.revised_plan_qty or 0) for row in requirements)
+        revised_by_date = requirement_by_product.get(product.id, {})
+        mis_plan_by_date = mis_plan_by_product.get(product.id, {})
+        plan_qty = 0.0
+        revised_days = 0
+        mis_fallback_days = 0
+        for work_date in working:
+            revised_row = revised_by_date.get(work_date)
+            if revised_row is not None:
+                plan_qty += float(revised_row.revised_plan_qty or 0)
+                revised_days += 1
+                continue
+            mis_plan_row = mis_plan_by_date.get(work_date)
+            if mis_plan_row is not None:
+                plan_qty += float(mis_plan_row.plan_qty or 0)
+                mis_fallback_days += 1
+        if revised_days and mis_fallback_days:
+            plan_source = "REVISED_REQUIREMENT_WITH_DAILY_MIS_FALLBACK"
+        elif revised_days:
             plan_source = "REVISED_DISPATCH_REQUIREMENT"
-        else:
-            plan_qty = sum(float(row.plan_qty or 0) for row in mis)
+        elif mis_fallback_days:
             plan_source = "DAILY_MIS_FALLBACK"
+        else:
+            plan_source = "NO_PLAN_ROWS"
 
         reported_days = len(reported_dates)
         run_rate = actual_qty / reported_days if reported_days else None
