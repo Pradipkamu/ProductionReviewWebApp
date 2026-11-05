@@ -73,7 +73,7 @@ def test_knowledge_search_finds_text_content_and_returns_authorized_source_link(
     assert target.is_file()
 
 
-def test_knowledge_search_rejects_tampered_files_and_keeps_metadata_search(tmp_path):
+def test_knowledge_search_rejects_tampered_files_even_when_metadata_matches(tmp_path):
     action_id, attachment_id, target = _seed_attachment(
         tmp_path,
         file_name="inspection.txt",
@@ -97,7 +97,7 @@ def test_knowledge_search_rejects_tampered_files_and_keeps_metadata_search(tmp_p
 
     assert content_search.status_code == 200, content_search.text
     assert content_search.json()["results"] == []
-    # Metadata can still be matched, but the tampered file is never opened as
-    # document text and is not returned as a valid download source.
+    # The complete attachment record is excluded if the integrity check fails,
+    # even when the query would match its filename.
     assert metadata_search.status_code == 200, metadata_search.text
     assert metadata_search.json()["results"] == []
