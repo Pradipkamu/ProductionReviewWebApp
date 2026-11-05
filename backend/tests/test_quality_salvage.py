@@ -176,7 +176,10 @@ def test_pending_salvage_does_not_change_rejection_reports_but_quality_approval_
 
     approved = client.post(
         "/api/quality/salvage/requests/" + str(request_id) + "/review",
-        headers=quality,
+        headers={
+            **quality,
+            "X-Change-Reason": "Quality approved salvage after dimensional re-inspection evidence.",
+        },
         json={"action": "APPROVE", "note": "Inspection evidence verified."},
     )
     assert approved.status_code == 200, approved.text
