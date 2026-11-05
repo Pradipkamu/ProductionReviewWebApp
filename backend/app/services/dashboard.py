@@ -352,7 +352,10 @@ def daily_control_summary(
     )).all())
     future_keys = {(r.req_date, r.product_id) for r in future}
     missing_customer = len(set(customer_plan) - set(mis))
-    missing_stage = len(set(stage_plan) - set(stage_actual))
+    missing_stage = sum(
+        1 for pid, route_operation_id in stage_plan
+        if selected_stage_actual(pid, route_operation_id) is None
+    )
     blockers = sum(1 for x in alerts if x["severity"] == "BLOCKER")
     critical = sum(1 for x in alerts if x["severity"] == "CRITICAL")
     warnings = sum(1 for x in alerts if x["severity"] == "WARNING")
@@ -373,7 +376,7 @@ def daily_control_summary(
         },
         "counts": {
             "planned_products": len(customer_plan), "reported_products": len(set(customer_plan) & set(mis)),
-            "planned_stages": len(stage_plan), "reported_stages": len(set(stage_plan) & set(stage_actual)),
+            "planned_stages": len(stage_plan), "reported_stages": reported_stage,
             "blockers": blockers, "critical": critical, "warnings": warnings,
         },
         "alerts": alerts[:100],
