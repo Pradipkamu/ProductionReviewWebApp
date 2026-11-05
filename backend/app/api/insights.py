@@ -648,7 +648,7 @@ def alert_delivery_log(
         "delivered_at": row.delivered_at,
         "created_at": row.created_at,
     } for row in rows]
-\n@router.post('/assistant-query')
+@router.post('/assistant-query')
 def assistant_query(
     query: str,
     as_of: date,
