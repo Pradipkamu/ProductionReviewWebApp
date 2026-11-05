@@ -58,3 +58,63 @@ def test_monthly_analytics_uses_revised_dispatch_requirement_for_plan():
     assert row["actual_sales"] == 875
     assert row["sales_gap"] == -225
     assert row["achievement"] == 875 / 1100
+
+
+def test_forecast_uses_reported_working_days_and_plant_calendar():
+    from app.models import WorkingCalendar
+
+    with SessionLocal() as db:
+        product = Product(code="FC-P1", name="Forecast Part", plant="Forecast Plant")
+        db.add(product)
+        db.flush()
+        db.add(WorkingCalendar(
+            work_date=date(2026, 5, 3), plant="Forecast Plant",
+            is_working_day=False, holiday_name="Weekly off",
+        ))
+        db.add_all([
+            DailyMIS(
+                mis_date=date(2026, 5, 1), product_id=product.id,
+                plan_qty=Decimal("100"), actual_qty=Decimal("50"),
+                sales_price=Decimal("1"), plan_sales=Decimal("100"),
+                actual_sales=Decimal("50"),
+            ),
+            DailyMIS(
+                mis_date=date(2026, 5, 5), product_id=product.id,
+                plan_qty=Decimal("100"), actual_qty=Decimal("70"),
+                sales_price=Decimal("1"), plan_sales=Decimal("100"),
+                actual_sales=Decimal("70"),
+            ),
+        ])
+        db.add_all([
+            DailyRequirement(
+                req_date=date(2026, 5, 1), product_id=product.id,
+                route_operation_id=None, baseline_plan_qty=Decimal("100"),
+                revised_plan_qty=Decimal("100"),
+            ),
+            DailyRequirement(
+                req_date=date(2026, 5, 5), product_id=product.id,
+                route_operation_id=None, baseline_plan_qty=Decimal("100"),
+                revised_plan_qty=Decimal("100"),
+            ),
+        ])
+        db.commit()
+        product_id = product.id
+
+    client = TestClient(app)
+    h = headers(client)
+    response = client.get(
+        f"/api/analytics/forecast?as_of=2026-05-05&product_id={product_id}",
+        headers=h,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["summary"]["products"] == 1
+    assert body["summary"]["products_with_actuals"] == 1
+    item = body["products_detail"][0]
+    assert item["actual_qty"] == 120.0
+    assert item["reported_working_days"] == 2
+    assert item["elapsed_working_days"] == 4
+    assert item["coverage_pct"] == 50.0
+    assert item["run_rate_per_reported_working_day"] == 60.0
+    assert item["plan_qty"] == 200.0
+    assert item["projected_month_end_qty"] == 1680.0
