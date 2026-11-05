@@ -8,7 +8,7 @@ export default function CapacityIntelligence(){
  async function load(){setBusy(true);try{setData(await api('/capacity/machine-loading?month='+month));setError('')}catch(e:any){setError(e.message)}finally{setBusy(false)}}
  useEffect(()=>{load()},[month])
  const allRows=data?.machines||data?.rows||data?.items||[]
- const plants=[...new Set(allRows.map((r:any)=>r.plant||'Unassigned'))].sort((a,b)=>String(a).localeCompare(String(b)))
+ const plants:string[]=[...new Set<string>(allRows.map((r:any)=>String(r.plant||'Unassigned')))].sort((a,b)=>a.localeCompare(b))
  const rows=plant==='ALL'?allRows:allRows.filter((r:any)=>(r.plant||'Unassigned')===plant)
  const over=rows.filter((r:any)=>Number(r.overload_percent)>0),near=rows.filter((r:any)=>Number(r.allocated_load_percent)>=85&&Number(r.overload_percent)<=0)
  const operators=rows.reduce((s:number,r:any)=>s+Number(r.required_operator_equivalent||0),0),hours=rows.reduce((s:number,r:any)=>s+Number(r.operator_hours||0),0)
