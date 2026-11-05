@@ -21,6 +21,7 @@ from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
 from ..services.action_pdf import build_action_plan_pdf
 from ..services.action_evidence import build_evidence_pdf, EvidenceError
+from ..services.document_search import extract_searchable_text, matching_excerpt
 from ..services.file_security import (
     UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
 )
@@ -308,6 +309,77 @@ def create_action(payload: ActionCreate, db: Session = Depends(get_db), user: Us
 
     db.commit(); db.refresh(a)
     return serialize_action(db, a)
+
+
+@router.get("/knowledge-search")
+def knowledge_search(q: str, limit: int = 30, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Search action metadata and bounded local text from supported attachments."""
+    query = " ".join((q or "").split())
+    if len(query) < 2 or len(query) > 100:
+        raise HTTPException(422, "Search text must contain 2 to 100 characters")
+    if limit < 1 or limit > 100:
+        raise HTTPException(422, "limit must be between 1 and 100")
+
+    rows = db.execute(
+        select(ActionAttachment, Action)
+        .join(Action, Action.id == ActionAttachment.action_id)
+        .order_by(ActionAttachment.created_at.desc(), ActionAttachment.id.desc())
+        .limit(200)
+    ).all()
+    results = []
+    needle = query.casefold()
+    for attachment, action in rows:
+        metadata = " ".join([
+            action.action_no or "",
+            action.problem_category or "",
+            action.problem_description or "",
+            action.action_description or "",
+            attachment.file_name or "",
+            attachment.caption or "",
+        ])
+        matched_metadata = needle in metadata.casefold()
+        try:
+            path = safe_path(settings.attachments_dir, attachment.relative_path)
+        except UploadSecurityError:
+            continue
+        if not path.is_file():
+            continue
+        try:
+            if hash_file(path) != attachment.sha256:
+                continue
+        except OSError:
+            continue
+
+        extracted = extract_searchable_text(path)
+        matched_content = bool(extracted and needle in extracted.casefold())
+        if not matched_metadata and not matched_content:
+            continue
+
+        source = "document text" if matched_content else "record metadata"
+        excerpt_source = extracted if matched_content and extracted else metadata
+        results.append({
+            "action_id": action.id,
+            "action_no": action.action_no,
+            "reference_date": action.reference_date,
+            "problem_description": action.problem_description,
+            "attachment_id": attachment.id,
+            "file_name": attachment.file_name,
+            "caption": attachment.caption,
+            "mime_type": attachment.mime_type,
+            "size_bytes": attachment.size_bytes,
+            "match_source": source,
+            "excerpt": matching_excerpt(excerpt_source, query, radius=100),
+            "download_path": f"/actions/{action.id}/attachments/{attachment.id}",
+        })
+        if len(results) >= limit:
+            break
+    return {
+        "query": query,
+        "results": results,
+        "scanned_attachment_limit": 200,
+        "supported_text_types": ["PDF", "TXT", "CSV"],
+        "metadata_only_types": ["DOCX", "PPTX", "XLSX", "XLSM", "PNG", "JPG", "JPEG", "WEBP"],
+    }
 
 
 @router.get("/{action_id}/plan")
