@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.enums import OperationType
@@ -14,7 +15,7 @@ from test_governance_security import headers
 
 def _seed_vendor_ledger():
     with SessionLocal() as db:
-        product = Product(code="VPERF-P1", name="Vendor Performance Part", plant="Plant 1")
+        product = Product(code="VPERF-P1", name="Vendor Performance Part", plant="Plant 1", product_group="Machining")
         operation = Operation(
             code="VPERF-OP", name="Heat Treatment",
             operation_type=OperationType.VENDOR_PROCESS,
@@ -104,3 +105,25 @@ def test_vendor_performance_is_as_of_date_stable():
     assert body["summary"]["overdue_lots"] == 0
     assert body["summary"]["overdue_qty"] == 0.0
     assert body["summary"]["pending_qty"] == 130.0
+
+
+def test_vendor_performance_respects_plant_and_product_scope():
+    _seed_vendor_ledger()
+    with SessionLocal() as db:
+        product_id = db.scalar(select(Product.id).where(Product.code == "VPERF-P1"))
+    client = TestClient(app)
+    h = headers(client)
+    selected = client.get(
+        f"/api/vendor/performance?as_of=2026-11-05&plant=Plant%201&product_group=Machining&product_id={product_id}",
+        headers=h,
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["summary"]["pending_qty"] == 130.0
+
+    excluded = client.get(
+        f"/api/vendor/performance?as_of=2026-11-05&plant=Other%20Plant",
+        headers=h,
+    )
+    assert excluded.status_code == 200, excluded.text
+    assert excluded.json()["summary"]["open_lots"] == 0
+    assert excluded.json()["summary"]["pending_qty"] == 0
