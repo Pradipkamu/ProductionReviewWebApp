@@ -64,6 +64,21 @@ def test_monthly_preview_reserves_machine_and_bulk_approval_detects_schedule_cha
     assert all(o["source"] == "SAVED" for o in second["operations"])
     assert second["preview_token"] != approval["preview_token"]
 
+    physical_load = client.get(
+        "/api/capacity/machine-loading?month=2026-02-01",
+        headers=auth,
+    )
+    assert physical_load.status_code == 200, physical_load.text
+    machine_row = next(
+        item for item in physical_load.json()["machines"]
+        if item["machine_id"] == machine
+    )
+    assert machine_row["allocation_count"] == 2
+    assert {x["product_id"] for x in machine_row["allocations"]} == {p1, p2}
+    # Different parts are combined as fractions of the same physical machine
+    # capacity, not by adding their piece quantities together.
+    assert machine_row["allocated_load_percent"] <= 100.0001
+
     # Changed demand must never silently approve an obsolete saved allocation.
     with SessionLocal() as db:
         row = db.scalar(select(DailyRequirement).where(DailyRequirement.product_id == p2))
