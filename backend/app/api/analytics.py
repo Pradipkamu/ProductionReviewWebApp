@@ -101,6 +101,122 @@ def monthly(
     } for m,pq,aq,ps,as_,pt,at in rows]
 
 
+@router.get("/dispatch-detail")
+def dispatch_detail(
+    from_date: date,
+    to_date: date,
+    plant: str | None = None,
+    product_group: str | None = None,
+    customer_id: str | None = None,
+    product_id: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Part-wise daily dispatch plan/actual matrix with source and upload state."""
+    from collections import defaultdict
+    from fastapi import HTTPException
+
+    if to_date < from_date:
+        raise HTTPException(422, "to_date must be on or after from_date")
+    if (to_date - from_date).days > 92:
+        raise HTTPException(422, "Dispatch detail range cannot exceed 93 days")
+
+    products_query = select(Product).where(Product.is_active.is_(True))
+    products_query = _apply_product_filters(
+        products_query, plant, product_group, customer_id, product_id
+    )
+    products = db.scalars(products_query.order_by(Product.sort_order, Product.name)).all()
+    if not products:
+        return {
+            "from_date": from_date.isoformat(), "to_date": to_date.isoformat(),
+            "summary": {"rows": 0, "products": 0, "missing_actual_rows": 0, "below_plan_rows": 0},
+            "rows": [],
+        }
+
+    ids = [p.id for p in products]
+    product_by_id = {p.id: p for p in products}
+    requirements = db.scalars(select(DailyRequirement).where(
+        DailyRequirement.product_id.in_(ids),
+        DailyRequirement.route_operation_id.is_(None),
+        DailyRequirement.req_date >= from_date,
+        DailyRequirement.req_date <= to_date,
+    )).all()
+    mis_rows = db.scalars(select(DailyMIS).where(
+        DailyMIS.product_id.in_(ids),
+        DailyMIS.mis_date >= from_date,
+        DailyMIS.mis_date <= to_date,
+    )).all()
+
+    revised_by_key = {(row.product_id, row.req_date): row for row in requirements}
+    mis_by_key = {(row.product_id, row.mis_date): row for row in mis_rows}
+    keys = sorted(set(revised_by_key) | set(mis_by_key), key=lambda item: (item[1], product_by_id[item[0]].sort_order, product_by_id[item[0]].name.casefold()))
+    result = []
+    missing_actual = 0
+    below_plan = 0
+    for pid, work_date in keys:
+        product = product_by_id[pid]
+        revised = revised_by_key.get((pid, work_date))
+        mis = mis_by_key.get((pid, work_date))
+        if revised is not None:
+            plan_qty = float(revised.revised_plan_qty or 0)
+            plan_source = "REVISED_REQUIREMENT"
+            baseline_qty = float(revised.baseline_plan_qty or 0)
+            revision_id = revised.schedule_revision_id
+        elif mis is not None:
+            plan_qty = float(mis.plan_qty or 0)
+            plan_source = "DAILY_MIS_BASELINE"
+            baseline_qty = plan_qty
+            revision_id = mis.schedule_revision_id
+        else:
+            plan_qty = None
+            plan_source = "NO_PLAN"
+            baseline_qty = None
+            revision_id = None
+
+        actual_qty = float(mis.actual_qty or 0) if mis is not None else None
+        gap_qty = plan_qty - actual_qty if plan_qty is not None and actual_qty is not None else None
+        achievement = actual_qty / plan_qty if plan_qty and actual_qty is not None else None
+        if actual_qty is None:
+            status = "ACTUAL_PENDING"
+            missing_actual += 1
+        elif plan_qty is None:
+            status = "NO_PLAN"
+        elif actual_qty < plan_qty:
+            status = "BELOW_PLAN"
+            below_plan += 1
+        else:
+            status = "PLAN_MET"
+
+        result.append({
+            "date": work_date.isoformat(),
+            "product_id": product.id,
+            "product_code": product.code,
+            "product": product.name,
+            "plant": product.plant,
+            "plan_qty": plan_qty,
+            "baseline_plan_qty": baseline_qty,
+            "actual_qty": actual_qty,
+            "gap_qty": gap_qty,
+            "achievement": achievement,
+            "plan_source": plan_source,
+            "schedule_revision_id": revision_id,
+            "actual_reported": mis is not None,
+            "status": status,
+        })
+
+    return {
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "summary": {
+            "rows": len(result),
+            "products": len({row["product_id"] for row in result}),
+            "missing_actual_rows": missing_actual,
+            "below_plan_rows": below_plan,
+        },
+        "rows": result,
+    }
+
+
 @router.get("/forecast")
 def production_forecast(
     as_of: date,
