@@ -6,6 +6,11 @@ from .models import PageAccessRule
 
 
 PAGE_CATALOG = (
+    {"key": "control_tower", "label": "Executive Control Tower", "path": "/control-tower"},
+    {"key": "dispatch_intelligence", "label": "Dispatch vs Actual", "path": "/dispatch-intelligence"},
+    {"key": "capacity_intelligence", "label": "Machine Load Intelligence", "path": "/capacity-intelligence"},
+    {"key": "operations_intelligence", "label": "Operations Intelligence", "path": "/operations-intelligence"},
+    {"key": "management_assistant", "label": "Management Assistant / Alerts", "path": "/management-assistant"},
     {"key": "insights", "label": "Exceptions / Data Quality", "path": "/insights"},
     {"key": "diagnostics", "label": "System Diagnostics", "path": "/diagnostics"},
     {"key": "account", "label": "Security / Users", "path": "/account", "required": True},
@@ -15,6 +20,7 @@ PAGE_CATALOG = (
     {"key": "mis", "label": "MIS", "path": "/mis"},
     {"key": "schedule", "label": "Schedule / Price / Calendar", "path": "/schedule"},
     {"key": "machine_master", "label": "Machine Master", "path": "/machine-master"},
+    {"key": "product_master", "label": "Product Update", "path": "/product-master"},
     {"key": "capacity", "label": "Capacity / Manpower", "path": "/capacity"},
     {"key": "process", "label": "Process Monitor", "path": "/process"},
     {"key": "process_actuals", "label": "Process Actuals / Edit", "path": "/process-actuals"},
