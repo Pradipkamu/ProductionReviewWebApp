@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app import __version__
 from app.api import diagnostics as diagnostics_api
 from app.main import app
 
@@ -48,7 +49,7 @@ def test_diagnostics_reports_database_storage_backup_restore_and_security(tmp_pa
         assert response.status_code == 200, response.text
         result = response.json()
         assert result['status'] == 'ok'
-        assert result['backend']['version'] == '0.5.7'
+        assert result['backend']['version'] == __version__
         assert result['database']['status'] == 'ok'
         assert result['backup']['file_name'] == backup.name
         assert result['backup']['checksum_valid'] is True
