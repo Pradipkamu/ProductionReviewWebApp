@@ -23,7 +23,7 @@ def _seed_oee_scope() -> tuple[int, int, int, int, int]:
     with SessionLocal() as db:
         customer = Customer(code="OEE-C", name="OEE Customer")
         db.add(customer); db.flush()
-        product = Product(code="OEE-P", name="OEE Product", customer_id=customer.id)
+        product = Product(code="OEE-P", name="OEE Product", customer_id=customer.id, product_group="Machining")
         operation = Operation(code="OEE-OP", name="OEE Machining", operation_type=OperationType.INTERNAL)
         machine = Machine(code="OEE-M1", name="OEE Machine", plant="Plant OEE")
         db.add_all([product, operation, machine]); db.flush()
@@ -37,11 +37,11 @@ def _seed_oee_scope() -> tuple[int, int, int, int, int]:
         availability = db.scalar(select(LossCategory).where(LossCategory.oee_component == OEEComponent.AVAILABILITY))
         quality = db.scalar(select(LossCategory).where(LossCategory.oee_component == OEEComponent.QUALITY))
         db.commit()
-        return product.id, route.id, machine.id, availability.id, quality.id
+        return product.id, route.id, machine.id, availability.id, quality.id, customer.id
 
 
 def test_controlled_oee_capture_reconciliation_and_actions():
-    product_id, route_id, machine_id, availability_loss_id, quality_loss_id = _seed_oee_scope()
+    product_id, route_id, machine_id, availability_loss_id, quality_loss_id, customer_id = _seed_oee_scope()
     client = TestClient(app); headers = _headers(client); day = date.today().isoformat()
     payload = {
         "production_date": day, "shift": "a", "product_id": product_id,
@@ -106,6 +106,19 @@ def test_controlled_oee_capture_reconciliation_and_actions():
     )
     assert other_plant.status_code == 200, other_plant.text
     assert other_plant.json()["entry_count"] == 0
+
+    product_group_scope = client.get(
+        f"/api/oee/management-summary?from_date={day}&to_date={day}&product_group=Machining&customer_id={customer_id}",
+        headers=headers,
+    )
+    assert product_group_scope.status_code == 200, product_group_scope.text
+    assert product_group_scope.json()["entry_count"] == 1
+    wrong_group_scope = client.get(
+        f"/api/oee/management-summary?from_date={day}&to_date={day}&product_group=Casting",
+        headers=headers,
+    )
+    assert wrong_group_scope.status_code == 200, wrong_group_scope.text
+    assert wrong_group_scope.json()["entry_count"] == 0
 
     data_quality = client.get(f"/api/insights/data-quality?as_of={day}&product_id={product_id}", headers=headers).json()
     assert data_quality["counts"]["oee_downtime_unclassified"] == 1
