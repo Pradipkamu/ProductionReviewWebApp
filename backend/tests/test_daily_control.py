@@ -124,7 +124,8 @@ def test_daily_control_reconciles_actual_after_route_revision():
     body = client.get("/api/dashboard/daily-control?as_of=2026-10-02", headers=_headers(client)).json()
     stage_alerts = [x for x in body["alerts"] if x["kind"] == "missing_stage_actual"]
     assert not stage_alerts
-    assert body["workflow"]["upload"]["reported_stages"] if "reported_stages" in body["workflow"]["upload"] else body["counts"]["reported_stages"] == 1
+    reported_stages = body["workflow"]["upload"].get("reported_stages", body["counts"].get("reported_stages"))
+    assert reported_stages == 1
 
 
 def test_daily_control_ignores_superseded_flow_requirements():
