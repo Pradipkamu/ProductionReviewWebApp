@@ -125,3 +125,63 @@ def test_forecast_uses_reported_working_days_and_plant_calendar():
     assert item["plan_qty"] == 240.0
     assert item["plan_source"] == "REVISED_REQUIREMENT_WITH_DAILY_MIS_FALLBACK"
     assert item["projected_month_end_qty"] == 1680.0
+
+
+def test_dispatch_detail_uses_revised_plan_then_daily_mis_fallback_and_flags_missing_actual():
+    with SessionLocal() as db:
+        product = Product(
+            code="DISP-DETAIL-P1", name="Dispatch Detail Part",
+            plant="Dispatch Plant", product_group="Machining",
+        )
+        db.add(product)
+        db.flush()
+        db.add_all([
+            DailyMIS(
+                mis_date=date(2026, 5, 2), product_id=product.id,
+                plan_qty=Decimal("10"), actual_qty=Decimal("8"),
+                sales_price=Decimal("1"), plan_sales=Decimal("10"),
+                actual_sales=Decimal("8"),
+            ),
+            DailyMIS(
+                mis_date=date(2026, 5, 3), product_id=product.id,
+                plan_qty=Decimal("20"), actual_qty=Decimal("0"),
+                sales_price=Decimal("1"), plan_sales=Decimal("20"),
+                actual_sales=Decimal("0"),
+            ),
+            DailyRequirement(
+                req_date=date(2026, 5, 2), product_id=product.id,
+                route_operation_id=None, baseline_plan_qty=Decimal("10"),
+                revised_plan_qty=Decimal("12"),
+            ),
+            DailyRequirement(
+                req_date=date(2026, 5, 4), product_id=product.id,
+                route_operation_id=None, baseline_plan_qty=Decimal("0"),
+                revised_plan_qty=Decimal("15"),
+            ),
+        ])
+        db.commit()
+        product_id = product.id
+
+    client = TestClient(app)
+    response = client.get(
+        f"/api/analytics/dispatch-detail?from_date=2026-05-02&to_date=2026-05-04&plant=Dispatch%20Plant&product_id={product_id}",
+        headers=headers(client),
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["summary"] == {
+        "rows": 3,
+        "products": 1,
+        "missing_actual_rows": 1,
+        "below_plan_rows": 2,
+    }
+    by_date = {row["date"]: row for row in body["rows"]}
+    assert by_date["2026-05-02"]["plan_qty"] == 12.0
+    assert by_date["2026-05-02"]["actual_qty"] == 8.0
+    assert by_date["2026-05-02"]["plan_source"] == "REVISED_REQUIREMENT"
+    assert by_date["2026-05-03"]["plan_qty"] == 20.0
+    assert by_date["2026-05-03"]["actual_qty"] == 0.0
+    assert by_date["2026-05-03"]["plan_source"] == "DAILY_MIS_BASELINE"
+    assert by_date["2026-05-04"]["plan_qty"] == 15.0
+    assert by_date["2026-05-04"]["actual_qty"] is None
+    assert by_date["2026-05-04"]["status"] == "ACTUAL_PENDING"
