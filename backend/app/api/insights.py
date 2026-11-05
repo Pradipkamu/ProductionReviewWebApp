@@ -11,7 +11,7 @@ from ..models import (User, Product, RouteVersion, RouteOperation, StandardCycle
  SalesPriceHistory, DailyMIS, DailyRequirement, QualityRejectionDaily, QualityRejectionMonthlyHistory,
  ImportBatch, QualityRejectionImportBatch, MachineShiftProduction, MachineLossEvent, Action, ActionContext,
  ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory,
- ReviewPoint, ReviewSession, ReviewParticipantPresence, ReviewMeetingRequest, ReviewActionLink, GovernanceAudit,
+ ReviewPoint, ReviewSession, ReviewParticipantPresence, ReviewMeetingRequest, ReviewActionLink, GovernanceAudit, AlertPolicy, AlertDeliveryLog,
  ProcessFlowVersion, ProcessFlowStage, StageScheduleAllocation, Operation,
  OperatorRequirementHistory, MachineCapacitySetting, Machine)
 from ..services.oee import calculate_oee
@@ -542,7 +542,113 @@ def exceptions(as_of:date,product_id:str|None=None,plant:str|None=None,customer_
     return {'counts':dict(Counter(r['kind'] for r in rows)),'exceptions':rows,'thresholds':dict(compliance=compliance_target,ppm=ppm_target,oee=oee_target,major_loss_min=major_loss_min)}
 
 
-@router.post('/assistant-query')
+
+
+def _validate_hhmm(value: str | None) -> str | None:
+    if value in (None, ""):
+        return None
+    parts = str(value).split(":")
+    if len(parts) != 2 or not all(part.isdigit() for part in parts):
+        raise HTTPException(422, "Quiet time must use HH:MM format")
+    hour, minute = int(parts[0]), int(parts[1])
+    if hour not in range(24) or minute not in range(60):
+        raise HTTPException(422, "Quiet time must use HH:MM format")
+    return f"{hour:02d}:{minute:02d}"
+
+
+@router.get('/alert-policies')
+def alert_policies(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(AlertPolicy).order_by(AlertPolicy.code)).all()
+    return [{
+        "id": row.id,
+        "code": row.code,
+        "name": row.name,
+        "enabled": row.enabled,
+        "threshold": float(row.threshold) if row.threshold is not None else None,
+        "quiet_start": row.quiet_start,
+        "quiet_end": row.quiet_end,
+        "recipient_roles": row.recipient_roles,
+        "updated_by_id": row.updated_by_id,
+        "updated_at": row.updated_at,
+    } for row in rows]
+
+
+@router.patch('/alert-policies/{policy_id}')
+def update_alert_policy(
+    policy_id: int,
+    enabled: bool | None = None,
+    threshold: float | None = Query(None),
+    quiet_start: str | None = None,
+    quiet_end: str | None = None,
+    recipient_roles: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role.value not in {'ADMIN', 'MANAGEMENT'}:
+        raise HTTPException(403, "Only Admin or Management users can change alert policies")
+    row = db.get(AlertPolicy, policy_id)
+    if not row:
+        raise HTTPException(404, "Alert policy not found")
+    if enabled is not None:
+        row.enabled = enabled
+    if threshold is not None:
+        row.threshold = threshold
+    if quiet_start is not None:
+        row.quiet_start = _validate_hhmm(quiet_start)
+    if quiet_end is not None:
+        row.quiet_end = _validate_hhmm(quiet_end)
+    if recipient_roles is not None:
+        row.recipient_roles = recipient_roles.strip() or None
+    row.updated_by_id = user.id
+    db.add(GovernanceAudit(
+        actor_id=user.id,
+        event="ALERT_POLICY_UPDATE",
+        entity="alert_policy",
+        entity_id=str(row.id),
+        month=ist_today().replace(day=1),
+        reason=f"Updated alert policy {row.code}",
+        before_json=None,
+        after_json=json.dumps({
+            "enabled": row.enabled,
+            "threshold": float(row.threshold) if row.threshold is not None else None,
+            "quiet_start": row.quiet_start,
+            "quiet_end": row.quiet_end,
+            "recipient_roles": row.recipient_roles,
+        }, sort_keys=True),
+    ))
+    db.commit()
+    db.refresh(row)
+    return {
+        "id": row.id, "code": row.code, "name": row.name, "enabled": row.enabled,
+        "threshold": float(row.threshold) if row.threshold is not None else None,
+        "quiet_start": row.quiet_start, "quiet_end": row.quiet_end,
+        "recipient_roles": row.recipient_roles, "updated_by_id": row.updated_by_id,
+    }
+
+
+@router.get('/alert-delivery-log')
+def alert_delivery_log(
+    from_date: date | None = None,
+    to_date: date | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if user.role.value not in {'ADMIN', 'MANAGEMENT'}:
+        raise HTTPException(403, "Only Admin or Management users can view alert delivery logs")
+    q = select(AlertDeliveryLog).order_by(AlertDeliveryLog.created_at.desc(), AlertDeliveryLog.id.desc()).limit(200)
+    rows = db.scalars(q).all()
+    return [{
+        "id": row.id,
+        "policy_id": row.policy_id,
+        "event_key": row.event_key,
+        "channel": row.channel,
+        "status": row.status,
+        "recipient_role": row.recipient_role,
+        "message": row.message,
+        "delivered_at": row.delivered_at,
+        "created_at": row.created_at,
+    } for row in rows]
+\n@router.post('/assistant-query')
 def assistant_query(
     query: str,
     as_of: date,
