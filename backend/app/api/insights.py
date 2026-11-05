@@ -550,6 +550,10 @@ def assistant_query(
     plant: str | None = None,
     customer_id: str | None = None,
     product_group: str | None = None,
+    compliance_target: float = Query(.9, ge=0, le=1),
+    ppm_target: float = Query(1000, ge=0),
+    oee_target: float = Query(.85, ge=0, le=1),
+    major_loss_min: float = Query(60, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -568,6 +572,10 @@ def assistant_query(
         plant=plant,
         customer_id=customer_id,
         product_group=product_group,
+        compliance_target=compliance_target,
+        ppm_target=ppm_target,
+        oee_target=oee_target,
+        major_loss_min=major_loss_min,
         db=db,
         user=user,
     )
