@@ -287,10 +287,6 @@ def review_salvage_request(
         {UserRole.QUALITY.value, UserRole.ADMIN.value},
         "Only Quality or Admin users can approve or reject salvage requests",
     )
-    if payload.action == "APPROVE":
-        if not change_reason or not change_reason.strip():
-            raise HTTPException(422, "Historical corrections require X-Change-Reason")
-        db.info["reason"] = change_reason.strip()
     request = db.scalar(
         select(QualityRejectionSalvageRequest)
         .where(QualityRejectionSalvageRequest.id == request_id)
@@ -302,6 +298,10 @@ def review_salvage_request(
         raise HTTPException(409, "This salvage request has already been reviewed")
     if request.requested_by_id == user.id:
         raise HTTPException(403, "The requester cannot approve or reject their own salvage request")
+    if payload.action == "APPROVE":
+        if not change_reason or not change_reason.strip():
+            raise HTTPException(422, "Historical corrections require X-Change-Reason")
+        db.info["reason"] = change_reason.strip()
     rejection = _eligible_row(db, request.daily_rejection_id)
     before = rejection.approved_salvage_qty or Decimal("0")
     after = before
