@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+import zipfile
 
 from fastapi.testclient import TestClient
 
@@ -101,3 +102,38 @@ def test_knowledge_search_rejects_tampered_files_even_when_metadata_matches(tmp_
     # even when the query would match its filename.
     assert metadata_search.status_code == 200, metadata_search.text
     assert metadata_search.json()["results"] == []
+
+
+def test_knowledge_search_extracts_docx_text_without_executing_macros(tmp_path):
+    action_id, attachment_id, target = _seed_attachment(
+        tmp_path,
+        file_name="inspection.docx",
+        contents=b"placeholder",
+    )
+    with zipfile.ZipFile(target, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            "<document><body><p><t>Fixture alignment verification passed.</t></p></body></document>",
+        )
+    with SessionLocal() as db:
+        attachment = db.get(ActionAttachment, attachment_id)
+        attachment.sha256 = hash_file(target)
+        attachment.mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        db.commit()
+    old_dir = actions_api.settings.attachments_dir
+    actions_api.settings.attachments_dir = str(tmp_path)
+    try:
+        client = TestClient(app)
+        response = client.get(
+            "/api/actions/knowledge-search?q=fixture%20alignment",
+            headers=headers(client),
+        )
+    finally:
+        actions_api.settings.attachments_dir = old_dir
+
+    assert response.status_code == 200, response.text
+    row = response.json()["results"][0]
+    assert row["action_id"] == action_id
+    assert row["attachment_id"] == attachment_id
+    assert row["match_source"] == "document text"
+    assert "fixture alignment" in row["excerpt"].lower()
