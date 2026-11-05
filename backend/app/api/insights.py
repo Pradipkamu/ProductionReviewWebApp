@@ -1,5 +1,6 @@
 from ..time_utils import ist_today, ist_date, ist_day_start_utc
 from collections import Counter, defaultdict
+import json
 from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, and_, extract, func, or_
@@ -10,7 +11,7 @@ from ..models import (User, Product, RouteVersion, RouteOperation, StandardCycle
  SalesPriceHistory, DailyMIS, DailyRequirement, QualityRejectionDaily, QualityRejectionMonthlyHistory,
  ImportBatch, QualityRejectionImportBatch, MachineShiftProduction, MachineLossEvent, Action, ActionContext,
  ActionWhyWhy, ActionReminder, VendorMovement, QualityPhenomenon, Customer, LossCategory,
- ReviewPoint, ReviewSession, ReviewParticipantPresence, ReviewMeetingRequest, ReviewActionLink,
+ ReviewPoint, ReviewSession, ReviewParticipantPresence, ReviewMeetingRequest, ReviewActionLink, GovernanceAudit,
  ProcessFlowVersion, ProcessFlowStage, StageScheduleAllocation, Operation,
  OperatorRequirementHistory, MachineCapacitySetting, Machine)
 from ..services.oee import calculate_oee
@@ -539,3 +540,122 @@ def exceptions(as_of:date,product_id:str|None=None,plant:str|None=None,customer_
     dq=data_quality(db,as_of,products)
     for issue in dq['issues']:add('data_quality',issue['kind']+': '+issue['detail'],issue['product_id'],None,issue['entity_id'])
     return {'counts':dict(Counter(r['kind'] for r in rows)),'exceptions':rows,'thresholds':dict(compliance=compliance_target,ppm=ppm_target,oee=oee_target,major_loss_min=major_loss_min)}
+
+
+@router.post('/assistant-query')
+def assistant_query(
+    query: str,
+    as_of: date,
+    product_id: str | None = None,
+    plant: str | None = None,
+    customer_id: str | None = None,
+    product_group: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return a deterministic, permission-aware management answer with source references.
+
+    This endpoint is intentionally not generative. It composes existing exception,
+    escalation and data-quality rules, records the query in GovernanceAudit, and
+    returns source API paths plus calculation definitions.
+    """
+    normalized = " ".join((query or "").split())
+    if len(normalized) < 2 or len(normalized) > 300:
+        raise HTTPException(422, "Query must contain 2 to 300 characters")
+    exception_data = exceptions(
+        as_of=as_of,
+        product_id=product_id,
+        plant=plant,
+        customer_id=customer_id,
+        product_group=product_group,
+        db=db,
+        user=user,
+    )
+    escalation_data = escalation(
+        product_id=product_id,
+        plant=plant,
+        customer_id=customer_id,
+        product_group=product_group,
+        db=db,
+        user=user,
+    )
+    dq = data_quality(db, as_of, scope(db, product_id, plant, customer_id, product_group))
+    q = normalized.casefold()
+    sources = [
+        {
+            "title": "Operational exception register",
+            "path": "/insights/exceptions",
+            "as_of": as_of.isoformat(),
+        },
+        {
+            "title": "Action escalation and reminders",
+            "path": "/insights/escalation",
+            "as_of": as_of.isoformat(),
+        },
+        {
+            "title": "Data-quality findings",
+            "path": "/insights/data-quality",
+            "as_of": as_of.isoformat(),
+        },
+    ]
+
+    if any(word in q for word in ("quality", "ppm", "rejection", "defect")):
+        counts = dq.get("counts", {})
+        answer = (
+            f"Quality readiness for {as_of}: {dq['total']} data-quality findings are recorded. "
+            f"PPM remains Pending wherever the dispatch denominator is missing. "
+            f"Top quality findings: {dict(list(counts.items())[:6])}."
+        )
+        definition = "PPM uses the established plant-specific denominator rules; missing denominators are not replaced by company-wide MIS."
+    elif any(word in q for word in ("overdue", "action", "follow", "escalat")):
+        overdue = [row for row in escalation_data["actions"] if row["overdue_days"] > 0]
+        answer = (
+            f"{len(overdue)} overdue action records are visible for the selected scope as of {as_of}. "
+            "Use the Action Register to review owners, due dates and Why-Why effectiveness."
+        )
+        definition = "Overdue means an open action has a due date earlier than the current India date; reminder records are deduplicated per action/day/kind."
+    elif any(word in q for word in ("vendor", "wip", "supplier")):
+        vendor_rows = [x for x in exception_data["exceptions"] if x["kind"] == "overdue_vendor_wip"]
+        answer = (
+            f"{len(vendor_rows)} vendor WIP exception records are present in the selected scope as of {as_of}. "
+            "Use the Vendor Performance scorecard for pending quantity, aging and overdue exposure."
+        )
+        definition = "Vendor exposure is derived from outward quantity minus recorded receipts; late is based on expected return date versus the selected as-of date."
+    else:
+        counts = exception_data.get("counts", {})
+        answer = (
+            f"{len(exception_data.get('exceptions', []))} operational exceptions are returned for {as_of}, "
+            f"including {counts.get('CRITICAL', 0)} critical, {counts.get('WARNING', 0)} warning and "
+            f"{counts.get('BLOCKER', 0)} blocker records."
+        )
+        definition = "Exceptions use the existing configurable compliance, PPM, OEE, loss and data-quality rules; no new targets are invented by the assistant."
+
+    audit = GovernanceAudit(
+        actor_id=user.id,
+        event="ASSISTANT_QUERY",
+        entity="management_assistant",
+        entity_id=None,
+        month=as_of.replace(day=1),
+        reason=normalized,
+        before_json=None,
+        after_json=json.dumps(
+            {"answer": answer, "sources": sources, "definition": definition},
+            default=str,
+            sort_keys=True,
+        ),
+    )
+    db.add(audit)
+    db.commit()
+    return {
+        "query": normalized,
+        "as_of": as_of.isoformat(),
+        "answer": answer,
+        "definition": definition,
+        "sources": sources,
+        "scope": {
+            "plant": csv_strings(plant),
+            "product_group": csv_strings(product_group),
+            "customer_id": csv_ints(customer_id),
+            "product_id": csv_ints(product_id),
+        },
+    }
