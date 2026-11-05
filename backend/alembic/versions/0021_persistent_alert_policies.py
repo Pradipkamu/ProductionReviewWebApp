@@ -13,7 +13,7 @@ def upgrade():
     alert_policies = op.create_table(
         "alert_policies",
         sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("code", sa.String(80), nullable=False, unique=True),
+        sa.Column("code", sa.String(80), nullable=False),
         sa.Column("name", sa.String(180), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("threshold", sa.Numeric(18, 6), nullable=True),
