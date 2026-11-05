@@ -26,28 +26,28 @@ Existing implementation status documents schedule revision/compliance reporting,
 
 ## Execution status — 2026-11-05
 
-The current branch contains the following implementation increments. These are source-branch statuses, not production deployment statuses.
+The current branch contains the implementation for all ten intelligence workstreams. These are source-branch statuses, not production deployment statuses.
 
-| Workstream | Current branch status | Remaining to call complete |
+| Workstream | Current branch status | Release validation still required |
 |---|---|---|
-| 1. Executive Control Tower | Cross-functional KPI cards now include sales/tonnage, rejection/PPM, OEE/loss, vendor WIP and overdue action exposure; calls use shared scope filters. | Reconcile each KPI against plant examples, add consistent source drill-through and visible freshness/denominator notes. |
-| 2. Dispatch vs Actual | Six-month trend plus a scoped part-wise daily matrix; revised dispatch requirement wins per date and Daily MIS plan is the fallback; missing actuals stay distinct from zero. | Add schedule-revision timeline and MOM blocker linkage; validate multi-plant totals with Windows data. |
-| 3. Machine Capacity | Existing machine setup, capacity planning, shared-machine reservation, monthly approval/revision snapshots and physical-machine load-fraction aggregation remain in place. | Rebuild setup masters on the Windows test data after the user's reset; verify mixed-part fixtures/simultaneous output assumptions with actual fixture data and complete end-to-end acceptance. |
-| 4. MOM Action | Bidirectional MOM/Action synchronization, audit history, closed-action guard, owner/participant scoping and action escalation are implemented; escalation/reminders now accept plant/product scope. | Build a unified part-wise issue timeline across MOM, quality, loss and dispatch; validate escalation ownership and recurrence with real records. |
-| 5. Quality | Approved plant-specific PPM denominator rules and effective-route handling are preserved; Operations Intelligence now shows phenomenon Pareto with pending-denominator state. | Complete recurring phenomenon/process trends and Why-Why effectiveness views; reconcile approved plant samples before release. |
-| 6. Vendor | Read-only scorecard, aging, overdue quantity, vendor exposure and plant/product/customer filters are implemented; ledger reconciliation and filter regression tests pass. | Verify actual plant ledgers in Windows/PostgreSQL and add supplier rejection/delivery compliance only if source records support it. |
-| 7. Forecasting | Current-month per-product working-day projection, coverage, recovery/day and per-date revised-plan/MIS fallback are implemented as advisory output. | Validate against actual plant calendars and schedule examples; keep forecast separate from committed promise dates and capacity approval. |
-| 8. Alerts | Existing deterministic exception engine supports adjustable dispatch/PPM/OEE/loss thresholds; Management Assistant exposes review-time overrides. Existing reminders are deduplicated by action/day/kind and can be acknowledged. | Persist organization-wide rules, add quiet periods and delivery/audit status; external email/WhatsApp remains opt-in integration work. |
-| 9. Document Knowledge | Action evidence search now locally extracts PDF/TXT/CSV text, verifies SHA-256 before reading, returns short excerpts and source links. Other Office formats/images are metadata-only. | Add validated extraction for Office formats; define retention/index refresh and explicit per-record access rules before broad indexing. No OCR or external upload is enabled. |
-| 10. Management Assistant | Deterministic, read-only management prompts now connect to operational data and local document-content search. | A generative model/provider, query audit trail and grounded answer citations are not configured. Do not describe the current deterministic assistant as a full generative AI assistant. |
+| 1. Executive Control Tower | Implemented: cross-functional KPI cards, shared scope filters, source-page drill-through, date/denominator notes. | Reconcile against approved plant examples on Windows/PostgreSQL. |
+| 2. Dispatch vs Actual | Implemented: six-month trend, part-wise daily matrix, revised-schedule precedence, MIS fallback, missing-actual distinction, and unified issue/MOM/action/quality/loss timeline. | Validate multi-plant totals and schedule examples on Windows. |
+| 3. Machine Capacity | Implemented: machine setup, mapping, cycle-time/operator revisions, capacity settings, monthly allocation approval/revisions, shared-machine load fractions and physical-machine loading. | Re-enter the freshly reset machine setup on the test environment and validate real fixture/mixed-part assumptions; no invented master data is added. |
+| 4. MOM Action | Implemented: bidirectional MOM/Action sync, history, closed-action guard, ownership/participant scoping, escalation/reminders and unified issue timeline. | Validate recurrence/escalation against real records. |
+| 5. Quality | Implemented: approved plant-specific PPM rules, effective-route denominator selection, pending-denominator state, phenomenon Pareto and Why-Why/effectiveness visibility. | Reconcile approved plant samples before release. |
+| 6. Vendor | Implemented: read-only scorecard, aging, overdue exposure, filters and regression coverage. | Verify actual ledger examples; supplier rejection/delivery compliance remains gated on source-data availability. |
+| 7. Forecasting | Implemented: working-day per-product projection, coverage, recovery/day and revised-plan/MIS fallback. | Validate against actual plant calendars and schedules. |
+| 8. Alerts | Implemented: persistent alert policies, thresholds, enablement, quiet hours, recipient roles, in-app reminder deduplication and delivery/suppression audit log. | Verify policy behavior and management ownership on Windows. External email/WhatsApp remains separate opt-in integration. |
+| 9. Document Knowledge | Implemented: integrity-checked local search for PDF/TXT/CSV plus DOCX/PPTX/XLSX/XLSM, bounded extraction and source excerpts; no macros/OCR/external upload. | Complete retention/index-refresh and broader per-record access acceptance. |
+| 10. Management Assistant | Implemented: deterministic permission-aware queries, calculation definitions, source API references, governance audit records and local document search. | Generative provider remains deliberately disabled; current release is read-only/deterministic. |
 
 ### Validation and release status
 
-- The five backend CI regressions recorded on the 2026-11-02 integration commit have been corrected: route-revision stage reconciliation, version-sensitive diagnostics assertion, duplicate migration index metadata and the missing historical-correction reason header.
-- The full backend test suite, frontend build/npm audit, Windows restore-helper syntax check and packaging passed on the stabilised branch before the latest incremental additions.
-- New tests have passed for the working-day forecast, per-date dispatch fallback, vendor scorecard ledger totals/aging, vendor scope filters and OEE scope filters.
-- The latest document-search and assistant UI increment passed CI. Alert threshold and Operations scope follow-up changes are in the current validation queue.
-- This branch has not been deployed to Pradipweb. Windows Docker Compose acceptance using representative company data is still required before release.
+- The five backend regressions from the 2026-11-02 integration are corrected, including migration-head/index handling and historical-correction reason enforcement.
+- The final implementation head currently has successful frontend build/npm audit and Windows restore-helper syntax validation; the backend suite is the remaining active CI gate.
+- This branch has not been deployed to Pradipweb.
+- Windows Docker Compose acceptance with representative company data, fresh machine-setup re-entry, and approved KPI/denominator reconciliations remain required before release.
+
 
 ## Ten workstreams
 
