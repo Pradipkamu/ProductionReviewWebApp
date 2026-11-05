@@ -202,9 +202,32 @@ def drilldown(kind:str,from_date:date,to_date:date,product_id:str|None=None,plan
     raise HTTPException(404,'Unknown drill-down')
 
 @router.get('/escalation')
-def escalation(db:Session=Depends(get_db),user:User=Depends(get_current_user)):
+def escalation(
+    product_id:str|None=None,
+    plant:str|None=None,
+    customer_id:str|None=None,
+    product_group:str|None=None,
+    db:Session=Depends(get_db),
+    user:User=Depends(get_current_user),
+):
     refresh_reminders(db)
-    today=ist_today();actions=db.scalars(select(Action)).all();plans={p.action_id:p for p in db.scalars(select(ActionWhyWhy))}
+    today=ist_today()
+    product_ids=csv_ints(product_id)
+    plants=csv_strings(plant)
+    customer_ids=csv_ints(customer_id)
+    groups=csv_strings(product_group)
+    scoped=any([product_ids,plants,customer_ids,groups])
+    if scoped:
+        products=scope(db,product_id,plant,customer_id,product_group)
+        ids=[p.id for p in products]
+        linked_ids=set(db.scalars(select(ActionContext.action_id).where(
+            ActionContext.product_id.in_(ids)
+        ).distinct()).all()) if ids else set()
+        actions=db.scalars(select(Action).where(Action.id.in_(linked_ids))).all() if linked_ids else []
+    else:
+        actions=db.scalars(select(Action)).all()
+    action_ids={a.id for a in actions}
+    plans={p.action_id:p for p in db.scalars(select(ActionWhyWhy).where(ActionWhyWhy.action_id.in_(action_ids or {-1})))}
     groups=defaultdict(list)
     for a in actions:groups[(a.problem_category or '', ' '.join(a.problem_description.lower().split()))].append(a)
     rows=[]
@@ -218,6 +241,8 @@ def escalation(db:Session=Depends(get_db),user:User=Depends(get_current_user)):
                 overdue_days=age,level='ADMIN' if age>=14 else 'MANAGEMENT' if age>=7 else 'OWNER',repeated_problem_count=len(peers),
                 recurrence_after_closure=recurrence,effectiveness_due=plan.effectiveness_check_date if plan else None,effectiveness_result=plan.effectiveness_result if plan else None))
     reminders=db.scalars(select(ActionReminder).where(ActionReminder.reminder_date==today).order_by(ActionReminder.id.desc())).all()
+    if scoped:
+        reminders=[r for r in reminders if r.action_id in action_ids]
     if user.role.value not in {'ADMIN','MANAGEMENT'}:
         owned={a.id for a in actions if a.owner_id==user.id}
         reminders=[r for r in reminders if r.action_id in owned or r.level==user.role.value]
