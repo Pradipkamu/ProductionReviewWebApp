@@ -18,7 +18,7 @@ from ..models import (
 )
 from ..schemas import LossEventCreate, MachineEntryCreate
 from ..services.oee import calculate_oee
-from ..services.filtering import csv_strings
+from ..services.filtering import csv_ints, csv_strings
 
 router = APIRouter(prefix="/oee", tags=["oee"])
 
@@ -320,7 +320,8 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
 
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
-                       product_id: int | None = None, plant: str | None = None,
+                       product_id: str | None = None, plant: str | None = None,
+                       product_group: str | None = None, customer_id: str | None = None,
                        target_oee: float = 0.85, recurring_event_threshold: int = 3,
                        db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     if to_date < from_date:
@@ -336,12 +337,24 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
         q = q.where(MachineShiftProduction.machine_id == machine_id)
         lq = lq.where(MachineLossEvent.machine_id == machine_id)
     plants = csv_strings(plant)
+    product_ids = csv_ints(product_id)
+    groups = csv_strings(product_group)
+    customer_ids = csv_ints(customer_id)
     if plants:
         q = q.join(Machine, Machine.id == MachineShiftProduction.machine_id).where(Machine.plant.in_(plants))
         lq = lq.join(Machine, Machine.id == MachineLossEvent.machine_id).where(Machine.plant.in_(plants))
-    if product_id is not None:
-        q = q.where(MachineShiftProduction.product_id == product_id)
-        lq = lq.where(MachineLossEvent.product_id == product_id)
+    if product_ids or groups or customer_ids:
+        q = q.join(Product, Product.id == MachineShiftProduction.product_id)
+        lq = lq.join(Product, Product.id == MachineLossEvent.product_id)
+        if product_ids:
+            q = q.where(Product.id.in_(product_ids))
+            lq = lq.where(Product.id.in_(product_ids))
+        if groups:
+            q = q.where(Product.product_group.in_(groups))
+            lq = lq.where(Product.product_group.in_(groups))
+        if customer_ids:
+            q = q.where(Product.customer_id.in_(customer_ids))
+            lq = lq.where(Product.customer_id.in_(customer_ids))
     rows = db.scalars(q.order_by(MachineShiftProduction.production_date, MachineShiftProduction.id)).all()
     losses = db.scalars(lq.order_by(MachineLossEvent.loss_date, MachineLossEvent.id)).all()
     machines = {x.id: x for x in db.scalars(select(Machine)).all()}
