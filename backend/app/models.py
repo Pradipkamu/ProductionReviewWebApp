@@ -603,8 +603,8 @@ class QualityRejectionMonthlyHistory(Base, TimestampMixin):
 class QualityHistoricalPpmProduction(Base, TimestampMixin):
     __tablename__ = "quality_historical_ppm_production"
     id: Mapped[int] = mapped_column(primary_key=True)
-    month: Mapped[date] = mapped_column(Date, index=True)
-    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    month: Mapped[date] = mapped_column(Date)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"))
     siddharth_machining_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
     silver_production_qty: Mapped[Decimal] = mapped_column(Numeric(16, 3), default=Decimal("0"))
     remark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
