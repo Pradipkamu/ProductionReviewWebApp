@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -280,12 +280,17 @@ def review_salvage_request(
     payload: SalvageReview,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    change_reason: str | None = Header(default=None, alias="X-Change-Reason"),
 ):
     _require_role(
         user,
         {UserRole.QUALITY.value, UserRole.ADMIN.value},
         "Only Quality or Admin users can approve or reject salvage requests",
     )
+    if payload.action == "APPROVE":
+        if not change_reason or not change_reason.strip():
+            raise HTTPException(422, "Historical corrections require X-Change-Reason")
+        db.info["reason"] = change_reason.strip()
     request = db.scalar(
         select(QualityRejectionSalvageRequest)
         .where(QualityRejectionSalvageRequest.id == request_id)
