@@ -9,7 +9,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..enums import ActionStatus
 from ..services.filtering import csv_ints, csv_strings
-from ..models import Action, ActionContext, DailyMIS, DailyRequirement, Product, User, WorkingCalendar
+from ..models import Action, ActionContext, DailyMIS, DailyRequirement, Product, ScheduleRevision, User, WorkingCalendar
 from ..services.planning import month_bounds
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -149,6 +149,16 @@ def dispatch_detail(
 
     revised_by_key = {(row.product_id, row.req_date): row for row in requirements}
     mis_by_key = {(row.product_id, row.mis_date): row for row in mis_rows}
+    revision_ids = {
+        row.schedule_revision_id
+        for row in [*requirements, *mis_rows]
+        if row.schedule_revision_id is not None
+    }
+    schedule_revisions = {
+        row.id: row for row in db.scalars(
+            select(ScheduleRevision).where(ScheduleRevision.id.in_(revision_ids))
+        ).all()
+    } if revision_ids else {}
     keys = sorted(set(revised_by_key) | set(mis_by_key), key=lambda item: (item[1], product_by_id[item[0]].sort_order, product_by_id[item[0]].name.casefold()))
     result = []
     missing_actual = 0
@@ -173,6 +183,7 @@ def dispatch_detail(
             baseline_qty = None
             revision_id = None
 
+        revision = schedule_revisions.get(revision_id) if revision_id is not None else None
         actual_qty = float(mis.actual_qty or 0) if mis is not None else None
         gap_qty = plan_qty - actual_qty if plan_qty is not None and actual_qty is not None else None
         achievement = actual_qty / plan_qty if plan_qty and actual_qty is not None else None
@@ -200,6 +211,9 @@ def dispatch_detail(
             "achievement": achievement,
             "plan_source": plan_source,
             "schedule_revision_id": revision_id,
+            "schedule_revision_no": revision.revision_no if revision else None,
+            "schedule_effective_from": revision.effective_from.isoformat() if revision else None,
+            "schedule_revision_reason": revision.reason if revision else None,
             "actual_reported": mis is not None,
             "status": status,
         })
