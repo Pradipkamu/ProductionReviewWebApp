@@ -924,7 +924,7 @@ def upload_rejection_attachment(
         daily_rejection_id=rejection_id,
         file_name=original,
         stored_name=stored_name,
-        relative_path=str(relative).replace("\\\\", "/"),
+        relative_path=str(relative).replace("\\", "/"),
         mime_type=mime_type,
         size_bytes=size,
         sha256=sha,
