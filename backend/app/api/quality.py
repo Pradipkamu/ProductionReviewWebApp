@@ -3,12 +3,14 @@ from ..time_utils import UTCTimestamp, ist_today, ist_date
 
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from pathlib import Path
+import uuid
 from decimal import Decimal
 from io import BytesIO
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile
+from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook as XLWorkbook
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Font, PatternFill, Protection
@@ -16,23 +18,33 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..config import get_settings
 from ..db import get_db
 from ..enums import ActionStatus, Priority
 from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, Customer, DailyMIS, Machine, Operation, Product,
-    QualityActionLink, QualityPhenomenon, QualityRejectionDaily, QualityRejectionImportBatch,
+    QualityActionLink, QualityPhenomenon, QualityRejectionDaily, QualityRejectionAttachment, QualityRejectionImportBatch,
     QualityRejectionMonthlyHistory, QualityHistoricalPpmProduction, ProcessDailySummary, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion, User,
 )
 from ..services.filtering import csv_ints, csv_strings
+from ..services.file_security import (
+    UploadSecurityError, hash_file, safe_original_name, safe_path,
+    save_limited_stream, validate_attachment_file,
+)
 from ..services.quality_import import (
     _daily_record_key, _route_for_date, denominator_for_rejection,
     upsert_phenomenon,
 )
 
 router = APIRouter(prefix="/quality", tags=["quality"])
+
+MAX_REJECTION_PHOTOS = 5
+MAX_REJECTION_PHOTO_BYTES = 8 * 1024 * 1024
+REJECTION_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 class PhenomenonCreate(BaseModel):
     name: str
     phenomenon_group: str | None = None
@@ -107,8 +119,16 @@ def _daily_context(db: Session, rows: list[QualityRejectionDaily]) -> dict:
         latest_links.setdefault(link.daily_rejection_id, link.action_id)
     actions = _by_id(db, Action, set(latest_links.values()))
     owners = _by_id(db, User, {a.owner_id for a in actions.values() if a.owner_id})
+    attachment_counts = {}
+    if rows:
+        attachment_counts = dict(db.execute(
+            select(QualityRejectionAttachment.daily_rejection_id, func.count(QualityRejectionAttachment.id))
+            .where(QualityRejectionAttachment.daily_rejection_id.in_([x.id for x in rows]))
+            .group_by(QualityRejectionAttachment.daily_rejection_id)
+        ).all())
     return dict(products=products, phenomena=phenomena, machines=machines,
-                routes=routes, operations=operations, latest_links=latest_links, actions=actions, owners=owners)
+                routes=routes, operations=operations, latest_links=latest_links, actions=actions,
+                owners=owners, attachment_counts=attachment_counts)
 
 
 def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
@@ -124,6 +144,7 @@ def _serialize_daily(row: QualityRejectionDaily, context: dict) -> dict:
     overdue_days = max(0, (ist_today() - ist_date(action.due_at)).days) if action and action.due_at and action.status != ActionStatus.CLOSED else 0
     return {
         "id": row.id,
+        "attachment_count": context.get("attachment_counts", {}).get(row.id, 0),
         "date": row.rejection_date,
         "shift": row.shift,
         "product_id": row.product_id,
@@ -823,6 +844,146 @@ def create_daily_manual(payload: QualityRejectionManualCreate, db: Session = Dep
     result["created"] = True
     result["ppm_pending"] = ppm is None
     return result
+
+
+
+
+def _serialize_rejection_attachment(row: QualityRejectionAttachment) -> dict:
+    return {
+        "id": row.id,
+        "file_name": row.file_name,
+        "mime_type": row.mime_type,
+        "size_bytes": row.size_bytes,
+        "sha256": row.sha256,
+        "caption": row.caption,
+        "uploaded_by_id": row.uploaded_by_id,
+        "created_at": row.created_at,
+    }
+
+
+@router.get("/daily/{rejection_id}/attachments")
+def list_rejection_attachments(
+    rejection_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    if not db.get(QualityRejectionDaily, rejection_id):
+        raise HTTPException(404, "Rejection record not found")
+    rows = db.scalars(
+        select(QualityRejectionAttachment)
+        .where(QualityRejectionAttachment.daily_rejection_id == rejection_id)
+        .order_by(QualityRejectionAttachment.created_at.asc(), QualityRejectionAttachment.id.asc())
+    ).all()
+    return [_serialize_rejection_attachment(row) for row in rows]
+
+
+@router.post("/daily/{rejection_id}/attachments")
+def upload_rejection_attachment(
+    rejection_id: int,
+    file: UploadFile = File(...),
+    caption: str | None = Form(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    rejection = db.scalar(
+        select(QualityRejectionDaily).where(QualityRejectionDaily.id == rejection_id).with_for_update()
+    )
+    if not rejection:
+        raise HTTPException(404, "Rejection record not found")
+    count = db.scalar(
+        select(func.count(QualityRejectionAttachment.id)).where(
+            QualityRejectionAttachment.daily_rejection_id == rejection_id
+        )
+    ) or 0
+    if count >= MAX_REJECTION_PHOTOS:
+        raise HTTPException(409, f"A rejection record can have at most {MAX_REJECTION_PHOTOS} photographs")
+
+    original = safe_original_name(file.filename, "defect-photo.jpg")
+    extension = Path(original).suffix.lower()
+    if extension not in REJECTION_PHOTO_EXTENSIONS:
+        raise HTTPException(415, "Only JPG, JPEG, PNG and WEBP defect photographs are allowed")
+    clean_caption = (caption or "").strip() or None
+    if clean_caption and len(clean_caption) > 500:
+        raise HTTPException(422, "Photo caption cannot exceed 500 characters")
+
+    stored_name = f"{uuid.uuid4().hex}{extension}"
+    relative = Path("quality-rejections") / str(rejection_id) / stored_name
+    settings = get_settings()
+    target = safe_path(settings.attachments_dir, relative)
+    try:
+        size, sha = save_limited_stream(file.file, target, MAX_REJECTION_PHOTO_BYTES)
+        mime_type = validate_attachment_file(
+            target, original, REJECTION_PHOTO_EXTENSIONS,
+            settings.office_max_uncompressed_mb * 1024 * 1024,
+        )
+    except UploadSecurityError as exc:
+        target.unlink(missing_ok=True)
+        raise HTTPException(exc.status_code, exc.detail) from exc
+
+    row = QualityRejectionAttachment(
+        daily_rejection_id=rejection_id,
+        file_name=original,
+        stored_name=stored_name,
+        relative_path=str(relative).replace("\\\\", "/"),
+        mime_type=mime_type,
+        size_bytes=size,
+        sha256=sha,
+        caption=clean_caption,
+        uploaded_by_id=user.id,
+    )
+    db.add(row)
+    try:
+        db.commit()
+        db.refresh(row)
+    except IntegrityError:
+        db.rollback()
+        target.unlink(missing_ok=True)
+        duplicate = db.scalar(
+            select(QualityRejectionAttachment).where(
+                QualityRejectionAttachment.daily_rejection_id == rejection_id,
+                QualityRejectionAttachment.sha256 == sha,
+            )
+        )
+        if duplicate:
+            return _serialize_rejection_attachment(duplicate)
+        raise
+    except Exception:
+        db.rollback()
+        target.unlink(missing_ok=True)
+        raise
+    return _serialize_rejection_attachment(row)
+
+
+@router.get("/daily/{rejection_id}/attachments/{attachment_id}")
+def download_rejection_attachment(
+    rejection_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    row = db.scalar(
+        select(QualityRejectionAttachment).where(
+            QualityRejectionAttachment.id == attachment_id,
+            QualityRejectionAttachment.daily_rejection_id == rejection_id,
+        )
+    )
+    if not row:
+        raise HTTPException(404, "Defect photograph not found")
+    settings = get_settings()
+    try:
+        path = safe_path(settings.attachments_dir, row.relative_path)
+    except UploadSecurityError as exc:
+        raise HTTPException(400, exc.detail) from exc
+    if not path.is_file():
+        raise HTTPException(404, "Photograph file is missing from storage")
+    if hash_file(path) != row.sha256:
+        raise HTTPException(409, "Photograph integrity check failed; contact the administrator")
+    return FileResponse(
+        path,
+        media_type=row.mime_type or "application/octet-stream",
+        filename=row.file_name,
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
 
 
 @router.get("/daily")
