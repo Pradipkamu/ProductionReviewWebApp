@@ -2,7 +2,7 @@ import { dateIST, daysAgoIST, formatIST } from '../time'
 import ImportPreview from '../components/ImportPreview'
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { api, downloadApi } from '../api'
+import { api, blobApi, downloadApi } from '../api'
 import { Kpi, PageHeader, num } from '../components/UI'
 import { RankedBars, ValueTrendChart } from '../components/Charts'
 import { MultiSelect } from '../components/MultiSelect'
@@ -22,6 +22,64 @@ function downloadCsv(name:string,rows:any[]){
   const csv='\ufeff'+[keys.map(csvCell).join(','),...rows.map(r=>keys.map(k=>csvCell(r[k])).join(','))].join('\r\n')
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'})
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)
+}
+
+
+function RejectionPhotoGallery({rejectionId,count}:{rejectionId:number,count:number}){
+  const [open,setOpen]=useState(false)
+  const [photos,setPhotos]=useState<any[]>([])
+  const [selected,setSelected]=useState(0)
+  const [loading,setLoading]=useState(false)
+  const [error,setError]=useState('')
+  useEffect(()=>{
+    if(!open)return
+    let cancelled=false
+    let objectUrls:string[]=[]
+    setLoading(true);setError('');setPhotos([]);setSelected(0)
+    ;(async()=>{
+      try{
+        const list:any[]=await api(`/quality/daily/${rejectionId}/attachments`)
+        const loaded=await Promise.all(list.map(async(photo:any)=>{
+          const url=URL.createObjectURL(await blobApi(`/quality/daily/${rejectionId}/attachments/${photo.id}`))
+          objectUrls.push(url)
+          return {...photo,url}
+        }))
+        if(!cancelled)setPhotos(loaded)
+      }catch(e:any){if(!cancelled)setError(e.message||'Unable to load rejection photographs.')}
+      finally{if(!cancelled)setLoading(false)}
+    })()
+    return()=>{cancelled=true;objectUrls.forEach(url=>URL.revokeObjectURL(url))}
+  },[open,rejectionId])
+  if(count<=0)return <span className="muted">—</span>
+  return <>
+    <button className="small secondary" onClick={()=>setOpen(true)}>Photos ({count}/5)</button>
+    {open&&<div className="photo-lightbox-backdrop" role="presentation" onClick={()=>setOpen(false)}>
+      <section className="photo-lightbox panel" role="dialog" aria-modal="true" aria-label={`Rejection ${rejectionId} photographs`} onClick={e=>e.stopPropagation()}>
+        <div className="panel-title">
+          <div><h2>Rejection #{rejectionId} — Photographs</h2><p>{count} of 5 photographs attached</p></div>
+          <button className="secondary small" onClick={()=>setOpen(false)}>Close</button>
+        </div>
+        {loading&&<p className="muted">Loading secure photographs…</p>}
+        {error&&<div className="error">{error}</div>}
+        {!loading&&!error&&photos.length===0&&<p className="muted">No photographs are available for this rejection.</p>}
+        {photos.length>0&&<>
+          <div className="photo-lightbox-main">
+            <img src={photos[Math.min(selected,photos.length-1)].url} alt={photos[Math.min(selected,photos.length-1)].caption||photos[Math.min(selected,photos.length-1)].file_name}/>
+            <div className="photo-lightbox-meta">
+              <span>{photos[Math.min(selected,photos.length-1)].caption||photos[Math.min(selected,photos.length-1)].file_name}</span>
+              <button className="small secondary" onClick={()=>downloadApi(`/quality/daily/${rejectionId}/attachments/${photos[Math.min(selected,photos.length-1)].id}`,photos[Math.min(selected,photos.length-1)].file_name)}>Download</button>
+            </div>
+          </div>
+          <div className="photo-thumbnail-strip">
+            {photos.map((photo:any,index:number)=><button key={photo.id} className={`photo-thumbnail ${selected===index?'selected':''}`} onClick={()=>setSelected(index)} title={photo.caption||photo.file_name}>
+              <img src={photo.url} alt={photo.caption||photo.file_name}/>
+              <span>{index+1}</span>
+            </button>)}
+          </div>
+        </>}
+      </section>
+    </div>}
+  </>
 }
 
 export default function Quality(){
@@ -225,6 +283,6 @@ export default function Quality(){
 
     {historyRows.length>0&&<section className="panel"><div className="panel-title"><h2>Historical Monthly Rejection Detail</h2><span>{num(historyRows.length)} rows{historyRows.length>500?' • first 500 shown':''}</span></div><div className="table-wrap"><table><thead><tr><th>Month</th><th>Source</th><th>Plant</th><th>Product</th><th>Phenomenon</th><th>Reject</th><th>PPM Production</th><th>Calculated PPM</th><th>Source PPM</th></tr></thead><tbody>{visibleHistory.map(r=><tr key={r.id}><td>{String(r.month).slice(0,7)}</td><td>{r.source||'—'}</td><td>{r.plant||'—'}</td><td>{r.product}</td><td>{r.phenomenon}</td><td><b>{num(r.reject_qty)}</b></td><td>{r.dispatch_qty==null?'Pending':<>{num(r.dispatch_qty)}{r.dispatch_qty_source==='MIS_HISTORY'&&<span className="muted"> • MIS</span>}</>}</td><td>{r.ppm==null?'Pending':Math.round(r.ppm).toLocaleString('en-IN')}</td><td>{r.source_reported_ppm==null?'—':Math.round(r.source_reported_ppm).toLocaleString('en-IN')}</td></tr>)}</tbody></table></div></section>}
 
-    <section className="panel"><div className="panel-title"><h2>Daily Rejection Detail</h2><span>{rows.length} rows</span></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Shift</th><th>Plant</th><th>Product</th><th>Detection Process</th><th>Responsible Process</th><th>Machine</th><th>Phenomenon</th><th>Original Reject</th><th>Approved Salvage</th><th>Net Reject</th><th>Denominator</th><th>PPM</th><th>Remark</th><th>Action</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.date}</td><td>{r.shift}</td><td>{r.plant||'—'}</td><td>{r.product}</td><td>{r.detection_process||'—'}</td><td>{r.responsible_process||'—'}</td><td>{r.machine||'—'}</td><td>{r.phenomenon}</td><td>{num(r.original_reject_qty??r.reject_qty)}</td><td>{num(r.approved_salvage_qty||0)}</td><td><b>{num(r.reject_qty)}</b></td><td>{r.denominator_qty==null?'Pending':`${num(r.denominator_qty)} (${r.denominator_source})`}</td><td>{r.ppm==null?'Pending':Math.round(r.ppm).toLocaleString('en-IN')}</td><td>{r.remark||''}</td><td>{r.action?<a href="/actions">{r.action.action_no} • {r.action.status}</a>:<button className="small" onClick={()=>raiseAction(r.id)}>Raise Action</button>}</td></tr>)}</tbody></table></div></section>
+    <section className="panel"><div className="panel-title"><h2>Daily Rejection Detail</h2><span>{rows.length} rows</span></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Shift</th><th>Plant</th><th>Product</th><th>Detection Process</th><th>Responsible Process</th><th>Machine</th><th>Phenomenon</th><th>Original Reject</th><th>Approved Salvage</th><th>Net Reject</th><th>Denominator</th><th>PPM</th><th>Remark</th><th>Photos</th><th>Action</th></tr></thead><tbody>{rows.map(r=><tr key={r.id}><td>{r.date}</td><td>{r.shift}</td><td>{r.plant||'—'}</td><td>{r.product}</td><td>{r.detection_process||'—'}</td><td>{r.responsible_process||'—'}</td><td>{r.machine||'—'}</td><td>{r.phenomenon}</td><td>{num(r.original_reject_qty??r.reject_qty)}</td><td>{num(r.approved_salvage_qty||0)}</td><td><b>{num(r.reject_qty)}</b></td><td>{r.denominator_qty==null?'Pending':`${num(r.denominator_qty)} (${r.denominator_source})`}</td><td>{r.ppm==null?'Pending':Math.round(r.ppm).toLocaleString('en-IN')}</td><td>{r.remark||''}</td><td><RejectionPhotoGallery rejectionId={Number(r.id)} count={Number(r.attachment_count||0)}/></td><td>{r.action?<a href="/actions">{r.action.action_no} • {r.action.status}</a>:<button className="small" onClick={()=>raiseAction(r.id)}>Raise Action</button>}</td></tr>)}</tbody></table></div></section>
   </>
 }
