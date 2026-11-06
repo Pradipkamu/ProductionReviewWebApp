@@ -90,6 +90,16 @@ def test_rejection_photos_are_authenticated_listed_downloaded_and_limited(tmp_pa
         assert response.status_code == 200, response.text
         uploaded.append(response.json())
 
+    # A client retry after a successful fifth upload must return the existing photo,
+    # not fail merely because the record is already at its five-photo limit.
+    retry = client.post(
+        f"/api/quality/daily/{rejection_id}/attachments",
+        headers=headers,
+        files={"file": ("retry.png", _png_1x1(0, 20, 10), "image/png")},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["id"] == uploaded[0]["id"]
+
     sixth = client.post(
         f"/api/quality/daily/{rejection_id}/attachments",
         headers=headers,
