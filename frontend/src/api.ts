@@ -49,3 +49,14 @@ export async function downloadApi(path: string, filename: string) {
   a.remove()
   URL.revokeObjectURL(url)
 }
+
+
+export async function blobApi(path: string): Promise<Blob> {
+  const headers = new Headers()
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const res = await fetch(`${API}${path}`, { headers })
+  if (res.status === 401) { clearToken(); location.reload() }
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status} ${res.statusText}`)
+  return res.blob()
+}
