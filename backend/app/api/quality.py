@@ -890,14 +890,6 @@ def upload_rejection_attachment(
     )
     if not rejection:
         raise HTTPException(404, "Rejection record not found")
-    count = db.scalar(
-        select(func.count(QualityRejectionAttachment.id)).where(
-            QualityRejectionAttachment.daily_rejection_id == rejection_id
-        )
-    ) or 0
-    if count >= MAX_REJECTION_PHOTOS:
-        raise HTTPException(409, f"A rejection record can have at most {MAX_REJECTION_PHOTOS} photographs")
-
     original = safe_original_name(file.filename, "defect-photo.jpg")
     extension = Path(original).suffix.lower()
     if extension not in REJECTION_PHOTO_EXTENSIONS:
@@ -919,6 +911,25 @@ def upload_rejection_attachment(
     except UploadSecurityError as exc:
         target.unlink(missing_ok=True)
         raise HTTPException(exc.status_code, exc.detail) from exc
+
+    duplicate = db.scalar(
+        select(QualityRejectionAttachment).where(
+            QualityRejectionAttachment.daily_rejection_id == rejection_id,
+            QualityRejectionAttachment.sha256 == sha,
+        )
+    )
+    if duplicate:
+        target.unlink(missing_ok=True)
+        return _serialize_rejection_attachment(duplicate)
+
+    count = db.scalar(
+        select(func.count(QualityRejectionAttachment.id)).where(
+            QualityRejectionAttachment.daily_rejection_id == rejection_id
+        )
+    ) or 0
+    if count >= MAX_REJECTION_PHOTOS:
+        target.unlink(missing_ok=True)
+        raise HTTPException(409, f"A rejection record can have at most {MAX_REJECTION_PHOTOS} photographs")
 
     row = QualityRejectionAttachment(
         daily_rejection_id=rejection_id,
