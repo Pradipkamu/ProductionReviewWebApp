@@ -22,8 +22,8 @@ Daily rejection records support up to five protected defect photographs.
 
 The Daily Rejection Detail table displays a `Photos (n/5)` control when a record has images. The secure gallery loads image bytes through the authenticated API, shows thumbnails and a larger selected image, and offers download. Object URLs are revoked when the gallery closes.
 
-The Android companion uploads only after the rejection record has been saved and uses these same endpoints. Existing rejection calculations and historical Excel import flows are unchanged.
+The Android companion source is included in `mobile-android/`. Its rejection form captures up to five photos, uploads them only after the rejection record has been saved, and uses these same endpoints. Existing rejection calculations and historical Excel import flows are unchanged.
 
 ## Deployment
 
-Run the normal Alembic migration to revision `0022_quality_rejection_attachments`. Ensure the configured attachments directory is on persistent storage and included in the application's backup/restore plan. Do not expose the directory as a public static web path.
+Run the normal Alembic migration to revision `0022_rejection_photos`. Ensure the configured attachments directory is on persistent storage and included in the application's backup/restore plan. Do not expose the directory as a public static web path.
