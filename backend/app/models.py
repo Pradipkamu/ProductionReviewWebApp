@@ -552,6 +552,26 @@ class QualityRejectionDaily(Base, TimestampMixin):
     )
 
 
+class QualityRejectionAttachment(Base, TimestampMixin):
+    __tablename__ = "quality_rejection_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    daily_rejection_id: Mapped[int] = mapped_column(
+        ForeignKey("quality_rejection_daily.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    file_name: Mapped[str] = mapped_column(String(260), nullable=False)
+    stored_name: Mapped[str] = mapped_column(String(260), nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("daily_rejection_id", "sha256", name="uq_quality_rejection_attachment_hash"),
+        Index("ix_quality_rejection_attachment_daily_created", "daily_rejection_id", "created_at"),
+    )
+
+
 class QualityRejectionSalvageRequest(Base, TimestampMixin):
     __tablename__ = "quality_rejection_salvage_requests"
     id: Mapped[int] = mapped_column(primary_key=True)
