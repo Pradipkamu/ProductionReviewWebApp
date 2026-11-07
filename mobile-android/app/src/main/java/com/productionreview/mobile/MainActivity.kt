@@ -439,6 +439,7 @@ class MainActivity : ComponentActivity() {
                             oeeError = "No active operation is available for this product and date."
                         } else {
                             val available = withContext(Dispatchers.IO) { ApiClient.loadOeeMachines(selectedOperation.id, oeeDate, auth) }
+                            oeeMachines = available
                             oeeMachine = available.firstOrNull()
                             if (oeeMachine == null) oeeError = "No active machine is available for this operation."
                         }
@@ -784,8 +785,18 @@ class MainActivity : ComponentActivity() {
                                             ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C")),null,{oeeShift=it.label;oeeSummary=null},oeeShift)
                                             ChoiceDropdown("Product",masters?.products.orEmpty(),oeeProduct,{oeeProduct=it;oeeSummary=null;oeeOperation=null;oeeMachine=null})
                                             Button(onClick={token?.let{loadOeeScope(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&token!=null,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"LOADING…" else "LOAD MACHINE SCOPE") }
-                                            Text("Operation: " + (oeeOperation?.label ?: "Not selected"),color=Muted,fontSize=12.sp)
-                                            Text("Machine: " + (oeeMachine?.label ?: "Not selected"),color=Muted,fontSize=12.sp)
+                                            if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
+                                                oeeOperation=oeeRoutes.firstOrNull{it.id==selected.id};oeeMachine=null;oeeMachines=emptyList();oeeSummary=null
+                                                val auth=token
+                                                if(auth!=null) scope.launch {
+                                                    oeeLoading=true
+                                                    try { val loaded=withContext(Dispatchers.IO){ApiClient.loadOeeMachines(selected.id,oeeDate,auth)};oeeMachines=loaded;oeeMachine=loaded.firstOrNull() }
+                                                    catch(e:Exception){oeeError=e.message ?: "Unable to load machines."}
+                                                    finally{oeeLoading=false}
+                                                }
+                                            })
+                                            if(oeeMachines.isNotEmpty()) ChoiceDropdown("Machine",oeeMachines,oeeMachine,{oeeMachine=it;oeeSummary=null})
+
                                             Button(onClick={token?.let{refreshOee(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&oeeMachine!=null,modifier=Modifier.fillMaxWidth()) { Text("REFRESH OEE") }
                                             oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
                                         }
