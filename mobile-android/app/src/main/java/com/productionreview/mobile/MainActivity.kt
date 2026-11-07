@@ -171,9 +171,16 @@ private object ApiClient {
     fun correctOeeLoss(lossId: Int, payload: JSONObject, reason: String, token: String): JSONObject =
         request("/oee/loss-events/$lossId", "PUT", payload, token, mapOf("X-Change-Reason" to reason))
 
-    fun loadOeeManagement(fromDate: String, toDate: String, token: String, productId: Int? = null): JSONObject {
-        val productFilter = productId?.let { "&product_id=$it" }.orEmpty()
-        return request("/oee/management-summary?from_date=$fromDate&to_date=$toDate$productFilter", "GET", token=token)
+    fun loadOeeManagement(
+        fromDate: String, toDate: String, token: String,
+        productId: Int? = null, routeOperationId: Int? = null, machineId: Int? = null
+    ): JSONObject {
+        val filters = buildString {
+            productId?.let { append("&product_id=$it") }
+            routeOperationId?.let { append("&route_operation_id=$it") }
+            machineId?.let { append("&machine_id=$it") }
+        }
+        return request("/oee/management-summary?from_date=$fromDate&to_date=$toDate$filters", "GET", token=token)
     }
 
     fun loadOeeLossCategories(token: String): List<Choice> {
@@ -525,25 +532,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(homeTab, token, oeeProduct?.id) {
+            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id) {
                 val auth = token
-                val selectedProductId = oeeProduct?.id
                 if (homeTab == "OEE" && auth != null) {
                     oeeLoading = true
                     oeeError = null
-                    oeeManagement = null
                     try {
-                        if (selectedProductId == null) {
-                            oeeError = "Select a part number to view its current-month OEE."
-                        } else {
-                            val today = LocalDate.now()
-                            val monthStart = today.withDayOfMonth(1)
-                            oeeManagement = withContext(Dispatchers.IO) {
-                                ApiClient.loadOeeManagement(monthStart.toString(), today.toString(), auth, selectedProductId)
-                            }
+                        val today = LocalDate.now()
+                        val monthStart = today.withDayOfMonth(1)
+                        oeeManagement = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeManagement(
+                                monthStart.toString(), today.toString(), auth,
+                                oeeProduct?.id, oeeOperation?.id, oeeMachine?.id
+                            )
                         }
                     } catch (e: Exception) {
                         oeeError = e.message ?: "Unable to load current-month OEE."
+                        oeeManagement = null
                     } finally {
                         oeeLoading = false
                     }
@@ -741,10 +746,12 @@ class MainActivity : ComponentActivity() {
                                 val totalOpen = if (isManager) pendingActionGroups.sumOf { it.openCount } else pendingActions.size
                                 val totalOverdue = if (isManager) pendingActionGroups.sumOf { it.overdueCount } else pendingActions.count { it.overdue }
                                 val dueToday = if (isManager) pendingActionGroups.sumOf { it.dueTodayCount } else pendingActions.count { it.due.substringBefore("T") == LocalDate.now().toString() }
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    MetricTile("OPEN ACTIONS", totalOpen.toString(), Teal, Modifier.weight(1f))
-                                    MetricTile("OVERDUE", totalOverdue.toString(), Danger, Modifier.weight(1f))
-                                    MetricTile("DUE TODAY", dueToday.toString(), Warning, Modifier.weight(1f))
+                                if (homeTab != "OEE") {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        MetricTile("OPEN ACTIONS", totalOpen.toString(), Teal, Modifier.weight(1f))
+                                        MetricTile("OVERDUE", totalOverdue.toString(), Danger, Modifier.weight(1f))
+                                        MetricTile("DUE TODAY", dueToday.toString(), Warning, Modifier.weight(1f))
+                                    }
                                 }
                                 if(homeTab=="ACTIONS") {
                                     if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
@@ -875,10 +882,10 @@ class MainActivity : ComponentActivity() {
                                             oeeManagement?.optJSONObject("overall")?.let { overall ->
                                                 Text("CURRENT MONTH OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
                                                 Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f))
-                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f))
-                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f))
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f),compact=true)
+                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f),compact=true)
+                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f),compact=true)
                                                 }
                                                 Text("This month • ${LocalDate.now().withDayOfMonth(1)} to ${LocalDate.now()}",color=Muted,fontSize=11.sp)
                                             } ?: Text(if(oeeLoading) "Loading current-month OEE…" else oeeError ?: "Select a part number to view OEE.",color=Muted,fontSize=12.sp)
@@ -996,7 +1003,7 @@ class MainActivity : ComponentActivity() {
                                             val auth=token
                                             if(auth!=null) scope.launch {
                                                 oeeLoading=true;oeeError=null
-                                                try{oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeDate,auth,oeeProduct?.id)}}
+                                                try{oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeDate,auth,oeeProduct?.id,oeeOperation?.id,oeeMachine?.id)}}
                                                 catch(e:Exception){oeeError=e.message ?: "Unable to load OEE management summary."}
                                                 finally{oeeLoading=false}
                                             }
