@@ -244,13 +244,17 @@ class MachineEntryCreate(BaseModel):
             raise ValueError("Planned break must be less than shift duration")
         if self.downtime_min > planned:
             raise ValueError("Downtime cannot exceed planned production time")
-        # New clients enter only good and rejected quantities. Legacy clients may
-        # still send total_count; when omitted it is derived deterministically.
+        # New clients enter only good and rejected quantities; total is derived.
+        # Preserve legacy clients that still send a larger total with unclassified output.
         derived_total = self.good_count + self.reject_count
         if self.total_count is None:
             self.total_count = derived_total
-        elif self.total_count != derived_total:
-            raise ValueError("Total production must equal good quantity plus rejected quantity")
+        elif self.good_count > self.total_count:
+            raise ValueError("Good count cannot exceed total count")
+        elif self.reject_count > self.total_count:
+            raise ValueError("Reject count cannot exceed total count")
+        elif derived_total > self.total_count:
+            raise ValueError("Good count plus reject count cannot exceed total count")
         self.shift = self.shift.strip().upper()
         return self
 
