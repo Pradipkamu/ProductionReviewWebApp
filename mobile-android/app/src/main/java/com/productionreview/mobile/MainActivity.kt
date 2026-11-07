@@ -916,19 +916,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                     oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f))
-                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f))
-                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f))
-                                                }
-                                            }
-                                        }
-                                    } ?: run {
-                                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
-                                            Text(if(oeeLoading) "Loading OEE management KPIs…" else "OEE management KPIs will appear here when data is available.",Modifier.padding(16.dp),color=Muted)
-                                        }
-                                    }
-                                    oeeError?.let { Text(it,color=Danger,fontSize=12.sp) }
-                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                         listOf("SUMMARY","ENTRY","LOSS","MANAGEMENT").forEach { mode ->
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
                                         }
