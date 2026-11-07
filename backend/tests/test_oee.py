@@ -62,3 +62,27 @@ def test_oee_aggregation_flags_conflicting_shared_shift_time():
     assert result["planned_production_min"] == 435
     assert result["run_time_min"] == 390
     assert result["shared_shift_time_conflict_count"] == 1
+
+def test_machine_entry_derives_total_count_from_good_and_reject():
+    from datetime import date
+    from app.schemas import MachineEntryCreate
+
+    entry = MachineEntryCreate(
+        production_date=date(2026, 11, 7), shift="A", product_id=1,
+        route_operation_id=1, machine_id=1, good_count=970, reject_count=30,
+    )
+    assert entry.total_count == 1000
+
+
+def test_machine_entry_rejects_mismatched_legacy_total_count():
+    from datetime import date
+    import pytest
+    from pydantic import ValidationError
+    from app.schemas import MachineEntryCreate
+
+    with pytest.raises(ValidationError, match="Total production must equal"):
+        MachineEntryCreate(
+            production_date=date(2026, 11, 7), shift="A", product_id=1,
+            route_operation_id=1, machine_id=1, total_count=999,
+            good_count=970, reject_count=30,
+        )
