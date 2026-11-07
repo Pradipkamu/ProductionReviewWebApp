@@ -408,6 +408,8 @@ class MainActivity : ComponentActivity() {
             var oeeLossQty by remember { mutableStateOf("0") }
             var oeeLossRemark by remember { mutableStateOf("") }
             var oeeSavedLossId by remember { mutableStateOf<Int?>(null) }
+            var oeeEditingLossId by remember { mutableStateOf<Int?>(null) }
+            var oeeLossCorrectionReason by remember { mutableStateOf("") }
             var oeeEntryId by remember { mutableStateOf<Int?>(null) }
             var oeeCorrectionReason by remember { mutableStateOf("") }
             var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
@@ -1007,6 +1009,28 @@ class MainActivity : ComponentActivity() {
                                         }
                                     } else if(oeeMode=="LOSS") {
                                         SectionLabel("Classified machine-loss capture", "Select the correct OEE component from the loss master")
+                                        val savedLosses=oeeSummary?.optJSONArray("losses") ?: JSONArray()
+                                        if(savedLosses.length()>0) {
+                                            SectionLabel("Existing loss events", "Load a record below to make an audited correction")
+                                            for(i in 0 until savedLosses.length()) {
+                                                val row=savedLosses.getJSONObject(i)
+                                                OutlinedButton(onClick={
+                                                    oeeEditingLossId=row.optInt("id").takeIf{it>0}
+                                                    oeeLossCategory=oeeLossCategories.firstOrNull{it.id==row.optInt("loss_category_id")}
+                                                    oeeLossDuration=row.optString("duration_min")
+                                                    oeeLossQty=row.optString("qty_loss","0")
+                                                    oeeLossRemark=row.optString("remark","")
+                                                    oeeLossCorrectionReason=""
+                                                },modifier=Modifier.fillMaxWidth()) {
+                                                    Text("#${row.optInt("id")} • ${row.optString("category")} • ${row.optString("duration_min")} min")
+                                                }
+                                            }
+                                        }
+                                        if(oeeEditingLossId!=null) {
+                                            Text("Correcting loss event #${oeeEditingLossId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                            OutlinedTextField(oeeLossCorrectionReason,{oeeLossCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                            TextButton(onClick={oeeEditingLossId=null;oeeLossCorrectionReason=""}){Text("CANCEL CORRECTION")}
+                                        }
                                         if(oeeLossCategories.isNotEmpty()) ChoiceDropdown("Loss category",oeeLossCategories,oeeLossCategory,{oeeLossCategory=it})
                                         OutlinedTextField(oeeLossDuration,{oeeLossDuration=it},label={Text("Loss duration (min) *")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(oeeLossQty,{oeeLossQty=it},label={Text("Quantity loss (optional)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
@@ -1022,14 +1046,20 @@ class MainActivity : ComponentActivity() {
                                                         .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
                                                         .put("loss_category_id",category.id).put("duration_min",oeeLossDuration.toDouble())
                                                         .put("qty_loss",oeeLossQty.toDoubleOrNull()?:0.0).put("remark",oeeLossRemark)
-                                                    val saved=withContext(Dispatchers.IO){ApiClient.saveOeeLoss(payload,auth)}
-                                                    oeeSavedLossId=saved.optInt("id").takeIf{it>0}
-                                                    oeeError="Loss saved: "+saved.optString("category")+" • "+saved.optString("component")
+                                                    val editingId=oeeEditingLossId
+                                                    if(editingId!=null && oeeLossCorrectionReason.trim().length<5) throw IllegalArgumentException("Enter a correction reason of at least 5 characters.")
+                                                    val saved=withContext(Dispatchers.IO){
+                                                        if(editingId==null) ApiClient.saveOeeLoss(payload,auth)
+                                                        else ApiClient.correctOeeLoss(editingId,payload,oeeLossCorrectionReason.trim(),auth)
+                                                    }
+                                                    oeeSavedLossId=if(editingId==null)saved.optInt("id").takeIf{it>0} else null
+                                                    oeeEditingLossId=null;oeeLossCorrectionReason=""
+                                                    oeeError=(if(editingId==null)"Loss saved: " else "Loss correction saved and audited: ")+saved.optString("category")+" • "+saved.optString("component")
                                                     refreshOee(auth)
                                                 } catch(e:Exception){oeeError=e.message ?: "Unable to save loss event."}
                                                 finally{oeeLoading=false}
                                             }
-                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text("SAVE LOSS EVENT") }
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeEditingLossId==null)"SAVE LOSS EVENT" else "SAVE AUDITED LOSS CORRECTION") }
                                         oeeSavedLossId?.let { lossId ->
                                             OutlinedButton(onClick={
                                                 val auth=token
