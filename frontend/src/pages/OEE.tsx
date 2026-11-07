@@ -17,7 +17,7 @@ export default function OEE(){
  const [mgmt,setMgmt]=useState<any>(null),[fromDate,setFromDate]=useState(today().slice(0,8)+'01')
  const selectedProduct=products.find(x=>String(x.id)===p),selectedMachine=machines.find(x=>String(x.id)===m),selectedRoute=routes.find(x=>String(x.route_operation_id)===op)
 
- useEffect(()=>{Promise.all([api('/masters/machines'),api('/masters/products'),api('/masters/loss-categories')]).then(([ms,ps,ls]:any[])=>{setAllMachines(ms);setMachines(ms.filter((x:any)=>x.active));setProducts(ps);setLossCategories(ls);if(ps[0])setP(String(ps[0].id));if(ls[0])setLosses([{...emptyLoss,loss_category_id:String(ls[0].id)}])}).catch((e:any)=>setError(e.message))},[])
+ useEffect(()=>{Promise.all([api('/masters/machines'),api('/masters/products'),api('/masters/loss-categories')]).then(([ms,ps,ls]:any[])=>{setAllMachines(ms);setMachines(ms.filter((x:any)=>x.active));setProducts(ps);setLossCategories(ls);if(ps[0])setP(String(ps[0].id));setLosses([emptyLoss])}).catch((e:any)=>setError(e.message))},[])
  useEffect(()=>{if(!p)return;api(`/masters/routes/${p}?on_date=${d}`).then((versions:any)=>{const active=versions.find((v:any)=>v.effective_from<=d&&(!v.effective_to||v.effective_to>=d))||versions[0];const ops=active?.operations||[];setRoutes(ops);setOp(ops[0]?String(ops[0].route_operation_id):'')}).catch((e:any)=>setError(e.message))},[p,d])
  useEffect(()=>{if(!op)return;api(`/oee/available-machines?route_operation_id=${op}&production_date=${d}`).then((r:any)=>{const available=r.machines||allMachines.filter(x=>x.active);setMachines(available);setM(old=>available.some((x:any)=>String(x.id)===old)?old:(available[0]?String(available[0].id):''));if(r.warning)setMsg(r.warning)}).catch((e:any)=>setError(e.message))},[op,d,allMachines])
 
@@ -28,7 +28,7 @@ export default function OEE(){
    setContext(r);setError('')
    if(r.existing_entry){const x=r.existing_entry;setEntryId(x.id);setEntry({shift_duration_min:x.shift_duration_min,planned_break_min:x.planned_break_min,downtime_min:x.downtime_min,good_count:x.good_count,reject_count:x.reject_count,ideal_cycle_time_sec:x.ideal_cycle_time_sec,remarks:x.remarks||''})}
    else{setEntryId(null);setEntry({...emptyEntry,ideal_cycle_time_sec:r.ideal_cycle_time_sec||0})}
-   setLosses([...(r.existing_losses||[]).map((x:any)=>({...x,loss_category_id:String(x.loss_category_id),saved:true})),{...emptyLoss,loss_category_id:lossCategories[0]?String(lossCategories[0].id):''}])
+   setLosses([...(r.existing_losses||[]).map((x:any)=>({...x,loss_category_id:String(x.loss_category_id),saved:true})),{...emptyLoss}])
   }catch(e:any){setContext(null);setEntryId(null);setError(e.message)}
  }
  async function refresh(){if(!m)return;try{const q=new URLSearchParams({machine_id:m,summary_date:d,shift});if(p)q.set('product_id',p);if(op)q.set('route_operation_id',op);setSum(await api(`/oee/machine-summary?${q}`))}catch(e:any){setError(e.message)}}
@@ -52,7 +52,7 @@ export default function OEE(){
   }catch(e:any){setError(e.message)}
  }
  function updateLoss(index:number,patch:any){
-  setLosses(old=>{const next=old.map((x,i)=>i===index?{...x,...patch}:x);const last=next[next.length-1];if(last&&!last.saved&&last.loss_category_id&&Number(last.duration_min)>0)next.push({...emptyLoss,loss_category_id:lossCategories[0]?String(lossCategories[0].id):''});return next})
+  setLosses(old=>{const next=old.map((x,i)=>i===index?{...x,...patch}:x);const last=next[next.length-1];if(last&&!last.saved&&last.loss_category_id&&Number(last.duration_min)>0)next.push({...emptyLoss});return next})
  }
  async function raiseOeeAction(){try{const r:any=await api('/oee/raise-action',{method:'POST',body:JSON.stringify({production_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),target_oee:.85})});setMsg(`${r.action_no} ${r.status==='already_linked'?'is already open':'created with a standard Why-Why plan'}`);await refresh()}catch(e:any){setError(e.message)}}
  async function raiseLossAction(id:number){try{const r:any=await api(`/oee/loss-events/${id}/raise-action`,{method:'POST',body:JSON.stringify({priority:'HIGH'})});setMsg(`${r.action_no} ${r.status==='already_linked'?'is already linked':'created with a standard Why-Why plan'}`);await refresh()}catch(e:any){setError(e.message)}}
