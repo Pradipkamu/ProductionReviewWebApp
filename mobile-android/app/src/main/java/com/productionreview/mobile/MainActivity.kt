@@ -985,7 +985,8 @@ class MainActivity : ComponentActivity() {
                                                         MetricTile("Planned time","${"%.0f".format(selectedSummary.optDouble("planned_production_min"))} min",Navy,Modifier.weight(1f),compact=true)
                                                         MetricTile("Run time","${"%.0f".format(selectedSummary.optDouble("run_time_min"))} min",Teal,Modifier.weight(1f),compact=true)
                                                     }
-                                                    Text("Output: ${selectedSummary.optDouble("good_count",0.0).toLong()} good • ${selectedSummary.optDouble("reject_or_unaccounted_count",0.0).toLong()} rejected / unclassified",color=Muted,fontSize=11.sp)
+                                                    val selectedGoodQty = (0 until selectedEntries.length()).sumOf { selectedEntries.getJSONObject(it).optDouble("good_count",0.0) }
+                                                    Text("Output: ${selectedGoodQty.toLong()} good • ${selectedSummary.optDouble("reject_or_unaccounted_count",0.0).toLong()} rejected / unclassified",color=Muted,fontSize=11.sp)
                                                     Text("Availability loss: ${"%.1f".format(selectedSummary.optDouble("captured_loss_min"))} min • Unclassified downtime: ${"%.1f".format(selectedSummary.optDouble("unclassified_loss_min"))} min",color=Muted,fontSize=11.sp)
                                                 }
                                                 OutlinedButton(
