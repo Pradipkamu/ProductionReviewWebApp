@@ -1001,7 +1001,7 @@ class MainActivity : ComponentActivity() {
                                                         Text("${loss.category} • ${loss.duration} min • ${loss.remark}",color=Muted,fontSize=12.sp)
                                                     } else {
                                                         ChoiceDropdown("Loss reason",oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},oeeLossCategories.firstOrNull{it.id==loss.categoryId},{selected->
-                                                            oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(categoryId=selected.id)}
+                                                            oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id);if(index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
                                                         })
                                                         OutlinedTextField(loss.duration,{value->
                                                             val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
@@ -1011,7 +1011,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         }
-                                        val availabilityLossTotal=oeeEntryLosses.filter{!it.saved && it.categoryId!=null && oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY"}.sumOf{it.duration.toDoubleOrNull()?:0.0}
+                                        val availabilityLossTotal=oeeEntryLosses.filter{it.categoryId!=null && (it.component=="AVAILABILITY" || oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY")}.sumOf{it.duration.toDoubleOrNull()?:0.0}
                                         Text("Total availability downtime: ${"%.1f".format(availabilityLossTotal)} min",color=Warning,fontWeight=FontWeight.Bold)
                                         Button(onClick={
                                             val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
