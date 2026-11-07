@@ -28,9 +28,9 @@ def test_oee_aggregation_counts_shared_machine_shift_time_once():
     result = aggregate_oee_entries(rows)
     assert result["planned_production_min"] == 435
     assert result["run_time_min"] == 375
-    assert result["availability"] == 375 / 435
-    assert result["quality"] == 293 / 300
-    assert result["performance_raw"] == (30 * 100 + 60 * 200) / 60 / 375
+    assert round(result["availability"], 8) == round(375 / 435, 8)
+    assert round(result["quality"], 8) == round(293 / 300, 8)
+    assert round(result["performance_raw"], 8) == round((30 * 100 + 60 * 200) / 60 / 375, 8)
 
 
 def test_oee_aggregation_adds_distinct_machine_shifts():
@@ -45,4 +45,4 @@ def test_oee_aggregation_adds_distinct_machine_shifts():
     result = aggregate_oee_entries(rows)
     assert result["planned_production_min"] == 870
     assert result["run_time_min"] == 820
-    assert result["quality"] == 191 / 200
+    assert round(result["quality"], 8) == round(191 / 200, 8)
