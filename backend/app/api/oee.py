@@ -279,6 +279,11 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
         summary = aggregate_oee_entries(rows)
         availability_loss = sum(float(x.duration_min) for x in losses
                                 if categories.get(x.loss_category_id) and categories[x.loss_category_id].oee_component == OEEComponent.AVAILABILITY)
+        # Derive reconciliation values from the same deduplicated machine-shift aggregate.
+        # Product quantities remain additive across rows in the selected scope.
+        downtime = max(0.0, summary["planned_production_min"] - summary["run_time_min"])
+        total_count = sum(float(row.total_count or 0) for row in rows)
+        good_count = sum(float(row.good_count or 0) for row in rows)
         summary["captured_loss_min"] = availability_loss
         summary["unclassified_loss_min"] = max(0.0, downtime - availability_loss)
         summary["overclassified_loss_min"] = max(0.0, availability_loss - downtime)
