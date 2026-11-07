@@ -17,7 +17,7 @@ from ..models import (
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
     StandardCycleTime, User, GovernanceAudit,
 )
-from ..schemas import LossEventCreate, MachineEntryCreate
+from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate
 from ..services.oee import aggregate_oee_entries, calculate_oee
 from ..services.filtering import csv_ints, csv_strings
 
@@ -184,6 +184,69 @@ def save_machine_entry(payload: MachineEntryCreate, db: Session = Depends(get_db
     row = MachineShiftProduction(**data)
     db.add(row); db.commit(); db.refresh(row)
     return {"entry": _entry_json(row, context), "warnings": context["warnings"]}
+
+
+
+@router.post("/machine-entry-with-losses")
+def save_machine_entry_with_losses(
+    payload: OEEEntryWithLossesCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Atomically save a production entry and all classified loss events."""
+    entry_payload = payload.entry
+    if payload.entry_id is not None:
+        raise HTTPException(422, "Batch correction is not enabled here; use the audited correction workflow")
+    duplicate = db.scalar(select(MachineShiftProduction.id).where(
+        MachineShiftProduction.production_date == entry_payload.production_date,
+        MachineShiftProduction.shift == entry_payload.shift,
+        MachineShiftProduction.product_id == entry_payload.product_id,
+        MachineShiftProduction.route_operation_id == entry_payload.route_operation_id,
+        MachineShiftProduction.machine_id == entry_payload.machine_id,
+    ).limit(1))
+    if duplicate:
+        raise HTTPException(409, f"This machine shift entry already exists as #{duplicate}; load and correct it instead of duplicating it")
+
+    data, context = _prepare_entry(db, entry_payload)
+    validated_losses: list[tuple[dict, LossCategory]] = []
+    availability_downtime = Decimal("0")
+    for loss_payload in payload.losses:
+        loss_data, category = _validate_loss(db, loss_payload)
+        validated_losses.append((loss_data, category))
+        if category.oee_component == OEEComponent.AVAILABILITY:
+            availability_downtime += loss_payload.duration_min
+
+    planned_minutes = entry_payload.shift_duration_min - entry_payload.planned_break_min
+    if availability_downtime > planned_minutes:
+        raise HTTPException(422, "Availability loss minutes cannot exceed planned production time")
+    data["downtime_min"] = availability_downtime
+
+    try:
+        row = MachineShiftProduction(**data)
+        db.add(row)
+        db.flush()
+        saved_losses = []
+        for loss_data, category in validated_losses:
+            event = MachineLossEvent(**loss_data)
+            db.add(event)
+            db.flush()
+            saved_losses.append({
+                "id": event.id, "category": category.name,
+                "component": category.oee_component.value,
+                "duration_min": float(event.duration_min),
+            })
+        db.commit()
+        db.refresh(row)
+        return {
+            "entry": _entry_json(row, context),
+            "losses": saved_losses,
+            "warnings": context["warnings"],
+            "total_count": float(row.total_count),
+            "downtime_min": float(row.downtime_min),
+        }
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.put("/machine-entry/{entry_id}")
