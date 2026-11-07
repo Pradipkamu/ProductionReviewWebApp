@@ -523,6 +523,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            LaunchedEffect(homeTab, token) {
+                val auth = token
+                if (homeTab == "OEE" && auth != null && oeeManagement == null && !oeeLoading) {
+                    oeeLoading = true
+                    oeeError = null
+                    try {
+                        oeeManagement = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeManagement(oeeManagementFrom, oeeDate, auth)
+                        }
+                    } catch (e: Exception) {
+                        oeeError = e.message ?: "Unable to load OEE management summary."
+                    } finally {
+                        oeeLoading = false
+                    }
+                }
+            }
+
             fun resetRejectionForm() {
                 date = LocalDate.now().toString()
                 shift = "A"
@@ -865,33 +882,24 @@ class MainActivity : ComponentActivity() {
                                             oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
                                         }
                                     }
-                                    val oee = oeeSummary?.optJSONObject("summary")
-                                    if(oee!=null) {
-                                        val oeePct = oee.optDouble("oee_reported",0.0)*100.0
-                                        val availabilityPct = oee.optDouble("availability",0.0)*100.0
-                                        val performancePct = oee.optDouble("performance_raw",0.0)*100.0
-                                        val qualityPct = oee.optDouble("quality",0.0)*100.0
+                                    oeeManagement?.optJSONObject("overall")?.let { overall ->
                                         Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                             Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("OEE RESULT",color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold);StatusPill("LIVE API DATA",Success)}
-                                                Text(String.format("%.1f%%",oeePct),color=if(oeePct<60)Danger else Navy,fontSize=34.sp,fontWeight=FontWeight.ExtraBold)
+                                                Text("PERIOD OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
+                                                Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                                    MetricTile("Availability",String.format("%.1f%%",availabilityPct),Teal,Modifier.weight(1f))
-                                                    MetricTile("Performance",String.format("%.1f%%",performancePct),Warning,Modifier.weight(1f))
-                                                    MetricTile("Quality",String.format("%.1f%%",qualityPct),Success,Modifier.weight(1f))
+                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f))
+                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f))
+                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f))
                                                 }
-                                                Divider(color=Border)
-                                                Text("Planned production: " + String.format("%.1f",oee.optDouble("planned_production_min")) + " min  •  Run time: " + String.format("%.1f",oee.optDouble("run_time_min")) + " min",color=Muted,fontSize=12.sp)
-                                                Text("Classified availability loss: " + String.format("%.1f",oee.optDouble("captured_loss_min")) + " min  •  Unclassified: " + String.format("%.1f",oee.optDouble("unclassified_loss_min")) + " min",color=if(oee.optDouble("unclassified_loss_min")>0)Warning else Muted,fontSize=12.sp)
-                                                if(oee.optDouble("overclassified_loss_min")>0) Text("Warning: availability loss events exceed downtime.",color=Danger,fontSize=12.sp)
-                                                if(oee.optInt("shared_shift_time_conflict_count")>0) Text("Warning: shared machine-shift time differs across product records. Review the shift entries.",color=Warning,fontSize=12.sp)
-                                                Text("Saved product records: " + (oeeSummary?.optJSONArray("entries")?.length() ?: 0),color=Muted,fontSize=12.sp)
-                                                if(oee.optBoolean("performance_master_warning")) Text("Performance exceeds 110%. Check the effective cycle-time master and production quantity.",color=Warning,fontSize=12.sp)
                                             }
                                         }
-                                    } else if(oeeSummary!=null) {
-                                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)){Text("No OEE entry exists for the selected scope.",Modifier.padding(16.dp),color=Muted)}
+                                    } ?: run {
+                                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                            Text(if(oeeLoading) "Loading OEE management KPIs…" else "OEE management KPIs will appear here when data is available.",Modifier.padding(16.dp),color=Muted)
+                                        }
                                     }
+                                    oeeError?.let { Text(it,color=Danger,fontSize=12.sp) }
                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                         listOf("SUMMARY","ENTRY","LOSS","MANAGEMENT").forEach { mode ->
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
