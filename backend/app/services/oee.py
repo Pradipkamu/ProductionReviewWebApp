@@ -57,10 +57,17 @@ def aggregate_oee_entries(items) -> dict:
     ideal_total_sec = 0.0
     for row in items:
         key = (getattr(row, "machine_id", None), getattr(row, "production_date", None), getattr(row, "shift", None))
-        group = shift_groups.setdefault(key, {"shift": 0.0, "breaks": 0.0, "downtime": 0.0})
-        group["shift"] = max(group["shift"], float(row.shift_duration_min or 0))
-        group["breaks"] = max(group["breaks"], float(row.planned_break_min or 0))
-        group["downtime"] = max(group["downtime"], float(row.downtime_min or 0))
+        group = shift_groups.setdefault(key, {"shift": 0.0, "breaks": 0.0, "downtime": 0.0,
+                                               "shift_values": set(), "break_values": set(), "downtime_values": set()})
+        shift_value = float(row.shift_duration_min or 0)
+        break_value = float(row.planned_break_min or 0)
+        downtime_value = float(row.downtime_min or 0)
+        group["shift"] = max(group["shift"], shift_value)
+        group["breaks"] = max(group["breaks"], break_value)
+        group["downtime"] = max(group["downtime"], downtime_value)
+        group["shift_values"].add(shift_value)
+        group["break_values"].add(break_value)
+        group["downtime_values"].add(downtime_value)
         quantity = float(row.total_count or 0)
         total_count += quantity
         good_count += float(row.good_count or 0)
@@ -71,4 +78,9 @@ def aggregate_oee_entries(items) -> dict:
     downtime = sum(group["downtime"] for group in shift_groups.values())
     # Equivalent weighted cycle preserves the sum of ideal production time.
     weighted_cycle = ideal_total_sec / total_count if total_count > 0 else 0.0
-    return calculate_oee(shift_duration, planned_break, downtime, total_count, good_count, weighted_cycle)
+    result = calculate_oee(shift_duration, planned_break, downtime, total_count, good_count, weighted_cycle)
+    result["shared_shift_time_conflict_count"] = sum(
+        1 for group in shift_groups.values()
+        if len(group["shift_values"]) > 1 or len(group["break_values"]) > 1 or len(group["downtime_values"]) > 1
+    )
+    return result
