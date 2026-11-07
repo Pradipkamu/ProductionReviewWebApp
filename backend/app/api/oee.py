@@ -17,7 +17,7 @@ from ..models import (
     StandardCycleTime, User,
 )
 from ..schemas import LossEventCreate, MachineEntryCreate
-from ..services.oee import calculate_oee
+from ..services.oee import aggregate_oee_entries, calculate_oee
 from ..services.filtering import csv_ints, csv_strings
 
 router = APIRouter(prefix="/oee", tags=["oee"])
@@ -276,14 +276,7 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
 
     summary = None
     if rows:
-        shift_duration = sum(float(x.shift_duration_min) for x in rows)
-        planned_break = sum(float(x.planned_break_min) for x in rows)
-        downtime = sum(float(x.downtime_min) for x in rows)
-        total_count = sum(float(x.total_count) for x in rows)
-        good_count = sum(float(x.good_count) for x in rows)
-        denom = total_count or 1
-        ideal_weighted = sum(float(x.ideal_cycle_time_sec) * float(x.total_count) for x in rows) / denom
-        summary = calculate_oee(shift_duration, planned_break, downtime, total_count, good_count, ideal_weighted)
+        summary = aggregate_oee_entries(rows)
         availability_loss = sum(float(x.duration_min) for x in losses
                                 if categories.get(x.loss_category_id) and categories[x.loss_category_id].oee_component == OEEComponent.AVAILABILITY)
         summary["captured_loss_min"] = availability_loss
@@ -361,15 +354,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     categories = {x.id: x for x in db.scalars(select(LossCategory)).all()}
 
     def aggregate(items):
-        if not items:
-            return calculate_oee(0, 0, 0, 0, 0, 0)
-        shift_duration = sum(float(x.shift_duration_min) for x in items)
-        planned_break = sum(float(x.planned_break_min) for x in items)
-        downtime = sum(float(x.downtime_min) for x in items)
-        total = sum(float(x.total_count) for x in items)
-        good = sum(float(x.good_count) for x in items)
-        weighted_cycle = sum(float(x.ideal_cycle_time_sec) * float(x.total_count) for x in items) / (total or 1)
-        return calculate_oee(shift_duration, planned_break, downtime, total, good, weighted_cycle)
+        return aggregate_oee_entries(items)
 
     by_day = {}
     by_machine = {}
