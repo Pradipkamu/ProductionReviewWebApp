@@ -38,6 +38,29 @@ jobs:
       - run: npm ci && npm run build && npm audit --audit-level=moderate
         working-directory: frontend
 
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android SDK platform
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" "platforms;android-34" "build-tools;34.0.0"
+      - name: Compile Production Mobile
+        run: gradle -p mobile-android --no-daemon assembleDebug
+
   windows-script-check:
     runs-on: windows-latest
     steps:
@@ -56,7 +79,7 @@ jobs:
           Write-Host "PowerShell restore helper syntax is valid."
 
   package:
-    needs: [backend, frontend, windows-script-check]
+    needs: [backend, frontend, android, windows-script-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

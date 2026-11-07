@@ -64,9 +64,20 @@ private val Danger = Color(0xFFB3261E)
 private data class Account(val username: String, val fullName: String, val role: String)
 private data class Choice(val id: Int, val label: String, val extra: String = "")
 private data class RouteChoice(val id: Int, val label: String)
+private data class OeeLossDraft(
+    val categoryId: Int? = null,
+    val duration: String = "",
+    val qty: String = "0",
+    val remark: String = "",
+    val saved: Boolean = false,
+    val id: Int? = null,
+    val category: String = "",
+    val component: String = ""
+)
 
 private object ApiClient {
-    private fun requestText(path: String, method: String, body: JSONObject? = null, token: String? = null): String {
+    private fun requestText(path: String, method: String, body: JSONObject? = null, token: String? = null,
+                             extraHeaders: Map<String, String> = emptyMap()): String {
         val connection = (URL(API_BASE + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 15000
@@ -78,6 +89,7 @@ private object ApiClient {
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
             }
             if (!token.isNullOrBlank()) setRequestProperty("Authorization", "Bearer $token")
+            extraHeaders.forEach { (name, value) -> setRequestProperty(name, value) }
         }
         try {
             if (body != null) connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -92,8 +104,9 @@ private object ApiClient {
         } finally { connection.disconnect() }
     }
 
-    private fun request(path: String, method: String, body: JSONObject? = null, token: String? = null): JSONObject =
-        JSONObject(requestText(path, method, body, token))
+    private fun request(path: String, method: String, body: JSONObject? = null, token: String? = null,
+                        extraHeaders: Map<String, String> = emptyMap()): JSONObject =
+        JSONObject(requestText(path, method, body, token, extraHeaders))
 
     private fun array(path: String, token: String): JSONArray = JSONArray(requestText(path, "GET", token=token))
 
@@ -145,6 +158,67 @@ private object ApiClient {
         }
         return candidates.maxByOrNull { it.first }?.second ?: emptyList()
     }
+    fun loadOeeMachines(routeOperationId: Int, date: String, token: String): List<Choice> {
+        val response = request("/oee/available-machines?route_operation_id=$routeOperationId&production_date=$date", "GET", token=token)
+        val rows = response.optJSONArray("machines") ?: JSONArray()
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            Choice(row.getInt("id"), row.optString("code") + " • " + row.optString("name"))
+        }
+    }
+    fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
+        request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
+
+    fun saveOeeMachineEntry(payload: JSONObject, token: String): JSONObject =
+        request("/oee/machine-entry", "POST", payload, token)
+
+    fun saveOeeEntryWithLosses(
+        entry: JSONObject, losses: JSONArray, token: String,
+        entryId: Int? = null, correctionReason: String? = null
+    ): JSONObject {
+        val body = JSONObject().put("entry", entry).put("losses", losses)
+        entryId?.let { body.put("entry_id", it) }
+        correctionReason?.let { body.put("correction_reason", it) }
+        return request("/oee/machine-entry-with-losses", "POST", body, token)
+    }
+
+    fun loadOeeEntryContext(productId: Int, operationId: Int, machineId: Int, date: String, shift: String, token: String): JSONObject =
+        request("/oee/entry-context?product_id=$productId&route_operation_id=$operationId&machine_id=$machineId&production_date=$date&shift=$shift", "GET", token=token)
+
+    fun correctOeeMachineEntry(entryId: Int, payload: JSONObject, reason: String, token: String): JSONObject =
+        request("/oee/machine-entry/$entryId", "PUT", payload, token, mapOf("X-Change-Reason" to reason))
+
+    fun correctOeeLoss(lossId: Int, payload: JSONObject, reason: String, token: String): JSONObject =
+        request("/oee/loss-events/$lossId", "PUT", payload, token, mapOf("X-Change-Reason" to reason))
+
+    fun loadOeeManagement(
+        fromDate: String, toDate: String, token: String,
+        productId: Int? = null, routeOperationId: Int? = null, machineId: Int? = null
+    ): JSONObject {
+        val filters = buildString {
+            productId?.let { append("&product_id=$it") }
+            routeOperationId?.let { append("&route_operation_id=$it") }
+            machineId?.let { append("&machine_id=$it") }
+        }
+        return request("/oee/management-summary?from_date=$fromDate&to_date=$toDate$filters", "GET", token=token)
+    }
+
+    fun loadOeeLossCategories(token: String): List<Choice> {
+        val rows = array("/masters/loss-categories", token)
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            Choice(row.getInt("id"), row.optString("name"), row.optString("component"))
+        }
+    }
+
+    fun saveOeeLoss(payload: JSONObject, token: String): JSONObject =
+        request("/oee/loss-events", "POST", payload, token)
+
+    fun raiseOeeLossAction(lossId: Int, token: String): JSONObject =
+        request("/oee/loss-events/$lossId/raise-action", "POST",
+            JSONObject().put("action_description", "Contain the loss, complete standard Why-Why analysis and implement corrective action")
+                .put("target_oee", 0.85), token)
+
     fun loadPendingActions(token: String): List<ActionItem> {
         val rows = array("/actions/my-pending", token)
         return (0 until rows.length()).map { i ->
@@ -264,13 +338,13 @@ private fun SectionLabel(title: String, subtitle: String? = null) {
     }
 }
 @Composable
-private fun MetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+private fun MetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier, compact: Boolean = false) {
     Card(modifier = modifier, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
         border = androidx.compose.foundation.BorderStroke(1.dp, Border), elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = if (compact) 7.dp else 12.dp, vertical = if (compact) 10.dp else 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Box(Modifier.width(28.dp).height(3.dp).clip(RoundedCornerShape(3.dp)).background(accent))
-            Text(value, color = Navy, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-            Text(label, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            Text(value, color = Navy, fontSize = if (compact) 19.sp else 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+            Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
         }
     }
 }
@@ -339,6 +413,38 @@ class MainActivity : ComponentActivity() {
             var verificationMethod by remember { mutableStateOf("") }
             var verificationResult by remember { mutableStateOf("") }
             var evidenceFile by remember { mutableStateOf<File?>(null) }
+            var oeeDate by remember { mutableStateOf(LocalDate.now().toString()) }
+            var oeeShift by remember { mutableStateOf("A") }
+            var oeeProduct by remember { mutableStateOf<Choice?>(null) }
+            var oeeOperation by remember { mutableStateOf<RouteChoice?>(null) }
+            var oeeRoutes by remember { mutableStateOf<List<RouteChoice>>(emptyList()) }
+            var oeeMachine by remember { mutableStateOf<Choice?>(null) }
+            var oeeMachines by remember { mutableStateOf<List<Choice>>(emptyList()) }
+            var oeeSummary by remember { mutableStateOf<JSONObject?>(null) }
+            var oeeError by remember { mutableStateOf<String?>(null) }
+            var oeeLoading by remember { mutableStateOf(false) }
+            var oeeMode by remember { mutableStateOf("SUMMARY") }
+            var oeeShiftMinutes by remember { mutableStateOf("480") }
+            var oeeBreakMinutes by remember { mutableStateOf("0") }
+            var oeeDowntimeMinutes by remember { mutableStateOf("0") }
+            var oeeTotalCount by remember { mutableStateOf("0") }
+            var oeeGoodCount by remember { mutableStateOf("0") }
+            var oeeRejectCount by remember { mutableStateOf("0") }
+            var oeeEntryRemarks by remember { mutableStateOf("") }
+            var oeeLossCategories by remember { mutableStateOf<List<Choice>>(emptyList()) }
+            var oeeEntryLosses by remember { mutableStateOf(listOf(OeeLossDraft())) }
+            var oeeLossCategory by remember { mutableStateOf<Choice?>(null) }
+            var oeeLossDuration by remember { mutableStateOf("") }
+            var oeeLossQty by remember { mutableStateOf("0") }
+            var oeeLossRemark by remember { mutableStateOf("") }
+            var oeeSavedLossId by remember { mutableStateOf<Int?>(null) }
+            var oeeEditingLossId by remember { mutableStateOf<Int?>(null) }
+            var oeeLossCorrectionReason by remember { mutableStateOf("") }
+            var oeeEntryId by remember { mutableStateOf<Int?>(null) }
+            var oeeCorrectionReason by remember { mutableStateOf("") }
+            var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
+            var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
+
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if(uri!=null) {
                     try {
@@ -402,6 +508,71 @@ class MainActivity : ComponentActivity() {
                         message="Action details loaded."
                     } catch(e:Exception){selectedAction=null;message=e.message ?: "Unable to load action."}
                     finally{busy=false}
+                }
+            }
+
+            fun loadOeeScope(auth: String) {
+                val selectedProduct = oeeProduct
+                if (selectedProduct == null) { oeeError = "Select a product first."; return }
+                scope.launch {
+                    oeeLoading = true; oeeError = null; oeeSummary = null
+                    try {
+                        val loadedRoutes = withContext(Dispatchers.IO) { ApiClient.loadRoutes(selectedProduct.id, oeeDate, auth) }
+                        oeeRoutes = loadedRoutes
+                        oeeOperation = loadedRoutes.firstOrNull()
+                        val selectedOperation = oeeOperation
+                        if (selectedOperation == null) {
+                            oeeMachine = null
+                            oeeError = "No active operation is available for this product and date."
+                        } else {
+                            val available = withContext(Dispatchers.IO) { ApiClient.loadOeeMachines(selectedOperation.id, oeeDate, auth) }
+                            oeeMachines = available
+                            oeeMachine = available.firstOrNull()
+                            if (oeeMachine == null) oeeError = "No active machine is available for this operation."
+                        }
+                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE scope." }
+                    finally { oeeLoading = false }
+                }
+                scope.launch {
+                    try {
+                        val categories = withContext(Dispatchers.IO) { ApiClient.loadOeeLossCategories(auth) }
+                        oeeLossCategories = categories
+                        oeeLossCategory = categories.firstOrNull()
+                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load loss categories." }
+                }
+            }
+            fun refreshOee(auth: String) {
+                val selectedProduct = oeeProduct; val selectedOperation = oeeOperation; val selectedMachine = oeeMachine
+                if (selectedProduct == null || selectedOperation == null || selectedMachine == null) { oeeError = "Load machine scope first."; return }
+                scope.launch {
+                    oeeLoading = true; oeeError = null
+                    try {
+                        oeeSummary = withContext(Dispatchers.IO) { ApiClient.loadOeeSummary(selectedMachine.id, oeeDate, oeeShift, selectedProduct.id, selectedOperation.id, auth) }
+                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE summary." }
+                    finally { oeeLoading = false }
+                }
+            }
+
+            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id) {
+                val auth = token
+                if (homeTab == "OEE" && auth != null) {
+                    oeeLoading = true
+                    oeeError = null
+                    try {
+                        val today = LocalDate.now()
+                        val monthStart = today.withDayOfMonth(1)
+                        oeeManagement = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeManagement(
+                                monthStart.toString(), today.toString(), auth,
+                                oeeProduct?.id, oeeOperation?.id, oeeMachine?.id
+                            )
+                        }
+                    } catch (e: Exception) {
+                        oeeError = e.message ?: "Unable to load current-month OEE."
+                        oeeManagement = null
+                    } finally {
+                        oeeLoading = false
+                    }
                 }
             }
 
@@ -596,10 +767,12 @@ class MainActivity : ComponentActivity() {
                                 val totalOpen = if (isManager) pendingActionGroups.sumOf { it.openCount } else pendingActions.size
                                 val totalOverdue = if (isManager) pendingActionGroups.sumOf { it.overdueCount } else pendingActions.count { it.overdue }
                                 val dueToday = if (isManager) pendingActionGroups.sumOf { it.dueTodayCount } else pendingActions.count { it.due.substringBefore("T") == LocalDate.now().toString() }
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    MetricTile("OPEN ACTIONS", totalOpen.toString(), Teal, Modifier.weight(1f))
-                                    MetricTile("OVERDUE", totalOverdue.toString(), Danger, Modifier.weight(1f))
-                                    MetricTile("DUE TODAY", dueToday.toString(), Warning, Modifier.weight(1f))
+                                if (homeTab != "OEE") {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        MetricTile("OPEN ACTIONS", totalOpen.toString(), Teal, Modifier.weight(1f))
+                                        MetricTile("OVERDUE", totalOverdue.toString(), Danger, Modifier.weight(1f))
+                                        MetricTile("DUE TODAY", dueToday.toString(), Warning, Modifier.weight(1f))
+                                    }
                                 }
                                 if(homeTab=="ACTIONS") {
                                     if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
@@ -724,15 +897,326 @@ class MainActivity : ComponentActivity() {
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
                                 }
                                 if(homeTab=="OEE") {
-                                    ScreenTitle("OEE", "Machine effectiveness and production performance")
-                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFFE6F2F4)),contentAlignment=Alignment.Center) { Icon(Icons.Filled.Speed,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp)) }
-                                            Text("OEE mobile dashboard",color=Navy,fontSize=18.sp,fontWeight=FontWeight.Bold)
-                                            Text("The screen is prepared for machine availability, performance, quality and overall equipment effectiveness indicators.",color=Muted,fontSize=14.sp)
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                             Divider(color=Border)
-                                            StatusPill("LIVE DATA CONNECTION PENDING", Warning)
-                                            Text("No production figures are simulated. Values will appear after the authorized API and role permissions are connected.",color=Muted,fontSize=12.sp)
+                                            oeeManagement?.optJSONObject("overall")?.let { overall ->
+                                                Text("CURRENT MONTH OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
+                                                Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f),compact=true)
+                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f),compact=true)
+                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f),compact=true)
+                                                }
+                                                Text("This month • ${LocalDate.now().withDayOfMonth(1)} to ${LocalDate.now()}",color=Muted,fontSize=11.sp)
+                                            } ?: Text(if(oeeLoading) "Loading current-month OEE…" else oeeError ?: "Select a part number to view OEE.",color=Muted,fontSize=12.sp)
+                                        }
+                                    }
+                                    ScreenTitle("Machine / OEE", "Live machine effectiveness from production records")
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                            ChoiceDropdown("Product / Part number",masters?.products.orEmpty(),oeeProduct,{selected ->
+                                                oeeProduct=selected
+                                                oeeOperation=null
+                                                oeeMachine=null
+                                                oeeRoutes=emptyList()
+                                                oeeMachines=emptyList()
+                                                oeeSummary=null
+                                                oeeError=null
+                                            })
+                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                            ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C")),null,{oeeShift=it.label;oeeSummary=null},oeeShift)
+                                            Button(onClick={token?.let{loadOeeScope(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&token!=null,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"LOADING…" else "LOAD MACHINE SCOPE") }
+                                            if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
+                                                oeeOperation=oeeRoutes.firstOrNull{it.id==selected.id};oeeMachine=null;oeeMachines=emptyList();oeeSummary=null
+                                                val auth=token
+                                                if(auth!=null) scope.launch {
+                                                    oeeLoading=true
+                                                    try { val loaded=withContext(Dispatchers.IO){ApiClient.loadOeeMachines(selected.id,oeeDate,auth)};oeeMachines=loaded;oeeMachine=loaded.firstOrNull() }
+                                                    catch(e:Exception){oeeError=e.message ?: "Unable to load machines."}
+                                                    finally{oeeLoading=false}
+                                                }
+                                            })
+                                            if(oeeMachines.isNotEmpty()) ChoiceDropdown("Machine",oeeMachines,oeeMachine,{oeeMachine=it;oeeSummary=null})
+
+                                            Button(onClick={token?.let{refreshOee(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&oeeMachine!=null,modifier=Modifier.fillMaxWidth()) { Text("REFRESH OEE") }
+                                            oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
+                                        }
+                                    }
+                                    oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                        listOf("SUMMARY","ENTRY","LOSS","MANAGEMENT").forEach { mode ->
+                                            FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
+                                        }
+                                    }
+                                    if(oeeMode=="SUMMARY") {
+                                        SectionLabel("Selected scope OEE", "Live figures for the selected part, process, machine, date and shift")
+                                        val selectedSummary = oeeSummary?.optJSONObject("summary")
+                                        val selectedEntries = oeeSummary?.optJSONArray("entries") ?: JSONArray()
+                                        val selectedLosses = oeeSummary?.optJSONArray("losses") ?: JSONArray()
+                                        Card(
+                                            Modifier.fillMaxWidth(),
+                                            shape=RoundedCornerShape(14.dp),
+                                            colors=CardDefaults.cardColors(containerColor=Color.White),
+                                            border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                                        ) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Text(
+                                                    listOfNotNull(oeeProduct?.label, oeeOperation?.label, oeeMachine?.label).joinToString("  ›  ").ifBlank { "No scope selected" },
+                                                    color=Navy,fontSize=12.sp,fontWeight=FontWeight.SemiBold
+                                                )
+                                                Text("$oeeDate • Shift $oeeShift",color=Muted,fontSize=11.sp)
+                                                if (selectedSummary == null) {
+                                                    EmptyState(
+                                                        if (oeeLoading) "Loading OEE summary" else "No OEE records for this scope",
+                                                        if (oeeProduct == null || oeeOperation == null || oeeMachine == null)
+                                                            "Select a part, load its process and machine, then refresh OEE."
+                                                        else "No saved production entry was found for this date and shift. Use Production Entry to record output."
+                                                    )
+                                                } else {
+                                                    Text("${"%.1f".format(selectedSummary.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
+                                                    Text("REPORTED OEE",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                        MetricTile("Availability","${"%.1f".format(selectedSummary.optDouble("availability")*100)}%",Teal,Modifier.weight(1f),compact=true)
+                                                        MetricTile("Performance","${"%.1f".format(selectedSummary.optDouble("performance_capped")*100)}%",Warning,Modifier.weight(1f),compact=true)
+                                                        MetricTile("Quality","${"%.1f".format(selectedSummary.optDouble("quality")*100)}%",Success,Modifier.weight(1f),compact=true)
+                                                    }
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                        MetricTile("Planned time","${"%.0f".format(selectedSummary.optDouble("planned_production_min"))} min",Navy,Modifier.weight(1f),compact=true)
+                                                        MetricTile("Run time","${"%.0f".format(selectedSummary.optDouble("run_time_min"))} min",Teal,Modifier.weight(1f),compact=true)
+                                                    }
+                                                    val selectedGoodQty = (0 until selectedEntries.length()).sumOf { selectedEntries.getJSONObject(it).optDouble("good_count",0.0) }
+                                                    Text("Output: ${selectedGoodQty.toLong()} good • ${selectedSummary.optDouble("reject_or_unaccounted_count",0.0).toLong()} rejected / unclassified",color=Muted,fontSize=11.sp)
+                                                    Text("Availability loss: ${"%.1f".format(selectedSummary.optDouble("captured_loss_min"))} min • Unclassified downtime: ${"%.1f".format(selectedSummary.optDouble("unclassified_loss_min"))} min",color=Muted,fontSize=11.sp)
+                                                }
+                                                OutlinedButton(
+                                                    onClick={token?.let{refreshOee(it)} ?: run{oeeError="Please sign in again."}},
+                                                    enabled=!oeeLoading && oeeMachine!=null,
+                                                    modifier=Modifier.fillMaxWidth()
+                                                ) { Text(if(oeeLoading) "REFRESHING…" else "REFRESH SELECTED SCOPE") }
+                                            }
+                                        }
+                                        SectionLabel("Production records", "${selectedEntries.length()} record(s) for this selected scope")
+                                        if(selectedEntries.length()==0) {
+                                            EmptyState("No production entries", "Load Production Entry to record the selected machine shift.")
+                                        } else {
+                                            for(i in 0 until selectedEntries.length()) {
+                                                val entry=selectedEntries.getJSONObject(i)
+                                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                        Text("Entry #${entry.optInt("id")} • ${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
+                                                        Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Loss events", "${selectedLosses.length()} classified event(s)")
+                                        if(selectedLosses.length()==0) Text("No loss events recorded for this scope.",color=Muted,fontSize=12.sp)
+                                        else for(i in 0 until selectedLosses.length()) {
+                                            val loss=selectedLosses.getJSONObject(i)
+                                            Text("${loss.optString("category")} • ${loss.optString("component")} • ${"%.1f".format(loss.optDouble("duration_min"))} min",color=Navy,fontSize=12.sp)
+                                        }
+                                    } else if(oeeMode=="ENTRY") {
+                                        SectionLabel("Production entry", "Enter good and rejected output. Total and downtime are calculated automatically.")
+                                        OutlinedButton(onClick={
+                                            val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
+                                            if(auth==null||p==null||op==null||m==null)oeeError="Select product, operation and machine first."
+                                            else scope.launch {
+                                                oeeLoading=true
+                                                try {
+                                                    if(oeeLossCategories.isEmpty()) oeeLossCategories=withContext(Dispatchers.IO){ApiClient.loadOeeLossCategories(auth)}
+                                                    val ctx=withContext(Dispatchers.IO){ApiClient.loadOeeEntryContext(p.id,op.id,m.id,oeeDate,oeeShift,auth)}
+                                                    val existing=ctx.optJSONObject("existing_entry")
+                                                    if(existing==null){
+                                                        oeeEntryId=null;oeeCorrectionReason=""
+                                                        oeeShiftMinutes="480";oeeBreakMinutes="0";oeeGoodCount="0";oeeRejectCount="0";oeeEntryRemarks=""
+                                                        oeeEntryLosses=listOf(OeeLossDraft())
+                                                        oeeError="No saved entry exists. Complete the production and loss details below."
+                                                    } else {
+                                                        oeeEntryId=existing.optInt("id").takeIf{it>0}
+                                                        oeeShiftMinutes=existing.optString("shift_duration_min","480")
+                                                        oeeBreakMinutes=existing.optString("planned_break_min","0")
+                                                        oeeGoodCount=existing.optString("good_count","0")
+                                                        oeeRejectCount=existing.optString("reject_count","0")
+                                                        oeeEntryRemarks=existing.optString("remarks","")
+                                                        oeeCorrectionReason=""
+                                                        val oldLosses=ctx.optJSONArray("existing_losses") ?: JSONArray()
+                                                        val loaded=(0 until oldLosses.length()).map { i ->
+                                                            val row=oldLosses.getJSONObject(i)
+                                                            OeeLossDraft(row.optInt("loss_category_id").takeIf{it>0},row.optString("duration_min"),row.optString("qty_loss","0"),row.optString("remark",""),true,row.optInt("id"),row.optString("category"),row.optString("component"))
+                                                        }
+                                                        oeeEntryLosses=loaded+OeeLossDraft()
+                                                        oeeError="Loaded entry #${oeeEntryId}. Existing losses are shown; new losses can be added below."
+                                                    }
+                                                } catch(e:Exception){oeeError=e.message ?: "Unable to load entry context."}
+                                                finally{oeeLoading=false}
+                                            }
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text("LOAD / CHECK EXISTING ENTRY") }
+                                        if(oeeEntryId!=null) {
+                                            Text("Editing saved entry #${oeeEntryId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                            OutlinedTextField(oeeCorrectionReason,{oeeCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        }
+                                        OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("Shift duration (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("Planned breaks (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("Good quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeRejectCount,{oeeRejectCount=it},label={Text("Rejected quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        Text("Total production: ${"%.3f".format((oeeGoodCount.toDoubleOrNull()?:0.0)+(oeeRejectCount.toDoubleOrNull()?:0.0)).trimEnd('0').trimEnd('.')} pcs",color=Success,fontWeight=FontWeight.Bold)
+                                        OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("Production remarks (optional)")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        SectionLabel("Machine losses", "Choose a reason and enter minutes. A new card appears after completing a loss.")
+                                        oeeEntryLosses.forEachIndexed { index, loss ->
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                        Text(if(loss.saved) "Saved loss #${loss.id}" else "Loss ${index+1}",color=Navy,fontWeight=FontWeight.Bold)
+                                                        if(!loss.saved && oeeEntryLosses.size>1) TextButton(onClick={oeeEntryLosses=oeeEntryLosses.filterIndexed{idx,_->idx!=index}}){Text("Remove")}
+                                                    }
+                                                    if(loss.saved) {
+                                                        Text("${loss.category} • ${loss.duration} min • ${loss.remark}",color=Muted,fontSize=12.sp)
+                                                    } else {
+                                                        ChoiceDropdown("Loss reason",oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},oeeLossCategories.firstOrNull{it.id==loss.categoryId},{selected->
+                                                            oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id);if(index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
+                                                        })
+                                                        OutlinedTextField(loss.duration,{value->
+                                                            val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
+                                                        },label={Text("Duration (minutes)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                        OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("Reason / details")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        val availabilityLossTotal=oeeEntryLosses.filter{it.categoryId!=null && (it.component=="AVAILABILITY" || oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY")}.sumOf{it.duration.toDoubleOrNull()?:0.0}
+                                        Text("Total availability downtime: ${"%.1f".format(availabilityLossTotal)} min",color=Warning,fontWeight=FontWeight.Bold)
+                                        Button(onClick={
+                                            val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
+                                            if(auth==null||p==null||op==null||m==null)oeeError="Select product, operation and machine first."
+                                            else if((oeeGoodCount.toDoubleOrNull()?:-1.0)<0||(oeeRejectCount.toDoubleOrNull()?:-1.0)<0)oeeError="Enter valid non-negative production quantities."
+                                            else if(oeeEntryId!=null&&oeeCorrectionReason.trim().length<5)oeeError="Enter a correction reason of at least 5 characters."
+                                            else scope.launch {
+                                                oeeLoading=true;oeeError=null
+                                                try {
+                                                    val lossRows=oeeEntryLosses.filter{!it.saved&&it.categoryId!=null&&(it.duration.toDoubleOrNull()?:0.0)>0}
+                                                    val losses=JSONArray()
+                                                    lossRows.forEach{loss->losses.put(JSONObject().put("loss_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("loss_category_id",loss.categoryId).put("duration_min",loss.duration.toDouble()).put("qty_loss",loss.qty.toDoubleOrNull()?:0.0).put("remark",loss.remark))}
+                                                    val payload=JSONObject().put("production_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                        .put("shift_duration_min",oeeShiftMinutes.toDouble()).put("planned_break_min",oeeBreakMinutes.toDouble())
+                                                        .put("downtime_min",availabilityLossTotal).put("good_count",oeeGoodCount.toDouble()).put("reject_count",oeeRejectCount.toDouble())
+                                                        .put("ideal_cycle_time_sec",0).put("remarks",oeeEntryRemarks)
+                                                    if(oeeEntryId!=null) payload.put("downtime_min",availabilityLossTotal)
+                                                    val saved=withContext(Dispatchers.IO){
+                                                        ApiClient.saveOeeEntryWithLosses(payload,losses,auth,oeeEntryId,oeeEntryId?.let{oeeCorrectionReason.trim()})
+                                                    }
+                                                    val entry=saved.optJSONObject("entry")
+                                                    oeeEntryId=entry?.optInt("id")?.takeIf{it>0} ?: oeeEntryId
+                                                    oeeCorrectionReason=""
+                                                    oeeError=if(oeeEntryId!=null)"Production saved. Total quantity and downtime calculated from the entered values." else "Production saved."
+                                                    refreshOee(auth)
+                                                } catch(e:Exception){oeeError=e.message ?: "Unable to save production entry and losses."}
+                                                finally{oeeLoading=false}
+                                            }
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"SAVING…" else "SAVE PRODUCTION ENTRY") }
+                                        Text("Total production = good + rejected. Availability downtime is the sum of Availability-category loss cards.",color=Muted,fontSize=11.sp)
+                                    } else if(oeeMode=="MANAGEMENT") {
+                                        SectionLabel("OEE management", "Period trend, machine ranking and classified loss Pareto")
+                                        OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth())
+                                        Button(onClick={
+                                            val auth=token
+                                            if(auth!=null) scope.launch {
+                                                oeeLoading=true;oeeError=null
+                                                try{oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeDate,auth,oeeProduct?.id,oeeOperation?.id,oeeMachine?.id)}}
+                                                catch(e:Exception){oeeError=e.message ?: "Unable to load OEE management summary."}
+                                                finally{oeeLoading=false}
+                                            }
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()){Text("LOAD MANAGEMENT SUMMARY")}
+                                        oeeManagement?.let { mgmt ->
+                                            val overall=mgmt.optJSONObject("overall")
+                                            if(overall!=null) Text("Shift records: ${mgmt.optInt("entry_count")} • Loss events: ${mgmt.optInt("loss_event_count")} • Machines below target: ${mgmt.optInt("below_target_machine_count")}",color=Muted,fontSize=12.sp)
+                                            SectionLabel("Machine ranking")
+                                            val machineRows=mgmt.optJSONArray("machines") ?: JSONArray()
+                                            for(i in 0 until minOf(machineRows.length(),8)){
+                                                val row=machineRows.getJSONObject(i)
+                                                Text("${row.optString("machine")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                            }
+                                            SectionLabel("Top loss categories")
+                                            val pareto=mgmt.optJSONArray("loss_pareto") ?: JSONArray()
+                                            for(i in 0 until minOf(pareto.length(),8)){
+                                                val row=pareto.getJSONObject(i)
+                                                Text("${row.optString("category")}  •  ${"%.1f".format(row.optDouble("minutes"))} min  •  ${row.optInt("events")} events",color=Navy,fontSize=13.sp)
+                                            }
+                                            SectionLabel("Daily OEE trend")
+                                            val trend=mgmt.optJSONArray("trend") ?: JSONArray()
+                                            for(i in 0 until trend.length()){
+                                                val row=trend.getJSONObject(i)
+                                                Text("${row.optString("date")}  •  OEE ${"%.1f".format(row.optDouble("oee_reported")*100)}%  (A ${"%.1f".format(row.optDouble("availability")*100)} / P ${"%.1f".format(row.optDouble("performance_raw")*100)} / Q ${"%.1f".format(row.optDouble("quality")*100)})",color=Muted,fontSize=11.sp)
+                                            }
+                                        }
+                                    } else if(oeeMode=="LOSS") {
+                                        SectionLabel("Classified machine-loss capture", "Select the correct OEE component from the loss master")
+                                        val savedLosses=oeeSummary?.optJSONArray("losses") ?: JSONArray()
+                                        if(savedLosses.length()>0) {
+                                            SectionLabel("Existing loss events", "Load a record below to make an audited correction")
+                                            for(i in 0 until savedLosses.length()) {
+                                                val row=savedLosses.getJSONObject(i)
+                                                OutlinedButton(onClick={
+                                                    oeeEditingLossId=row.optInt("id").takeIf{it>0}
+                                                    oeeLossCategory=oeeLossCategories.firstOrNull{it.id==row.optInt("loss_category_id")}
+                                                    oeeLossDuration=row.optString("duration_min")
+                                                    oeeLossQty=row.optString("qty_loss","0")
+                                                    oeeLossRemark=row.optString("remark","")
+                                                    oeeLossCorrectionReason=""
+                                                },modifier=Modifier.fillMaxWidth()) {
+                                                    Text("#${row.optInt("id")} • ${row.optString("category")} • ${row.optString("duration_min")} min")
+                                                }
+                                            }
+                                        }
+                                        if(oeeEditingLossId!=null) {
+                                            Text("Correcting loss event #${oeeEditingLossId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                            OutlinedTextField(oeeLossCorrectionReason,{oeeLossCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                            TextButton(onClick={oeeEditingLossId=null;oeeLossCorrectionReason=""}){Text("CANCEL CORRECTION")}
+                                        }
+                                        if(oeeLossCategories.isNotEmpty()) ChoiceDropdown("Loss category",oeeLossCategories,oeeLossCategory,{oeeLossCategory=it})
+                                        OutlinedTextField(oeeLossDuration,{oeeLossDuration=it},label={Text("Loss duration (min) *")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeLossQty,{oeeLossQty=it},label={Text("Quantity loss (optional)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeLossRemark,{oeeLossRemark=it},label={Text("Loss details / remark")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        Button(onClick={
+                                            val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine;val category=oeeLossCategory
+                                            if(auth==null||p==null||op==null||m==null||category==null) oeeError="Load machine scope and select a loss category."
+                                            else if(oeeLossDuration.toDoubleOrNull()==null||oeeLossDuration.toDouble()<=0) oeeError="Enter a valid loss duration."
+                                            else scope.launch {
+                                                oeeLoading=true;oeeError=null
+                                                try {
+                                                    val payload=JSONObject().put("loss_date",oeeDate).put("shift",oeeShift)
+                                                        .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                        .put("loss_category_id",category.id).put("duration_min",oeeLossDuration.toDouble())
+                                                        .put("qty_loss",oeeLossQty.toDoubleOrNull()?:0.0).put("remark",oeeLossRemark)
+                                                    val editingId=oeeEditingLossId
+                                                    if(editingId!=null && oeeLossCorrectionReason.trim().length<5) throw IllegalArgumentException("Enter a correction reason of at least 5 characters.")
+                                                    val saved=withContext(Dispatchers.IO){
+                                                        if(editingId==null) ApiClient.saveOeeLoss(payload,auth)
+                                                        else ApiClient.correctOeeLoss(editingId,payload,oeeLossCorrectionReason.trim(),auth)
+                                                    }
+                                                    oeeSavedLossId=if(editingId==null)saved.optInt("id").takeIf{it>0} else null
+                                                    oeeEditingLossId=null;oeeLossCorrectionReason=""
+                                                    oeeError=(if(editingId==null)"Loss saved: " else "Loss correction saved and audited: ")+saved.optString("category")+" • "+saved.optString("component")
+                                                    refreshOee(auth)
+                                                } catch(e:Exception){oeeError=e.message ?: "Unable to save loss event."}
+                                                finally{oeeLoading=false}
+                                            }
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeEditingLossId==null)"SAVE LOSS EVENT" else "SAVE AUDITED LOSS CORRECTION") }
+                                        oeeSavedLossId?.let { lossId ->
+                                            OutlinedButton(onClick={
+                                                val auth=token
+                                                if(auth!=null) scope.launch {
+                                                    oeeLoading=true
+                                                    try {
+                                                        val result=withContext(Dispatchers.IO){ApiClient.raiseOeeLossAction(lossId,auth)}
+                                                        oeeError="Action ${result.optString("action_no")} linked to loss event."
+                                                        oeeSavedLossId=null
+                                                        refreshOee(auth)
+                                                    } catch(e:Exception){oeeError=e.message ?: "Unable to raise action."}
+                                                    finally{oeeLoading=false}
+                                                }
+                                            },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text("RAISE WHY-WHY ACTION FOR THIS LOSS") }
                                         }
                                     }
                                 } else if(homeTab=="HISTORY") {
