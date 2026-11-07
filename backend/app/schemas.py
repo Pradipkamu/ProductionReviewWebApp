@@ -229,7 +229,7 @@ class MachineEntryCreate(BaseModel):
     shift_duration_min: Decimal = Field(default=Decimal("480"), gt=0)
     planned_break_min: Decimal = Field(default=Decimal("0"), ge=0)
     downtime_min: Decimal = Field(default=Decimal("0"), ge=0)
-    total_count: Decimal = Field(default=Decimal("0"), ge=0)
+    total_count: Optional[Decimal] = Field(default=None, ge=0)
     good_count: Decimal = Field(default=Decimal("0"), ge=0)
     reject_count: Decimal = Field(default=Decimal("0"), ge=0)
     # Zero means "resolve the effective standard from the master". The API never
@@ -244,12 +244,13 @@ class MachineEntryCreate(BaseModel):
             raise ValueError("Planned break must be less than shift duration")
         if self.downtime_min > planned:
             raise ValueError("Downtime cannot exceed planned production time")
-        if self.good_count > self.total_count:
-            raise ValueError("Good count cannot exceed total count")
-        if self.reject_count > self.total_count:
-            raise ValueError("Reject count cannot exceed total count")
-        if self.good_count + self.reject_count > self.total_count:
-            raise ValueError("Good count plus reject count cannot exceed total count")
+        # New clients enter only good and rejected quantities. Legacy clients may
+        # still send total_count; when omitted it is derived deterministically.
+        derived_total = self.good_count + self.reject_count
+        if self.total_count is None:
+            self.total_count = derived_total
+        elif self.total_count != derived_total:
+            raise ValueError("Total production must equal good quantity plus rejected quantity")
         self.shift = self.shift.strip().upper()
         return self
 
@@ -272,6 +273,26 @@ class LossEventCreate(BaseModel):
         if self.start_time and self.end_time and self.end_time <= self.start_time:
             raise ValueError("Loss end time must be after start time")
         self.shift = self.shift.strip().upper()
+        return self
+
+
+class OEEEntryWithLossesCreate(BaseModel):
+    entry: MachineEntryCreate
+    losses: list[LossEventCreate] = Field(default_factory=list, max_length=30)
+    entry_id: Optional[int] = None
+    correction_reason: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_loss_scope(self):
+        if self.entry_id and len((self.correction_reason or "").strip()) < 5:
+            raise ValueError("A correction reason of at least 5 characters is required")
+        for loss in self.losses:
+            if (loss.loss_date != self.entry.production_date
+                or loss.shift != self.entry.shift
+                or loss.machine_id != self.entry.machine_id
+                or loss.product_id != self.entry.product_id
+                or loss.route_operation_id != self.entry.route_operation_id):
+                raise ValueError("Every loss must belong to the selected date, shift, product, operation and machine")
         return self
 
 class VendorMovementCreate(BaseModel):
