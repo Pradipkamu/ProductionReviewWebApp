@@ -244,6 +244,23 @@ def save_machine_entry_with_losses(
     data, context = _prepare_entry(db, entry_payload)
     validated_losses: list[tuple[dict, LossCategory]] = []
     availability_downtime = Decimal("0")
+    if row:
+        previous_losses = db.execute(
+            select(MachineLossEvent, LossCategory)
+            .join(LossCategory, LossCategory.id == MachineLossEvent.loss_category_id)
+            .where(
+                MachineLossEvent.loss_date == entry_payload.production_date,
+                MachineLossEvent.shift == entry_payload.shift,
+                MachineLossEvent.product_id == entry_payload.product_id,
+                MachineLossEvent.route_operation_id == entry_payload.route_operation_id,
+                MachineLossEvent.machine_id == entry_payload.machine_id,
+            )
+        ).all()
+        availability_downtime += sum(
+            (event.duration_min for event, category in previous_losses
+             if category.oee_component == OEEComponent.AVAILABILITY),
+            Decimal("0"),
+        )
     for loss_payload in payload.losses:
         loss_data, category = _validate_loss(db, loss_payload)
         validated_losses.append((loss_data, category))
