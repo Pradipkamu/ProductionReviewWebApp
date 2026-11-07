@@ -318,13 +318,13 @@ private fun SectionLabel(title: String, subtitle: String? = null) {
     }
 }
 @Composable
-private fun MetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier) {
+private fun MetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier, compact: Boolean = false) {
     Card(modifier = modifier, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
         border = androidx.compose.foundation.BorderStroke(1.dp, Border), elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = if (compact) 7.dp else 12.dp, vertical = if (compact) 10.dp else 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Box(Modifier.width(28.dp).height(3.dp).clip(RoundedCornerShape(3.dp)).background(accent))
-            Text(value, color = Navy, fontSize = 23.sp, fontWeight = FontWeight.Bold)
-            Text(label, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            Text(value, color = Navy, fontSize = if (compact) 19.sp else 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+            Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
         }
     }
 }
