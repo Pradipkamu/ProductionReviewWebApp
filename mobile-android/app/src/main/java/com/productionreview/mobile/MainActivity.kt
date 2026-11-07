@@ -1028,14 +1028,10 @@ class MainActivity : ComponentActivity() {
                                                         .put("shift_duration_min",oeeShiftMinutes.toDouble()).put("planned_break_min",oeeBreakMinutes.toDouble())
                                                         .put("downtime_min",availabilityLossTotal).put("good_count",oeeGoodCount.toDouble()).put("reject_count",oeeRejectCount.toDouble())
                                                         .put("ideal_cycle_time_sec",0).put("remarks",oeeEntryRemarks)
+                                                    if(oeeEntryId!=null) payload.put("downtime_min",availabilityLossTotal)
                                                     val saved=withContext(Dispatchers.IO){
                                                         if(oeeEntryId==null) ApiClient.saveOeeEntryWithLosses(payload,losses,auth)
-                                                        else {
-                                                            val corrected=ApiClient.correctOeeMachineEntry(oeeEntryId!!,payload,oeeCorrectionReason.trim(),auth)
-                                                            // Existing correction endpoint is retained for audited record edits; append new losses only after it succeeds.
-                                                            for(i in 0 until losses.length()) ApiClient.saveOeeLoss(losses.getJSONObject(i),auth)
-                                                            corrected
-                                                        }
+                                                        else ApiClient.saveOeeEntryWithLosses(payload.put("entry_id",oeeEntryId).put("correction_reason",oeeCorrectionReason.trim()),losses,auth)
                                                     }
                                                     val entry=saved.optJSONObject("entry")
                                                     oeeEntryId=entry?.optInt("id")?.takeIf{it>0} ?: oeeEntryId
