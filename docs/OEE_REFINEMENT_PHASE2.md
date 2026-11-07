@@ -19,7 +19,7 @@ Deliver a consistent OEE workflow across the web application, backend and Androi
 ## Android
 - Live OEE summary with date, shift, product, operation and machine scope.
 - Machine-shift production entry and controlled correction with mandatory reason.
-- Classified machine-loss capture and linked standard Why-Why action creation.
+- Classified machine-loss capture, audited loss-event correction and linked standard Why-Why action creation.
 - Period management summary with overall OEE, A/P/Q, machine ranking, top loss categories and daily trend.
 - Cycle-time master is treated as seconds per piece; no cavity or pieces-per-cycle conversion is applied without verified business definition.
 
