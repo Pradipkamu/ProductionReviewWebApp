@@ -887,7 +887,16 @@ class MainActivity : ComponentActivity() {
                                     ScreenTitle("Machine / OEE", "Live machine effectiveness from production records")
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                            ChoiceDropdown("Product / Part number",masters?.products.orEmpty(),oeeProduct,{selected ->
+                                                oeeProduct=selected
+                                                oeeOperation=null
+                                                oeeMachine=null
+                                                oeeRoutes=emptyList()
+                                                oeeMachines=emptyList()
+                                                oeeSummary=null
+                                                oeeError=null
+                                            })
+                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
                                             ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C")),null,{oeeShift=it.label;oeeSummary=null},oeeShift)
                                             Button(onClick={token?.let{loadOeeScope(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&token!=null,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"LOADING…" else "LOAD MACHINE SCOPE") }
                                             if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
