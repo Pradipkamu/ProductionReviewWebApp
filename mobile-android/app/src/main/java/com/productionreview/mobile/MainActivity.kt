@@ -432,6 +432,7 @@ class MainActivity : ComponentActivity() {
                     oeeLoading = true; oeeError = null; oeeSummary = null
                     try {
                         val loadedRoutes = withContext(Dispatchers.IO) { ApiClient.loadRoutes(selectedProduct.id, oeeDate, auth) }
+                        oeeRoutes = loadedRoutes
                         oeeOperation = loadedRoutes.firstOrNull()
                         val selectedOperation = oeeOperation
                         if (selectedOperation == null) {
