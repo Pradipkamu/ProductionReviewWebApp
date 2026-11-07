@@ -49,7 +49,7 @@ export default function OEE(){
    let r:any;
    if(entryId){
     if(!reason.trim()){setError('Enter a correction reason to update the existing shift entry.');return}
-    const availabilityMinutes=losses.reduce((n:number,x:any)=>n+((x.component==='AVAILABILITY'&&!x.saved?Number(x.duration_min||0):0)),0);
+    const availabilityMinutes=losses.reduce((n:number,x:any)=>n+(x.component==='AVAILABILITY'?Number(x.duration_min||0):0),0);
     r=await api(`/oee/machine-entry/${entryId}`,{method:'PUT',headers:{'X-Change-Reason':reason},body:JSON.stringify({...body.entry,downtime_min:availabilityMinutes})});
     for(const x of completed){await api('/oee/loss-events',{method:'POST',body:JSON.stringify({loss_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),loss_category_id:Number(x.loss_category_id),duration_min:Number(x.duration_min),qty_loss:Number(x.qty_loss||0),remark:x.remark||''})})}
    } else {
