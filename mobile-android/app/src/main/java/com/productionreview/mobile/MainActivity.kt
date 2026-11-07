@@ -523,9 +523,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(homeTab, token) {
+            LaunchedEffect(homeTab, token, oeeDate, oeeManagementFrom) {
                 val auth = token
-                if (homeTab == "OEE" && auth != null && oeeManagement == null && !oeeLoading) {
+                if (homeTab == "OEE" && auth != null) {
                     oeeLoading = true
                     oeeError = null
                     try {
