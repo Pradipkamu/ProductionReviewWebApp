@@ -210,19 +210,36 @@ def save_machine_entry_with_losses(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Atomically save a production entry and all classified loss events."""
+    """Atomically save/correct a production entry and append its classified loss events."""
     entry_payload = payload.entry
-    if payload.entry_id is not None:
-        raise HTTPException(422, "Batch correction is not enabled here; use the audited correction workflow")
-    duplicate = db.scalar(select(MachineShiftProduction.id).where(
-        MachineShiftProduction.production_date == entry_payload.production_date,
-        MachineShiftProduction.shift == entry_payload.shift,
-        MachineShiftProduction.product_id == entry_payload.product_id,
-        MachineShiftProduction.route_operation_id == entry_payload.route_operation_id,
-        MachineShiftProduction.machine_id == entry_payload.machine_id,
-    ).limit(1))
-    if duplicate:
-        raise HTTPException(409, f"This machine shift entry already exists as #{duplicate}; load and correct it instead of duplicating it")
+    row = db.get(MachineShiftProduction, payload.entry_id) if payload.entry_id else None
+    if payload.entry_id and not row:
+        raise HTTPException(404, "Machine shift entry not found")
+
+    if row:
+        reason = (payload.correction_reason or "").strip()
+        if len(reason) < 5:
+            raise HTTPException(422, "Enter a correction reason of at least 5 characters")
+        scope = (row.production_date, row.shift, row.product_id, row.route_operation_id, row.machine_id)
+        requested_scope = (entry_payload.production_date, entry_payload.shift, entry_payload.product_id,
+                           entry_payload.route_operation_id, entry_payload.machine_id)
+        if scope != requested_scope:
+            raise HTTPException(422, "An existing entry's date, shift, product, operation and machine cannot be changed")
+        before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
+                  for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
+                              "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
+                              "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
+    else:
+        duplicate = db.scalar(select(MachineShiftProduction.id).where(
+            MachineShiftProduction.production_date == entry_payload.production_date,
+            MachineShiftProduction.shift == entry_payload.shift,
+            MachineShiftProduction.product_id == entry_payload.product_id,
+            MachineShiftProduction.route_operation_id == entry_payload.route_operation_id,
+            MachineShiftProduction.machine_id == entry_payload.machine_id,
+        ).limit(1))
+        if duplicate:
+            raise HTTPException(409, f"This machine shift entry already exists as #{duplicate}; load and correct it instead of duplicating it")
+        before = None
 
     data, context = _prepare_entry(db, entry_payload)
     validated_losses: list[tuple[dict, LossCategory]] = []
@@ -239,9 +256,20 @@ def save_machine_entry_with_losses(
     data["downtime_min"] = availability_downtime
 
     try:
-        row = MachineShiftProduction(**data)
-        db.add(row)
+        if row:
+            for key, value in data.items():
+                setattr(row, key, value)
+        else:
+            row = MachineShiftProduction(**data)
+            db.add(row)
         db.flush()
+        if before is not None:
+            after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
+            db.add(GovernanceAudit(
+                actor_id=user.id, event="OEE_ENTRY_CORRECTED", entity="machine_shift_production",
+                entity_id=str(row.id), month=row.production_date.replace(day=1), reason=payload.correction_reason.strip(),
+                before_json=json.dumps(before, default=str), after_json=json.dumps(after, default=str),
+            ))
         saved_losses = []
         for loss_data, category in validated_losses:
             event = MachineLossEvent(**loss_data)
