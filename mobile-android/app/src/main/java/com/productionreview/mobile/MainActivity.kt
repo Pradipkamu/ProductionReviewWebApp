@@ -871,7 +871,6 @@ class MainActivity : ComponentActivity() {
                                 if(homeTab=="OEE") {
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                            ChoiceDropdown("Part number",masters?.products.orEmpty(),oeeProduct,{oeeProduct=it;oeeSummary=null;oeeOperation=null;oeeMachine=null})
                                             Divider(color=Border)
                                             oeeManagement?.optJSONObject("overall")?.let { overall ->
                                                 Text("CURRENT MONTH OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
