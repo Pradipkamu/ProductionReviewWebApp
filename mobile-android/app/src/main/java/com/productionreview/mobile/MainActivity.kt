@@ -171,8 +171,10 @@ private object ApiClient {
     fun correctOeeLoss(lossId: Int, payload: JSONObject, reason: String, token: String): JSONObject =
         request("/oee/loss-events/$lossId", "PUT", payload, token, mapOf("X-Change-Reason" to reason))
 
-    fun loadOeeManagement(fromDate: String, toDate: String, token: String): JSONObject =
-        request("/oee/management-summary?from_date=$fromDate&to_date=$toDate", "GET", token=token)
+    fun loadOeeManagement(fromDate: String, toDate: String, token: String, productId: Int? = null): JSONObject {
+        val productFilter = productId?.let { "&product_id=$it" }.orEmpty()
+        return request("/oee/management-summary?from_date=$fromDate&to_date=$toDate$productFilter", "GET", token=token)
+    }
 
     fun loadOeeLossCategories(token: String): List<Choice> {
         val rows = array("/masters/loss-categories", token)
@@ -523,17 +525,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(homeTab, token, oeeDate, oeeManagementFrom) {
+            LaunchedEffect(homeTab, token, oeeProduct?.id) {
                 val auth = token
+                val selectedProductId = oeeProduct?.id
                 if (homeTab == "OEE" && auth != null) {
                     oeeLoading = true
                     oeeError = null
+                    oeeManagement = null
                     try {
-                        oeeManagement = withContext(Dispatchers.IO) {
-                            ApiClient.loadOeeManagement(oeeManagementFrom, oeeDate, auth)
+                        if (selectedProductId == null) {
+                            oeeError = "Select a part number to view its current-month OEE."
+                        } else {
+                            val today = LocalDate.now()
+                            val monthStart = today.withDayOfMonth(1)
+                            oeeManagement = withContext(Dispatchers.IO) {
+                                ApiClient.loadOeeManagement(monthStart.toString(), today.toString(), auth, selectedProductId)
+                            }
                         }
                     } catch (e: Exception) {
-                        oeeError = e.message ?: "Unable to load OEE management summary."
+                        oeeError = e.message ?: "Unable to load current-month OEE."
                     } finally {
                         oeeLoading = false
                     }
@@ -859,12 +869,34 @@ class MainActivity : ComponentActivity() {
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
                                 }
                                 if(homeTab=="OEE") {
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                            ChoiceDropdown("Part number",masters?.products.orEmpty(),oeeProduct,{oeeProduct=it;oeeSummary=null;oeeOperation=null;oeeMachine=null})
+                                        }
+                                    }
+                                    oeeManagement?.optJSONObject("overall")?.let { overall ->
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Text("CURRENT MONTH OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
+                                                Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f))
+                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f))
+                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f))
+                                                }
+                                                Text("This month • ${LocalDate.now().withDayOfMonth(1)} to ${LocalDate.now()}",color=Muted,fontSize=11.sp)
+                                            }
+                                        }
+                                    } ?: run {
+                                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
+                                            Text(if(oeeLoading) "Loading current-month OEE…" else oeeError ?: "Select a part number to view OEE.",Modifier.padding(16.dp),color=Muted)
+                                        }
+                                    }
                                     ScreenTitle("Machine / OEE", "Live machine effectiveness from production records")
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                             OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
                                             ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C")),null,{oeeShift=it.label;oeeSummary=null},oeeShift)
-                                            ChoiceDropdown("Product",masters?.products.orEmpty(),oeeProduct,{oeeProduct=it;oeeSummary=null;oeeOperation=null;oeeMachine=null})
                                             Button(onClick={token?.let{loadOeeScope(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&token!=null,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"LOADING…" else "LOAD MACHINE SCOPE") }
                                             if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
                                                 oeeOperation=oeeRoutes.firstOrNull{it.id==selected.id};oeeMachine=null;oeeMachines=emptyList();oeeSummary=null
@@ -882,12 +914,8 @@ class MainActivity : ComponentActivity() {
                                             oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
                                         }
                                     }
-                                    oeeManagement?.optJSONObject("overall")?.let { overall ->
-                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                                Text("PERIOD OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
-                                                Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                                     MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f))
                                                     MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f))
                                                     MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f))
@@ -980,22 +1008,14 @@ class MainActivity : ComponentActivity() {
                                             val auth=token
                                             if(auth!=null) scope.launch {
                                                 oeeLoading=true;oeeError=null
-                                                try{oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeDate,auth)}}
+                                                try{oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeDate,auth,oeeProduct?.id)}}
                                                 catch(e:Exception){oeeError=e.message ?: "Unable to load OEE management summary."}
                                                 finally{oeeLoading=false}
                                             }
                                         },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()){Text("LOAD MANAGEMENT SUMMARY")}
                                         oeeManagement?.let { mgmt ->
                                             val overall=mgmt.optJSONObject("overall")
-                                            if(overall!=null) {
-                                                Text("Period OEE  ${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=25.sp,fontWeight=FontWeight.ExtraBold)
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f))
-                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f))
-                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f))
-                                                }
-                                                Text("Shift records: ${mgmt.optInt("entry_count")} • Loss events: ${mgmt.optInt("loss_event_count")} • Machines below target: ${mgmt.optInt("below_target_machine_count")}",color=Muted,fontSize=12.sp)
-                                            }
+                                            if(overall!=null) Text("Shift records: ${mgmt.optInt("entry_count")} • Loss events: ${mgmt.optInt("loss_event_count")} • Machines below target: ${mgmt.optInt("below_target_machine_count")}",color=Muted,fontSize=12.sp)
                                             SectionLabel("Machine ranking")
                                             val machineRows=mgmt.optJSONArray("machines") ?: JSONArray()
                                             for(i in 0 until minOf(machineRows.length(),8)){
