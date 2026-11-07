@@ -821,6 +821,7 @@ class MainActivity : ComponentActivity() {
                                                 Text("Planned production: " + String.format("%.1f",oee.optDouble("planned_production_min")) + " min  •  Run time: " + String.format("%.1f",oee.optDouble("run_time_min")) + " min",color=Muted,fontSize=12.sp)
                                                 Text("Classified availability loss: " + String.format("%.1f",oee.optDouble("captured_loss_min")) + " min  •  Unclassified: " + String.format("%.1f",oee.optDouble("unclassified_loss_min")) + " min",color=if(oee.optDouble("unclassified_loss_min")>0)Warning else Muted,fontSize=12.sp)
                                                 if(oee.optDouble("overclassified_loss_min")>0) Text("Warning: availability loss events exceed downtime.",color=Danger,fontSize=12.sp)
+                                                if(oee.optInt("shared_shift_time_conflict_count")>0) Text("Warning: shared machine-shift time differs across product records. Review the shift entries.",color=Warning,fontSize=12.sp)
                                                 Text("Saved product records: " + (oeeSummary?.optJSONArray("entries")?.length() ?: 0),color=Muted,fontSize=12.sp)
                                                 if(oee.optBoolean("performance_master_warning")) Text("Performance exceeds 110%. Check the effective cycle-time master and production quantity.",color=Warning,fontSize=12.sp)
                                             }
