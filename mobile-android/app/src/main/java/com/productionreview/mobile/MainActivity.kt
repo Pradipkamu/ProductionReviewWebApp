@@ -156,6 +156,25 @@ private object ApiClient {
     fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
         request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
 
+    fun saveOeeMachineEntry(payload: JSONObject, token: String): JSONObject =
+        request("/oee/machine-entry", "POST", payload, token)
+
+    fun loadOeeLossCategories(token: String): List<Choice> {
+        val rows = array("/masters/loss-categories", token)
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            Choice(row.getInt("id"), row.optString("name"), row.optString("component"))
+        }
+    }
+
+    fun saveOeeLoss(payload: JSONObject, token: String): JSONObject =
+        request("/oee/loss-events", "POST", payload, token)
+
+    fun raiseOeeLossAction(lossId: Int, token: String): JSONObject =
+        request("/oee/loss-events/$lossId/raise-action", "POST",
+            JSONObject().put("action_description", "Contain the loss, complete standard Why-Why analysis and implement corrective action")
+                .put("target_oee", 0.85), token)
+
     fun loadPendingActions(token: String): List<ActionItem> {
         val rows = array("/actions/my-pending", token)
         return (0 until rows.length()).map { i ->
@@ -360,6 +379,20 @@ class MainActivity : ComponentActivity() {
             var oeeSummary by remember { mutableStateOf<JSONObject?>(null) }
             var oeeError by remember { mutableStateOf<String?>(null) }
             var oeeLoading by remember { mutableStateOf(false) }
+            var oeeMode by remember { mutableStateOf("SUMMARY") }
+            var oeeShiftMinutes by remember { mutableStateOf("480") }
+            var oeeBreakMinutes by remember { mutableStateOf("0") }
+            var oeeDowntimeMinutes by remember { mutableStateOf("0") }
+            var oeeTotalCount by remember { mutableStateOf("0") }
+            var oeeGoodCount by remember { mutableStateOf("0") }
+            var oeeRejectCount by remember { mutableStateOf("0") }
+            var oeeEntryRemarks by remember { mutableStateOf("") }
+            var oeeLossCategories by remember { mutableStateOf<List<Choice>>(emptyList()) }
+            var oeeLossCategory by remember { mutableStateOf<Choice?>(null) }
+            var oeeLossDuration by remember { mutableStateOf("") }
+            var oeeLossQty by remember { mutableStateOf("0") }
+            var oeeLossRemark by remember { mutableStateOf("") }
+            var oeeSavedLossId by remember { mutableStateOf<Int?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if(uri!=null) {
@@ -448,6 +481,13 @@ class MainActivity : ComponentActivity() {
                         }
                     } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE scope." }
                     finally { oeeLoading = false }
+                }
+                scope.launch {
+                    try {
+                        val categories = withContext(Dispatchers.IO) { ApiClient.loadOeeLossCategories(auth) }
+                        oeeLossCategories = categories
+                        oeeLossCategory = categories.firstOrNull()
+                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load loss categories." }
                 }
             }
             fun refreshOee(auth: String) {
@@ -830,6 +870,83 @@ class MainActivity : ComponentActivity() {
                                         }
                                     } else if(oeeSummary!=null) {
                                         Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)){Text("No OEE entry exists for the selected scope.",Modifier.padding(16.dp),color=Muted)}
+                                    }
+                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                        listOf("SUMMARY","ENTRY","LOSS").forEach { mode ->
+                                            FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
+                                        }
+                                    }
+                                    if(oeeMode=="ENTRY") {
+                                        SectionLabel("Machine-shift production entry", "The effective cycle time is resolved by the server from the master")
+                                        OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("Shift duration (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("Planned breaks (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeDowntimeMinutes,{oeeDowntimeMinutes=it},label={Text("Machine downtime (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeTotalCount,{oeeTotalCount=it},label={Text("Total production quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("Good quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeRejectCount,{oeeRejectCount=it},label={Text("Reject quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("Remarks")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        Button(onClick={
+                                            val auth=token; val p=oeeProduct; val op=oeeOperation; val m=oeeMachine
+                                            if(auth==null || p==null || op==null || m==null) oeeError="Load product, operation and machine scope first."
+                                            else scope.launch {
+                                                oeeLoading=true;oeeError=null
+                                                try {
+                                                    val payload=JSONObject()
+                                                        .put("production_date",oeeDate).put("shift",oeeShift)
+                                                        .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                        .put("shift_duration_min",oeeShiftMinutes.toDouble()).put("planned_break_min",oeeBreakMinutes.toDouble())
+                                                        .put("downtime_min",oeeDowntimeMinutes.toDouble()).put("total_count",oeeTotalCount.toDouble())
+                                                        .put("good_count",oeeGoodCount.toDouble()).put("reject_count",oeeRejectCount.toDouble())
+                                                        .put("ideal_cycle_time_sec",0).put("remarks",oeeEntryRemarks)
+                                                    val saved=withContext(Dispatchers.IO){ApiClient.saveOeeMachineEntry(payload,auth)}
+                                                    val warnings=saved.optJSONArray("warnings")
+                                                    oeeError="Entry saved successfully. "+(warnings?.let{arr->(0 until arr.length()).joinToString("; "){arr.optString(it)}}.orEmpty())
+                                                    refreshOee(auth)
+                                                } catch(e:Exception){oeeError=e.message ?: "Unable to save machine entry."}
+                                                finally{oeeLoading=false}
+                                            }
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"SAVING…" else "SAVE MACHINE-SHIFT ENTRY") }
+                                        Text("Duplicate entries are blocked by the server. Load the existing record in the web app for controlled correction.",color=Muted,fontSize=11.sp)
+                                    } else if(oeeMode=="LOSS") {
+                                        SectionLabel("Classified machine-loss capture", "Select the correct OEE component from the loss master")
+                                        if(oeeLossCategories.isNotEmpty()) ChoiceDropdown("Loss category",oeeLossCategories,oeeLossCategory,{oeeLossCategory=it})
+                                        OutlinedTextField(oeeLossDuration,{oeeLossDuration=it},label={Text("Loss duration (min) *")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeLossQty,{oeeLossQty=it},label={Text("Quantity loss (optional)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeLossRemark,{oeeLossRemark=it},label={Text("Loss details / remark")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        Button(onClick={
+                                            val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine;val category=oeeLossCategory
+                                            if(auth==null||p==null||op==null||m==null||category==null) oeeError="Load machine scope and select a loss category."
+                                            else if(oeeLossDuration.toDoubleOrNull()==null||oeeLossDuration.toDouble()<=0) oeeError="Enter a valid loss duration."
+                                            else scope.launch {
+                                                oeeLoading=true;oeeError=null
+                                                try {
+                                                    val payload=JSONObject().put("loss_date",oeeDate).put("shift",oeeShift)
+                                                        .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                        .put("loss_category_id",category.id).put("duration_min",oeeLossDuration.toDouble())
+                                                        .put("qty_loss",oeeLossQty.toDoubleOrNull()?:0.0).put("remark",oeeLossRemark)
+                                                    val saved=withContext(Dispatchers.IO){ApiClient.saveOeeLoss(payload,auth)}
+                                                    oeeSavedLossId=saved.optInt("id").takeIf{it>0}
+                                                    oeeError="Loss saved: "+saved.optString("category")+" • "+saved.optString("component")
+                                                    refreshOee(auth)
+                                                } catch(e:Exception){oeeError=e.message ?: "Unable to save loss event."}
+                                                finally{oeeLoading=false}
+                                            }
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text("SAVE LOSS EVENT") }
+                                        oeeSavedLossId?.let { lossId ->
+                                            OutlinedButton(onClick={
+                                                val auth=token
+                                                if(auth!=null) scope.launch {
+                                                    oeeLoading=true
+                                                    try {
+                                                        val result=withContext(Dispatchers.IO){ApiClient.raiseOeeLossAction(lossId,auth)}
+                                                        oeeError="Action ${result.optString("action_no")} linked to loss event."
+                                                        oeeSavedLossId=null
+                                                        refreshOee(auth)
+                                                    } catch(e:Exception){oeeError=e.message ?: "Unable to raise action."}
+                                                    finally{oeeLoading=false}
+                                                }
+                                            },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text("RAISE WHY-WHY ACTION FOR THIS LOSS") }
+                                        }
                                     }
                                 } else if(homeTab=="HISTORY") {
                                     ScreenTitle("Action history", "Review previous action updates")
