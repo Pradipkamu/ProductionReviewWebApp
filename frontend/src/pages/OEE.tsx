@@ -45,16 +45,8 @@ export default function OEE(){
   try{
    const completed=losses.filter((x:any)=>!x.saved&&x.loss_category_id&&Number(x.duration_min)>0);
    const lossPayload=completed.map((x:any)=>({loss_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),loss_category_id:Number(x.loss_category_id),duration_min:Number(x.duration_min),qty_loss:Number(x.qty_loss||0),remark:x.remark||''}));
-   const body={entry:{...entry,downtime_min:0,production_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m)},losses:lossPayload};
-   let r:any;
-   if(entryId){
-    if(!reason.trim()){setError('Enter a correction reason to update the existing shift entry.');return}
-    const availabilityMinutes=losses.reduce((n:number,x:any)=>n+(x.component==='AVAILABILITY'?Number(x.duration_min||0):0),0);
-    r=await api(`/oee/machine-entry/${entryId}`,{method:'PUT',headers:{'X-Change-Reason':reason},body:JSON.stringify({...body.entry,downtime_min:availabilityMinutes})});
-    for(const x of completed){await api('/oee/loss-events',{method:'POST',body:JSON.stringify({loss_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),loss_category_id:Number(x.loss_category_id),duration_min:Number(x.duration_min),qty_loss:Number(x.qty_loss||0),remark:x.remark||''})})}
-   } else {
-    r=await api('/oee/machine-entry-with-losses',{method:'POST',body:JSON.stringify(body)});
-   }
+   const body={entry:{...entry,downtime_min:0,production_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m)},losses:lossPayload,...(entryId?{entry_id:entryId,correction_reason:reason}:{})};
+   const r:any=await api('/oee/machine-entry-with-losses',{method:'POST',body:JSON.stringify(body)});
    setMsg(`${entryId?'Shift entry corrected':'Shift entry saved'} with ${completed.length} new loss event(s).${r.warnings?.length?` — ${r.warnings.join('; ')}`:''}`);
    setReason('');setError('');await loadContext();await refresh()
   }catch(e:any){setError(e.message)}
