@@ -338,7 +338,7 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
 
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
-                       product_id: str | None = None, plant: str | None = None,
+                       route_operation_id: int | None = None, product_id: str | None = None, plant: str | None = None,
                        product_group: str | None = None, customer_id: str | None = None,
                        target_oee: float = 0.85, recurring_event_threshold: int = 3,
                        db: Session = Depends(get_db), _: User = Depends(get_current_user)):
@@ -354,6 +354,9 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     if machine_id is not None:
         q = q.where(MachineShiftProduction.machine_id == machine_id)
         lq = lq.where(MachineLossEvent.machine_id == machine_id)
+    if route_operation_id is not None:
+        q = q.where(MachineShiftProduction.route_operation_id == route_operation_id)
+        lq = lq.where(MachineLossEvent.route_operation_id == route_operation_id)
     plants = csv_strings(plant)
     product_ids = csv_ints(product_id)
     groups = csv_strings(product_group)
