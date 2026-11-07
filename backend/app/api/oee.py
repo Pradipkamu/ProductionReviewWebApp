@@ -161,11 +161,28 @@ def entry_context(product_id: int, route_operation_id: int, machine_id: int, pro
         MachineShiftProduction.route_operation_id == route_operation_id,
         MachineShiftProduction.machine_id == machine_id,
     ).order_by(MachineShiftProduction.id.desc()).limit(1))
+    existing_losses = db.execute(
+        select(MachineLossEvent, LossCategory)
+        .join(LossCategory, LossCategory.id == MachineLossEvent.loss_category_id)
+        .where(
+            MachineLossEvent.loss_date == production_date,
+            MachineLossEvent.shift == shift.strip().upper(),
+            MachineLossEvent.product_id == product_id,
+            MachineLossEvent.route_operation_id == route_operation_id,
+            MachineLossEvent.machine_id == machine_id,
+        ).order_by(MachineLossEvent.id)
+    ).all()
     return {
         "product": context["product"].name, "operation": context["operation"].name,
         "machine": context["machine"].code, "allowed_machine_ids": context["allowed_machine_ids"],
         "ideal_cycle_time_sec": float(context["cycle"].ideal_cycle_time_sec) if context["cycle"] else None,
         "warnings": context["warnings"], "existing_entry": _entry_json(existing, context) if existing else None,
+        "existing_losses": [{
+            "id": event.id, "loss_category_id": event.loss_category_id,
+            "category": category.name, "component": category.oee_component.value,
+            "duration_min": float(event.duration_min), "qty_loss": float(event.qty_loss),
+            "remark": event.remark or "",
+        } for event, category in existing_losses],
     }
 
 
