@@ -31,6 +31,7 @@ def test_oee_aggregation_counts_shared_machine_shift_time_once():
     assert round(result["availability"], 8) == round(375 / 435, 8)
     assert round(result["quality"], 8) == round(293 / 300, 8)
     assert round(result["performance_raw"], 8) == round((30 * 100 + 60 * 200) / 60 / 375, 8)
+    assert result["shared_shift_time_conflict_count"] == 0
 
 
 def test_oee_aggregation_adds_distinct_machine_shifts():
@@ -46,3 +47,18 @@ def test_oee_aggregation_adds_distinct_machine_shifts():
     assert result["planned_production_min"] == 870
     assert result["run_time_min"] == 820
     assert round(result["quality"], 8) == round(191 / 200, 8)
+
+
+def test_oee_aggregation_flags_conflicting_shared_shift_time():
+    rows = [
+        SimpleNamespace(machine_id=1, production_date="2026-11-07", shift="A",
+                        shift_duration_min=480, planned_break_min=45, downtime_min=30,
+                        total_count=100, good_count=95, ideal_cycle_time_sec=30),
+        SimpleNamespace(machine_id=1, production_date="2026-11-07", shift="A",
+                        shift_duration_min=480, planned_break_min=45, downtime_min=45,
+                        total_count=100, good_count=96, ideal_cycle_time_sec=30),
+    ]
+    result = aggregate_oee_entries(rows)
+    assert result["planned_production_min"] == 435
+    assert result["run_time_min"] == 390
+    assert result["shared_shift_time_conflict_count"] == 1
