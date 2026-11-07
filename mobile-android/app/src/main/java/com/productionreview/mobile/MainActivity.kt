@@ -354,7 +354,9 @@ class MainActivity : ComponentActivity() {
             var oeeShift by remember { mutableStateOf("A") }
             var oeeProduct by remember { mutableStateOf<Choice?>(null) }
             var oeeOperation by remember { mutableStateOf<RouteChoice?>(null) }
+            var oeeRoutes by remember { mutableStateOf<List<RouteChoice>>(emptyList()) }
             var oeeMachine by remember { mutableStateOf<Choice?>(null) }
+            var oeeMachines by remember { mutableStateOf<List<Choice>>(emptyList()) }
             var oeeSummary by remember { mutableStateOf<JSONObject?>(null) }
             var oeeError by remember { mutableStateOf<String?>(null) }
             var oeeLoading by remember { mutableStateOf(false) }
