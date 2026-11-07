@@ -145,6 +145,17 @@ private object ApiClient {
         }
         return candidates.maxByOrNull { it.first }?.second ?: emptyList()
     }
+    fun loadOeeMachines(routeOperationId: Int, date: String, token: String): List<Choice> {
+        val response = request("/oee/available-machines?route_operation_id=$routeOperationId&production_date=$date", "GET", token=token)
+        val rows = response.optJSONArray("machines") ?: JSONArray()
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            Choice(row.getInt("id"), row.optString("code") + " • " + row.optString("name"))
+        }
+    }
+    fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
+        request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
+
     fun loadPendingActions(token: String): List<ActionItem> {
         val rows = array("/actions/my-pending", token)
         return (0 until rows.length()).map { i ->
@@ -339,6 +350,15 @@ class MainActivity : ComponentActivity() {
             var verificationMethod by remember { mutableStateOf("") }
             var verificationResult by remember { mutableStateOf("") }
             var evidenceFile by remember { mutableStateOf<File?>(null) }
+            var oeeDate by remember { mutableStateOf(LocalDate.now().toString()) }
+            var oeeShift by remember { mutableStateOf("A") }
+            var oeeProduct by remember { mutableStateOf<Choice?>(null) }
+            var oeeOperation by remember { mutableStateOf<RouteChoice?>(null) }
+            var oeeMachine by remember { mutableStateOf<Choice?>(null) }
+            var oeeSummary by remember { mutableStateOf<JSONObject?>(null) }
+            var oeeError by remember { mutableStateOf<String?>(null) }
+            var oeeLoading by remember { mutableStateOf(false) }
+
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if(uri!=null) {
                     try {
@@ -402,6 +422,39 @@ class MainActivity : ComponentActivity() {
                         message="Action details loaded."
                     } catch(e:Exception){selectedAction=null;message=e.message ?: "Unable to load action."}
                     finally{busy=false}
+                }
+            }
+
+            fun loadOeeScope(auth: String) {
+                val selectedProduct = oeeProduct
+                if (selectedProduct == null) { oeeError = "Select a product first."; return }
+                scope.launch {
+                    oeeLoading = true; oeeError = null; oeeSummary = null
+                    try {
+                        val loadedRoutes = withContext(Dispatchers.IO) { ApiClient.loadRoutes(selectedProduct.id, oeeDate, auth) }
+                        oeeOperation = loadedRoutes.firstOrNull()
+                        val selectedOperation = oeeOperation
+                        if (selectedOperation == null) {
+                            oeeMachine = null
+                            oeeError = "No active operation is available for this product and date."
+                        } else {
+                            val available = withContext(Dispatchers.IO) { ApiClient.loadOeeMachines(selectedOperation.id, oeeDate, auth) }
+                            oeeMachine = available.firstOrNull()
+                            if (oeeMachine == null) oeeError = "No active machine is available for this operation."
+                        }
+                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE scope." }
+                    finally { oeeLoading = false }
+                }
+            }
+            fun refreshOee(auth: String) {
+                val selectedProduct = oeeProduct; val selectedOperation = oeeOperation; val selectedMachine = oeeMachine
+                if (selectedProduct == null || selectedOperation == null || selectedMachine == null) { oeeError = "Load machine scope first."; return }
+                scope.launch {
+                    oeeLoading = true; oeeError = null
+                    try {
+                        oeeSummary = withContext(Dispatchers.IO) { ApiClient.loadOeeSummary(selectedMachine.id, oeeDate, oeeShift, selectedProduct.id, selectedOperation.id, auth) }
+                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE summary." }
+                    finally { oeeLoading = false }
                 }
             }
 
@@ -724,16 +777,44 @@ class MainActivity : ComponentActivity() {
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
                                 }
                                 if(homeTab=="OEE") {
-                                    ScreenTitle("OEE", "Machine effectiveness and production performance")
-                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFFE6F2F4)),contentAlignment=Alignment.Center) { Icon(Icons.Filled.Speed,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp)) }
-                                            Text("OEE mobile dashboard",color=Navy,fontSize=18.sp,fontWeight=FontWeight.Bold)
-                                            Text("The screen is prepared for machine availability, performance, quality and overall equipment effectiveness indicators.",color=Muted,fontSize=14.sp)
-                                            Divider(color=Border)
-                                            StatusPill("LIVE DATA CONNECTION PENDING", Warning)
-                                            Text("No production figures are simulated. Values will appear after the authorized API and role permissions are connected.",color=Muted,fontSize=12.sp)
+                                    ScreenTitle("Machine / OEE", "Live machine effectiveness from production records")
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                            ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C")),null,{oeeShift=it.label;oeeSummary=null},oeeShift)
+                                            ChoiceDropdown("Product",masters?.products.orEmpty(),oeeProduct,{oeeProduct=it;oeeSummary=null;oeeOperation=null;oeeMachine=null})
+                                            Button(onClick={token?.let{loadOeeScope(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&token!=null,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"LOADING…" else "LOAD MACHINE SCOPE") }
+                                            Text("Operation: " + (oeeOperation?.label ?: "Not selected"),color=Muted,fontSize=12.sp)
+                                            Text("Machine: " + (oeeMachine?.label ?: "Not selected"),color=Muted,fontSize=12.sp)
+                                            Button(onClick={token?.let{refreshOee(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&oeeMachine!=null,modifier=Modifier.fillMaxWidth()) { Text("REFRESH OEE") }
+                                            oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
                                         }
+                                    }
+                                    val oee = oeeSummary?.optJSONObject("summary")
+                                    if(oee!=null) {
+                                        val oeePct = oee.optDouble("oee_reported",0.0)*100.0
+                                        val availabilityPct = oee.optDouble("availability",0.0)*100.0
+                                        val performancePct = oee.optDouble("performance_raw",0.0)*100.0
+                                        val qualityPct = oee.optDouble("quality",0.0)*100.0
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("OEE RESULT",color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold);StatusPill("LIVE API DATA",Success)}
+                                                Text(String.format("%.1f%%",oeePct),color=if(oeePct<60)Danger else Navy,fontSize=34.sp,fontWeight=FontWeight.ExtraBold)
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    MetricTile("Availability",String.format("%.1f%%",availabilityPct),Teal,Modifier.weight(1f))
+                                                    MetricTile("Performance",String.format("%.1f%%",performancePct),Warning,Modifier.weight(1f))
+                                                    MetricTile("Quality",String.format("%.1f%%",qualityPct),Success,Modifier.weight(1f))
+                                                }
+                                                Divider(color=Border)
+                                                Text("Planned production: " + String.format("%.1f",oee.optDouble("planned_production_min")) + " min  •  Run time: " + String.format("%.1f",oee.optDouble("run_time_min")) + " min",color=Muted,fontSize=12.sp)
+                                                Text("Classified availability loss: " + String.format("%.1f",oee.optDouble("captured_loss_min")) + " min  •  Unclassified: " + String.format("%.1f",oee.optDouble("unclassified_loss_min")) + " min",color=if(oee.optDouble("unclassified_loss_min")>0)Warning else Muted,fontSize=12.sp)
+                                                if(oee.optDouble("overclassified_loss_min")>0) Text("Warning: availability loss events exceed downtime.",color=Danger,fontSize=12.sp)
+                                                Text("Saved product records: " + (oeeSummary?.optJSONArray("entries")?.length() ?: 0),color=Muted,fontSize=12.sp)
+                                                if(oee.optBoolean("performance_master_warning")) Text("Performance exceeds 110%. Check the effective cycle-time master and production quantity.",color=Warning,fontSize=12.sp)
+                                            }
+                                        }
+                                    } else if(oeeSummary!=null) {
+                                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)){Text("No OEE entry exists for the selected scope.",Modifier.padding(16.dp),color=Muted)}
                                     }
                                 } else if(homeTab=="HISTORY") {
                                     ScreenTitle("Action history", "Review previous action updates")
