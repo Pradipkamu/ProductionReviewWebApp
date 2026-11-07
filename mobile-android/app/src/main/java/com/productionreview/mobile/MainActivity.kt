@@ -949,7 +949,74 @@ class MainActivity : ComponentActivity() {
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
                                         }
                                     }
-                                    if(oeeMode=="ENTRY") {
+                                    if(oeeMode=="SUMMARY") {
+                                        SectionLabel("Selected scope OEE", "Live figures for the selected part, process, machine, date and shift")
+                                        val selectedSummary = oeeSummary?.optJSONObject("summary")
+                                        val selectedEntries = oeeSummary?.optJSONArray("entries") ?: JSONArray()
+                                        val selectedLosses = oeeSummary?.optJSONArray("losses") ?: JSONArray()
+                                        Card(
+                                            Modifier.fillMaxWidth(),
+                                            shape=RoundedCornerShape(14.dp),
+                                            colors=CardDefaults.cardColors(containerColor=Color.White),
+                                            border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                                        ) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Text(
+                                                    listOfNotNull(oeeProduct?.label, oeeOperation?.label, oeeMachine?.label).joinToString("  ›  ").ifBlank { "No scope selected" },
+                                                    color=Navy,fontSize=12.sp,fontWeight=FontWeight.SemiBold
+                                                )
+                                                Text("$oeeDate • Shift $oeeShift",color=Muted,fontSize=11.sp)
+                                                if (selectedSummary == null) {
+                                                    EmptyState(
+                                                        if (oeeLoading) "Loading OEE summary" else "No OEE records for this scope",
+                                                        if (oeeProduct == null || oeeOperation == null || oeeMachine == null)
+                                                            "Select a part, load its process and machine, then refresh OEE."
+                                                        else "No saved production entry was found for this date and shift. Use Production Entry to record output."
+                                                    )
+                                                } else {
+                                                    Text("${"%.1f".format(selectedSummary.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
+                                                    Text("REPORTED OEE",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                        MetricTile("Availability","${"%.1f".format(selectedSummary.optDouble("availability")*100)}%",Teal,Modifier.weight(1f),compact=true)
+                                                        MetricTile("Performance","${"%.1f".format(selectedSummary.optDouble("performance_capped")*100)}%",Warning,Modifier.weight(1f),compact=true)
+                                                        MetricTile("Quality","${"%.1f".format(selectedSummary.optDouble("quality")*100)}%",Success,Modifier.weight(1f),compact=true)
+                                                    }
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                        MetricTile("Planned time","${"%.0f".format(selectedSummary.optDouble("planned_production_min"))} min",Navy,Modifier.weight(1f),compact=true)
+                                                        MetricTile("Run time","${"%.0f".format(selectedSummary.optDouble("run_time_min"))} min",Teal,Modifier.weight(1f),compact=true)
+                                                    }
+                                                    Text("Output: ${selectedSummary.optDouble("good_count",0.0).toLong()} good • ${selectedSummary.optDouble("reject_or_unaccounted_count",0.0).toLong()} rejected / unclassified",color=Muted,fontSize=11.sp)
+                                                    Text("Availability loss: ${"%.1f".format(selectedSummary.optDouble("captured_loss_min"))} min • Unclassified downtime: ${"%.1f".format(selectedSummary.optDouble("unclassified_loss_min"))} min",color=Muted,fontSize=11.sp)
+                                                }
+                                                OutlinedButton(
+                                                    onClick={token?.let{refreshOee(it)} ?: run{oeeError="Please sign in again."}},
+                                                    enabled=!oeeLoading && oeeMachine!=null,
+                                                    modifier=Modifier.fillMaxWidth()
+                                                ) { Text(if(oeeLoading) "REFRESHING…" else "REFRESH SELECTED SCOPE") }
+                                            }
+                                        }
+                                        SectionLabel("Production records", "${selectedEntries.length()} record(s) for this selected scope")
+                                        if(selectedEntries.length()==0) {
+                                            EmptyState("No production entries", "Load Production Entry to record the selected machine shift.")
+                                        } else {
+                                            for(i in 0 until selectedEntries.length()) {
+                                                val entry=selectedEntries.getJSONObject(i)
+                                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                        Text("Entry #${entry.optInt("id")} • ${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
+                                                        Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Loss events", "${selectedLosses.length()} classified event(s)")
+                                        if(selectedLosses.length()==0) Text("No loss events recorded for this scope.",color=Muted,fontSize=12.sp)
+                                        else for(i in 0 until selectedLosses.length()) {
+                                            val loss=selectedLosses.getJSONObject(i)
+                                            Text("${loss.optString("category")} • ${loss.optString("component")} • ${"%.1f".format(loss.optDouble("duration_min"))} min",color=Navy,fontSize=12.sp)
+                                        }
+                                    } else if(oeeMode=="ENTRY") {
                                         SectionLabel("Production entry", "Enter good and rejected output. Total and downtime are calculated automatically.")
                                         OutlinedButton(onClick={
                                             val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
