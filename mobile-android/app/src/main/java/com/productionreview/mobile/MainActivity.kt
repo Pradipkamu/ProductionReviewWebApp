@@ -172,9 +172,15 @@ private object ApiClient {
     fun saveOeeMachineEntry(payload: JSONObject, token: String): JSONObject =
         request("/oee/machine-entry", "POST", payload, token)
 
-    fun saveOeeEntryWithLosses(entry: JSONObject, losses: JSONArray, token: String): JSONObject =
-        request("/oee/machine-entry-with-losses", "POST",
-            JSONObject().put("entry", entry).put("losses", losses), token)
+    fun saveOeeEntryWithLosses(
+        entry: JSONObject, losses: JSONArray, token: String,
+        entryId: Int? = null, correctionReason: String? = null
+    ): JSONObject {
+        val body = JSONObject().put("entry", entry).put("losses", losses)
+        entryId?.let { body.put("entry_id", it) }
+        correctionReason?.let { body.put("correction_reason", it) }
+        return request("/oee/machine-entry-with-losses", "POST", body, token)
+    }
 
     fun loadOeeEntryContext(productId: Int, operationId: Int, machineId: Int, date: String, shift: String, token: String): JSONObject =
         request("/oee/entry-context?product_id=$productId&route_operation_id=$operationId&machine_id=$machineId&production_date=$date&shift=$shift", "GET", token=token)
@@ -1030,8 +1036,7 @@ class MainActivity : ComponentActivity() {
                                                         .put("ideal_cycle_time_sec",0).put("remarks",oeeEntryRemarks)
                                                     if(oeeEntryId!=null) payload.put("downtime_min",availabilityLossTotal)
                                                     val saved=withContext(Dispatchers.IO){
-                                                        if(oeeEntryId==null) ApiClient.saveOeeEntryWithLosses(payload,losses,auth)
-                                                        else ApiClient.saveOeeEntryWithLosses(payload.put("entry_id",oeeEntryId).put("correction_reason",oeeCorrectionReason.trim()),losses,auth)
+                                                        ApiClient.saveOeeEntryWithLosses(payload,losses,auth,oeeEntryId,oeeEntryId?.let{oeeCorrectionReason.trim()})
                                                     }
                                                     val entry=saved.optJSONObject("entry")
                                                     oeeEntryId=entry?.optInt("id")?.takeIf{it>0} ?: oeeEntryId
