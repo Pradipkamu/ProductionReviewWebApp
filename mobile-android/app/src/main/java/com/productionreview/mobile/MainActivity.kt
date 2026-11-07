@@ -987,7 +987,7 @@ class MainActivity : ComponentActivity() {
                                         OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("Planned breaks (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("Good quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(oeeRejectCount,{oeeRejectCount=it},label={Text("Rejected quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        Text("Total production: ${((oeeGoodCount.toDoubleOrNull()?:0.0)+(oeeRejectCount.toDoubleOrNull()?:0.0)).toLong()} pcs",color=Success,fontWeight=FontWeight.Bold)
+                                        Text("Total production: ${"%.3f".format((oeeGoodCount.toDoubleOrNull()?:0.0)+(oeeRejectCount.toDoubleOrNull()?:0.0)).trimEnd('0').trimEnd('.')} pcs",color=Success,fontWeight=FontWeight.Bold)
                                         OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("Production remarks (optional)")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         SectionLabel("Machine losses", "Choose a reason and enter minutes. A new card appears after completing a loss.")
                                         oeeEntryLosses.forEachIndexed { index, loss ->
@@ -1043,7 +1043,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"SAVING…" else "SAVE PRODUCTION ENTRY") }
                                         Text("Total production = good + rejected. Availability downtime is the sum of Availability-category loss cards.",color=Muted,fontSize=11.sp)
-                                    }                                    } else if(oeeMode=="MANAGEMENT") {
+                                    } else if(oeeMode=="MANAGEMENT") {
                                         SectionLabel("OEE management", "Period trend, machine ranking and classified loss Pareto")
                                         OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth())
                                         Button(onClick={
