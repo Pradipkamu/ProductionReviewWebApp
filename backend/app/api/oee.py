@@ -1,8 +1,9 @@
 from ..time_utils import UTCTimestamp
 from datetime import date, datetime
+import json
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -14,7 +15,7 @@ from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
     MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
-    StandardCycleTime, User,
+    StandardCycleTime, User, GovernanceAudit,
 )
 from ..schemas import LossEventCreate, MachineEntryCreate
 from ..services.oee import aggregate_oee_entries, calculate_oee
@@ -186,12 +187,18 @@ def save_machine_entry(payload: MachineEntryCreate, db: Session = Depends(get_db
 
 
 @router.put("/machine-entry/{entry_id}")
-def update_machine_entry(entry_id: int, payload: MachineEntryCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def update_machine_entry(entry_id: int, payload: MachineEntryCreate, request: Request,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(MachineShiftProduction, entry_id)
     if not row:
         raise HTTPException(404, "Machine shift entry not found")
-    if not db.info.get("reason"):
-        raise HTTPException(422, "Enter a correction reason before updating an OEE entry")
+    reason = (request.headers.get("X-Change-Reason") or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(422, "Enter a correction reason of at least 5 characters before updating an OEE entry")
+    before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
+              for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
+                          "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
+                          "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
     duplicate = db.scalar(select(MachineShiftProduction.id).where(
         MachineShiftProduction.production_date == payload.production_date,
         MachineShiftProduction.shift == payload.shift,
@@ -205,6 +212,10 @@ def update_machine_entry(entry_id: int, payload: MachineEntryCreate, db: Session
     data, context = _prepare_entry(db, payload)
     for key, value in data.items():
         setattr(row, key, value)
+    after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
+    db.add(GovernanceAudit(actor_id=user.id, event="OEE_ENTRY_CORRECTED", entity="machine_shift_production",
+                           entity_id=str(row.id), month=row.production_date.replace(day=1), reason=reason,
+                           before_json=json.dumps(before, default=str), after_json=json.dumps(after, default=str)))
     db.commit(); db.refresh(row)
     return {"entry": _entry_json(row, context), "warnings": context["warnings"]}
 
@@ -229,15 +240,24 @@ def save_loss(payload: LossEventCreate, db: Session = Depends(get_db), _: User =
 
 
 @router.put("/loss-events/{loss_id}")
-def update_loss(loss_id: int, payload: LossEventCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def update_loss(loss_id: int, payload: LossEventCreate, request: Request,
+                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(MachineLossEvent, loss_id)
     if not row:
         raise HTTPException(404, "Loss event not found")
-    if not db.info.get("reason"):
-        raise HTTPException(422, "Enter a correction reason before updating a loss event")
+    reason = (request.headers.get("X-Change-Reason") or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(422, "Enter a correction reason of at least 5 characters before updating a loss event")
+    before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
+              for key in ("loss_date", "shift", "product_id", "route_operation_id", "machine_id",
+                          "loss_category_id", "start_time", "end_time", "duration_min", "qty_loss", "remark")}
     data, category = _validate_loss(db, payload)
     for key, value in data.items():
         setattr(row, key, value)
+    after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
+    db.add(GovernanceAudit(actor_id=user.id, event="OEE_LOSS_CORRECTED", entity="machine_loss_events",
+                           entity_id=str(row.id), month=row.loss_date.replace(day=1), reason=reason,
+                           before_json=json.dumps(before, default=str), after_json=json.dumps(after, default=str)))
     db.commit(); db.refresh(row)
     return {"id": row.id, "category": category.name, "component": category.oee_component.value}
 
