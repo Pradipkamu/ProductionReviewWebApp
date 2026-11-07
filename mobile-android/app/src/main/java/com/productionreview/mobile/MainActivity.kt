@@ -872,11 +872,8 @@ class MainActivity : ComponentActivity() {
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                             ChoiceDropdown("Part number",masters?.products.orEmpty(),oeeProduct,{oeeProduct=it;oeeSummary=null;oeeOperation=null;oeeMachine=null})
-                                        }
-                                    }
-                                    oeeManagement?.optJSONObject("overall")?.let { overall ->
-                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                            Divider(color=Border)
+                                            oeeManagement?.optJSONObject("overall")?.let { overall ->
                                                 Text("CURRENT MONTH OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
                                                 Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -885,11 +882,7 @@ class MainActivity : ComponentActivity() {
                                                     MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f))
                                                 }
                                                 Text("This month • ${LocalDate.now().withDayOfMonth(1)} to ${LocalDate.now()}",color=Muted,fontSize=11.sp)
-                                            }
-                                        }
-                                    } ?: run {
-                                        Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=Color.White)) {
-                                            Text(if(oeeLoading) "Loading current-month OEE…" else oeeError ?: "Select a part number to view OEE.",Modifier.padding(16.dp),color=Muted)
+                                            } ?: Text(if(oeeLoading) "Loading current-month OEE…" else oeeError ?: "Select a part number to view OEE.",color=Muted,fontSize=12.sp)
                                         }
                                     }
                                     ScreenTitle("Machine / OEE", "Live machine effectiveness from production records")
