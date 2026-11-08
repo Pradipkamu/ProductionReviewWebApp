@@ -526,18 +526,20 @@ class MainActivity : ComponentActivity() {
                 scope.launch {
                     oeeLoading = true; oeeError = null; oeeSummary = null
                     try {
-                        val loadedRoutes = withContext(Dispatchers.IO) { ApiClient.loadRoutes(selectedProduct.id, oeeDate, auth) }
-                        oeeRoutes = loadedRoutes
-                        oeeOperation = loadedRoutes.firstOrNull()
-                        val selectedOperation = oeeOperation
-                        if (selectedOperation == null) {
+                        val routeCandidates = withContext(Dispatchers.IO) { ApiClient.loadRoutes(selectedProduct.id, oeeDate, auth) }
+                        val mapped = withContext(Dispatchers.IO) {
+                            routeCandidates.mapNotNull { operation ->
+                                val machines = ApiClient.loadOeeMachines(operation.id, oeeDate, auth)
+                                if (machines.isNotEmpty()) operation to machines else null
+                            }
+                        }
+                        oeeRoutes = mapped.map { it.first }
+                        oeeOperation = mapped.firstOrNull()?.first
+                        oeeMachines = mapped.firstOrNull()?.second.orEmpty()
+                        oeeMachine = oeeMachines.firstOrNull()
+                        if (oeeRoutes.isEmpty()) {
                             oeeMachine = null
-                            oeeError = "No active operation is available for this product and date."
-                        } else {
-                            val available = withContext(Dispatchers.IO) { ApiClient.loadOeeMachines(selectedOperation.id, oeeDate, auth) }
-                            oeeMachines = available
-                            oeeMachine = available.firstOrNull()
-                            if (oeeMachine == null) oeeError = "No active machine is available for this operation."
+                            oeeError = "No operations with active machine mapping are available for this part and date."
                         }
                     } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE scope." }
                     finally { oeeLoading = false }
@@ -587,6 +589,59 @@ class MainActivity : ComponentActivity() {
                 } else {
                     oeeRecentRecords = emptyList()
                     oeeRecentError = null
+                }
+            }
+
+            LaunchedEffect(homeTab, oeeMode, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate, oeeShift) {
+                val auth = token
+                val product = oeeProduct
+                val operation = oeeOperation
+                val machine = oeeMachine
+                if (homeTab == "OEE" && oeeMode == "ENTRY" && auth != null &&
+                    product != null && operation != null && machine != null) {
+                    oeeLoading = true
+                    try {
+                        if (oeeLossCategories.isEmpty()) {
+                            oeeLossCategories = withContext(Dispatchers.IO) { ApiClient.loadOeeLossCategories(auth) }
+                        }
+                        val context = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeEntryContext(product.id, operation.id, machine.id, oeeDate, oeeShift, auth)
+                        }
+                        val existing = context.optJSONObject("existing_entry")
+                        if (existing == null) {
+                            oeeEntryId = null
+                            oeeCorrectionReason = ""
+                            oeeShiftMinutes = "480"
+                            oeeBreakMinutes = "0"
+                            oeeGoodCount = "0"
+                            oeeRejectCount = "0"
+                            oeeEntryRemarks = ""
+                            oeeEntryLosses = listOf(OeeLossDraft())
+                            oeeError = "No saved entry exists. Enter production and loss details below."
+                        } else {
+                            oeeEntryId = existing.optInt("id").takeIf { it > 0 }
+                            oeeShiftMinutes = existing.optString("shift_duration_min", "480")
+                            oeeBreakMinutes = existing.optString("planned_break_min", "0")
+                            oeeGoodCount = existing.optString("good_count", "0")
+                            oeeRejectCount = existing.optString("reject_count", "0")
+                            oeeEntryRemarks = existing.optString("remarks", "")
+                            oeeCorrectionReason = ""
+                            val oldLosses = context.optJSONArray("existing_losses") ?: JSONArray()
+                            val loaded = (0 until oldLosses.length()).map { index ->
+                                val row = oldLosses.getJSONObject(index)
+                                OeeLossDraft(row.optInt("loss_category_id").takeIf { it > 0 },
+                                    row.optString("duration_min"), row.optString("qty_loss", "0"),
+                                    row.optString("remark", ""), true, row.optInt("id"),
+                                    row.optString("category"), row.optString("component"))
+                            }
+                            oeeEntryLosses = loaded + OeeLossDraft()
+                            oeeError = "Loaded existing entry #$oeeEntryId."
+                        }
+                    } catch (e: Exception) {
+                        oeeError = e.message ?: "Unable to load production entry."
+                    } finally {
+                        oeeLoading = false
+                    }
                 }
             }
 
@@ -960,6 +1015,9 @@ class MainActivity : ComponentActivity() {
                                                 oeeMachines=emptyList()
                                                 oeeSummary=null
                                                 oeeError=null
+                                                oeeMode="ENTRY"
+                                                oeeEntryId=null
+                                                oeeEntryLosses=listOf(OeeLossDraft())
                                                 val auth=token
                                                 if(auth!=null) loadOeeScope(auth,selected)
                                                 else oeeError="Please sign in again."
@@ -1009,7 +1067,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        listOf("SUMMARY","ENTRY","LOSS","MANAGEMENT").forEach { mode ->
+                                        listOf("SUMMARY","LOSS","MANAGEMENT").forEach { mode ->
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
                                         }
                                     }
@@ -1104,40 +1162,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     } else if(oeeMode=="ENTRY") {
                                         SectionLabel("Production entry", "Enter good and rejected output. Total and downtime are calculated automatically.")
-                                        OutlinedButton(onClick={
-                                            val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
-                                            if(auth==null||p==null||op==null||m==null)oeeError="Select product, operation and machine first."
-                                            else scope.launch {
-                                                oeeLoading=true
-                                                try {
-                                                    if(oeeLossCategories.isEmpty()) oeeLossCategories=withContext(Dispatchers.IO){ApiClient.loadOeeLossCategories(auth)}
-                                                    val ctx=withContext(Dispatchers.IO){ApiClient.loadOeeEntryContext(p.id,op.id,m.id,oeeDate,oeeShift,auth)}
-                                                    val existing=ctx.optJSONObject("existing_entry")
-                                                    if(existing==null){
-                                                        oeeEntryId=null;oeeCorrectionReason=""
-                                                        oeeShiftMinutes="480";oeeBreakMinutes="0";oeeGoodCount="0";oeeRejectCount="0";oeeEntryRemarks=""
-                                                        oeeEntryLosses=listOf(OeeLossDraft())
-                                                        oeeError="No saved entry exists. Complete the production and loss details below."
-                                                    } else {
-                                                        oeeEntryId=existing.optInt("id").takeIf{it>0}
-                                                        oeeShiftMinutes=existing.optString("shift_duration_min","480")
-                                                        oeeBreakMinutes=existing.optString("planned_break_min","0")
-                                                        oeeGoodCount=existing.optString("good_count","0")
-                                                        oeeRejectCount=existing.optString("reject_count","0")
-                                                        oeeEntryRemarks=existing.optString("remarks","")
-                                                        oeeCorrectionReason=""
-                                                        val oldLosses=ctx.optJSONArray("existing_losses") ?: JSONArray()
-                                                        val loaded=(0 until oldLosses.length()).map { i ->
-                                                            val row=oldLosses.getJSONObject(i)
-                                                            OeeLossDraft(row.optInt("loss_category_id").takeIf{it>0},row.optString("duration_min"),row.optString("qty_loss","0"),row.optString("remark",""),true,row.optInt("id"),row.optString("category"),row.optString("component"))
-                                                        }
-                                                        oeeEntryLosses=loaded+OeeLossDraft()
-                                                        oeeError="Loaded entry #${oeeEntryId}. Existing losses are shown; new losses can be added below."
-                                                    }
-                                                } catch(e:Exception){oeeError=e.message ?: "Unable to load entry context."}
-                                                finally{oeeLoading=false}
-                                            }
-                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text("LOAD / CHECK EXISTING ENTRY") }
+                                        Text(if(oeeLoading) "Loading production entry…" else if(oeeEntryId!=null) "Editing saved entry #$oeeEntryId" else "New production entry",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
                                         if(oeeEntryId!=null) {
                                             Text("Editing saved entry #${oeeEntryId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
                                             OutlinedTextField(oeeCorrectionReason,{oeeCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
