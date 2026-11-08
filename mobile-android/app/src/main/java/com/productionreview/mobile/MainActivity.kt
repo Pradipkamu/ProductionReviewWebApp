@@ -925,7 +925,25 @@ class MainActivity : ComponentActivity() {
                                                 oeeError=null
                                             })
                                             OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                                            ChoiceDropdown("Shift",listOf(Choice(1,"A"),Choice(2,"B"),Choice(3,"C")),null,{oeeShift=it.label;oeeSummary=null},oeeShift)
+                                            Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                Text("Shift",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    listOf("A","B","C").forEach { shiftOption ->
+                                                        FilterChip(
+                                                            selected=oeeShift==shiftOption,
+                                                            onClick={
+                                                                if(oeeShift!=shiftOption) {
+                                                                    oeeShift=shiftOption
+                                                                    oeeSummary=null
+                                                                    oeeError=null
+                                                                }
+                                                            },
+                                                            label={Text("Shift $shiftOption",maxLines=1,fontSize=12.sp)},
+                                                            modifier=Modifier.weight(1f)
+                                                        )
+                                                    }
+                                                }
+                                            }
                                             Button(onClick={token?.let{loadOeeScope(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&token!=null,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"LOADING…" else "LOAD MACHINE SCOPE") }
                                             if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
                                                 oeeOperation=oeeRoutes.firstOrNull{it.id==selected.id};oeeMachine=null;oeeMachines=emptyList();oeeSummary=null
