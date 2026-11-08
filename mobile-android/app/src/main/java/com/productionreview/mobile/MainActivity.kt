@@ -592,6 +592,59 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            LaunchedEffect(homeTab, oeeMode, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate, oeeShift) {
+                val auth = token
+                val product = oeeProduct
+                val operation = oeeOperation
+                val machine = oeeMachine
+                if (homeTab == "OEE" && oeeMode == "ENTRY" && auth != null &&
+                    product != null && operation != null && machine != null) {
+                    oeeLoading = true
+                    try {
+                        if (oeeLossCategories.isEmpty()) {
+                            oeeLossCategories = withContext(Dispatchers.IO) { ApiClient.loadOeeLossCategories(auth) }
+                        }
+                        val context = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeEntryContext(product.id, operation.id, machine.id, oeeDate, oeeShift, auth)
+                        }
+                        val existing = context.optJSONObject("existing_entry")
+                        if (existing == null) {
+                            oeeEntryId = null
+                            oeeCorrectionReason = ""
+                            oeeShiftMinutes = "480"
+                            oeeBreakMinutes = "0"
+                            oeeGoodCount = "0"
+                            oeeRejectCount = "0"
+                            oeeEntryRemarks = ""
+                            oeeEntryLosses = listOf(OeeLossDraft())
+                            oeeError = "No saved entry exists. Enter production and loss details below."
+                        } else {
+                            oeeEntryId = existing.optInt("id").takeIf { it > 0 }
+                            oeeShiftMinutes = existing.optString("shift_duration_min", "480")
+                            oeeBreakMinutes = existing.optString("planned_break_min", "0")
+                            oeeGoodCount = existing.optString("good_count", "0")
+                            oeeRejectCount = existing.optString("reject_count", "0")
+                            oeeEntryRemarks = existing.optString("remarks", "")
+                            oeeCorrectionReason = ""
+                            val oldLosses = context.optJSONArray("existing_losses") ?: JSONArray()
+                            val loaded = (0 until oldLosses.length()).map { index ->
+                                val row = oldLosses.getJSONObject(index)
+                                OeeLossDraft(row.optInt("loss_category_id").takeIf { it > 0 },
+                                    row.optString("duration_min"), row.optString("qty_loss", "0"),
+                                    row.optString("remark", ""), true, row.optInt("id"),
+                                    row.optString("category"), row.optString("component"))
+                            }
+                            oeeEntryLosses = loaded + OeeLossDraft()
+                            oeeError = "Loaded existing entry #$oeeEntryId."
+                        }
+                    } catch (e: Exception) {
+                        oeeError = e.message ?: "Unable to load production entry."
+                    } finally {
+                        oeeLoading = false
+                    }
+                }
+            }
+
             LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id) {
                 val auth = token
                 if (homeTab == "OEE" && auth != null) {
