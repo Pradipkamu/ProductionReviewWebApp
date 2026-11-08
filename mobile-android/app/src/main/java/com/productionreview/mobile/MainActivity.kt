@@ -149,10 +149,14 @@ private object ApiClient {
             val to=route.optString("effective_to").takeIf { it.isNotBlank() && it!="null" }
             if (from.isNotBlank() && from <= date && (to == null || to >= date)) {
                 val ops=route.optJSONArray("operations") ?: JSONArray()
-                val list=(0 until ops.length()).map { j ->
+                val list=(0 until ops.length()).mapNotNull { j ->
                     val op=ops.getJSONObject(j)
-                    RouteChoice(op.getInt("route_operation_id"), "${op.optInt("sequence_no")}. ${op.optString("operation")}")
-                }
+                    val operationId=op.optInt("route_operation_id")
+                    val operationName=op.optString("operation").trim()
+                    if(operationId>0 && operationName.isNotBlank()) {
+                        RouteChoice(operationId, "${op.optInt("sequence_no")}. $operationName")
+                    } else null
+                }.distinctBy { it.id }
                 candidates.add(from to list)
             }
         }
@@ -511,8 +515,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            fun loadOeeScope(auth: String) {
-                val selectedProduct = oeeProduct
+            fun loadOeeScope(auth: String, selectedProduct: Choice? = oeeProduct) {
                 if (selectedProduct == null) { oeeError = "Select a product first."; return }
                 scope.launch {
                     oeeLoading = true; oeeError = null; oeeSummary = null
@@ -543,7 +546,7 @@ class MainActivity : ComponentActivity() {
             }
             fun refreshOee(auth: String) {
                 val selectedProduct = oeeProduct; val selectedOperation = oeeOperation; val selectedMachine = oeeMachine
-                if (selectedProduct == null || selectedOperation == null || selectedMachine == null) { oeeError = "Load machine scope first."; return }
+                if (selectedProduct == null || selectedOperation == null || selectedMachine == null) { oeeError = "Select a part, applicable operation and machine first."; return }
                 scope.launch {
                     oeeLoading = true; oeeError = null
                     try {
@@ -923,6 +926,9 @@ class MainActivity : ComponentActivity() {
                                                 oeeMachines=emptyList()
                                                 oeeSummary=null
                                                 oeeError=null
+                                                val auth=token
+                                                if(auth!=null) loadOeeScope(auth,selected)
+                                                else oeeError="Please sign in again."
                                             })
                                             OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
                                             Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
@@ -944,7 +950,13 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 }
                                             }
-                                            Button(onClick={token?.let{loadOeeScope(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&token!=null,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"LOADING…" else "LOAD MACHINE SCOPE") }
+                                            if(oeeLoading) {
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
+                                                    CircularProgressIndicator(modifier=Modifier.size(18.dp),strokeWidth=2.dp)
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text("Loading applicable operations and machines…",color=Muted,fontSize=12.sp)
+                                                }
+                                            }
                                             if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
                                                 oeeOperation=oeeRoutes.firstOrNull{it.id==selected.id};oeeMachine=null;oeeMachines=emptyList();oeeSummary=null
                                                 val auth=token
@@ -988,7 +1000,7 @@ class MainActivity : ComponentActivity() {
                                                     EmptyState(
                                                         if (oeeLoading) "Loading OEE summary" else "No OEE records for this scope",
                                                         if (oeeProduct == null || oeeOperation == null || oeeMachine == null)
-                                                            "Select a part, load its process and machine, then refresh OEE."
+                                                            "Select a part to load its applicable operations and available machines automatically."
                                                         else "No saved production entry was found for this date and shift. Use Production Entry to record output."
                                                     )
                                                 } else {
