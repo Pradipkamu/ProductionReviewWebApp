@@ -843,18 +843,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             } else {
-                                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
-                                    Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                            Text("Welcome back", color = Muted, fontSize = 12.sp)
-                                            Text(account!!.fullName.ifBlank { account!!.username }, color = Navy, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                            Text(account!!.role.replace("_", " "), color = Teal, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFFE7F1F8)), contentAlignment = Alignment.Center) {
-                                            Icon(Icons.Filled.Person, contentDescription = null, tint = Navy, modifier = Modifier.size(24.dp))
-                                        }
-                                    }
-                                }
                                 val isManager = account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")
                                 val totalOpen = if (isManager) pendingActionGroups.sumOf { it.openCount } else pendingActions.size
                                 val totalOverdue = if (isManager) pendingActionGroups.sumOf { it.overdueCount } else pendingActions.count { it.overdue }
@@ -1067,7 +1055,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        listOf("SUMMARY","LOSS","MANAGEMENT").forEach { mode ->
+                                        listOf("SUMMARY","MANAGEMENT").forEach { mode ->
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
                                         }
                                     }
@@ -1260,75 +1248,7 @@ class MainActivity : ComponentActivity() {
                                                 Text("${row.optString("date")}  •  OEE ${"%.1f".format(row.optDouble("oee_reported")*100)}%  (A ${"%.1f".format(row.optDouble("availability")*100)} / P ${"%.1f".format(row.optDouble("performance_raw")*100)} / Q ${"%.1f".format(row.optDouble("quality")*100)})",color=Muted,fontSize=11.sp)
                                             }
                                         }
-                                    } else if(oeeMode=="LOSS") {
-                                        SectionLabel("Classified machine-loss capture", "Select the correct OEE component from the loss master")
-                                        val savedLosses=oeeSummary?.optJSONArray("losses") ?: JSONArray()
-                                        if(savedLosses.length()>0) {
-                                            SectionLabel("Existing loss events", "Load a record below to make an audited correction")
-                                            for(i in 0 until savedLosses.length()) {
-                                                val row=savedLosses.getJSONObject(i)
-                                                OutlinedButton(onClick={
-                                                    oeeEditingLossId=row.optInt("id").takeIf{it>0}
-                                                    oeeLossCategory=oeeLossCategories.firstOrNull{it.id==row.optInt("loss_category_id")}
-                                                    oeeLossDuration=row.optString("duration_min")
-                                                    oeeLossQty=row.optString("qty_loss","0")
-                                                    oeeLossRemark=row.optString("remark","")
-                                                    oeeLossCorrectionReason=""
-                                                },modifier=Modifier.fillMaxWidth()) {
-                                                    Text("#${row.optInt("id")} • ${row.optString("category")} • ${row.optString("duration_min")} min")
-                                                }
-                                            }
-                                        }
-                                        if(oeeEditingLossId!=null) {
-                                            Text("Correcting loss event #${oeeEditingLossId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
-                                            OutlinedTextField(oeeLossCorrectionReason,{oeeLossCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
-                                            TextButton(onClick={oeeEditingLossId=null;oeeLossCorrectionReason=""}){Text("CANCEL CORRECTION")}
-                                        }
-                                        if(oeeLossCategories.isNotEmpty()) ChoiceDropdown("Loss category",oeeLossCategories,oeeLossCategory,{oeeLossCategory=it})
-                                        OutlinedTextField(oeeLossDuration,{oeeLossDuration=it},label={Text("Loss duration (min) *")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeLossQty,{oeeLossQty=it},label={Text("Quantity loss (optional)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeLossRemark,{oeeLossRemark=it},label={Text("Loss details / remark")},modifier=Modifier.fillMaxWidth(),minLines=2)
-                                        Button(onClick={
-                                            val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine;val category=oeeLossCategory
-                                            if(auth==null||p==null||op==null||m==null||category==null) oeeError="Load machine scope and select a loss category."
-                                            else if(oeeLossDuration.toDoubleOrNull()==null||oeeLossDuration.toDouble()<=0) oeeError="Enter a valid loss duration."
-                                            else scope.launch {
-                                                oeeLoading=true;oeeError=null
-                                                try {
-                                                    val payload=JSONObject().put("loss_date",oeeDate).put("shift",oeeShift)
-                                                        .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
-                                                        .put("loss_category_id",category.id).put("duration_min",oeeLossDuration.toDouble())
-                                                        .put("qty_loss",oeeLossQty.toDoubleOrNull()?:0.0).put("remark",oeeLossRemark)
-                                                    val editingId=oeeEditingLossId
-                                                    if(editingId!=null && oeeLossCorrectionReason.trim().length<5) throw IllegalArgumentException("Enter a correction reason of at least 5 characters.")
-                                                    val saved=withContext(Dispatchers.IO){
-                                                        if(editingId==null) ApiClient.saveOeeLoss(payload,auth)
-                                                        else ApiClient.correctOeeLoss(editingId,payload,oeeLossCorrectionReason.trim(),auth)
-                                                    }
-                                                    oeeSavedLossId=if(editingId==null)saved.optInt("id").takeIf{it>0} else null
-                                                    oeeEditingLossId=null;oeeLossCorrectionReason=""
-                                                    oeeError=(if(editingId==null)"Loss saved: " else "Loss correction saved and audited: ")+saved.optString("category")+" • "+saved.optString("component")
-                                                    refreshOee(auth)
-                                                } catch(e:Exception){oeeError=e.message ?: "Unable to save loss event."}
-                                                finally{oeeLoading=false}
-                                            }
-                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeEditingLossId==null)"SAVE LOSS EVENT" else "SAVE AUDITED LOSS CORRECTION") }
-                                        oeeSavedLossId?.let { lossId ->
-                                            OutlinedButton(onClick={
-                                                val auth=token
-                                                if(auth!=null) scope.launch {
-                                                    oeeLoading=true
-                                                    try {
-                                                        val result=withContext(Dispatchers.IO){ApiClient.raiseOeeLossAction(lossId,auth)}
-                                                        oeeError="Action ${result.optString("action_no")} linked to loss event."
-                                                        oeeSavedLossId=null
-                                                        refreshOee(auth)
-                                                    } catch(e:Exception){oeeError=e.message ?: "Unable to raise action."}
-                                                    finally{oeeLoading=false}
-                                                }
-                                            },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text("RAISE WHY-WHY ACTION FOR THIS LOSS") }
-                                        }
-                                    }
+
                                 } else if(homeTab=="HISTORY") {
                                     ScreenTitle("Action history", "Review previous action updates")
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
