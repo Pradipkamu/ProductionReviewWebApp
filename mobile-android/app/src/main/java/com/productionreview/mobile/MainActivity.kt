@@ -1060,6 +1060,16 @@ class MainActivity : ComponentActivity() {
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
                                         }
                                     }
+                                        oeeSuccess?.let { success ->
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF6F2)),
+                                                shape = RoundedCornerShape(12.dp),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBE8DD))
+                                            ) {
+                                                Text(success, modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                                    color = Success, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                            }
+                                        }
                                     if(oeeMode=="SUMMARY") {
                                         SectionLabel("Selected scope OEE", "Live figures for the selected part, process, machine, date and shift")
                                         val selectedSummary = oeeSummary?.optJSONObject("summary")
@@ -1224,16 +1234,6 @@ class MainActivity : ComponentActivity() {
                                                 finally{oeeLoading=false}
                                             }
                                         },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"SAVING…" else "SAVE PRODUCTION ENTRY") }
-                                        oeeSuccess?.let { success ->
-                                            Card(
-                                                colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF6F2)),
-                                                shape = RoundedCornerShape(12.dp),
-                                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBE8DD))
-                                            ) {
-                                                Text(success, modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                                    color = Success, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                            }
-                                        }
                                         Text("Total production = good + rejected. Availability downtime is the sum of Availability-category loss cards.",color=Muted,fontSize=11.sp)
                                     } else if(oeeMode=="MANAGEMENT") {
                                         SectionLabel("OEE management", "Period trend, machine ranking and classified loss Pareto")
