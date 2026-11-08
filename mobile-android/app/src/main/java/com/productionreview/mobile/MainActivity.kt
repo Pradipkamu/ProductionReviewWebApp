@@ -1248,7 +1248,7 @@ class MainActivity : ComponentActivity() {
                                                 Text("${row.optString("date")}  •  OEE ${"%.1f".format(row.optDouble("oee_reported")*100)}%  (A ${"%.1f".format(row.optDouble("availability")*100)} / P ${"%.1f".format(row.optDouble("performance_raw")*100)} / Q ${"%.1f".format(row.optDouble("quality")*100)})",color=Muted,fontSize=11.sp)
                                             }
                                         }
-
+                                    }
                                 } else if(homeTab=="HISTORY") {
                                     ScreenTitle("Action history", "Review previous action updates")
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
