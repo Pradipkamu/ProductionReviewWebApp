@@ -461,6 +461,37 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
     }
 
 
+@router.get("/recent-records")
+def recent_records(from_date: date, to_date: date, shift: str, machine_id: int,
+                  product_id: int, route_operation_id: int,
+                  db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Return daily OEE entries for one selected machine/part/operation/shift scope."""
+    normalized_shift = shift.strip().upper()
+    if normalized_shift not in {"A", "B", "C"}:
+        raise HTTPException(422, "shift must be A, B or C")
+    if to_date < from_date:
+        raise HTTPException(422, "to_date must be on or after from_date")
+    rows = db.scalars(
+        select(MachineShiftProduction).where(
+            MachineShiftProduction.production_date >= from_date,
+            MachineShiftProduction.production_date <= to_date,
+            MachineShiftProduction.shift == normalized_shift,
+            MachineShiftProduction.machine_id == machine_id,
+            MachineShiftProduction.product_id == product_id,
+            MachineShiftProduction.route_operation_id == route_operation_id,
+        ).order_by(MachineShiftProduction.production_date.desc(), MachineShiftProduction.id.desc())
+    ).all()
+    records = []
+    for row in rows:
+        try:
+            context = _context(db, row.product_id, row.route_operation_id, row.machine_id, row.production_date)
+        except HTTPException:
+            context = None
+        records.append(_entry_json(row, context))
+    return {"from_date": from_date, "to_date": to_date, "shift": normalized_shift,
+            "count": len(records), "records": records}
+
+
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
                        route_operation_id: int | None = None, product_id: str | None = None, plant: str | None = None,

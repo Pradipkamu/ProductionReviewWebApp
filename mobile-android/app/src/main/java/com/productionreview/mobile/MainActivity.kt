@@ -173,6 +173,9 @@ private object ApiClient {
     fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
         request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
 
+    fun loadOeeRecentRecords(fromDate: String, toDate: String, shift: String, machineId: Int, productId: Int, routeOperationId: Int, token: String): JSONObject =
+        request("/oee/recent-records?from_date=$fromDate&to_date=$toDate&shift=$shift&machine_id=$machineId&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
+
     fun saveOeeMachineEntry(payload: JSONObject, token: String): JSONObject =
         request("/oee/machine-entry", "POST", payload, token)
 
@@ -425,6 +428,9 @@ class MainActivity : ComponentActivity() {
             var oeeMachine by remember { mutableStateOf<Choice?>(null) }
             var oeeMachines by remember { mutableStateOf<List<Choice>>(emptyList()) }
             var oeeSummary by remember { mutableStateOf<JSONObject?>(null) }
+            var oeeRecentRecords by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+            var oeeRecentLoading by remember { mutableStateOf(false) }
+            var oeeRecentError by remember { mutableStateOf<String?>(null) }
             var oeeError by remember { mutableStateOf<String?>(null) }
             var oeeLoading by remember { mutableStateOf(false) }
             var oeeMode by remember { mutableStateOf("SUMMARY") }
@@ -553,6 +559,34 @@ class MainActivity : ComponentActivity() {
                         oeeSummary = withContext(Dispatchers.IO) { ApiClient.loadOeeSummary(selectedMachine.id, oeeDate, oeeShift, selectedProduct.id, selectedOperation.id, auth) }
                     } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE summary." }
                     finally { oeeLoading = false }
+                }
+            }
+
+            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate, oeeShift) {
+                val auth = token
+                val productId = oeeProduct?.id
+                val operationId = oeeOperation?.id
+                val machineId = oeeMachine?.id
+                if (homeTab == "OEE" && auth != null && productId != null && operationId != null && machineId != null) {
+                    oeeRecentLoading = true
+                    oeeRecentError = null
+                    try {
+                        val endDate = LocalDate.parse(oeeDate)
+                        val startDate = endDate.minusDays(6)
+                        val response = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeRecentRecords(startDate.toString(), endDate.toString(), oeeShift, machineId, productId, operationId, auth)
+                        }
+                        val rows = response.optJSONArray("records") ?: JSONArray()
+                        oeeRecentRecords = (0 until rows.length()).map { rows.getJSONObject(it) }
+                    } catch (e: Exception) {
+                        oeeRecentRecords = emptyList()
+                        oeeRecentError = e.message ?: "Unable to load recent OEE records."
+                    } finally {
+                        oeeRecentLoading = false
+                    }
+                } else {
+                    oeeRecentRecords = emptyList()
+                    oeeRecentError = null
                 }
             }
 
@@ -1035,6 +1069,27 @@ class MainActivity : ComponentActivity() {
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                         Text("Entry #${entry.optInt("id")} • ${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
+                                                        Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(Modifier.height(8.dp))
+                                        SectionLabel("Last 7 days • Shift $oeeShift", "${oeeRecentRecords.size} record(s) from ${runCatching { LocalDate.parse(oeeDate).minusDays(6) }.getOrNull() ?: oeeDate} to $oeeDate")
+                                        when {
+                                            oeeRecentLoading -> Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
+                                                CircularProgressIndicator(modifier=Modifier.size(18.dp),strokeWidth=2.dp)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Loading last 7 days…",color=Muted,fontSize=12.sp)
+                                            }
+                                            oeeRecentError != null -> Text(oeeRecentError!!,color=Danger,fontSize=12.sp)
+                                            oeeRecentRecords.isEmpty() -> EmptyState("No OEE records in the last 7 days", "No saved entries were found for Shift $oeeShift in the selected part, operation and machine.")
+                                            else -> oeeRecentRecords.forEach { entry ->
+                                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                        Text("${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                                                     }
