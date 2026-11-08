@@ -21,14 +21,24 @@ export default function OEE(){
  useEffect(()=>{if(!p)return;api(`/masters/routes/${p}?on_date=${d}`).then((versions:any)=>{const active=versions.find((v:any)=>v.effective_from<=d&&(!v.effective_to||v.effective_to>=d))||versions[0];const ops=active?.operations||[];setRoutes(ops);setOp(ops[0]?String(ops[0].route_operation_id):'')}).catch((e:any)=>setError(e.message))},[p,d])
  useEffect(()=>{if(!op)return;api(`/oee/available-machines?route_operation_id=${op}&production_date=${d}`).then((r:any)=>{const available=r.machines||allMachines.filter(x=>x.active);setMachines(available);setM(old=>available.some((x:any)=>String(x.id)===old)?old:(available[0]?String(available[0].id):''));if(r.warning)setMsg(r.warning)}).catch((e:any)=>setError(e.message))},[op,d,allMachines])
 
- async function loadContext(){
+ async function loadContext(editExisting=false){
   if(!p||!op||!m)return
   try{
    const r:any=await api(`/oee/entry-context?product_id=${p}&route_operation_id=${op}&machine_id=${m}&production_date=${d}&shift=${shift}`)
    setContext(r);setError('')
-   if(r.existing_entry){const x=r.existing_entry;setEntryId(x.id);setEntry({shift_duration_min:x.shift_duration_min,planned_break_min:x.planned_break_min,downtime_min:x.downtime_min,good_count:x.good_count,reject_count:x.reject_count,ideal_cycle_time_sec:x.ideal_cycle_time_sec,remarks:x.remarks||''})}
-   else{setEntryId(null);setEntry({...emptyEntry,ideal_cycle_time_sec:r.ideal_cycle_time_sec||0})}
-   setLosses([...(r.existing_losses||[]).map((x:any)=>({...x,loss_category_id:String(x.loss_category_id),saved:true})),{...emptyLoss}])
+   if(editExisting&&r.existing_entry){
+    const x=r.existing_entry
+    setEntryId(x.id)
+    setEntry({shift_duration_min:x.shift_duration_min,planned_break_min:x.planned_break_min,downtime_min:x.downtime_min,good_count:x.good_count,reject_count:x.reject_count,ideal_cycle_time_sec:x.ideal_cycle_time_sec,remarks:x.remarks||''})
+    setLosses([...(r.existing_losses||[]).map((x:any)=>({...x,loss_category_id:String(x.loss_category_id),saved:true})),{...emptyLoss}])
+    setReason('')
+    setMsg(`Editing saved entry #${x.id}. Enter a correction reason before saving.`)
+   }else{
+    setEntryId(null)
+    setEntry({...emptyEntry,ideal_cycle_time_sec:r.ideal_cycle_time_sec||0})
+    setLosses([{...emptyLoss}])
+    setReason('')
+   }
   }catch(e:any){setContext(null);setEntryId(null);setError(e.message)}
  }
  async function refresh(){if(!m)return;try{const q=new URLSearchParams({machine_id:m,summary_date:d,shift});if(p)q.set('product_id',p);if(op)q.set('route_operation_id',op);setSum(await api(`/oee/machine-summary?${q}`))}catch(e:any){setError(e.message)}}
@@ -97,6 +107,6 @@ export default function OEE(){
   {mgmt.recurring_losses?.length>0&&<div className="warning-box"><b>Recurring losses needing action:</b> {mgmt.recurring_losses.map((x:any)=>`${x.category} (${x.events} events)`).join(', ')}</div>}
   <div className="table-wrap"><table><thead><tr><th>Loss</th><th>Component</th><th>Events</th><th>Minutes</th><th>Qty loss</th></tr></thead><tbody>{(mgmt.loss_pareto||[]).slice(0,10).map((x:any)=><tr key={x.category}><td><b>{x.category}</b></td><td>{x.component||'—'}</td><td>{x.events}</td><td>{num(x.minutes)}</td><td>{num(x.qty_loss)}</td></tr>)}{!mgmt.loss_pareto?.length&&<tr><td colSpan={5} className="muted">No classified losses in this period.</td></tr>}</tbody></table></div></div>
   <div className="table-wrap"><table><thead><tr><th>Date</th><th>A</th><th>P</th><th>Q</th><th>OEE</th></tr></thead><tbody>{(mgmt.trend||[]).map((x:any)=><tr key={x.date}><td>{x.date}</td><td>{pct(x.availability)}</td><td>{pct(x.performance_raw)}</td><td>{pct(x.quality)}</td><td><b>{pct(x.oee_reported)}</b></td></tr>)}</tbody></table></div></>}</section>
-  <section className="panel"><div className="panel-title"><div><h2>Saved OEE records</h2><p>One row per selected machine, product, operation and shift.</p></div><Link to={`/insights?kind=oee&from_date=${d}&to_date=${d}&machine_id=${m}`}>Open drill-down</Link></div><div className="table-wrap"><table><thead><tr><th>ID</th><th>Total</th><th>Good</th><th>Reject</th><th>Downtime</th><th>Cycle</th><th>A</th><th>P</th><th>Q</th><th>OEE</th></tr></thead><tbody>{(sum?.entries||[]).map((x:any)=><tr key={x.id}><td>#{x.id}</td><td>{num(x.total_count)}</td><td>{num(x.good_count)}</td><td>{num(x.reject_count)}</td><td>{num(x.downtime_min)} min</td><td>{num(x.ideal_cycle_time_sec)} sec</td><td>{pct(x.availability)}</td><td className={x.performance_master_warning?'neg':''}>{pct(x.performance_raw)}</td><td>{pct(x.quality)}</td><td><b>{pct(x.oee_reported)}</b></td></tr>)}{!sum?.entries?.length&&<tr><td colSpan={10} className="muted">No shift entry saved yet.</td></tr>}</tbody></table></div></section>
+  <section className="panel"><div className="panel-title"><div><h2>Saved OEE records</h2><p>One row per selected machine, product, operation and shift.</p></div><Link to={`/insights?kind=oee&from_date=${d}&to_date=${d}&machine_id=${m}`}>Open drill-down</Link></div><div className="table-wrap"><table><thead><tr><th>ID</th><th>Total</th><th>Good</th><th>Reject</th><th>Downtime</th><th>Cycle</th><th>A</th><th>P</th><th>Q</th><th>OEE</th><th>Action</th></tr></thead><tbody>{(sum?.entries||[]).map((x:any)=><tr key={x.id}><td>#{x.id}</td><td>{num(x.total_count)}</td><td>{num(x.good_count)}</td><td>{num(x.reject_count)}</td><td>{num(x.downtime_min)} min</td><td>{num(x.ideal_cycle_time_sec)} sec</td><td>{pct(x.availability)}</td><td className={x.performance_master_warning?'neg':''}>{pct(x.performance_raw)}</td><td>{pct(x.quality)}</td><td><b>{pct(x.oee_reported)}</b></td><td><button type="button" className="small secondary" onClick={()=>loadContext(true)}>Edit</button></td></tr>)}{!sum?.entries?.length&&<tr><td colSpan={11} className="muted">No shift entry saved yet.</td></tr>}</tbody></table></div></section>
  </>
 }
