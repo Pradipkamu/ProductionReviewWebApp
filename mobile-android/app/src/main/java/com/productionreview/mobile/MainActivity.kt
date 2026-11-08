@@ -432,6 +432,7 @@ class MainActivity : ComponentActivity() {
             var oeeRecentLoading by remember { mutableStateOf(false) }
             var oeeRecentError by remember { mutableStateOf<String?>(null) }
             var oeeError by remember { mutableStateOf<String?>(null) }
+            var oeeSuccess by remember { mutableStateOf<String?>(null) }
             var oeeLoading by remember { mutableStateOf(false) }
             var oeeMode by remember { mutableStateOf("SUMMARY") }
             var oeeShiftMinutes by remember { mutableStateOf("480") }
@@ -1059,6 +1060,16 @@ class MainActivity : ComponentActivity() {
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
                                         }
                                     }
+                                        oeeSuccess?.let { success ->
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF6F2)),
+                                                shape = RoundedCornerShape(12.dp),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBE8DD))
+                                            ) {
+                                                Text(success, modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                                    color = Success, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                            }
+                                        }
                                     if(oeeMode=="SUMMARY") {
                                         SectionLabel("Selected scope OEE", "Live figures for the selected part, process, machine, date and shift")
                                         val selectedSummary = oeeSummary?.optJSONObject("summary")
@@ -1205,9 +1216,19 @@ class MainActivity : ComponentActivity() {
                                                         ApiClient.saveOeeEntryWithLosses(payload,losses,auth,oeeEntryId,oeeEntryId?.let{oeeCorrectionReason.trim()})
                                                     }
                                                     val entry=saved.optJSONObject("entry")
-                                                    oeeEntryId=entry?.optInt("id")?.takeIf{it>0} ?: oeeEntryId
-                                                    oeeCorrectionReason=""
-                                                    oeeError=if(oeeEntryId!=null)"Production saved. Total quantity and downtime calculated from the entered values." else "Production saved."
+                                                    val savedEntryId = entry?.optInt("id")?.takeIf { it > 0 } ?: oeeEntryId
+                                                    // A successful correction must leave edit mode. Keeping the returned ID
+                                                    // here made the form look as though the save had not completed.
+                                                    oeeEntryId = null
+                                                    oeeCorrectionReason = ""
+                                                    oeeEntryLosses = listOf(OeeLossDraft())
+                                                    oeeMode = "SUMMARY"
+                                                    oeeError = null
+                                                    oeeSuccess = if (savedEntryId != null) {
+                                                        "Production entry #$savedEntryId saved successfully. Edit mode closed."
+                                                    } else {
+                                                        "Production entry saved successfully."
+                                                    }
                                                     refreshOee(auth)
                                                 } catch(e:Exception){oeeError=e.message ?: "Unable to save production entry and losses."}
                                                 finally{oeeLoading=false}
