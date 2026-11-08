@@ -35,7 +35,7 @@
 .daily-action-cell.has-actions strong{color:#b45309}
 
 /* v0.4.7: controlled OEE capture and loss-to-action workflow */
-.oee-scope .filters{align-items:end;flex-wrap:wrap;margin-bottom:8px}.oee-scope .filters label{min-width:210px;flex:1;margin:0}.oee-entry-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:0 12px}.oee-entry-grid .span-2{grid-column:span 2}.oee-entry-grid input[readonly]{background:#eef3f8;color:#40526c;font-weight:700}.panel-title p{margin:4px 0 0;color:#758297;font-size:12px}@media(max-width:850px){.oee-entry-grid{grid-template-columns:1fr 1fr}.oee-entry-grid .span-2{grid-column:span 2}}@media(max-width:540px){.oee-entry-grid{grid-template-columns:1fr}.oee-entry-grid .span-2{grid-column:auto}}
+.oee-scope .filters{align-items:end;flex-wrap:wrap;margin-bottom:8px}.oee-scope .filters label{min-width:210px;flex:1;margin:0}.oee-entry-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:0 12px}.oee-entry-grid .span-2{grid-column:span 2}.oee-entry-grid input[readonly]{background:#eef3f8;color:#40526c;font-weight:700}.oee-loss-list{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}.oee-loss-card{border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0;background:#fbfcfe}.oee-loss-card .panel-title{margin-bottom:8px}.oee-loss-card .panel-title b{color:var(--navy)}.panel-title p{margin:4px 0 0;color:#758297;font-size:12px}@media(max-width:850px){.oee-entry-grid{grid-template-columns:1fr 1fr}.oee-entry-grid .span-2{grid-column:span 2}}@media(max-width:540px){.oee-entry-grid{grid-template-columns:1fr}.oee-entry-grid .span-2{grid-column:auto}}
 
 /* click-to-filter report charts */
 .rank-row{border-radius:8px;padding:3px 4px}

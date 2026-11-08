@@ -1,8 +1,9 @@
 from ..time_utils import UTCTimestamp
 from datetime import date, datetime
+import json
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -14,10 +15,10 @@ from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
     MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
-    StandardCycleTime, User,
+    StandardCycleTime, User, GovernanceAudit,
 )
-from ..schemas import LossEventCreate, MachineEntryCreate
-from ..services.oee import calculate_oee
+from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate
+from ..services.oee import aggregate_oee_entries, calculate_oee
 from ..services.filtering import csv_ints, csv_strings
 
 router = APIRouter(prefix="/oee", tags=["oee"])
@@ -160,11 +161,28 @@ def entry_context(product_id: int, route_operation_id: int, machine_id: int, pro
         MachineShiftProduction.route_operation_id == route_operation_id,
         MachineShiftProduction.machine_id == machine_id,
     ).order_by(MachineShiftProduction.id.desc()).limit(1))
+    existing_losses = db.execute(
+        select(MachineLossEvent, LossCategory)
+        .join(LossCategory, LossCategory.id == MachineLossEvent.loss_category_id)
+        .where(
+            MachineLossEvent.loss_date == production_date,
+            MachineLossEvent.shift == shift.strip().upper(),
+            MachineLossEvent.product_id == product_id,
+            MachineLossEvent.route_operation_id == route_operation_id,
+            MachineLossEvent.machine_id == machine_id,
+        ).order_by(MachineLossEvent.id)
+    ).all()
     return {
         "product": context["product"].name, "operation": context["operation"].name,
         "machine": context["machine"].code, "allowed_machine_ids": context["allowed_machine_ids"],
         "ideal_cycle_time_sec": float(context["cycle"].ideal_cycle_time_sec) if context["cycle"] else None,
         "warnings": context["warnings"], "existing_entry": _entry_json(existing, context) if existing else None,
+        "existing_losses": [{
+            "id": event.id, "loss_category_id": event.loss_category_id,
+            "category": category.name, "component": category.oee_component.value,
+            "duration_min": float(event.duration_min), "qty_loss": float(event.qty_loss),
+            "remark": event.remark or "",
+        } for event, category in existing_losses],
     }
 
 
@@ -185,13 +203,127 @@ def save_machine_entry(payload: MachineEntryCreate, db: Session = Depends(get_db
     return {"entry": _entry_json(row, context), "warnings": context["warnings"]}
 
 
+
+@router.post("/machine-entry-with-losses")
+def save_machine_entry_with_losses(
+    payload: OEEEntryWithLossesCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Atomically save/correct a production entry and append its classified loss events."""
+    entry_payload = payload.entry
+    row = db.get(MachineShiftProduction, payload.entry_id) if payload.entry_id else None
+    if payload.entry_id and not row:
+        raise HTTPException(404, "Machine shift entry not found")
+
+    if row:
+        reason = (payload.correction_reason or "").strip()
+        if len(reason) < 5:
+            raise HTTPException(422, "Enter a correction reason of at least 5 characters")
+        scope = (row.production_date, row.shift, row.product_id, row.route_operation_id, row.machine_id)
+        requested_scope = (entry_payload.production_date, entry_payload.shift, entry_payload.product_id,
+                           entry_payload.route_operation_id, entry_payload.machine_id)
+        if scope != requested_scope:
+            raise HTTPException(422, "An existing entry's date, shift, product, operation and machine cannot be changed")
+        before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
+                  for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
+                              "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
+                              "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
+    else:
+        duplicate = db.scalar(select(MachineShiftProduction.id).where(
+            MachineShiftProduction.production_date == entry_payload.production_date,
+            MachineShiftProduction.shift == entry_payload.shift,
+            MachineShiftProduction.product_id == entry_payload.product_id,
+            MachineShiftProduction.route_operation_id == entry_payload.route_operation_id,
+            MachineShiftProduction.machine_id == entry_payload.machine_id,
+        ).limit(1))
+        if duplicate:
+            raise HTTPException(409, f"This machine shift entry already exists as #{duplicate}; load and correct it instead of duplicating it")
+        before = None
+
+    data, context = _prepare_entry(db, entry_payload)
+    validated_losses: list[tuple[dict, LossCategory]] = []
+    availability_downtime = Decimal("0")
+    if row:
+        previous_losses = db.execute(
+            select(MachineLossEvent, LossCategory)
+            .join(LossCategory, LossCategory.id == MachineLossEvent.loss_category_id)
+            .where(
+                MachineLossEvent.loss_date == entry_payload.production_date,
+                MachineLossEvent.shift == entry_payload.shift,
+                MachineLossEvent.product_id == entry_payload.product_id,
+                MachineLossEvent.route_operation_id == entry_payload.route_operation_id,
+                MachineLossEvent.machine_id == entry_payload.machine_id,
+            )
+        ).all()
+        availability_downtime += sum(
+            (event.duration_min for event, category in previous_losses
+             if category.oee_component == OEEComponent.AVAILABILITY),
+            Decimal("0"),
+        )
+    for loss_payload in payload.losses:
+        loss_data, category = _validate_loss(db, loss_payload)
+        validated_losses.append((loss_data, category))
+        if category.oee_component == OEEComponent.AVAILABILITY:
+            availability_downtime += loss_payload.duration_min
+
+    planned_minutes = entry_payload.shift_duration_min - entry_payload.planned_break_min
+    if availability_downtime > planned_minutes:
+        raise HTTPException(422, "Availability loss minutes cannot exceed planned production time")
+    data["downtime_min"] = availability_downtime
+
+    try:
+        if row:
+            for key, value in data.items():
+                setattr(row, key, value)
+        else:
+            row = MachineShiftProduction(**data)
+            db.add(row)
+        db.flush()
+        if before is not None:
+            after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
+            db.add(GovernanceAudit(
+                actor_id=user.id, event="OEE_ENTRY_CORRECTED", entity="machine_shift_production",
+                entity_id=str(row.id), month=row.production_date.replace(day=1), reason=payload.correction_reason.strip(),
+                before_json=json.dumps(before, default=str), after_json=json.dumps(after, default=str),
+            ))
+        saved_losses = []
+        for loss_data, category in validated_losses:
+            event = MachineLossEvent(**loss_data)
+            db.add(event)
+            db.flush()
+            saved_losses.append({
+                "id": event.id, "category": category.name,
+                "component": category.oee_component.value,
+                "duration_min": float(event.duration_min),
+            })
+        db.commit()
+        db.refresh(row)
+        return {
+            "entry": _entry_json(row, context),
+            "losses": saved_losses,
+            "warnings": context["warnings"],
+            "total_count": float(row.total_count),
+            "downtime_min": float(row.downtime_min),
+        }
+    except Exception:
+        db.rollback()
+        raise
+
+
 @router.put("/machine-entry/{entry_id}")
-def update_machine_entry(entry_id: int, payload: MachineEntryCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def update_machine_entry(entry_id: int, payload: MachineEntryCreate, request: Request,
+                         db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(MachineShiftProduction, entry_id)
     if not row:
         raise HTTPException(404, "Machine shift entry not found")
-    if not db.info.get("reason"):
-        raise HTTPException(422, "Enter a correction reason before updating an OEE entry")
+    reason = (request.headers.get("X-Change-Reason") or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(422, "Enter a correction reason of at least 5 characters before updating an OEE entry")
+    before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
+              for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
+                          "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
+                          "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
     duplicate = db.scalar(select(MachineShiftProduction.id).where(
         MachineShiftProduction.production_date == payload.production_date,
         MachineShiftProduction.shift == payload.shift,
@@ -205,6 +337,10 @@ def update_machine_entry(entry_id: int, payload: MachineEntryCreate, db: Session
     data, context = _prepare_entry(db, payload)
     for key, value in data.items():
         setattr(row, key, value)
+    after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
+    db.add(GovernanceAudit(actor_id=user.id, event="OEE_ENTRY_CORRECTED", entity="machine_shift_production",
+                           entity_id=str(row.id), month=row.production_date.replace(day=1), reason=reason,
+                           before_json=json.dumps(before, default=str), after_json=json.dumps(after, default=str)))
     db.commit(); db.refresh(row)
     return {"entry": _entry_json(row, context), "warnings": context["warnings"]}
 
@@ -229,15 +365,24 @@ def save_loss(payload: LossEventCreate, db: Session = Depends(get_db), _: User =
 
 
 @router.put("/loss-events/{loss_id}")
-def update_loss(loss_id: int, payload: LossEventCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def update_loss(loss_id: int, payload: LossEventCreate, request: Request,
+                db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     row = db.get(MachineLossEvent, loss_id)
     if not row:
         raise HTTPException(404, "Loss event not found")
-    if not db.info.get("reason"):
-        raise HTTPException(422, "Enter a correction reason before updating a loss event")
+    reason = (request.headers.get("X-Change-Reason") or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(422, "Enter a correction reason of at least 5 characters before updating a loss event")
+    before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
+              for key in ("loss_date", "shift", "product_id", "route_operation_id", "machine_id",
+                          "loss_category_id", "start_time", "end_time", "duration_min", "qty_loss", "remark")}
     data, category = _validate_loss(db, payload)
     for key, value in data.items():
         setattr(row, key, value)
+    after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
+    db.add(GovernanceAudit(actor_id=user.id, event="OEE_LOSS_CORRECTED", entity="machine_loss_events",
+                           entity_id=str(row.id), month=row.loss_date.replace(day=1), reason=reason,
+                           before_json=json.dumps(before, default=str), after_json=json.dumps(after, default=str)))
     db.commit(); db.refresh(row)
     return {"id": row.id, "category": category.name, "component": category.oee_component.value}
 
@@ -276,16 +421,14 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
 
     summary = None
     if rows:
-        shift_duration = sum(float(x.shift_duration_min) for x in rows)
-        planned_break = sum(float(x.planned_break_min) for x in rows)
-        downtime = sum(float(x.downtime_min) for x in rows)
-        total_count = sum(float(x.total_count) for x in rows)
-        good_count = sum(float(x.good_count) for x in rows)
-        denom = total_count or 1
-        ideal_weighted = sum(float(x.ideal_cycle_time_sec) * float(x.total_count) for x in rows) / denom
-        summary = calculate_oee(shift_duration, planned_break, downtime, total_count, good_count, ideal_weighted)
+        summary = aggregate_oee_entries(rows)
         availability_loss = sum(float(x.duration_min) for x in losses
                                 if categories.get(x.loss_category_id) and categories[x.loss_category_id].oee_component == OEEComponent.AVAILABILITY)
+        # Derive reconciliation values from the same deduplicated machine-shift aggregate.
+        # Product quantities remain additive across rows in the selected scope.
+        downtime = max(0.0, summary["planned_production_min"] - summary["run_time_min"])
+        total_count = sum(float(row.total_count or 0) for row in rows)
+        good_count = sum(float(row.good_count or 0) for row in rows)
         summary["captured_loss_min"] = availability_loss
         summary["unclassified_loss_min"] = max(0.0, downtime - availability_loss)
         summary["overclassified_loss_min"] = max(0.0, availability_loss - downtime)
@@ -318,9 +461,40 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
     }
 
 
+@router.get("/recent-records")
+def recent_records(from_date: date, to_date: date, shift: str, machine_id: int,
+                  product_id: int, route_operation_id: int,
+                  db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Return daily OEE entries for one selected machine/part/operation/shift scope."""
+    normalized_shift = shift.strip().upper()
+    if normalized_shift not in {"A", "B", "C"}:
+        raise HTTPException(422, "shift must be A, B or C")
+    if to_date < from_date:
+        raise HTTPException(422, "to_date must be on or after from_date")
+    rows = db.scalars(
+        select(MachineShiftProduction).where(
+            MachineShiftProduction.production_date >= from_date,
+            MachineShiftProduction.production_date <= to_date,
+            MachineShiftProduction.shift == normalized_shift,
+            MachineShiftProduction.machine_id == machine_id,
+            MachineShiftProduction.product_id == product_id,
+            MachineShiftProduction.route_operation_id == route_operation_id,
+        ).order_by(MachineShiftProduction.production_date.desc(), MachineShiftProduction.id.desc())
+    ).all()
+    records = []
+    for row in rows:
+        try:
+            context = _context(db, row.product_id, row.route_operation_id, row.machine_id, row.production_date)
+        except HTTPException:
+            context = None
+        records.append(_entry_json(row, context))
+    return {"from_date": from_date, "to_date": to_date, "shift": normalized_shift,
+            "count": len(records), "records": records}
+
+
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
-                       product_id: str | None = None, plant: str | None = None,
+                       route_operation_id: int | None = None, product_id: str | None = None, plant: str | None = None,
                        product_group: str | None = None, customer_id: str | None = None,
                        target_oee: float = 0.85, recurring_event_threshold: int = 3,
                        db: Session = Depends(get_db), _: User = Depends(get_current_user)):
@@ -336,6 +510,9 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     if machine_id is not None:
         q = q.where(MachineShiftProduction.machine_id == machine_id)
         lq = lq.where(MachineLossEvent.machine_id == machine_id)
+    if route_operation_id is not None:
+        q = q.where(MachineShiftProduction.route_operation_id == route_operation_id)
+        lq = lq.where(MachineLossEvent.route_operation_id == route_operation_id)
     plants = csv_strings(plant)
     product_ids = csv_ints(product_id)
     groups = csv_strings(product_group)
@@ -361,15 +538,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     categories = {x.id: x for x in db.scalars(select(LossCategory)).all()}
 
     def aggregate(items):
-        if not items:
-            return calculate_oee(0, 0, 0, 0, 0, 0)
-        shift_duration = sum(float(x.shift_duration_min) for x in items)
-        planned_break = sum(float(x.planned_break_min) for x in items)
-        downtime = sum(float(x.downtime_min) for x in items)
-        total = sum(float(x.total_count) for x in items)
-        good = sum(float(x.good_count) for x in items)
-        weighted_cycle = sum(float(x.ideal_cycle_time_sec) * float(x.total_count) for x in items) / (total or 1)
-        return calculate_oee(shift_duration, planned_break, downtime, total, good, weighted_cycle)
+        return aggregate_oee_entries(items)
 
     by_day = {}
     by_machine = {}
