@@ -75,7 +75,9 @@ private data class OeeLossDraft(
     val saved: Boolean = false,
     val id: Int? = null,
     val category: String = "",
-    val component: String = ""
+    val component: String = "",
+    val startTime: String = "",
+    val endTime: String = ""
 )
 
 private object ApiClient {
@@ -668,7 +670,9 @@ class MainActivity : ComponentActivity() {
                                 saved = true,
                                 id = loss.optInt("id").takeIf { it > 0 },
                                 category = loss.optString("category"),
-                                component = loss.optString("component")
+                                component = loss.optString("component"),
+                                startTime = loss.optString("start_time").takeUnless { it == "null" }.orEmpty(),
+                                endTime = loss.optString("end_time").takeUnless { it == "null" }.orEmpty()
                             )
                         }
                         oeeEntryLosses = loadedLosses + listOf(OeeLossDraft())
@@ -1376,16 +1380,21 @@ class MainActivity : ComponentActivity() {
                                                         if(!loss.saved && oeeEntryLosses.size>1) TextButton(onClick={oeeEntryLosses=oeeEntryLosses.filterIndexed{idx,_->idx!=index}}){Text("Remove")}
                                                     }
                                                     if(loss.saved) {
-                                                        Text("${loss.category} • ${loss.duration} min • ${loss.remark}",color=Muted,fontSize=12.sp)
-                                                    } else {
-                                                        ChoiceDropdown("Loss reason",oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},oeeLossCategories.firstOrNull{it.id==loss.categoryId},{selected->
-                                                            oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id);if(index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
-                                                        })
-                                                        OutlinedTextField(loss.duration,{value->
-                                                            val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
-                                                        },label={Text("Duration (minutes)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                                        OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("Reason / details")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                                        Text("Edit saved loss event #${loss.id}",color=Warning,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                                                     }
+                                                    ChoiceDropdown(
+                                                        if(loss.saved) "Loss type" else "Loss reason",
+                                                        oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},
+                                                        oeeLossCategories.firstOrNull{it.id==loss.categoryId},
+                                                        {selected->
+                                                            oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id,category=selected.label,component=selected.extra);if(!loss.saved&&index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
+                                                        }
+                                                    )
+                                                    OutlinedTextField(loss.duration,{value->
+                                                        val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(!loss.saved&&value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
+                                                    },label={Text("Loss time (minutes)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                    OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("Quantity loss")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                    OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("Reason / details")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                                 }
                                             }
                                         }
@@ -1400,6 +1409,21 @@ class MainActivity : ComponentActivity() {
                                             else scope.launch {
                                                 oeeLoading=true;oeeError=null
                                                 try {
+                                                    // Correct existing loss events individually before recalculating entry downtime.
+                                                    // The backend correction endpoint appends new losses; saved losses must never be re-posted.
+                                                    val savedLossEdits=oeeEntryLosses.filter{it.saved&&it.id!=null}
+                                                    savedLossEdits.forEach{loss->
+                                                        val lossPayload=JSONObject()
+                                                            .put("loss_date",oeeDate).put("shift",oeeShift)
+                                                            .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                            .put("loss_category_id",loss.categoryId)
+                                                            .put("duration_min",loss.duration.toDouble())
+                                                            .put("qty_loss",loss.qty.toDoubleOrNull()?:0.0)
+                                                            .put("remark",loss.remark)
+                                                        if(loss.startTime.isNotBlank())lossPayload.put("start_time",loss.startTime)
+                                                        if(loss.endTime.isNotBlank())lossPayload.put("end_time",loss.endTime)
+                                                        withContext(Dispatchers.IO){ApiClient.correctOeeLoss(loss.id!!,lossPayload,oeeCorrectionReason.trim(),auth)}
+                                                    }
                                                     val lossRows=oeeEntryLosses.filter{!it.saved&&it.categoryId!=null&&(it.duration.toDoubleOrNull()?:0.0)>0}
                                                     val losses=JSONArray()
                                                     lossRows.forEach{loss->losses.put(JSONObject().put("loss_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("loss_category_id",loss.categoryId).put("duration_min",loss.duration.toDouble()).put("qty_loss",loss.qty.toDoubleOrNull()?:0.0).put("remark",loss.remark))}

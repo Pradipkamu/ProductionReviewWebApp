@@ -186,6 +186,7 @@ def entry_context(product_id: int, route_operation_id: int, machine_id: int, pro
             "id": event.id, "loss_category_id": event.loss_category_id,
             "category": category.name, "component": category.oee_component.value,
             "duration_min": float(event.duration_min), "qty_loss": float(event.qty_loss),
+            "start_time": event.start_time, "end_time": event.end_time,
             "remark": event.remark or "",
         } for event, category in existing_losses],
     }
