@@ -13,11 +13,12 @@ export default function OEE(){
  const [allMachines,setAllMachines]=useState<any[]>([]),[machines,setMachines]=useState<any[]>([]),[products,setProducts]=useState<any[]>([]),[lossCategories,setLossCategories]=useState<any[]>([]),[routes,setRoutes]=useState<any[]>([])
  const [m,setM]=useState(''),[p,setP]=useState(''),[op,setOp]=useState(''),[d,setD]=useState(today()),[shift,setShift]=useState('A')
  const [sum,setSum]=useState<any>(null),[context,setContext]=useState<any>(null),[entryId,setEntryId]=useState<number|null>(null)
+ const [operators,setOperators]=useState<any[]>([]),[operatorName,setOperatorName]=useState(''),[operatorId,setOperatorId]=useState<number|null>(null),[operatorBusy,setOperatorBusy]=useState(false)
  const [entry,setEntry]=useState<any>(emptyEntry),[losses,setLosses]=useState<any[]>([emptyLoss]),[reason,setReason]=useState(''),[msg,setMsg]=useState(''),[error,setError]=useState('')
  const [mgmt,setMgmt]=useState<any>(null),[fromDate,setFromDate]=useState(today().slice(0,8)+'01')
  const selectedProduct=products.find(x=>String(x.id)===p),selectedMachine=machines.find(x=>String(x.id)===m),selectedRoute=routes.find(x=>String(x.route_operation_id)===op)
 
- useEffect(()=>{Promise.all([api('/masters/machines'),api('/masters/products'),api('/masters/loss-categories')]).then(([ms,ps,ls]:any[])=>{setAllMachines(ms);setMachines(ms.filter((x:any)=>x.active));setProducts(ps);setLossCategories(ls);if(ps[0])setP(String(ps[0].id));setLosses([emptyLoss])}).catch((e:any)=>setError(e.message))},[])
+ useEffect(()=>{Promise.all([api('/masters/machines'),api('/masters/products'),api('/masters/loss-categories'),api('/oee/operators')]).then(([ms,ps,ls,ops]:any[])=>{setAllMachines(ms);setMachines(ms.filter((x:any)=>x.active));setProducts(ps);setLossCategories(ls);setOperators(ops);if(ps[0])setP(String(ps[0].id));setLosses([emptyLoss])}).catch((e:any)=>setError(e.message))},[])
  useEffect(()=>{if(!p)return;api(`/masters/routes/${p}?on_date=${d}`).then((versions:any)=>{const active=versions.find((v:any)=>v.effective_from<=d&&(!v.effective_to||v.effective_to>=d))||versions[0];const ops=active?.operations||[];setRoutes(ops);setOp(ops[0]?String(ops[0].route_operation_id):'')}).catch((e:any)=>setError(e.message))},[p,d])
  useEffect(()=>{if(!op)return;api(`/oee/available-machines?route_operation_id=${op}&production_date=${d}`).then((r:any)=>{const available=r.machines||allMachines.filter(x=>x.active);setMachines(available);setM(old=>available.some((x:any)=>String(x.id)===old)?old:(available[0]?String(available[0].id):''));if(r.warning)setMsg(r.warning)}).catch((e:any)=>setError(e.message))},[op,d,allMachines])
 
@@ -29,12 +30,14 @@ export default function OEE(){
    if(editExisting&&r.existing_entry){
     const x=r.existing_entry
     setEntryId(x.id)
+    setOperatorId(x.operator_id||null);setOperatorName(x.operator_name||'')
     setEntry({shift_duration_min:x.shift_duration_min,planned_break_min:x.planned_break_min,downtime_min:x.downtime_min,good_count:x.good_count,reject_count:x.reject_count,ideal_cycle_time_sec:x.ideal_cycle_time_sec,remarks:x.remarks||''})
     setLosses([...(r.existing_losses||[]).map((x:any)=>({...x,loss_category_id:String(x.loss_category_id),saved:true})),{...emptyLoss}])
     setReason('')
     setMsg(`Editing saved entry #${x.id}. Enter a correction reason before saving.`)
    }else{
     setEntryId(null)
+    setOperatorId(null);setOperatorName('')
     setEntry({...emptyEntry,ideal_cycle_time_sec:r.ideal_cycle_time_sec||0})
     setLosses([{...emptyLoss}])
     setReason('')
@@ -51,15 +54,34 @@ export default function OEE(){
  },[entry,sum])
  async function save(){
   if(!p||!op||!m){setError('Select product, operation and machine.');return}
+  if(!operatorId){setError('Select or add an operator name before saving.');return}
   if(entryId&&!reason.trim()){setError('Enter a correction reason to update the existing shift entry.');return}
   try{
    const completed=losses.filter((x:any)=>!x.saved&&x.loss_category_id&&Number(x.duration_min)>0);
    const lossPayload=completed.map((x:any)=>({loss_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),loss_category_id:Number(x.loss_category_id),duration_min:Number(x.duration_min),qty_loss:Number(x.qty_loss||0),remark:x.remark||''}));
-   const body={entry:{...entry,downtime_min:0,production_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m)},losses:lossPayload,...(entryId?{entry_id:entryId,correction_reason:reason}:{})};
+   const body={entry:{...entry,downtime_min:0,production_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),operator_id:operatorId},losses:lossPayload,...(entryId?{entry_id:entryId,correction_reason:reason}:{})};
    const r:any=await api('/oee/machine-entry-with-losses',{method:'POST',body:JSON.stringify(body)});
    setMsg(`${entryId?'Shift entry corrected':'Shift entry saved'} with ${completed.length} new loss event(s).${r.warnings?.length?` — ${r.warnings.join('; ')}`:''}`);
    setReason('');setError('');await loadContext();await refresh()
   }catch(e:any){setError(e.message)}
+ }
+ async function addOperator(){
+  const fullName=operatorName.trim().replace(/\\s+/g,' ')
+  if(fullName.split(' ').length<2){setError('Enter at least first name and surname.');return}
+  setOperatorBusy(true)
+  try{
+   const r:any=await api('/oee/operators',{method:'POST',body:JSON.stringify({full_name:fullName})})
+   setOperators(old=>old.some(x=>x.id===r.id)?old:[...old,{id:r.id,full_name:r.full_name}])
+   setOperatorId(r.id);setOperatorName(r.full_name);setError('');setMsg(r.created?'Operator added to the shared master.':'Existing operator selected.')
+  }catch(e:any){setError(e.message)}finally{setOperatorBusy(false)}
+ }
+ function startOperatorVoice(){
+  const w=window as any;const Speech=w.SpeechRecognition||w.webkitSpeechRecognition
+  if(!Speech){setError('Voice typing is not supported in this browser. Use your keyboard microphone instead.');return}
+  const recognition=new Speech();recognition.lang='en-IN';recognition.interimResults=false;recognition.maxAlternatives=1
+  recognition.onresult=(event:any)=>{const value=event.results?.[0]?.[0]?.transcript||'';setOperatorName(value);const match=operators.find(x=>x.full_name.toLowerCase()===value.trim().replace(/\\s+/g,' ').toLowerCase());setOperatorId(match?.id||null)}
+  recognition.onerror=()=>setError('Voice recognition failed. Please type the operator name.')
+  recognition.start()
  }
  function updateLoss(index:number,patch:any){
   setLosses(old=>{const next=old.map((x,i)=>i===index?{...x,...patch}:x);const last=next[next.length-1];if(last&&!last.saved&&last.loss_category_id&&Number(last.duration_min)>0)next.push({...emptyLoss});return next})
@@ -75,6 +97,12 @@ export default function OEE(){
   <section className="panel">
    <div className="panel-title"><div><h2>Machine shift production</h2><p>{entryId?`Loaded entry #${entryId}. Saving requires an audited correction reason.`:'Enter good and rejected quantities; total output and availability downtime are calculated automatically.'}</p></div></div>
    <div className="oee-entry-grid">
+    <label className="span-2">Operator name
+     <input list="oee-operator-options" value={operatorName} onChange={e=>{const value=e.target.value;setOperatorName(value);const match=operators.find(x=>x.full_name.toLowerCase()===value.trim().replace(/\\s+/g,' ').toLowerCase());setOperatorId(match?.id||null)}} placeholder="Type first name and surname"/>
+     <datalist id="oee-operator-options">{operators.map(x=><option key={x.id} value={x.full_name}/>)}</datalist>
+     <span className="button-row"><button type="button" className="secondary small" onClick={startOperatorVoice}>Voice type</button>{!operatorId&&operatorName.trim().split(/\\s+/).filter(Boolean).length>=2&&<button type="button" className="small" onClick={addOperator} disabled={operatorBusy}>{operatorBusy?'Adding…':`Add “${operatorName.trim()}”`}</button>}</span>
+     {operatorId&&<small className="muted">Registered operator selected</small>}
+    </label>
     <label>Shift duration (min)<input type="number" min="1" value={entry.shift_duration_min} onChange={e=>setEntry({...entry,shift_duration_min:Number(e.target.value)})}/></label>
     <label>Planned break (min)<input type="number" min="0" value={entry.planned_break_min} onChange={e=>setEntry({...entry,planned_break_min:Number(e.target.value)})}/></label>
     <label>Good quantity<input type="number" min="0" value={entry.good_count} onChange={e=>setEntry({...entry,good_count:Number(e.target.value)})}/></label>
