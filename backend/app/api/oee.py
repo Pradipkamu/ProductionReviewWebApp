@@ -15,9 +15,9 @@ from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
     MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
-    StandardCycleTime, User, GovernanceAudit,
+    StandardCycleTime, User, GovernanceAudit, Personnel,
 )
-from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate
+from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate, PersonnelCreate
 from ..services.oee import aggregate_oee_entries, calculate_oee
 from ..services.filtering import csv_ints, csv_strings
 
@@ -94,6 +94,11 @@ def _context(db: Session, product_id: int, route_operation_id: int, machine_id: 
 
 
 def _prepare_entry(db: Session, payload: MachineEntryCreate) -> tuple[dict, dict]:
+    if payload.operator_id is not None:
+        person = db.get(Personnel, payload.operator_id)
+        if not person or not person.is_active:
+            raise HTTPException(422, "Select an active person from the Personnel Master")
+
     context = _context(db, payload.product_id, payload.route_operation_id, payload.machine_id, payload.production_date)
     data = payload.model_dump()
     cycle = context["cycle"]
@@ -113,7 +118,8 @@ def _entry_json(row: MachineShiftProduction, context: dict | None = None) -> dic
     result = {
         "id": row.id, "production_date": row.production_date, "shift": row.shift,
         "product_id": row.product_id, "route_operation_id": row.route_operation_id,
-        "machine_id": row.machine_id, "shift_duration_min": float(row.shift_duration_min),
+        "machine_id": row.machine_id, "operator_id": row.operator_id,
+        "operator_name": row.operator.full_name if row.operator else None, "shift_duration_min": float(row.shift_duration_min),
         "planned_break_min": float(row.planned_break_min), "downtime_min": float(row.downtime_min),
         "total_count": float(row.total_count), "good_count": float(row.good_count),
         "reject_count": float(row.reject_count), "ideal_cycle_time_sec": float(row.ideal_cycle_time_sec),
@@ -127,6 +133,44 @@ def _entry_json(row: MachineShiftProduction, context: dict | None = None) -> dic
             "operation": context["operation"].name, "data_quality_warnings": context["warnings"],
         })
     return result
+
+
+def _personnel_name(first_name: str, last_name: str):
+    first = " ".join(first_name.strip().split())
+    last = " ".join(last_name.strip().split())
+    if not first or not last:
+        raise HTTPException(422, "First name and surname are required")
+    full = f"{first} {last}"
+    return first, last, full, full.casefold()
+
+
+@router.get("/personnel")
+def list_personnel(q: str = "", db: Session = Depends(get_db),
+                   _: User = Depends(get_current_user)):
+    query = select(Personnel).where(Personnel.is_active.is_(True))
+    term = " ".join(q.strip().split()).casefold()
+    if term:
+        query = query.where(Personnel.normalized_name.contains(term))
+    rows = db.scalars(query.order_by(Personnel.first_name, Personnel.last_name).limit(500)).all()
+    return [{"id": x.id, "first_name": x.first_name, "last_name": x.last_name,
+             "full_name": x.full_name, "is_active": x.is_active} for x in rows]
+
+
+@router.post("/personnel")
+def create_personnel(payload: PersonnelCreate, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    first, last, full, normalized = _personnel_name(payload.first_name, payload.last_name)
+    duplicates = db.scalars(select(Personnel).where(
+        Personnel.normalized_name == normalized, Personnel.is_active.is_(True)
+    )).all()
+    row = Personnel(first_name=first, last_name=last, full_name=full,
+                    normalized_name=normalized, created_by_id=user.id)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "first_name": row.first_name, "last_name": row.last_name,
+            "full_name": row.full_name, "is_active": row.is_active,
+            "duplicate_warning": bool(duplicates), "created": True}
 
 
 @router.get("/available-machines")
