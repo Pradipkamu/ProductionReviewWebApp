@@ -717,6 +717,9 @@ class MainActivity : ComponentActivity() {
                 val machine = oeeMachine
                 if (homeTab == "OEE" && oeeMode == "ENTRY" && auth != null &&
                     product != null && operation != null && machine != null) {
+                    // Capture the explicit edit intent before any suspending master-data calls.
+                    // The edit loader may finish while this effect is still loading categories/operators.
+                    val preserveSelectedRecord = oeeLoadingPreviousEntry
                     oeeLoading = true
                     try {
                         if (oeeLossCategories.isEmpty()) {
@@ -725,10 +728,10 @@ class MainActivity : ComponentActivity() {
                         if (oeeOperators.isEmpty()) {
                             oeeOperators = withContext(Dispatchers.IO) { ApiClient.loadOeeOperators(auth) }
                         }
-                        // ENTRY always opens as a new production record. Existing records must
-                        // never be loaded implicitly into edit mode when opening the fresh form.
-                        // Do not overwrite a record that the user explicitly selected for editing.
-                        if (!oeeLoadingPreviousEntry) {
+                        // ENTRY always opens as a new production record unless the user
+                        // explicitly selected a record to correct. Preserve that intent
+                        // across the asynchronous master-data loading above.
+                        if (!preserveSelectedRecord) {
                             // Every fresh entry starts with zero planned breaks.
                             oeeEntryId = null
                             oeeBreakMinutes = "0"
