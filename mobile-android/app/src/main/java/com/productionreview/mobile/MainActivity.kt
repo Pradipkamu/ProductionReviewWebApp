@@ -618,6 +618,64 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun editOeeEntry(entryDate: String, entryShift: String, expectedEntryId: Int) {
+                val auth = token
+                val product = oeeProduct
+                val operation = oeeOperation
+                val machine = oeeMachine
+                if (auth == null || product == null || operation == null || machine == null) {
+                    oeeError = "Select product, operation and machine before editing."
+                    return
+                }
+                oeeDate = entryDate
+                oeeShift = entryShift
+                oeeMode = "ENTRY"
+                scope.launch {
+                    oeeLoading = true
+                    oeeError = null
+                    oeeSuccess = null
+                    try {
+                        val context = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeEntryContext(product.id, operation.id, machine.id, entryDate, entryShift, auth)
+                        }
+                        val entry = context.optJSONObject("existing_entry")
+                        if (entry == null || entry.optInt("id") != expectedEntryId) {
+                            throw IllegalStateException("The selected production record is no longer available in this scope. Refresh Summary and try again.")
+                        }
+                        oeeEntryId = entry.optInt("id")
+                        oeeCorrectionReason = ""
+                        oeeOperatorName = entry.optString("operator_name").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                        oeeOperatorId = oeeOperators.firstOrNull { it.label.equals(oeeOperatorName, ignoreCase = true) }?.id
+                        if (oeeOperatorId == null) throw IllegalStateException("Could not match the saved operator to Personnel Master. Refresh and try again.")
+                        oeeShiftMinutes = entry.optDouble("shift_duration_min", 480.0).toString()
+                        oeeBreakMinutes = entry.optDouble("planned_break_min", 0.0).toString()
+                        oeeGoodCount = entry.optDouble("good_count", 0.0).toString()
+                        oeeRejectCount = entry.optDouble("reject_count", 0.0).toString()
+                        oeeEntryRemarks = entry.optString("remarks").takeUnless { it == "null" }.orEmpty()
+                        val savedLosses = context.optJSONArray("existing_losses") ?: JSONArray()
+                        val loadedLosses = (0 until savedLosses.length()).map { index ->
+                            val loss = savedLosses.getJSONObject(index)
+                            OeeLossDraft(
+                                categoryId = loss.optInt("loss_category_id").takeIf { it > 0 },
+                                duration = loss.optDouble("duration_min").toString(),
+                                qty = loss.optDouble("qty_loss").toString(),
+                                remark = loss.optString("remark"),
+                                saved = true,
+                                id = loss.optInt("id").takeIf { it > 0 },
+                                category = loss.optString("category"),
+                                component = loss.optString("component")
+                            )
+                        }
+                        oeeEntryLosses = loadedLosses + listOf(OeeLossDraft())
+                    } catch (e: Exception) {
+                        oeeEntryId = null
+                        oeeError = e.message ?: "Unable to load the selected production record."
+                    } finally {
+                        oeeLoading = false
+                    }
+                }
+            }
+
             LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate, oeeShift) {
                 val auth = token
                 val productId = oeeProduct?.id
@@ -663,8 +721,9 @@ class MainActivity : ComponentActivity() {
                         }
                         // ENTRY always opens as a new production record. Existing records must
                         // never be loaded implicitly into edit mode when opening the fresh form.
-                        // Keep the operator and planned break minutes for consecutive entries.
+                        // Every fresh entry starts with zero planned breaks; editing loads its saved value explicitly.
                         oeeEntryId = null
+                        oeeBreakMinutes = "0"
                         oeeCorrectionReason = ""
                         oeeShiftMinutes = "480"
                         oeeGoodCount = "0"
@@ -1174,6 +1233,7 @@ class MainActivity : ComponentActivity() {
                                                         Text("Operator: ${entry.optString("operator_name").takeIf{it.isNotBlank() && it!="null"} ?: "Not recorded"}",color=Teal,fontSize=11.sp,fontWeight=FontWeight.SemiBold)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                        OutlinedButton(onClick={editOeeEntry(entry.optString("production_date"), entry.optString("shift"), entry.optInt("id"))}, modifier=Modifier.fillMaxWidth(), enabled=!oeeLoading) { Text("EDIT THIS RECORD") }
                                                     }
                                                 }
                                             }
@@ -1195,6 +1255,7 @@ class MainActivity : ComponentActivity() {
                                                         Text("${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                        OutlinedButton(onClick={editOeeEntry(entry.optString("production_date"), entry.optString("shift"), entry.optInt("id"))}, modifier=Modifier.fillMaxWidth(), enabled=!oeeLoading) { Text("EDIT THIS RECORD") }
                                                     }
                                                 }
                                             }
@@ -1349,6 +1410,7 @@ class MainActivity : ComponentActivity() {
                                                     // but clear record-specific values and return directly to the entry form.
                                                     oeeGoodCount = "0"
                                                     oeeRejectCount = "0"
+                                                    oeeBreakMinutes = "0"
                                                     oeeEntryRemarks = ""
                                                     oeeCorrectionReason = ""
                                                     oeeMode = "ENTRY"
