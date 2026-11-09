@@ -661,43 +661,17 @@ class MainActivity : ComponentActivity() {
                         if (oeeOperators.isEmpty()) {
                             oeeOperators = withContext(Dispatchers.IO) { ApiClient.loadOeeOperators(auth) }
                         }
-                        val context = withContext(Dispatchers.IO) {
-                            ApiClient.loadOeeEntryContext(product.id, operation.id, machine.id, oeeDate, oeeShift, auth)
-                        }
-                        val existing = context.optJSONObject("existing_entry")
-                        if (existing == null) {
-                            oeeOperatorId = null
-                            oeeOperatorName = ""
-                            oeeEntryId = null
-                            oeeCorrectionReason = ""
-                            oeeShiftMinutes = "480"
-                            // Keep the planned break value from the previous entry for consecutive records.
-                            oeeGoodCount = "0"
-                            oeeRejectCount = "0"
-                            oeeEntryRemarks = ""
-                            oeeEntryLosses = listOf(OeeLossDraft())
-                            oeeError = "No saved entry exists. Enter production and loss details below."
-                        } else {
-                            oeeOperatorId = existing.optInt("operator_id").takeIf { it > 0 }
-                            oeeOperatorName = existing.optString("operator_name", "")
-                            oeeEntryId = existing.optInt("id").takeIf { it > 0 }
-                            oeeShiftMinutes = existing.optString("shift_duration_min", "480")
-                            oeeBreakMinutes = existing.optString("planned_break_min", "0")
-                            oeeGoodCount = existing.optString("good_count", "0")
-                            oeeRejectCount = existing.optString("reject_count", "0")
-                            oeeEntryRemarks = existing.optString("remarks", "")
-                            oeeCorrectionReason = ""
-                            val oldLosses = context.optJSONArray("existing_losses") ?: JSONArray()
-                            val loaded = (0 until oldLosses.length()).map { index ->
-                                val row = oldLosses.getJSONObject(index)
-                                OeeLossDraft(row.optInt("loss_category_id").takeIf { it > 0 },
-                                    row.optString("duration_min"), row.optString("qty_loss", "0"),
-                                    row.optString("remark", ""), true, row.optInt("id"),
-                                    row.optString("category"), row.optString("component"))
-                            }
-                            oeeEntryLosses = loaded + OeeLossDraft()
-                            oeeError = "Loaded existing entry #$oeeEntryId."
-                        }
+                        // ENTRY always opens as a new production record. Existing records must
+                        // never be loaded implicitly into edit mode when opening the fresh form.
+                        // Keep the operator and planned break minutes for consecutive entries.
+                        oeeEntryId = null
+                        oeeCorrectionReason = ""
+                        oeeShiftMinutes = "480"
+                        oeeGoodCount = "0"
+                        oeeRejectCount = "0"
+                        oeeEntryRemarks = ""
+                        oeeEntryLosses = listOf(OeeLossDraft())
+                        oeeError = null
                     } catch (e: Exception) {
                         oeeError = e.message ?: "Unable to load production entry."
                     } finally {
