@@ -13,7 +13,7 @@ from ..db import get_db
 from ..enums import ActionStatus, OEEComponent, Priority
 from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
-    MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap,
+    MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap, Personnel,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
     StandardCycleTime, User, GovernanceAudit ,
 )
