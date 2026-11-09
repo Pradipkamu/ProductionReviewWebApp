@@ -206,9 +206,11 @@ private object ApiClient {
         }
     }
 
-    fun createOeeOperator(fullName: String, token: String): Choice {
-        val response = request("/personnel", "POST", JSONObject().put("first_name", fullName.trim().split(Regex("\\s+")).first()).put("last_name", fullName.trim().split(Regex("\\s+")).drop(1).joinToString(" ")), token)
-        return Choice(response.getInt("id"), response.optString("full_name"))
+    fun createOeeOperator(fullName: String, token: String): Pair<Choice, Boolean> {
+        val parts = fullName.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        require(parts.size >= 2) { "Enter first name and surname." }
+        val response = request("/personnel", "POST", JSONObject().put("first_name", parts.first()).put("last_name", parts.drop(1).joinToString(" ")), token)
+        return Pair(Choice(response.getInt("id"), response.optString("full_name")), response.optBoolean("duplicate_warning"))
     }
 
     fun loadOeeManagement(
@@ -1216,10 +1218,10 @@ class MainActivity : ComponentActivity() {
                                                     val auth=token
                                                     if(auth!=null) scope.launch {
                                                         try {
-                                                            val created=withContext(Dispatchers.IO){ApiClient.createOeeOperator(oeeOperatorName.trim().replace(Regex("\\s+")," "),auth)}
+                                                            val (created, duplicateWarning)=withContext(Dispatchers.IO){ApiClient.createOeeOperator(oeeOperatorName.trim().replace(Regex("\\s+")," "),auth)}
                                                             oeeOperators=(oeeOperators.filterNot{it.id==created.id}+created).sortedBy{it.label}
                                                             oeeOperatorId=created.id;oeeOperatorName=created.label;oeeOperatorMenu=false
-                                                            oeeSuccess="Operator registered and available in Web and Android."
+                                                            oeeSuccess=if(duplicateWarning) "A person with the same name already exists. Verify identity before continuing; a new record was added." else "Operator registered and available in Web and Android."
                                                         } catch(e:Exception){oeeError=e.message ?: "Unable to add operator."}
                                                     }
                                                 }) { Text("＋ Add new operator") }
