@@ -199,7 +199,7 @@ private object ApiClient {
         request("/oee/loss-events/$lossId", "PUT", payload, token, mapOf("X-Change-Reason" to reason))
 
     fun loadOeeOperators(token: String): List<Choice> {
-        val rows = array("/oee/personnel", token)
+        val rows = array("/personnel", token)
         return (0 until rows.length()).map { i ->
             val row = rows.getJSONObject(i)
             Choice(row.getInt("id"), row.optString("full_name"))
@@ -207,7 +207,7 @@ private object ApiClient {
     }
 
     fun createOeeOperator(fullName: String, token: String): Choice {
-        val response = request("/oee/personnel", "POST", JSONObject().put("first_name", fullName.trim().split(Regex("\\s+")).first()).put("last_name", fullName.trim().split(Regex("\\s+")).drop(1).joinToString(" ")), token)
+        val response = request("/personnel", "POST", JSONObject().put("first_name", fullName.trim().split(Regex("\\s+")).first()).put("last_name", fullName.trim().split(Regex("\\s+")).drop(1).joinToString(" ")), token)
         return Choice(response.getInt("id"), response.optString("full_name"))
     }
 
