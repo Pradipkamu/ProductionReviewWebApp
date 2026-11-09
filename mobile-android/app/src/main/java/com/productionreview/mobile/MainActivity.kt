@@ -1243,6 +1243,7 @@ class MainActivity : ComponentActivity() {
                                                 value=oeeOperatorName,
                                                 onValueChange={value->
                                                     oeeOperatorName=value
+                                                    oeeOperatorError=null
                                                     oeeOperatorId=oeeOperators.firstOrNull{it.label.equals(value.trim().replace(Regex("\\s+")," "),ignoreCase=true)}?.id
                                                     oeeOperatorMenu=true
                                                 },
@@ -1265,6 +1266,7 @@ class MainActivity : ComponentActivity() {
                                                             TextButton(
                                                                 onClick={
                                                                     oeeOperatorId=option.id
+                                                                    oeeOperatorError=null
                                                                     oeeOperatorName=option.label
                                                                     oeeOperatorMenu=false
                                                                 },
