@@ -133,10 +133,7 @@ deploy() {
       stop "Could not create local tracking branch '$branch'."
   fi
 
-  git merge-base --is-ancestor "$current_head" HEAD ||
-    stop "After branch switch, current deployment commit is not an ancestor."
-  [[ "$(git rev-parse HEAD)" == "$target_head" ]] ||
-    git merge --ff-only "$target_ref" || stop "Fast-forward failed."
+  git merge --ff-only "$target_ref" || stop "Target branch could not be fast-forwarded after switching."
 
   log "Target branch now active: $(git branch --show-current) @ $(git rev-parse --short HEAD)"
   log "Validating Docker Compose."
