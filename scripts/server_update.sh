@@ -9,7 +9,7 @@
 #   bash scripts/server_update.sh deploy <branch> --confirm
 #
 # Optional overrides:
-#   APP_DIR, BACKUP_DIR, LOG_DIR
+#   APP_DIR, BACKUP_DIR, LOG_DIR, CODE_BACKUP_DIR
 #
 # Safety guarantees:
 # - Does not print .env or rendered Compose configuration.
@@ -163,6 +163,7 @@ usage() {
 Usage:
   bash scripts/server_update.sh check
   bash scripts/server_update.sh backup
+  bash scripts/server_update.sh preserve
   bash scripts/server_update.sh prepare <branch>
   bash scripts/server_update.sh deploy <branch> --confirm
 
