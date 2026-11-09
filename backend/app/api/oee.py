@@ -15,9 +15,9 @@ from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
     MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
-    StandardCycleTime, User, GovernanceAudit,
+    StandardCycleTime, User, GovernanceAudit, OEEOperator,
 )
-from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate
+from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate, OEEOperatorCreate
 from ..services.oee import aggregate_oee_entries, calculate_oee
 from ..services.filtering import csv_ints, csv_strings
 
@@ -113,7 +113,9 @@ def _entry_json(row: MachineShiftProduction, context: dict | None = None) -> dic
     result = {
         "id": row.id, "production_date": row.production_date, "shift": row.shift,
         "product_id": row.product_id, "route_operation_id": row.route_operation_id,
-        "machine_id": row.machine_id, "shift_duration_min": float(row.shift_duration_min),
+        "machine_id": row.machine_id, "operator_id": row.operator_id,
+        "operator_name": (row.operator.full_name if getattr(row, "operator", None) else None),
+        "shift_duration_min": float(row.shift_duration_min),
         "planned_break_min": float(row.planned_break_min), "downtime_min": float(row.downtime_min),
         "total_count": float(row.total_count), "good_count": float(row.good_count),
         "reject_count": float(row.reject_count), "ideal_cycle_time_sec": float(row.ideal_cycle_time_sec),
@@ -127,6 +129,47 @@ def _entry_json(row: MachineShiftProduction, context: dict | None = None) -> dic
             "operation": context["operation"].name, "data_quality_warnings": context["warnings"],
         })
     return result
+
+
+def _normalize_operator_name(value: str) -> tuple[str, str]:
+    cleaned = " ".join(value.strip().split())
+    if len(cleaned.split(" ")) < 2:
+        raise HTTPException(422, "Enter at least first name and surname")
+    return cleaned, cleaned.casefold()
+
+
+@router.get("/operators")
+def list_oee_operators(q: str = "", db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    query = select(OEEOperator).where(OEEOperator.is_active.is_(True))
+    term = " ".join(q.strip().split())
+    if term:
+        query = query.where(OEEOperator.normalized_name.contains(term.casefold()))
+    rows = db.scalars(query.order_by(OEEOperator.full_name).limit(30)).all()
+    return [{"id": row.id, "full_name": row.full_name} for row in rows]
+
+
+@router.post("/operators")
+def create_oee_operator(payload: OEEOperatorCreate, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    full_name, normalized = _normalize_operator_name(payload.full_name)
+    existing = db.scalar(select(OEEOperator).where(OEEOperator.normalized_name == normalized))
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+            db.commit()
+        return {"id": existing.id, "full_name": existing.full_name, "created": False}
+    row = OEEOperator(full_name=full_name, normalized_name=normalized, created_by_id=user.id)
+    db.add(row)
+    try:
+        db.commit()
+        db.refresh(row)
+    except Exception:
+        db.rollback()
+        existing = db.scalar(select(OEEOperator).where(OEEOperator.normalized_name == normalized))
+        if existing:
+            return {"id": existing.id, "full_name": existing.full_name, "created": False}
+        raise
+    return {"id": row.id, "full_name": row.full_name, "created": True}
 
 
 @router.get("/available-machines")
@@ -240,6 +283,13 @@ def save_machine_entry_with_losses(
         if duplicate:
             raise HTTPException(409, f"This machine shift entry already exists as #{duplicate}; load and correct it instead of duplicating it")
         before = None
+
+    if entry_payload.operator_id is not None:
+        operator = db.get(OEEOperator, entry_payload.operator_id)
+        if not operator or not operator.is_active:
+            raise HTTPException(422, "Select an active operator")
+    else:
+        raise HTTPException(422, "Select an operator before saving the OEE entry")
 
     data, context = _prepare_entry(db, entry_payload)
     validated_losses: list[tuple[dict, LossCategory]] = []
