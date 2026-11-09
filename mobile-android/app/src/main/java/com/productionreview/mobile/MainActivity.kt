@@ -493,6 +493,8 @@ class MainActivity : ComponentActivity() {
             var oeeOperatorName by remember { mutableStateOf("") }
             var oeeOperatorId by remember { mutableStateOf<Int?>(null) }
             var oeeOperatorMenu by remember { mutableStateOf(false) }
+            var oeeOperatorCreating by remember { mutableStateOf(false) }
+            var oeeOperatorError by remember { mutableStateOf<String?>(null) }
             var oeeLossCategories by remember { mutableStateOf<List<Choice>>(emptyList()) }
             var oeeEntryLosses by remember { mutableStateOf(listOf(OeeLossDraft())) }
             var oeeLossCategory by remember { mutableStateOf<Choice?>(null) }
@@ -1275,18 +1277,39 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                             if(oeeOperatorId==null && oeeOperatorName.trim().split(Regex("\\s+")).filter{it.isNotBlank()}.size>=2) {
-                                                TextButton(onClick={
-                                                    val auth=token
-                                                    if(auth!=null) scope.launch {
-                                                        try {
-                                                            val (created, duplicateWarning)=withContext(Dispatchers.IO){ApiClient.createOeeOperator(oeeOperatorName.trim().replace(Regex("\\s+")," "),auth)}
-                                                            oeeOperators=(oeeOperators.filterNot{it.id==created.id}+created).sortedBy{it.label}
-                                                            oeeOperatorId=created.id;oeeOperatorName=created.label;oeeOperatorMenu=false
-                                                            oeeSuccess=if(duplicateWarning) "A person with the same name already exists. Verify identity before continuing; a new record was added." else "Operator registered and available in Web and Android."
-                                                        } catch(e:Exception){oeeError=e.message ?: "Unable to add operator."}
+                                                TextButton(
+                                                    enabled=!oeeOperatorCreating && token!=null,
+                                                    onClick={
+                                                        val auth=token
+                                                        if(auth==null) {
+                                                            oeeOperatorError="Your session is not available. Please sign in again."
+                                                        } else scope.launch {
+                                                            oeeOperatorCreating=true
+                                                            oeeOperatorError=null
+                                                            oeeError=null
+                                                            try {
+                                                                val requestedName=oeeOperatorName.trim().replace(Regex("\\s+")," ")
+                                                                val (created, duplicateWarning)=withContext(Dispatchers.IO){ApiClient.createOeeOperator(requestedName,auth)}
+                                                                val refreshed=withContext(Dispatchers.IO){ApiClient.loadOeeOperators(auth)}
+                                                                val registered=refreshed.firstOrNull{it.id==created.id}
+                                                                    ?: refreshed.firstOrNull{it.label.equals(created.label,ignoreCase=true)}
+                                                                    ?: created
+                                                                oeeOperators=refreshed.ifEmpty { (oeeOperators.filterNot{it.id==registered.id}+registered).sortedBy{it.label} }
+                                                                oeeOperatorId=registered.id
+                                                                oeeOperatorName=registered.label
+                                                                oeeOperatorMenu=false
+                                                                oeeOperatorError=null
+                                                                oeeSuccess=if(duplicateWarning) "Operator added. A matching name already exists; verify the person's identity." else "Operator registered successfully."
+                                                            } catch(e:Exception) {
+                                                                oeeOperatorError=e.message?.takeIf{it.isNotBlank()} ?: "Unable to add operator. Check connection and permissions, then retry."
+                                                            } finally {
+                                                                oeeOperatorCreating=false
+                                                            }
+                                                        }
                                                     }
-                                                }) { Text("＋ Add new operator") }
+                                                ) { Text(if(oeeOperatorCreating) "ADDING OPERATOR…" else "＋ Add new operator") }
                                             }
+                                            oeeOperatorError?.let { Text(it,color=Danger,fontSize=12.sp) }
                                             Text("Use the microphone on your Android keyboard for voice typing. Review the name, then select or add it.",color=Muted,fontSize=10.sp)
                                         }
                                         OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("Shift duration (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
