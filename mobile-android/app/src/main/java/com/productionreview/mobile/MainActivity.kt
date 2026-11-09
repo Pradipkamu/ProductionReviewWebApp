@@ -1150,6 +1150,7 @@ class MainActivity : ComponentActivity() {
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                         Text("Entry #${entry.optInt("id")} • ${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("Operator: ${entry.optString("operator_name").takeIf{it.isNotBlank() && it!="null"} ?: "Not recorded"}",color=Teal,fontSize=11.sp,fontWeight=FontWeight.SemiBold)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                                                     }
