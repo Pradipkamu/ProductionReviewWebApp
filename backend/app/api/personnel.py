@@ -19,7 +19,7 @@ def _personnel_name(first_name: str, last_name: str):
     return first, last, full, full.casefold()
 
 
-@router.get("/personnel")
+@router.get("")
 def list_personnel(q: str = "", db: Session = Depends(get_db),
                    _: User = Depends(get_current_user)):
     query = select(Personnel).where(Personnel.is_active.is_(True))
@@ -31,7 +31,7 @@ def list_personnel(q: str = "", db: Session = Depends(get_db),
              "full_name": x.full_name, "is_active": x.is_active} for x in rows]
 
 
-@router.post("/personnel")
+@router.post("")
 def create_personnel(payload: PersonnelCreate, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
     first, last, full, normalized = _personnel_name(payload.first_name, payload.last_name)
