@@ -220,12 +220,17 @@ class ActionWhyWhyUpdate(BaseModel):
 
 
 
+class OEEOperatorCreate(BaseModel):
+    full_name: str = Field(min_length=3, max_length=160)
+
+
 class MachineEntryCreate(BaseModel):
     production_date: date
     shift: str = Field(min_length=1, max_length=30)
     product_id: int
     route_operation_id: int
     machine_id: int
+    operator_id: Optional[int] = None
     shift_duration_min: Decimal = Field(default=Decimal("480"), gt=0)
     planned_break_min: Decimal = Field(default=Decimal("0"), ge=0)
     downtime_min: Decimal = Field(default=Decimal("0"), ge=0)
