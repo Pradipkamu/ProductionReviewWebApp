@@ -11,6 +11,7 @@
 # - Preserves the current branch and all local changes in an external snapshot.
 # - Never resets, cleans, stashes, or deletes user files.
 # - Allows tracked local edits only when each edited file already matches target.
+# - Stages only those verified target-identical files so Git can switch safely.
 # - Refuses untracked-file collisions with incoming tracked files.
 # - Switches to the target branch (tracking origin/<branch>) for future deployments.
 # - Requires an existing, verified DB backup; does not create a duplicate backup.
@@ -53,24 +54,6 @@ init() {
   touch "$LOG_FILE"
   chmod 600 "$LOG_FILE"
   cd "$APP_DIR"
-}
-preserve_current_state() {
-  local dest patch untracked
-  dest="$CODE_BACKUP_DIR/server-code-$STAMP"
-  mkdir -p "$dest"
-  chmod 700 "$CODE_BACKUP_DIR" "$dest"
-  git status --short --branch > "$dest/git-status.txt"
-  git diff HEAD --binary > "$dest/tracked-changes.patch"
-  git ls-files --others --exclude-standard -z > "$dest/untracked-files.list0"
-  if [[ -s "$dest/untracked-files.list0" ]]; then
-    tar --null -T "$dest/untracked-files.list0" -czf "$dest/untracked-files.tar.gz"
-    chmod 600 "$dest/untracked-files.list0" "$dest/untracked-files.tar.gz"
-  else
-    rm -f "$dest/untracked-files.list0"
-    : > "$dest/no-untracked-files.txt"
-  fi
-  chmod 600 "$dest/git-status.txt" "$dest/tracked-changes.patch"
-  log "Additional code snapshot: $dest"
 }
 check_untracked_collisions() {
   local collisions
@@ -116,11 +99,17 @@ deploy() {
 
   check_untracked_collisions "$target_ref"
 
+  # Any tracked local edit is accepted only if its working-tree contents
+  # already equal the fetched target. Stage only those exact files: this
+  # aligns the index with the target and lets git switch proceed without
+  # discarding or overwriting user work.
   changed_files="$(git diff HEAD --name-only)"
   while IFS= read -r file; do
     [[ -z "$file" ]] && continue
     git diff --quiet "$target_ref" -- "$file" ||
       stop "Local tracked edit differs from target branch: $file. No local changes were discarded."
+    git add -- "$file" || stop "Could not stage verified target-identical file: $file"
+    log "Safely staged target-identical local file: $file"
   done <<< "$changed_files"
 
   verify_existing_backups "$db_backup" "$code_snapshot"
@@ -161,7 +150,6 @@ deploy() {
   log "Code snapshot retained at: $code_snapshot"
   log "No database rows, Docker volumes, attachments, or backup files were deleted."
 }
-
 main() {
   init
   case "${1:-}" in
