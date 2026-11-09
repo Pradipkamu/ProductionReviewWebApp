@@ -18,7 +18,7 @@ export default function OEE(){
  const [mgmt,setMgmt]=useState<any>(null),[fromDate,setFromDate]=useState(today().slice(0,8)+'01')
  const selectedProduct=products.find(x=>String(x.id)===p),selectedMachine=machines.find(x=>String(x.id)===m),selectedRoute=routes.find(x=>String(x.route_operation_id)===op)
 
- useEffect(()=>{Promise.all([api('/masters/machines'),api('/masters/products'),api('/masters/loss-categories'),api('/oee/personnel')]).then(([ms,ps,ls,ops]:any[])=>{setAllMachines(ms);setMachines(ms.filter((x:any)=>x.active));setProducts(ps);setLossCategories(ls);setOperators(ops);if(ps[0])setP(String(ps[0].id));setLosses([emptyLoss])}).catch((e:any)=>setError(e.message))},[])
+ useEffect(()=>{Promise.all([api('/masters/machines'),api('/masters/products'),api('/masters/loss-categories'),api('/personnel')]).then(([ms,ps,ls,ops]:any[])=>{setAllMachines(ms);setMachines(ms.filter((x:any)=>x.active));setProducts(ps);setLossCategories(ls);setOperators(ops);if(ps[0])setP(String(ps[0].id));setLosses([emptyLoss])}).catch((e:any)=>setError(e.message))},[])
  useEffect(()=>{if(!p)return;api(`/masters/routes/${p}?on_date=${d}`).then((versions:any)=>{const active=versions.find((v:any)=>v.effective_from<=d&&(!v.effective_to||v.effective_to>=d))||versions[0];const ops=active?.operations||[];setRoutes(ops);setOp(ops[0]?String(ops[0].route_operation_id):'')}).catch((e:any)=>setError(e.message))},[p,d])
  useEffect(()=>{if(!op)return;api(`/oee/available-machines?route_operation_id=${op}&production_date=${d}`).then((r:any)=>{const available=r.machines||allMachines.filter(x=>x.active);setMachines(available);setM(old=>available.some((x:any)=>String(x.id)===old)?old:(available[0]?String(available[0].id):''));if(r.warning)setMsg(r.warning)}).catch((e:any)=>setError(e.message))},[op,d,allMachines])
 
@@ -70,7 +70,7 @@ export default function OEE(){
   if(fullName.split(' ').length<2){setError('Enter at least first name and surname.');return}
   setOperatorBusy(true)
   try{
-   const r:any=await api('/oee/personnel',{method:'POST',body:JSON.stringify({first_name:fullName.split(/\\s+/)[0],last_name:fullName.split(/\\s+/).slice(1).join(" ")})})
+   const r:any=await api('/personnel',{method:'POST',body:JSON.stringify({first_name:fullName.split(/\\s+/)[0],last_name:fullName.split(/\\s+/).slice(1).join(" ")})})
    setOperators(old=>old.some(x=>x.id===r.id)?old:[...old,{id:r.id,full_name:r.full_name}])
    setOperatorId(r.id);setOperatorName(r.full_name);setError('');setMsg(r.created?'Operator added to the shared master.':'Existing operator selected.')
   }catch(e:any){setError(e.message)}finally{setOperatorBusy(false)}
