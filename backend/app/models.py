@@ -457,6 +457,15 @@ class VendorMovement(Base, TimestampMixin):
     __table_args__ = (Index("ix_vendor_product_expected_return", "product_id", "expected_return_date"),)
 
 
+class OEEOperator(Base, TimestampMixin):
+    __tablename__ = "oee_operators"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(160), unique=True, index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class MachineShiftProduction(Base, TimestampMixin):
     __tablename__ = "machine_shift_production"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -465,6 +474,7 @@ class MachineShiftProduction(Base, TimestampMixin):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("oee_operators.id", ondelete="SET NULL"), nullable=True, index=True)
     shift_duration_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("480"))
     planned_break_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
     downtime_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
