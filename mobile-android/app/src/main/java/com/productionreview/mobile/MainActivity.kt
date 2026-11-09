@@ -198,6 +198,19 @@ private object ApiClient {
     fun correctOeeLoss(lossId: Int, payload: JSONObject, reason: String, token: String): JSONObject =
         request("/oee/loss-events/$lossId", "PUT", payload, token, mapOf("X-Change-Reason" to reason))
 
+    fun loadOeeOperators(token: String): List<Choice> {
+        val rows = array("/oee/personnel", token)
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            Choice(row.getInt("id"), row.optString("full_name"))
+        }
+    }
+
+    fun createOeeOperator(fullName: String, token: String): Choice {
+        val response = request("/oee/personnel", "POST", JSONObject().put("first_name", fullName.trim().split(Regex("\\s+")).first()).put("last_name", fullName.trim().split(Regex("\\s+")).drop(1).joinToString(" ")), token)
+        return Choice(response.getInt("id"), response.optString("full_name"))
+    }
+
     fun loadOeeManagement(
         fromDate: String, toDate: String, token: String,
         productId: Int? = null, routeOperationId: Int? = null, machineId: Int? = null
@@ -442,6 +455,10 @@ class MainActivity : ComponentActivity() {
             var oeeGoodCount by remember { mutableStateOf("0") }
             var oeeRejectCount by remember { mutableStateOf("0") }
             var oeeEntryRemarks by remember { mutableStateOf("") }
+            var oeeOperators by remember { mutableStateOf<List<Choice>>(emptyList()) }
+            var oeeOperatorName by remember { mutableStateOf("") }
+            var oeeOperatorId by remember { mutableStateOf<Int?>(null) }
+            var oeeOperatorMenu by remember { mutableStateOf(false) }
             var oeeLossCategories by remember { mutableStateOf<List<Choice>>(emptyList()) }
             var oeeEntryLosses by remember { mutableStateOf(listOf(OeeLossDraft())) }
             var oeeLossCategory by remember { mutableStateOf<Choice?>(null) }
@@ -605,11 +622,16 @@ class MainActivity : ComponentActivity() {
                         if (oeeLossCategories.isEmpty()) {
                             oeeLossCategories = withContext(Dispatchers.IO) { ApiClient.loadOeeLossCategories(auth) }
                         }
+                        if (oeeOperators.isEmpty()) {
+                            oeeOperators = withContext(Dispatchers.IO) { ApiClient.loadOeeOperators(auth) }
+                        }
                         val context = withContext(Dispatchers.IO) {
                             ApiClient.loadOeeEntryContext(product.id, operation.id, machine.id, oeeDate, oeeShift, auth)
                         }
                         val existing = context.optJSONObject("existing_entry")
                         if (existing == null) {
+                            oeeOperatorId = null
+                            oeeOperatorName = ""
                             oeeEntryId = null
                             oeeCorrectionReason = ""
                             oeeShiftMinutes = "480"
@@ -620,6 +642,8 @@ class MainActivity : ComponentActivity() {
                             oeeEntryLosses = listOf(OeeLossDraft())
                             oeeError = "No saved entry exists. Enter production and loss details below."
                         } else {
+                            oeeOperatorId = existing.optInt("operator_id").takeIf { it > 0 }
+                            oeeOperatorName = existing.optString("operator_name", "")
                             oeeEntryId = existing.optInt("id").takeIf { it > 0 }
                             oeeShiftMinutes = existing.optString("shift_duration_min", "480")
                             oeeBreakMinutes = existing.optString("planned_break_min", "0")
@@ -1126,6 +1150,7 @@ class MainActivity : ComponentActivity() {
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                         Text("Entry #${entry.optInt("id")} • ${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("Operator: ${entry.optString("operator_name").takeIf{it.isNotBlank() && it!="null"} ?: "Not recorded"}",color=Teal,fontSize=11.sp,fontWeight=FontWeight.SemiBold)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                                                     }
@@ -1166,6 +1191,41 @@ class MainActivity : ComponentActivity() {
                                             Text("Editing saved entry #${oeeEntryId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
                                             OutlinedTextField(oeeCorrectionReason,{oeeCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         }
+                                        Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                            OutlinedTextField(
+                                                value=oeeOperatorName,
+                                                onValueChange={value->
+                                                    oeeOperatorName=value
+                                                    oeeOperatorId=oeeOperators.firstOrNull{it.label.equals(value.trim().replace(Regex("\\s+")," "),ignoreCase=true)}?.id
+                                                    oeeOperatorMenu=true
+                                                },
+                                                label={Text("Operator name (first name and surname)")},
+                                                placeholder={Text("Type name or use keyboard microphone")},
+                                                modifier=Modifier.fillMaxWidth(),
+                                                singleLine=true
+                                            )
+                                            DropdownMenu(expanded=oeeOperatorMenu && oeeOperatorName.isNotBlank(),onDismissRequest={oeeOperatorMenu=false}) {
+                                                oeeOperators.filter{it.label.contains(oeeOperatorName.trim(),ignoreCase=true)}.take(8).forEach { option ->
+                                                    DropdownMenuItem(text={Text(option.label)},onClick={
+                                                        oeeOperatorId=option.id;oeeOperatorName=option.label;oeeOperatorMenu=false
+                                                    })
+                                                }
+                                            }
+                                            if(oeeOperatorId==null && oeeOperatorName.trim().split(Regex("\\s+")).filter{it.isNotBlank()}.size>=2) {
+                                                TextButton(onClick={
+                                                    val auth=token
+                                                    if(auth!=null) scope.launch {
+                                                        try {
+                                                            val created=withContext(Dispatchers.IO){ApiClient.createOeeOperator(oeeOperatorName.trim().replace(Regex("\\s+")," "),auth)}
+                                                            oeeOperators=(oeeOperators.filterNot{it.id==created.id}+created).sortedBy{it.label}
+                                                            oeeOperatorId=created.id;oeeOperatorName=created.label;oeeOperatorMenu=false
+                                                            oeeSuccess="Operator registered and available in Web and Android."
+                                                        } catch(e:Exception){oeeError=e.message ?: "Unable to add operator."}
+                                                    }
+                                                }) { Text("＋ Add new operator") }
+                                            }
+                                            Text("Use the microphone on your Android keyboard for voice typing. Review the name, then select or add it.",color=Muted,fontSize=10.sp)
+                                        }
                                         OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("Shift duration (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("Planned breaks (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("Good quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
@@ -1199,6 +1259,7 @@ class MainActivity : ComponentActivity() {
                                         Button(onClick={
                                             val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
                                             if(auth==null||p==null||op==null||m==null)oeeError="Select product, operation and machine first."
+                                            else if(oeeOperatorId==null)oeeError="Select or add an operator name before saving."
                                             else if((oeeGoodCount.toDoubleOrNull()?:-1.0)<0||(oeeRejectCount.toDoubleOrNull()?:-1.0)<0)oeeError="Enter valid non-negative production quantities."
                                             else if(oeeEntryId!=null&&oeeCorrectionReason.trim().length<5)oeeError="Enter a correction reason of at least 5 characters."
                                             else scope.launch {
@@ -1207,7 +1268,7 @@ class MainActivity : ComponentActivity() {
                                                     val lossRows=oeeEntryLosses.filter{!it.saved&&it.categoryId!=null&&(it.duration.toDoubleOrNull()?:0.0)>0}
                                                     val losses=JSONArray()
                                                     lossRows.forEach{loss->losses.put(JSONObject().put("loss_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("loss_category_id",loss.categoryId).put("duration_min",loss.duration.toDouble()).put("qty_loss",loss.qty.toDoubleOrNull()?:0.0).put("remark",loss.remark))}
-                                                    val payload=JSONObject().put("production_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                    val payload=JSONObject().put("production_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("operator_id",oeeOperatorId)
                                                         .put("shift_duration_min",oeeShiftMinutes.toDouble()).put("planned_break_min",oeeBreakMinutes.toDouble())
                                                         .put("downtime_min",availabilityLossTotal).put("good_count",oeeGoodCount.toDouble()).put("reject_count",oeeRejectCount.toDouble())
                                                         .put("ideal_cycle_time_sec",0).put("remarks",oeeEntryRemarks)
