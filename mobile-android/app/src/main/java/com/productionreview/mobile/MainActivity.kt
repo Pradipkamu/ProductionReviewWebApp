@@ -505,6 +505,7 @@ class MainActivity : ComponentActivity() {
             var oeeEditingLossId by remember { mutableStateOf<Int?>(null) }
             var oeeLossCorrectionReason by remember { mutableStateOf("") }
             var oeeEntryId by remember { mutableStateOf<Int?>(null) }
+            var oeeLoadingPreviousEntry by remember { mutableStateOf(false) }
             var oeeCorrectionReason by remember { mutableStateOf("") }
             var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
@@ -629,6 +630,7 @@ class MainActivity : ComponentActivity() {
                 }
                 oeeDate = entryDate
                 oeeShift = entryShift
+                oeeLoadingPreviousEntry = true
                 oeeMode = "ENTRY"
                 scope.launch {
                     oeeLoading = true
@@ -643,6 +645,9 @@ class MainActivity : ComponentActivity() {
                             throw IllegalStateException("The selected production record is no longer available in this scope. Refresh Summary and try again.")
                         }
                         oeeEntryId = entry.optInt("id")
+                        if (oeeOperators.isEmpty()) {
+                            oeeOperators = withContext(Dispatchers.IO) { ApiClient.loadOeeOperators(auth) }
+                        }
                         oeeCorrectionReason = ""
                         oeeOperatorName = entry.optString("operator_name").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
                         oeeOperatorId = oeeOperators.firstOrNull { it.label.equals(oeeOperatorName, ignoreCase = true) }?.id
@@ -671,6 +676,7 @@ class MainActivity : ComponentActivity() {
                         oeeEntryId = null
                         oeeError = e.message ?: "Unable to load the selected production record."
                     } finally {
+                        oeeLoadingPreviousEntry = false
                         oeeLoading = false
                     }
                 }
@@ -721,15 +727,18 @@ class MainActivity : ComponentActivity() {
                         }
                         // ENTRY always opens as a new production record. Existing records must
                         // never be loaded implicitly into edit mode when opening the fresh form.
-                        // Every fresh entry starts with zero planned breaks; editing loads its saved value explicitly.
-                        oeeEntryId = null
-                        oeeBreakMinutes = "0"
-                        oeeCorrectionReason = ""
-                        oeeShiftMinutes = "480"
-                        oeeGoodCount = "0"
-                        oeeRejectCount = "0"
-                        oeeEntryRemarks = ""
-                        oeeEntryLosses = listOf(OeeLossDraft())
+                        // Do not overwrite a record that the user explicitly selected for editing.
+                        if (!oeeLoadingPreviousEntry) {
+                            // Every fresh entry starts with zero planned breaks.
+                            oeeEntryId = null
+                            oeeBreakMinutes = "0"
+                            oeeCorrectionReason = ""
+                            oeeShiftMinutes = "480"
+                            oeeGoodCount = "0"
+                            oeeRejectCount = "0"
+                            oeeEntryRemarks = ""
+                            oeeEntryLosses = listOf(OeeLossDraft())
+                        }
                         oeeError = null
                     } catch (e: Exception) {
                         oeeError = e.message ?: "Unable to load production entry."
