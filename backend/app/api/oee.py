@@ -376,8 +376,11 @@ def update_machine_entry(entry_id: int, payload: MachineEntryCreate, request: Re
     reason = (request.headers.get("X-Change-Reason") or "").strip()
     if len(reason) < 5:
         raise HTTPException(422, "Enter a correction reason of at least 5 characters before updating an OEE entry")
+    operator = db.get(OEEOperator, payload.operator_id) if payload.operator_id is not None else None
+    if not operator or not operator.is_active:
+        raise HTTPException(422, "Select an active operator before updating the OEE entry")
     before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
-              for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
+              for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id", "operator_id",
                           "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
                           "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
     duplicate = db.scalar(select(MachineShiftProduction.id).where(
