@@ -1127,7 +1127,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        listOf("SUMMARY","MANAGEMENT").forEach { mode ->
+                                        listOf("ENTRY","SUMMARY","MANAGEMENT").forEach { mode ->
                                             FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
                                         }
                                     }
@@ -1371,7 +1371,13 @@ class MainActivity : ComponentActivity() {
                                                     oeeEntryId = null
                                                     oeeCorrectionReason = ""
                                                     oeeEntryLosses = listOf(OeeLossDraft())
-                                                    oeeMode = "SUMMARY"
+                                                    // Keep the selected production scope and operator for quick consecutive entries,
+                                                    // but clear record-specific values and return directly to the entry form.
+                                                    oeeGoodCount = "0"
+                                                    oeeRejectCount = "0"
+                                                    oeeEntryRemarks = ""
+                                                    oeeCorrectionReason = ""
+                                                    oeeMode = "ENTRY"
                                                     oeeError = null
                                                     oeeSuccess = if (savedEntryId != null) {
                                                         "Production entry #$savedEntryId saved successfully. Edit mode closed."
