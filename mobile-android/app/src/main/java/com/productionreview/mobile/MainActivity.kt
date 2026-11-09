@@ -48,7 +48,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URL
+import java.io.IOException
 import java.time.LocalDate
 
 private const val API_BASE = "https://machineshop.duckdns.org/api"
@@ -76,6 +79,32 @@ private data class OeeLossDraft(
 )
 
 private object ApiClient {
+    private fun describeApiError(body: String, code: Int): String {
+        fun valueText(value: Any?): String = when (value) {
+            is String -> value.trim()
+            is JSONObject -> listOf("message", "msg", "detail", "error_description", "error")
+                .firstNotNullOfOrNull { key -> value.opt(key)?.let(::valueText)?.takeIf { it.isNotBlank() } }.orEmpty()
+            is JSONArray -> (0 until value.length()).mapNotNull { index ->
+                value.opt(index)?.let(::valueText)?.takeIf { it.isNotBlank() }
+            }.distinct().joinToString("; ")
+            else -> ""
+        }
+        val parsed = runCatching {
+            val json = JSONObject(body)
+            listOf("detail", "message", "error_description", "error")
+                .firstNotNullOfOrNull { key -> json.opt(key)?.let(::valueText)?.takeIf { it.isNotBlank() } }.orEmpty()
+        }.getOrElse { runCatching { valueText(JSONArray(body)) }.getOrDefault("") }
+        if (parsed.isNotBlank()) return parsed
+        return when (code) {
+            400 -> "The request could not be accepted. Check the entered information."
+            401 -> "Incorrect username or password, or your session is no longer valid."
+            403 -> "Your account does not have permission to sign in."
+            404 -> "The sign-in service could not be found. Contact the administrator."
+            in 500..599 -> "The server encountered an error (HTTP $code). Please try again later."
+            else -> "Sign-in failed (HTTP $code). Please check your details and try again."
+        }
+    }
+
     private fun requestText(path: String, method: String, body: JSONObject? = null, token: String? = null,
                              extraHeaders: Map<String, String> = emptyMap()): String {
         val connection = (URL(API_BASE + path).openConnection() as HttpURLConnection).apply {
@@ -96,11 +125,14 @@ private object ApiClient {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull().orEmpty()
-                throw IllegalStateException(detail.ifBlank { "Server returned HTTP $code" })
-            }
+            if (code !in 200..299) throw IllegalStateException(describeApiError(text, code))
             return text
+        } catch (e: SocketTimeoutException) {
+            throw IllegalStateException("Connection timed out. Check your internet connection and try again.", e)
+        } catch (e: UnknownHostException) {
+            throw IllegalStateException("Cannot reach the Production Review server. Check your internet connection.", e)
+        } catch (e: IOException) {
+            throw IllegalStateException("Network error while contacting the server: ${e.localizedMessage ?: "please try again"}.", e)
         } finally { connection.disconnect() }
     }
 
@@ -863,10 +895,21 @@ class MainActivity : ComponentActivity() {
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
                                                     token=result.first; account=result.second; password=""; refreshPendingActions(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
-                                                } catch(e:Exception){message=e.message ?: "Unable to sign in."}
-                                                finally{busy=false}
+                                                } catch(e:Exception){
+                                                    message=e.message?.takeIf { it.isNotBlank() } ?: "Unable to sign in. Check your connection and try again."
+                                                } finally{busy=false}
                                             }}
                                         },enabled=!busy,modifier=Modifier.fillMaxWidth().height(50.dp),colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text(if(busy)"PLEASE WAIT…" else "SIGN IN") }
+                                        if (!busy && message != "Connect securely to your production account." && !message.startsWith("Signed in.")) {
+                                            Card(
+                                                modifier=Modifier.fillMaxWidth(),
+                                                colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF1F0)),
+                                                border=androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF2C7C4)),
+                                                shape=RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text(message, modifier=Modifier.fillMaxWidth().padding(12.dp), color=Danger, fontSize=13.sp, fontWeight=FontWeight.Medium)
+                                            }
+                                        }
                                     }
                                 }
                             } else {
@@ -1206,11 +1249,29 @@ class MainActivity : ComponentActivity() {
                                                 modifier=Modifier.fillMaxWidth(),
                                                 singleLine=true
                                             )
-                                            DropdownMenu(expanded=oeeOperatorMenu && oeeOperatorName.isNotBlank(),onDismissRequest={oeeOperatorMenu=false}) {
-                                                oeeOperators.filter{it.label.contains(oeeOperatorName.trim(),ignoreCase=true)}.take(8).forEach { option ->
-                                                    DropdownMenuItem(text={Text(option.label)},onClick={
-                                                        oeeOperatorId=option.id;oeeOperatorName=option.label;oeeOperatorMenu=false
-                                                    })
+                                            val matchingOperators = if (oeeOperatorName.isBlank()) emptyList()
+                                                else oeeOperators.filter { it.label.contains(oeeOperatorName.trim(), ignoreCase=true) }.take(8)
+                                            if (oeeOperatorMenu && matchingOperators.isNotEmpty()) {
+                                                Card(
+                                                    modifier=Modifier.fillMaxWidth(),
+                                                    colors=CardDefaults.cardColors(containerColor=Color.White),
+                                                    border=androidx.compose.foundation.BorderStroke(1.dp, Border),
+                                                    shape=RoundedCornerShape(10.dp)
+                                                ) {
+                                                    Column(Modifier.fillMaxWidth().padding(vertical=4.dp)) {
+                                                        matchingOperators.forEach { option ->
+                                                            TextButton(
+                                                                onClick={
+                                                                    oeeOperatorId=option.id
+                                                                    oeeOperatorName=option.label
+                                                                    oeeOperatorMenu=false
+                                                                },
+                                                                modifier=Modifier.fillMaxWidth()
+                                                            ) {
+                                                                Text(option.label, modifier=Modifier.fillMaxWidth(), color=Navy)
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                             if(oeeOperatorId==null && oeeOperatorName.trim().split(Regex("\\s+")).filter{it.isNotBlank()}.size>=2) {
