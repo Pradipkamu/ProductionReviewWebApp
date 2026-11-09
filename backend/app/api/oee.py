@@ -144,7 +144,7 @@ def list_oee_operators(q: str = "", db: Session = Depends(get_db), _: User = Dep
     term = " ".join(q.strip().split())
     if term:
         query = query.where(OEEOperator.normalized_name.contains(term.casefold()))
-    rows = db.scalars(query.order_by(OEEOperator.full_name).limit(30)).all()
+    rows = db.scalars(query.order_by(OEEOperator.full_name).limit(500)).all()
     return [{"id": row.id, "full_name": row.full_name} for row in rows]
 
 
