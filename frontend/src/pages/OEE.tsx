@@ -70,9 +70,9 @@ export default function OEE(){
   if(fullName.split(' ').length<2){setError('Enter at least first name and surname.');return}
   setOperatorBusy(true)
   try{
-   const r:any=await api('/personnel',{method:'POST',body:JSON.stringify({first_name:fullName.split(/\\s+/)[0],last_name:fullName.split(/\\s+/).slice(1).join(" ")})})
+   const r:any=await api('/personnel',{method:'POST',body:JSON.stringify({first_name:fullName.split(/\s+/)[0],last_name:fullName.split(/\s+/).slice(1).join(" ")})})
    setOperators(old=>old.some(x=>x.id===r.id)?old:[...old,{id:r.id,full_name:r.full_name}])
-   setOperatorId(r.id);setOperatorName(r.full_name);setError('');setMsg(r.created?'Operator added to the shared master.':'Existing operator selected.')
+   setOperatorId(r.id);setOperatorName(r.full_name);setError('');setMsg(r.duplicate_warning?'A person with the same name already exists. Please verify identity before continuing. New record added.':'Operator added to the shared Personnel Master.')
   }catch(e:any){setError(e.message)}finally{setOperatorBusy(false)}
  }
  function startOperatorVoice(){
