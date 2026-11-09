@@ -174,8 +174,6 @@ class MachineMasterHistory(Base, TimestampMixin):
     __tablename__ = "machine_master_history"
     id: Mapped[int] = mapped_column(primary_key=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
-    operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("personnel.id", ondelete="SET NULL"), nullable=True, index=True)
-    operator: Mapped[Optional[Personnel]] = relationship()
     change_type: Mapped[str] = mapped_column(String(20))
     snapshot_json: Mapped[str] = mapped_column(Text)
     reason: Mapped[str] = mapped_column(String(500))
@@ -467,7 +465,7 @@ class Personnel(Base, TimestampMixin):
     last_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(201), nullable=False, index=True)
     normalized_name: Mapped[str] = mapped_column(String(201), nullable=False, index=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
