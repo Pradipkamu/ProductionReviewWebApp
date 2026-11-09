@@ -94,10 +94,9 @@ def _context(db: Session, product_id: int, route_operation_id: int, machine_id: 
 
 
 def _prepare_entry(db: Session, payload: MachineEntryCreate) -> tuple[dict, dict]:
-    if payload.operator_id is not None:
-        person = db.get(Personnel, payload.operator_id)
-        if not person or not person.is_active:
-            raise HTTPException(422, "Select an active person from the Personnel Master")
+    person = db.get(Personnel, payload.operator_id)
+    if not person or not person.is_active:
+        raise HTTPException(422, "Select an active person from the Personnel Master")
 
     context = _context(db, payload.product_id, payload.route_operation_id, payload.machine_id, payload.production_date)
     data = payload.model_dump()
@@ -272,7 +271,7 @@ def save_machine_entry_with_losses(
         before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
                   for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
                               "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
-                              "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
+                              "good_count", "reject_count", "ideal_cycle_time_sec", "operator_id", "remarks")}
     else:
         duplicate = db.scalar(select(MachineShiftProduction.id).where(
             MachineShiftProduction.production_date == entry_payload.production_date,
