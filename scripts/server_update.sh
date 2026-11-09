@@ -89,8 +89,8 @@ deploy() {
   log "Current branch: $current_branch"
   log "Current commit: $current_head"
   log "Fetching target branch origin/$branch."
-  git fetch origin "$branch" || stop "Fetch failed."
-  target_ref="FETCH_HEAD"
+  git fetch origin "+refs/heads/$branch:refs/remotes/origin/$branch" || stop "Fetch failed."
+  target_ref="origin/$branch"
   target_head="$(git rev-parse "$target_ref")"
   log "Target commit: $target_head"
 
