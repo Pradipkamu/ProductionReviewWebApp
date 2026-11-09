@@ -20,9 +20,8 @@ def upgrade():
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.ForeignKeyConstraint(["created_by_id"], ["users.id"], ondelete="SET NULL"),
-        sa.UniqueConstraint("normalized_name", name="uq_oee_operators_normalized_name"),
     )
-    op.create_index("ix_oee_operators_normalized_name", "oee_operators", ["normalized_name"], unique=False)
+    op.create_index("ix_oee_operators_normalized_name", "oee_operators", ["normalized_name"], unique=True)
     with op.batch_alter_table("machine_shift_production") as batch:
         batch.add_column(sa.Column("operator_id", sa.Integer(), nullable=True))
         batch.create_foreign_key(
