@@ -101,8 +101,6 @@ deploy() {
   [[ -n "$branch" && "$branch" != -* ]] || stop "Invalid target branch."
   [[ -s "$db_backup" ]] || stop "Supply --reuse-db-backup with the existing dump."
   [[ -d "$code_snapshot" ]] || stop "Supply --code-snapshot with the existing snapshot."
-  preserve_current_state
-
   current_branch="$(git branch --show-current)"
   current_head="$(git rev-parse HEAD)"
   log "Current branch: $current_branch"
@@ -118,7 +116,7 @@ deploy() {
 
   check_untracked_collisions "$target_ref"
 
-  changed_files="$(git diff --name-only)"
+  changed_files="$(git diff HEAD --name-only)"
   while IFS= read -r file; do
     [[ -z "$file" ]] && continue
     git diff --quiet "$target_ref" -- "$file" ||
