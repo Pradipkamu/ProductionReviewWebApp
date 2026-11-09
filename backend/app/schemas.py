@@ -231,7 +231,7 @@ class MachineEntryCreate(BaseModel):
     product_id: int
     route_operation_id: int
     machine_id: int
-    operator_id: Optional[int] = None
+    operator_id: int
     shift_duration_min: Decimal = Field(default=Decimal("480"), gt=0)
     planned_break_min: Decimal = Field(default=Decimal("0"), ge=0)
     downtime_min: Decimal = Field(default=Decimal("0"), ge=0)
