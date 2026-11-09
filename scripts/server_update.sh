@@ -4,6 +4,7 @@
 # Install/run from the repository root:
 #   bash scripts/server_update.sh check
 #   bash scripts/server_update.sh backup
+#   bash scripts/server_update.sh preserve
 #   bash scripts/server_update.sh prepare <branch>
 #   bash scripts/server_update.sh deploy <branch> --confirm
 #
@@ -13,6 +14,8 @@
 # Safety guarantees:
 # - Does not print .env or rendered Compose configuration.
 # - Never stashes, resets, checks out, or discards local changes.
+# - Can archive tracked edits and untracked files outside the repository.
+# - Automatically preserves dirty server code before refusing prepare/deploy.
 # - Stops if the Git working tree is dirty or deployment is not fast-forward.
 # - Creates and verifies a PostgreSQL custom-format backup before migration.
 # - Does not delete database rows, Docker volumes, or attachments.
@@ -24,6 +27,7 @@ umask 077
 APP_DIR="${APP_DIR:-$HOME/ProductionReviewWebApp}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/ProductionReviewWebApp-backups/database}"
 LOG_DIR="${LOG_DIR:-$HOME/ProductionReviewWebApp-backups/logs}"
+CODE_BACKUP_DIR="${CODE_BACKUP_DIR:-$HOME/ProductionReviewWebApp-backups/server-code}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 LOG_FILE=""
 
@@ -48,6 +52,50 @@ init() {
 
   cd "$APP_DIR"
   docker compose config --quiet || stop "Docker Compose configuration is invalid."
+}
+
+preserve_server_code() {
+  local snapshot_dir status_file patch_file untracked_list untracked_archive
+
+  snapshot_dir="$CODE_BACKUP_DIR/server-code-$STAMP"
+  mkdir -p "$snapshot_dir"
+  chmod 700 "$CODE_BACKUP_DIR" "$snapshot_dir"
+
+  status_file="$snapshot_dir/git-status.txt"
+  patch_file="$snapshot_dir/tracked-changes.patch"
+  untracked_list="$snapshot_dir/untracked-files.list0"
+  untracked_archive="$snapshot_dir/untracked-files.tar.gz"
+
+  git status --short --branch > "$status_file"
+  git diff HEAD --binary > "$patch_file"
+  git ls-files --others --exclude-standard -z > "$untracked_list"
+
+  if [[ -s "$untracked_list" ]]; then
+    tar --null -T "$untracked_list" -czf "$untracked_archive"
+  else
+    rm -f "$untracked_list"
+    : > "$snapshot_dir/no-untracked-files.txt"
+  fi
+
+  chmod 600 "$status_file" "$patch_file"
+  [[ ! -f "$untracked_archive" ]] || chmod 600 "$untracked_archive"
+  [[ ! -f "$untracked_list" ]] || chmod 600 "$untracked_list"
+
+  log "SERVER CODE PRESERVED: $snapshot_dir"
+  log "Tracked-change patch: $patch_file"
+  if [[ -f "$untracked_archive" ]]; then
+    log "Untracked files archive: $untracked_archive"
+  else
+    log "No untracked non-ignored files were found."
+  fi
+  log "This is a preservation snapshot only; no working files were changed."
+}
+
+preserve_if_dirty_then_stop() {
+  if [[ -n "$(git status --porcelain)" ]]; then
+    preserve_server_code
+    stop "Working tree is dirty. Server code was archived; review/reconcile the changes before deployment. Nothing was stashed or discarded."
+  fi
 }
 
 check_git_clean() {
@@ -139,9 +187,13 @@ main() {
       show_status
       database_backup
       ;;
+    preserve)
+      preserve_server_code
+      ;;
     prepare)
       local branch="${2:-}"
       [[ -n "$branch" ]] || stop "Branch name is required."
+      preserve_if_dirty_then_stop
       check_git_clean
       log "Fetching origin/$branch."
       git fetch origin "$branch" || stop "Git fetch failed."
@@ -162,6 +214,7 @@ main() {
       [[ "$confirmation" == "--confirm" ]] ||
         stop "Explicit confirmation required: deploy <branch> --confirm"
 
+      preserve_if_dirty_then_stop
       check_git_clean
       [[ "$(git branch --show-current)" == "$branch" ]] ||
         stop "Current branch must already be '$branch'. This helper will not switch branches."
