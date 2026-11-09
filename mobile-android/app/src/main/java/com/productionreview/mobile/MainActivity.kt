@@ -671,7 +671,7 @@ class MainActivity : ComponentActivity() {
                             oeeEntryId = null
                             oeeCorrectionReason = ""
                             oeeShiftMinutes = "480"
-                            oeeBreakMinutes = "0"
+                            // Keep the planned break value from the previous entry for consecutive records.
                             oeeGoodCount = "0"
                             oeeRejectCount = "0"
                             oeeEntryRemarks = ""
