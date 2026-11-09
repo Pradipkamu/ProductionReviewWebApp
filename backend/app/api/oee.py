@@ -231,6 +231,12 @@ def entry_context(product_id: int, route_operation_id: int, machine_id: int, pro
 
 @router.post("/machine-entry")
 def save_machine_entry(payload: MachineEntryCreate, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    if payload.operator_id is not None:
+        operator = db.get(OEEOperator, payload.operator_id)
+        if not operator or not operator.is_active:
+            raise HTTPException(422, "Select an active operator")
+    else:
+        raise HTTPException(422, "Select an operator before saving the OEE entry")
     duplicate = db.scalar(select(MachineShiftProduction.id).where(
         MachineShiftProduction.production_date == payload.production_date,
         MachineShiftProduction.shift == payload.shift,
@@ -270,7 +276,7 @@ def save_machine_entry_with_losses(
             raise HTTPException(422, "An existing entry's date, shift, product, operation and machine cannot be changed")
         before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
                   for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
-                              "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
+                              "operator_id", "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
                               "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
     else:
         duplicate = db.scalar(select(MachineShiftProduction.id).where(
