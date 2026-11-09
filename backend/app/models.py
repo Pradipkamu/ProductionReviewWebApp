@@ -457,6 +457,18 @@ class VendorMovement(Base, TimestampMixin):
     __table_args__ = (Index("ix_vendor_product_expected_return", "product_id", "expected_return_date"),)
 
 
+class Personnel(Base, TimestampMixin):
+    """Shared people master for OEE, training and future workforce modules."""
+    __tablename__ = "personnel"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    last_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(201), nullable=False, index=True)
+    normalized_name: Mapped[str] = mapped_column(String(201), nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class MachineShiftProduction(Base, TimestampMixin):
     __tablename__ = "machine_shift_production"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -465,6 +477,8 @@ class MachineShiftProduction(Base, TimestampMixin):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("personnel.id", ondelete="SET NULL"), nullable=True, index=True)
+    operator: Mapped[Optional[Personnel]] = relationship()
     shift_duration_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("480"))
     planned_break_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
     downtime_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
