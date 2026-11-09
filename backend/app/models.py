@@ -475,6 +475,7 @@ class MachineShiftProduction(Base, TimestampMixin):
     route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
     operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("oee_operators.id", ondelete="SET NULL"), nullable=True, index=True)
+    operator: Mapped[Optional[OEEOperator]] = relationship()
     shift_duration_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("480"))
     planned_break_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
     downtime_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
