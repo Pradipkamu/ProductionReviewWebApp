@@ -66,7 +66,7 @@ export default function OEE(){
   }catch(e:any){setError(e.message)}
  }
  async function addOperator(){
-  const fullName=operatorName.trim().replace(/\\s+/g,' ')
+  const fullName=operatorName.trim().replace(/\s+/g,' ')
   if(fullName.split(' ').length<2){setError('Enter at least first name and surname.');return}
   setOperatorBusy(true)
   try{
@@ -79,7 +79,7 @@ export default function OEE(){
   const w=window as any;const Speech=w.SpeechRecognition||w.webkitSpeechRecognition
   if(!Speech){setError('Voice typing is not supported in this browser. Use your keyboard microphone instead.');return}
   const recognition=new Speech();recognition.lang='en-IN';recognition.interimResults=false;recognition.maxAlternatives=1
-  recognition.onresult=(event:any)=>{const value=event.results?.[0]?.[0]?.transcript||'';setOperatorName(value);const match=operators.find(x=>x.full_name.toLowerCase()===value.trim().replace(/\\s+/g,' ').toLowerCase());setOperatorId(match?.id||null)}
+  recognition.onresult=(event:any)=>{const value=event.results?.[0]?.[0]?.transcript||'';setOperatorName(value);const match=operators.find(x=>x.full_name.toLowerCase()===value.trim().replace(/\s+/g,' ').toLowerCase());setOperatorId(match?.id||null)}
   recognition.onerror=()=>setError('Voice recognition failed. Please type the operator name.')
   recognition.start()
  }
@@ -98,9 +98,9 @@ export default function OEE(){
    <div className="panel-title"><div><h2>Machine shift production</h2><p>{entryId?`Loaded entry #${entryId}. Saving requires an audited correction reason.`:'Enter good and rejected quantities; total output and availability downtime are calculated automatically.'}</p></div></div>
    <div className="oee-entry-grid">
     <label className="span-2">Operator name
-     <input list="oee-operator-options" value={operatorName} onChange={e=>{const value=e.target.value;setOperatorName(value);const match=operators.find(x=>x.full_name.toLowerCase()===value.trim().replace(/\\s+/g,' ').toLowerCase());setOperatorId(match?.id||null)}} placeholder="Type first name and surname"/>
+     <input list="oee-operator-options" value={operatorName} onChange={e=>{const value=e.target.value;setOperatorName(value);const match=operators.find(x=>x.full_name.toLowerCase()===value.trim().replace(/\s+/g,' ').toLowerCase());setOperatorId(match?.id||null)}} placeholder="Type first name and surname"/>
      <datalist id="oee-operator-options">{operators.map(x=><option key={x.id} value={x.full_name}/>)}</datalist>
-     <span className="button-row"><button type="button" className="secondary small" onClick={startOperatorVoice}>Voice type</button>{!operatorId&&operatorName.trim().split(/\\s+/).filter(Boolean).length>=2&&<button type="button" className="small" onClick={addOperator} disabled={operatorBusy}>{operatorBusy?'Adding…':`Add “${operatorName.trim()}”`}</button>}</span>
+     <span className="button-row"><button type="button" className="secondary small" onClick={startOperatorVoice}>Voice type</button>{!operatorId&&operatorName.trim().split(/\s+/).filter(Boolean).length>=2&&<button type="button" className="small" onClick={addOperator} disabled={operatorBusy}>{operatorBusy?'Adding…':`Add “${operatorName.trim()}”`}</button>}</span>
      {operatorId&&<small className="muted">Registered operator selected</small>}
     </label>
     <label>Shift duration (min)<input type="number" min="1" value={entry.shift_duration_min} onChange={e=>setEntry({...entry,shift_duration_min:Number(e.target.value)})}/></label>
