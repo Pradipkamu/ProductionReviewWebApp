@@ -54,6 +54,8 @@ import java.net.UnknownHostException
 import java.net.URL
 import java.io.IOException
 import java.time.LocalDate
+import java.time.Instant
+import java.time.ZoneOffset
 
 private const val API_BASE = "https://machineshop.duckdns.org/api"
 private val Navy = Color(0xFF142B45)
@@ -471,6 +473,7 @@ class MainActivity : ComponentActivity() {
             var verificationResult by remember { mutableStateOf("") }
             var evidenceFile by remember { mutableStateOf<File?>(null) }
             var oeeDate by remember { mutableStateOf(LocalDate.now().toString()) }
+            var showOeeDatePicker by remember { mutableStateOf(false) }
             var oeeShift by remember { mutableStateOf("A") }
             var oeeProduct by remember { mutableStateOf<Choice?>(null) }
             var oeeOperation by remember { mutableStateOf<RouteChoice?>(null) }
@@ -1188,7 +1191,11 @@ class MainActivity : ComponentActivity() {
                                                 if(auth!=null) loadOeeScope(auth,selected)
                                                 else oeeError="Please sign in again."
                                             })
-                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date")},placeholder={Text("YYYY-MM-DD")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                            OutlinedTextField(value=oeeDate,onValueChange={},readOnly=true,label={Text("Production date")},singleLine=true,trailingIcon={IconButton(onClick={showOeeDatePicker=true}){Icon(Icons.Filled.DateRange,contentDescription="Choose production date")}},modifier=Modifier.fillMaxWidth().clickable{showOeeDatePicker=true})
+                                            if(showOeeDatePicker) {
+                                                val pickerState=rememberDatePickerState(initialSelectedDateMillis=runCatching{LocalDate.parse(oeeDate).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()}.getOrDefault(System.currentTimeMillis()))
+                                                DatePickerDialog(onDismissRequest={showOeeDatePicker=false},confirmButton={TextButton(onClick={pickerState.selectedDateMillis?.let{millis->oeeDate=Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString();oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null};showOeeDatePicker=false}){Text("OK")}},dismissButton={TextButton(onClick={showOeeDatePicker=false}){Text("CANCEL")}}){DatePicker(state=pickerState)}
+                                            }
                                             Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Text("Shift",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
