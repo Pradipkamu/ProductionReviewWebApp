@@ -150,9 +150,11 @@ def available_machines(route_operation_id: int, production_date: date,
     ).all()
     if rows:
         return {"mapped": True, "machines": [{"id": m.id, "code": m.code, "name": m.name} for _, m in rows]}
-    machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.code)).all()
-    return {"mapped": False, "warning": "No machine mapping exists; showing all active machines",
-            "machines": [{"id": m.id, "code": m.code, "name": m.name} for m in machines]}
+    # OEE entry selection must only offer explicitly mapped machines.
+    # Returning an empty list lets the mobile client exclude this operation
+    # instead of accidentally treating every active machine as a valid mapping.
+    return {"mapped": False, "warning": "No active machine mapping exists for this operation on the selected date.",
+            "machines": []}
 
 
 @router.get("/entry-context")
