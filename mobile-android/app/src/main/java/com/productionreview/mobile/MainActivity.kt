@@ -83,6 +83,15 @@ private data class OeeLossDraft(
     val endTime: String = ""
 )
 
+private fun resolvedOeeLossQuantity(loss: OeeLossDraft, idealCycleSeconds: Double?): Double {
+    if (loss.component == "AVAILABILITY") {
+        val minutes = loss.duration.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+        val cycle = idealCycleSeconds?.takeIf { it > 0.0 } ?: return 0.0
+        return minutes * 60.0 / cycle
+    }
+    return loss.qty.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+}
+
 private object ApiClient {
     private fun describeApiError(body: String, code: Int): String {
         fun valueText(value: Any?): String = when (value) {
@@ -1466,7 +1475,12 @@ class MainActivity : ComponentActivity() {
                                                     OutlinedTextField(loss.duration,{value->
                                                         val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(!loss.saved&&value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
                                                     },label={Text("Loss time (minutes)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                                    OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("Quantity loss")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                    if(loss.component=="AVAILABILITY") {
+                                                        val calculatedQty=if(oeeIdealCycleSeconds!=null) "%.2f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds)) else ""
+                                                        OutlinedTextField(value=calculatedQty,onValueChange={},readOnly=true,label={Text("Calculated quantity loss (pcs)")},supportingText={Text(if(oeeIdealCycleSeconds==null)"Standard cycle time unavailable" else "Calculated from loss minutes × 60 ÷ standard cycle time")},modifier=Modifier.fillMaxWidth())
+                                                    } else {
+                                                        OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("Quantity loss")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                    }
                                                     OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("Reason / details")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                                 }
                                             }
@@ -1528,7 +1542,7 @@ class MainActivity : ComponentActivity() {
                                                             .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
                                                             .put("loss_category_id",loss.categoryId)
                                                             .put("duration_min",loss.duration.toDouble())
-                                                            .put("qty_loss",loss.qty.toDoubleOrNull()?:0.0)
+                                                            .put("qty_loss",resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds))
                                                             .put("remark",loss.remark)
                                                         if(loss.startTime.isNotBlank())lossPayload.put("start_time",loss.startTime)
                                                         if(loss.endTime.isNotBlank())lossPayload.put("end_time",loss.endTime)
