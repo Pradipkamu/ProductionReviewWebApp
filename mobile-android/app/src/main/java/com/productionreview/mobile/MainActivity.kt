@@ -1,6 +1,7 @@
 package com.productionreview.mobile
 
 import android.os.Bundle
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -333,6 +335,30 @@ private object ApiClient {
     }
 
     fun loadActionPlan(id:Int,token:String): JSONObject = request("/actions/$id/plan","GET",token=token)
+    fun loadActionHistory(id:Int,token:String): List<JSONObject> {
+        val rows=array("/actions/$id/history",token)
+        return (0 until rows.length()).map { rows.getJSONObject(it) }
+    }
+    fun downloadActionAttachment(actionId:Int,attachmentId:Int,fileName:String,cacheDir:File,token:String):File {
+        val connection=(URL("$API_BASE/actions/$actionId/attachments/$attachmentId").openConnection() as HttpURLConnection).apply {
+            requestMethod="GET";connectTimeout=15000;readTimeout=45000
+            setRequestProperty("Accept","application/octet-stream")
+            setRequestProperty("Authorization","Bearer $token")
+        }
+        try {
+            val code=connection.responseCode
+            if(code !in 200..299) {
+                val body=connection.errorStream?.bufferedReader()?.use{it.readText()}.orEmpty()
+                val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty()
+                throw IllegalStateException(detail.ifBlank{"Attachment download failed (HTTP $code)"})
+            }
+            val safeName=fileName.substringAfterLast('/').substringAfterLast(92.toChar()).replace(Regex("[^A-Za-z0-9._-]"),"_").ifBlank{"action_attachment_$attachmentId"}
+            val target=File(cacheDir,"action_" + actionId + "_" + attachmentId + "_" + safeName)
+            connection.inputStream.use{input->target.outputStream().use{output->input.copyTo(output)}}
+            if(!target.exists()||target.length()==0L)throw IllegalStateException("Downloaded attachment is empty.")
+            return target
+        } finally { connection.disconnect() }
+    }
     fun updateAction(id:Int,comment:String,status:String,token:String): JSONObject {
         val body=JSONObject().put("comment",comment).put("status",status)
         return request("/actions/$id","PATCH",body,token)
@@ -524,6 +550,16 @@ class MainActivity : ComponentActivity() {
             var verificationMethod by remember { mutableStateOf("") }
             var verificationResult by remember { mutableStateOf("") }
             var evidenceFile by remember { mutableStateOf<File?>(null) }
+            var actionAttachments by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+            var actionHistory by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+            var actionHistoryLoading by remember { mutableStateOf(false) }
+            var actionHistoryError by remember { mutableStateOf<String?>(null) }
+            var whyWhySavedPending by remember { mutableStateOf(false) }
+            var evidenceUploadedPending by remember { mutableStateOf(false) }
+            var actionUpdateSavedPending by remember { mutableStateOf(false) }
+            var pendingFollowupComment by remember { mutableStateOf("") }
+            var pendingActionStatus by remember { mutableStateOf("IN_PROGRESS") }
+            var submissionStarted by remember { mutableStateOf(false) }
             var oeeDate by remember { mutableStateOf(LocalDate.now().toString()) }
             var showOeeDatePicker by remember { mutableStateOf(false) }
             var oeeShift by remember { mutableStateOf("A") }
@@ -617,6 +653,11 @@ class MainActivity : ComponentActivity() {
                     try {
                         val data=withContext(Dispatchers.IO){ApiClient.loadActionPlan(item.id,auth)}
                         actionPlan=data.optJSONObject("plan")
+                        val attachments=data.optJSONArray("attachments") ?: JSONArray()
+                        actionAttachments=(0 until attachments.length()).map{attachments.getJSONObject(it)}
+                        actionHistory=emptyList();actionHistoryError=null
+                        whyWhySavedPending=false;evidenceUploadedPending=false;actionUpdateSavedPending=false
+                        pendingFollowupComment="";pendingActionStatus=item.status;submissionStarted=false
                         val p=actionPlan
                         why1=p?.optString("why1").orEmpty().takeUnless{it=="null"}.orEmpty()
                         why2=p?.optString("why2").orEmpty().takeUnless{it=="null"}.orEmpty()
@@ -1195,6 +1236,7 @@ class MainActivity : ComponentActivity() {
                                 } else if(homeTab=="DETAIL" && selectedAction!=null) {
                                     val item=selectedAction!!
                                     TextButton(onClick={homeTab=if(account?.role?.uppercase() in listOf("ADMIN","MANAGEMENT")) "USER_ACTIONS" else "ACTIONS";token?.let{refreshPendingActions(it)}}) { Text("← BACK TO ACTIONS") }
+                                    OutlinedButton(onClick={val auth=token;if(auth==null)message="Please sign in again." else scope.launch {homeTab="HISTORY";actionHistoryLoading=true;actionHistoryError=null;try{actionHistory=withContext(Dispatchers.IO){ApiClient.loadActionHistory(item.id,auth)}}catch(e:Exception){actionHistoryError=e.message ?: "Unable to load action history."}finally{actionHistoryLoading=false}}},modifier=Modifier.fillMaxWidth()){Text("VIEW ACTION HISTORY")}
                                     Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), colors=CardDefaults.cardColors(containerColor=Color.White), border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                             Text(item.number,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
@@ -1237,19 +1279,37 @@ class MainActivity : ComponentActivity() {
                                         else if(followupComment.isBlank()) message="Enter action taken / progress before submitting."
                                         else scope.launch {
                                             busy=true
+                                            if(!submissionStarted) { pendingFollowupComment=followupComment.trim();pendingActionStatus=actionStatus;submissionStarted=true }
                                             try {
-                                                withContext(Dispatchers.IO){ApiClient.updateAction(item.id,followupComment.trim(),actionStatus,auth)}
-                                                evidenceFile?.let { evidence ->
-                                                    withContext(Dispatchers.IO){ApiClient.uploadActionEvidence(item.id,evidence,auth)}
-                                                    evidence.delete();evidenceFile=null
-                                                }
-                                                if(item.whyWhy) {
+                                                if(item.whyWhy && !whyWhySavedPending) {
                                                     val plan=JSONObject().put("why1",why1).put("why2",why2).put("why3",why3).put("why4",why4).put("why5",why5).put("root_cause",rootCause).put("corrective_action",correctiveAction).put("preventive_action",preventiveAction).put("verification_method",verificationMethod).put("verification_result",verificationResult)
                                                     withContext(Dispatchers.IO){ApiClient.updateWhyWhy(item.id,plan,auth)}
+                                                    whyWhySavedPending=true
                                                 }
+                                                if(evidenceFile!=null && !evidenceUploadedPending) {
+                                                    val evidence=evidenceFile!!
+                                                    withContext(Dispatchers.IO){ApiClient.uploadActionEvidence(item.id,evidence,auth)}
+                                                    evidence.delete();evidenceFile=null;evidenceUploadedPending=true
+                                                }
+                                                if(!actionUpdateSavedPending) {
+                                                    withContext(Dispatchers.IO){ApiClient.updateAction(item.id,pendingFollowupComment,pendingActionStatus,auth)}
+                                                    actionUpdateSavedPending=true
+                                                }
+                                                whyWhySavedPending=false;evidenceUploadedPending=false;actionUpdateSavedPending=false
+                                                pendingFollowupComment="";pendingActionStatus=actionStatus;submissionStarted=false
+                                                followupComment=""
                                                 message="Action update submitted successfully."
-                                                selectedAction=null;homeTab="ACTIONS";refreshPendingActions(auth)
-                                            } catch(e:Exception){message=e.message ?: "Unable to submit action update."}
+                                                refreshPendingActions(auth)
+                                                homeTab="HISTORY";actionHistoryLoading=true;actionHistoryError=null
+                                                try { actionHistory=withContext(Dispatchers.IO){ApiClient.loadActionHistory(item.id,auth)} }
+                                                catch(historyError:Exception){actionHistoryError=historyError.message ?: "Unable to refresh action history."}
+                                                finally{actionHistoryLoading=false}
+                                                try {
+                                                    val refreshed=withContext(Dispatchers.IO){ApiClient.loadActionPlan(item.id,auth)}
+                                                    val rows=refreshed.optJSONArray("attachments") ?: JSONArray()
+                                                    actionAttachments=(0 until rows.length()).map{rows.getJSONObject(it)}
+                                                } catch(refreshError:Exception) { message="Action update saved. Evidence list refresh failed: "+(refreshError.message ?: "Please reopen the action.") }
+                                            } catch(e:Exception){message=e.message ?: "Unable to submit action update. Retry; completed steps will not be repeated."}
                                             finally{busy=false}
                                         }
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
@@ -1791,13 +1851,50 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else if(homeTab=="HISTORY") {
-                                    ScreenTitle("Action history", "Review previous action updates")
-                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.fillMaxWidth().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFFE7F1F8)),contentAlignment=Alignment.Center) { Icon(Icons.Filled.History,contentDescription=null,tint=Navy,modifier=Modifier.size(30.dp)) }
-                                            Text("History module not connected",color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
-                                            Text("The action history API is not yet connected to this mobile screen. No records are simulated or hidden.",color=Muted,fontSize=13.sp,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
-                                            StatusPill("AWAITING API INTEGRATION", Warning)
+                                    ScreenTitle("Action history", selectedAction?.number ?: "Open an action to review its history")
+                                    if(selectedAction==null) EmptyState("Select an action first","Open an action and choose VIEW ACTION HISTORY to see its updates.",{Icon(Icons.Filled.History,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp))})
+                                    else {
+                                        TextButton(onClick={homeTab="DETAIL"}){Text("← BACK TO ACTION DETAILS")}
+                                        if(actionHistoryLoading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Teal)
+                                        actionHistoryError?.let{Text(it,color=Danger,fontSize=12.sp)}
+                                        if(!actionHistoryLoading && actionHistory.isEmpty() && actionHistoryError==null) EmptyState("No history entries yet","Progress updates and status changes will appear here.",{Icon(Icons.Filled.History,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp))})
+                                        actionHistory.forEach { row ->
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                    Text(row.optString("changed_by_name").ifBlank{row.optString("changed_by_username").ifBlank{"User #"+row.optInt("changed_by_id")}},color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                                    Text(row.optString("changed_at").replace("T"," ").removeSuffix("Z"),color=Muted,fontSize=11.sp)
+                                                    val oldStatus=row.optString("old_status");val newStatus=row.optString("new_status")
+                                                    if(oldStatus.isNotBlank()||newStatus.isNotBlank()) Text(oldStatus.ifBlank{"—"}.replace("_"," ")+" → "+newStatus.ifBlank{"—"}.replace("_"," "),color=Teal,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
+                                                    val comment=row.optString("comment")
+                                                    if(comment.isNotBlank()&&comment!="null") Text(comment,color=Navy,fontSize=13.sp)
+                                                }
+                                            }
+                                        }
+                                        if(actionAttachments.isNotEmpty()) {
+                                            SectionLabel("Evidence attachments","Files linked to this action")
+                                            actionAttachments.forEach { att ->
+                                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White).padding(12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text(att.optString("file_name"),color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                                                        Text((att.optLong("size_bytes")/1024).toString()+" KB • "+att.optString("created_at").replace("T"," ").removeSuffix("Z"),color=Muted,fontSize=10.sp)
+                                                    }
+                                                    val context=LocalContext.current
+                                                    OutlinedButton(onClick={
+                                                        val auth=token
+                                                        if(auth==null)message="Please sign in again."
+                                                        else scope.launch {
+                                                            busy=true
+                                                            try {
+                                                                val file=withContext(Dispatchers.IO){ApiClient.downloadActionAttachment(selectedAction!!.id,att.optInt("id"),att.optString("file_name"),cacheDir,auth)}
+                                                                val uri=FileProvider.getUriForFile(context,context.packageName+".fileprovider",file)
+                                                                val mime=att.optString("mime_type").ifBlank{"application/octet-stream"}
+                                                                context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                                            } catch(e:Exception){message=e.message ?: "Unable to open attachment."}
+                                                            finally{busy=false}
+                                                        }
+                                                    },enabled=!busy){Text("OPEN")}
+                                                }
+                                            }
                                         }
                                     }
                                 } else if(homeTab=="ACCOUNT") {
