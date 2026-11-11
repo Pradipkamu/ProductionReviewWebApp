@@ -1451,9 +1451,34 @@ class MainActivity : ComponentActivity() {
                                         }
                                     } else if(oeeMode=="ENTRY") {
                                         SectionLabel(if(oeeEntryId!=null) "Correct production record" else "New production entry", "Enter operator, shift time and production quantities. Calculations update from your inputs.")
-                                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if(oeeEntryId!=null)Color(0xFFFFF4E5) else Color(0xFFEAF5F5)).padding(11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                            Icon(if(oeeEntryId!=null)Icons.Filled.History else Icons.Filled.Assignment,contentDescription=null,tint=if(oeeEntryId!=null)Warning else Teal,modifier=Modifier.size(18.dp))
-                                            Text(if(oeeLoading) "Loading production record…" else if(oeeEntryId!=null) "CORRECTION MODE  •  RECORD #$oeeEntryId" else "NEW ENTRY  •  READY TO CAPTURE",color=if(oeeEntryId!=null)Warning else Teal,fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
+                                        if(oeeEntryId==null && !oeeLoading) {
+                                            val readyPulse = rememberInfiniteTransition(label="newEntryReadyPulse")
+                                            val readyAlpha by readyPulse.animateFloat(
+                                                initialValue=0.55f,
+                                                targetValue=1.0f,
+                                                animationSpec=infiniteRepeatable(
+                                                    animation=tween(durationMillis=850,easing=FastOutSlowInEasing),
+                                                    repeatMode=RepeatMode.Reverse
+                                                ),
+                                                label="newEntryReadyAlpha"
+                                            )
+                                            Row(
+                                                Modifier.fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFFEAF5F5))
+                                                    .border(1.dp,Color(0x8848E0B4),RoundedCornerShape(10.dp))
+                                                    .padding(11.dp),
+                                                verticalAlignment=Alignment.CenterVertically,
+                                                horizontalArrangement=Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF20C997).copy(alpha=readyAlpha)))
+                                                Text("NEW ENTRY  •  READY TO CAPTURE",color=Color(0xFF087F70).copy(alpha=readyAlpha),fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
+                                            }
+                                        } else {
+                                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if(oeeEntryId!=null)Color(0xFFFFF4E5) else Color(0xFFEAF5F5)).padding(11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                Icon(if(oeeEntryId!=null)Icons.Filled.History else Icons.Filled.Assignment,contentDescription=null,tint=if(oeeEntryId!=null)Warning else Teal,modifier=Modifier.size(18.dp))
+                                                Text(if(oeeLoading) "Loading production record…" else "CORRECTION MODE  •  RECORD #$oeeEntryId",color=Warning,fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
+                                            }
                                         }
                                         if(oeeEntryId!=null) {
                                             Text("Editing saved entry #${oeeEntryId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
