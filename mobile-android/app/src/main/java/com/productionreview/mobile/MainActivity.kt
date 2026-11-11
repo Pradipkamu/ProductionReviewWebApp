@@ -1861,7 +1861,10 @@ class MainActivity : ComponentActivity() {
                                         actionHistory.forEach { row ->
                                             Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                 Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                                                    Text(row.optString("changed_by_name").ifBlank{row.optString("changed_by_username").ifBlank{"User #"+row.optInt("changed_by_id")}},color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                                    val changedByName=row.opt("changed_by_name")?.takeUnless{it==JSONObject.NULL}?.toString()?.trim().orEmpty()
+                                                     val changedByUsername=row.opt("changed_by_username")?.takeUnless{it==JSONObject.NULL}?.toString()?.trim().orEmpty()
+                                                     val actorName=changedByName.takeIf{it.isNotBlank()&&it!="null"}?:changedByUsername.takeIf{it.isNotBlank()&&it!="null"}?:"Unknown User"
+                                                     Text(actorName,color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
                                                     Text(row.optString("changed_at").replace("T"," ").removeSuffix("Z"),color=Muted,fontSize=11.sp)
                                                     val oldStatus=row.optString("old_status");val newStatus=row.optString("new_status")
                                                     if(oldStatus.isNotBlank()||newStatus.isNotBlank()) Text(oldStatus.ifBlank{"—"}.replace("_"," ")+" → "+newStatus.ifBlank{"—"}.replace("_"," "),color=Teal,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
