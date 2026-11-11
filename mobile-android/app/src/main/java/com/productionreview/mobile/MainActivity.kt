@@ -83,8 +83,15 @@ private data class OeeLossDraft(
     val endTime: String = ""
 )
 
+private fun isAvailabilityOeeLoss(loss: OeeLossDraft, categories: List<Choice>): Boolean {
+    val component = loss.component.ifBlank {
+        categories.firstOrNull { it.id == loss.categoryId }?.extra.orEmpty()
+    }
+    return component.trim().equals("AVAILABILITY", ignoreCase = true)
+}
+
 private fun resolvedOeeLossQuantity(loss: OeeLossDraft, idealCycleSeconds: Double?): Double {
-    if (loss.component == "AVAILABILITY") {
+    if (loss.component.trim().equals("AVAILABILITY", ignoreCase = true)) {
         val minutes = loss.duration.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
         val cycle = idealCycleSeconds?.takeIf { it > 0.0 } ?: return 0.0
         return minutes * 60.0 / cycle
@@ -964,7 +971,7 @@ class MainActivity : ComponentActivity() {
                             val headerGood=oeeGoodCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
                             val headerReject=oeeRejectCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
                             val headerTotal=headerGood+headerReject
-                            val headerDowntime=oeeEntryLosses.filter{it.categoryId!=null&&(it.component=="AVAILABILITY"||oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY")}.sumOf{it.duration.toDoubleOrNull()?:0.0}
+                            val headerDowntime=oeeEntryLosses.filter{it.categoryId!=null&&(isAvailabilityOeeLoss(it,oeeLossCategories))}.sumOf{it.duration.toDoubleOrNull()?:0.0}
                             val headerPlanned=((oeeShiftMinutes.toDoubleOrNull()?:0.0)-(oeeBreakMinutes.toDoubleOrNull()?:0.0)).coerceAtLeast(0.0)
                             val headerRun=(headerPlanned-headerDowntime).coerceAtLeast(0.0)
                             val headerAvailability=if(headerPlanned>0)headerRun/headerPlanned else 0.0
@@ -1491,17 +1498,39 @@ class MainActivity : ComponentActivity() {
                                                     OutlinedTextField(loss.duration,{value->
                                                         val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(!loss.saved&&value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
                                                     },label={Text("Loss time (minutes)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                                    if(loss.component=="AVAILABILITY") {
-                                                        val calculatedQty=if(oeeIdealCycleSeconds!=null) "%.2f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds)) else ""
-                                                        OutlinedTextField(value=calculatedQty,onValueChange={},readOnly=true,label={Text("Calculated quantity loss (pcs)")},supportingText={Text(if(oeeIdealCycleSeconds==null)"Standard cycle time unavailable" else "Calculated from loss minutes × 60 ÷ standard cycle time")},modifier=Modifier.fillMaxWidth())
+                                                    if(isAvailabilityOeeLoss(loss, oeeLossCategories)) {
+                                                        Card(
+                                                            modifier=Modifier.fillMaxWidth(),
+                                                            shape=RoundedCornerShape(9.dp),
+                                                            colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF5F5)),
+                                                            border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFB9DDE0))
+                                                        ) {
+                                                            Row(
+                                                                Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=10.dp),
+                                                                horizontalArrangement=Arrangement.SpaceBetween,
+                                                                verticalAlignment=Alignment.CenterVertically
+                                                            ) {
+                                                                Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                                                    Text("QUANTITY LOSS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                                    Text(
+                                                                        if(oeeIdealCycleSeconds==null) "Standard cycle time unavailable" else "Auto-calculated • ${"%.2f".format(oeeIdealCycleSeconds)} sec/cycle",
+                                                                        color=Muted,fontSize=10.sp
+                                                                    )
+                                                                }
+                                                                Text(
+                                                                    if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.2f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds))} pcs",
+                                                                    color=Navy,fontSize=18.sp,fontWeight=FontWeight.ExtraBold
+                                                                )
+                                                            }
+                                                        }
                                                     } else {
-                                                        OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("Quantity loss")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                        OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("Quantity loss (pcs)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                                     }
                                                     OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("Reason / details")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                                 }
                                             }
                                         }
-                                        val availabilityLossTotal=oeeEntryLosses.filter{it.categoryId!=null && (it.component=="AVAILABILITY" || oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY")}.sumOf{it.duration.toDoubleOrNull()?:0.0}
+                                        val availabilityLossTotal=oeeEntryLosses.filter{it.categoryId!=null && (isAvailabilityOeeLoss(it,oeeLossCategories))}.sumOf{it.duration.toDoubleOrNull()?:0.0}
                                         Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF5E8)),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFF2D8B5))) {
                                             Row(Modifier.fillMaxWidth().padding(13.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                                                 Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
