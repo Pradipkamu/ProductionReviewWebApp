@@ -947,6 +947,21 @@ class MainActivity : ComponentActivity() {
                         }
                         if (homeTab == "OEE") {
                             val monthOee = oeeManagement?.optJSONObject("overall")
+                            val headerGood=oeeGoodCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
+                            val headerReject=oeeRejectCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
+                            val headerTotal=headerGood+headerReject
+                            val headerDowntime=oeeEntryLosses.filter{it.categoryId!=null&&(it.component=="AVAILABILITY"||oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY")}.sumOf{it.duration.toDoubleOrNull()?:0.0}
+                            val headerPlanned=((oeeShiftMinutes.toDoubleOrNull()?:0.0)-(oeeBreakMinutes.toDoubleOrNull()?:0.0)).coerceAtLeast(0.0)
+                            val headerRun=(headerPlanned-headerDowntime).coerceAtLeast(0.0)
+                            val headerAvailability=if(headerPlanned>0)headerRun/headerPlanned else 0.0
+                            val headerPerfRaw=if(headerRun>0)((oeeIdealCycleSeconds?:0.0)*headerTotal/60.0)/headerRun else 0.0
+                            val headerPerformance=headerPerfRaw.coerceIn(0.0,1.0)
+                            val headerQuality=if(headerTotal>0)headerGood/headerTotal else 0.0
+                            val showLiveHeader=oeeMode=="ENTRY"&&oeeProduct!=null&&headerTotal>0
+                            val headerOee=if(showLiveHeader&&oeeIdealCycleSeconds!=null)headerAvailability*headerPerformance*headerQuality else monthOee?.optDouble("oee_reported")?:0.0
+                            val headerAvail=if(showLiveHeader)headerAvailability else monthOee?.optDouble("availability")?:0.0
+                            val headerPerf=if(showLiveHeader)headerPerformance else monthOee?.optDouble("performance_raw")?:0.0
+                            val headerQual=if(showLiveHeader)headerQuality else monthOee?.optDouble("quality")?:0.0
                             Card(
                                 Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=6.dp),
                                 shape=RoundedCornerShape(15.dp),
@@ -959,19 +974,19 @@ class MainActivity : ComponentActivity() {
                                     horizontalArrangement=Arrangement.spacedBy(12.dp)
                                 ) {
                                     Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                                        Text("CURRENT-MONTH OEE",color=Color(0xFFD4E7F1),fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=0.8.sp)
-                                        Text(monthOee?.let { "${"%.1f".format(it.optDouble("oee_reported")*100)}%" } ?: "—",color=Color.White,fontSize=27.sp,fontWeight=FontWeight.ExtraBold)
+                                        Text(if(showLiveHeader)"LIVE ENTRY OEE" else "CURRENT-MONTH OEE",color=Color(0xFFD4E7F1),fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=0.8.sp)
+                                        Text(if(showLiveHeader&&oeeIdealCycleSeconds==null)"—" else if(showLiveHeader||monthOee!=null)"${"%.1f".format(headerOee*100)}%" else "—",color=Color.White,fontSize=34.sp,fontWeight=FontWeight.ExtraBold)
                                     }
                                     Column(Modifier.weight(2f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
-                                            listOf("AVAIL" to (monthOee?.optDouble("availability") ?: 0.0),"PERF" to (monthOee?.optDouble("performance_raw") ?: 0.0),"QUAL" to (monthOee?.optDouble("quality") ?: 0.0)).forEach { (label,value) ->
+                                            listOf("AVAIL" to headerAvail,"PERF" to headerPerf,"QUAL" to headerQual).forEach { (label,value) ->
                                                 Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(Color(0x22FFFFFF)).padding(horizontal=6.dp,vertical=5.dp)) {
-                                                    Text(if(monthOee==null) "—" else "${"%.0f".format(value*100)}%",color=Color.White,fontSize=12.sp,fontWeight=FontWeight.Bold)
-                                                    Text(label,color=Color(0xFFD4E7F1),fontSize=8.sp,fontWeight=FontWeight.Bold)
+                                                    Text(if(if(showLiveHeader)label!="PERF"||oeeIdealCycleSeconds!=null else monthOee!=null)"${"%.1f".format(value*100)}%" else "—",color=Color.White,fontSize=16.sp,fontWeight=FontWeight.ExtraBold)
+                                                    Text(label,color=Color(0xFFD4E7F1),fontSize=10.sp,fontWeight=FontWeight.Bold)
                                                 }
                                             }
                                         }
-                                        Text("Part: ${oeeProduct?.label ?: "Select a part"}",color=Color(0xFFD4E7F1),fontSize=9.sp,maxLines=1)
+                                        Text(if(showLiveHeader&&oeeIdealCycleSeconds==null)"Standard cycle time unavailable" else if(showLiveHeader)"Live quantity: ${headerTotal.toInt()} pcs" else "Part: ${oeeProduct?.label ?: "Select a part"}",color=Color(0xFFD4E7F1),fontSize=11.sp,maxLines=1)
                                     }
                                 }
                             }
