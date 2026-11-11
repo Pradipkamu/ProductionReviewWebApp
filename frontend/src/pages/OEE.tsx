@@ -38,7 +38,7 @@ export default function OEE(){
    }else{
     setEntryId(null)
     setOperatorId(null);setOperatorName('')
-    setEntry({...emptyEntry,ideal_cycle_time_sec:r.ideal_cycle_time_sec||0})
+    setEntry({...emptyEntry,planned_break_min:0,ideal_cycle_time_sec:r.ideal_cycle_time_sec||0})
     setLosses([{...emptyLoss}])
     setReason('')
    }
