@@ -90,8 +90,12 @@ private fun isAvailabilityOeeLoss(loss: OeeLossDraft, categories: List<Choice>):
     return component.trim().equals("AVAILABILITY", ignoreCase = true)
 }
 
-private fun resolvedOeeLossQuantity(loss: OeeLossDraft, idealCycleSeconds: Double?): Double {
-    if (loss.component.trim().equals("AVAILABILITY", ignoreCase = true)) {
+private fun resolvedOeeLossQuantity(
+    loss: OeeLossDraft,
+    idealCycleSeconds: Double?,
+    categories: List<Choice>
+): Double {
+    if (isAvailabilityOeeLoss(loss, categories)) {
         val minutes = loss.duration.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
         val cycle = idealCycleSeconds?.takeIf { it > 0.0 } ?: return 0.0
         return minutes * 60.0 / cycle
@@ -1007,7 +1011,39 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         }
-                                        Text(if(showLiveHeader&&oeeIdealCycleSeconds==null)"Standard cycle time unavailable" else if(showLiveHeader)"Live quantity: ${headerTotal.toInt()} pcs" else "Part: ${oeeProduct?.label ?: "Select a part"}",color=Color(0xFFD4E7F1),fontSize=11.sp,maxLines=1)
+                                        if(showLiveHeader) {
+                                            val livePulse = rememberInfiniteTransition(label="liveQuantityPulse")
+                                            val liveAlpha by livePulse.animateFloat(
+                                                initialValue=0.58f,
+                                                targetValue=1.0f,
+                                                animationSpec=infiniteRepeatable(
+                                                    animation=tween(durationMillis=850, easing=FastOutSlowInEasing),
+                                                    repeatMode=RepeatMode.Reverse
+                                                ),
+                                                label="liveQuantityAlpha"
+                                            )
+                                            Row(
+                                                modifier=Modifier
+                                                    .clip(RoundedCornerShape(20.dp))
+                                                    .background(Color(0x3348E0B4))
+                                                    .border(1.dp,Color(0x8848E0B4),RoundedCornerShape(20.dp))
+                                                    .padding(horizontal=10.dp,vertical=5.dp),
+                                                verticalAlignment=Alignment.CenterVertically,
+                                                horizontalArrangement=Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF65F0B8).copy(alpha=liveAlpha)))
+                                                Text(
+                                                    if(oeeIdealCycleSeconds==null) "LIVE • CYCLE TIME NEEDED" else "LIVE • ${headerTotal.toInt()} PCS",
+                                                    color=Color(0xFF8BFFD0).copy(alpha=liveAlpha),
+                                                    fontSize=12.sp,
+                                                    fontWeight=FontWeight.ExtraBold,
+                                                    letterSpacing=0.35.sp,
+                                                    maxLines=1
+                                                )
+                                            }
+                                        } else {
+                                            Text("Part: ${oeeProduct?.label ?: "Select a part"}",color=Color(0xFFD4E7F1),fontSize=11.sp,maxLines=1)
+                                        }
                                     }
                                 }
                             }
@@ -1518,7 +1554,7 @@ class MainActivity : ComponentActivity() {
                                                                     )
                                                                 }
                                                                 Text(
-                                                                    if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.2f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds))} pcs",
+                                                                    if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.2f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))} pcs",
                                                                     color=Navy,fontSize=18.sp,fontWeight=FontWeight.ExtraBold
                                                                 )
                                                             }
@@ -1587,7 +1623,7 @@ class MainActivity : ComponentActivity() {
                                                             .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
                                                             .put("loss_category_id",loss.categoryId)
                                                             .put("duration_min",loss.duration.toDouble())
-                                                            .put("qty_loss",resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds))
+                                                            .put("qty_loss",resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))
                                                             .put("remark",loss.remark)
                                                         if(loss.startTime.isNotBlank())lossPayload.put("start_time",loss.startTime)
                                                         if(loss.endTime.isNotBlank())lossPayload.put("end_time",loss.endTime)
@@ -1595,7 +1631,7 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                     val lossRows=oeeEntryLosses.filter{!it.saved&&it.categoryId!=null&&(it.duration.toDoubleOrNull()?:0.0)>0}
                                                     val losses=JSONArray()
-                                                    lossRows.forEach{loss->losses.put(JSONObject().put("loss_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("loss_category_id",loss.categoryId).put("duration_min",loss.duration.toDouble()).put("qty_loss",resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds)).put("remark",loss.remark))}
+                                                    lossRows.forEach{loss->losses.put(JSONObject().put("loss_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("loss_category_id",loss.categoryId).put("duration_min",loss.duration.toDouble()).put("qty_loss",resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories)).put("remark",loss.remark))}
                                                     val payload=JSONObject().put("production_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("operator_id",oeeOperatorId)
                                                         .put("shift_duration_min",oeeShiftMinutes.toDouble()).put("planned_break_min",oeeBreakMinutes.toDouble())
                                                         .put("downtime_min",availabilityLossTotal).put("good_count",oeeGoodCount.toDouble()).put("reject_count",oeeRejectCount.toDouble())
