@@ -555,6 +555,7 @@ class MainActivity : ComponentActivity() {
             var oeeOperatorError by remember { mutableStateOf<String?>(null) }
             var oeeLossCategories by remember { mutableStateOf<List<Choice>>(emptyList()) }
             var oeeEntryLosses by remember { mutableStateOf(listOf(OeeLossDraft())) }
+            var editingLossIndex by remember { mutableStateOf<Int?>(null) }
             var oeeLossCategory by remember { mutableStateOf<Choice?>(null) }
             var oeeLossDuration by remember { mutableStateOf("") }
             var oeeLossQty by remember { mutableStateOf("0") }
@@ -1568,55 +1569,80 @@ class MainActivity : ComponentActivity() {
                                         OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("PRODUCTION REMARKS (OPTIONAL)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         SectionLabel("Machine losses", "Choose a reason and enter minutes. A new card appears after completing a loss.")
                                         oeeEntryLosses.forEachIndexed { index, loss ->
-                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                                Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                                                        Text(if(loss.saved) "Recorded Loss Event #${loss.id}" else "Loss Event ${index+1}",color=Navy,fontWeight=FontWeight.Bold)
-                                                        if(!loss.saved && oeeEntryLosses.size>1) TextButton(onClick={oeeEntryLosses=oeeEntryLosses.filterIndexed{idx,_->idx!=index}}){Text("Remove")}
+                                            OutlinedButton(
+                                                onClick = { editingLossIndex = index },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp,Border),
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor=Navy)
+                                            ) {
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                    Column(horizontalAlignment=Alignment.Start) {
+                                                        Text(if(loss.saved) "Recorded Loss Event #${loss.id}" else "Loss Event ${index+1}",fontWeight=FontWeight.Bold)
+                                                        Text(
+                                                            "${loss.category.ifBlank { "Select loss reason" }} • ${loss.duration.ifBlank { "0" }} min",
+                                                            color=Muted,fontSize=11.sp
+                                                        )
                                                     }
-                                                    if(loss.saved) {
-                                                        Text("Edit saved loss event #${loss.id}",color=Warning,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
-                                                    }
-                                                    ChoiceDropdown(
-                                                        if(loss.saved) "Loss type" else "Loss reason",
-                                                        oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},
-                                                        oeeLossCategories.firstOrNull{it.id==loss.categoryId},
-                                                        {selected->
-                                                            oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id,category=selected.label,component=selected.extra);if(!loss.saved&&index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
-                                                        }
-                                                    )
-                                                    OutlinedTextField(loss.duration,{value->
-                                                        val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(!loss.saved&&value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
-                                                    },label={Text("LOSS TIME (MINUTES)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                                    if(isAvailabilityOeeLoss(loss, oeeLossCategories)) {
-                                                        Card(
-                                                            modifier=Modifier.fillMaxWidth(),
-                                                            shape=RoundedCornerShape(9.dp),
-                                                            colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF5F5)),
-                                                            border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFB9DDE0))
-                                                        ) {
+                                                    Text(if(loss.saved) "EDIT" else "ADD / EDIT",color=Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                }
+                                            }
+                                            if (editingLossIndex == index) {
+                                                Dialog(onDismissRequest = { editingLossIndex = null }) {
+                                                    Card(
+                                                        modifier=Modifier.fillMaxWidth(),
+                                                        shape=RoundedCornerShape(8.dp),
+                                                        colors=CardDefaults.cardColors(containerColor=Color(0xFFF8FAFC)),
+                                                        border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFCBD5E1)),
+                                                        elevation=CardDefaults.cardElevation(defaultElevation=12.dp)
+                                                    ) {
+                                                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                                             Row(
-                                                                Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=10.dp),
+                                                                Modifier.fillMaxWidth().background(Color(0xFFE8EEF5),RoundedCornerShape(5.dp)).padding(horizontal=12.dp,vertical=10.dp),
                                                                 horizontalArrangement=Arrangement.SpaceBetween,
                                                                 verticalAlignment=Alignment.CenterVertically
                                                             ) {
-                                                                Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                                                                    Text("QUANTITY LOSS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
-                                                                    Text(
-                                                                        if(oeeIdealCycleSeconds==null) "Standard cycle time unavailable" else "Auto-calculated • ${"%.2f".format(oeeIdealCycleSeconds)} sec/cycle",
-                                                                        color=Muted,fontSize=10.sp
-                                                                    )
+                                                                Text(if(loss.saved) "EDIT MACHINE LOSS" else "ADD MACHINE LOSS",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=14.sp)
+                                                                TextButton(onClick={editingLossIndex=null}) { Text("✕",color=Navy) }
+                                                            }
+                                                            if(loss.saved) Text("Editing recorded loss event #${loss.id}",color=Warning,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                            ChoiceDropdown(
+                                                                if(loss.saved) "Loss type" else "Loss reason",
+                                                                oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},
+                                                                oeeLossCategories.firstOrNull{it.id==loss.categoryId},
+                                                                {selected->
+                                                                    oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id,category=selected.label,component=selected.extra);if(!loss.saved&&index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
                                                                 }
-                                                                Text(
-                                                                    if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.0f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))} pcs",
-                                                                    color=Navy,fontSize=18.sp,fontWeight=FontWeight.ExtraBold
-                                                                )
+                                                            )
+                                                            OutlinedTextField(loss.duration,{value->
+                                                                val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(!loss.saved&&value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
+                                                            },label={Text("LOSS TIME (MINUTES)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                            if(isAvailabilityOeeLoss(loss, oeeLossCategories)) {
+                                                                Card(
+                                                                    modifier=Modifier.fillMaxWidth(),
+                                                                    shape=RoundedCornerShape(8.dp),
+                                                                    colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF5F5)),
+                                                                    border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFB9DDE0))
+                                                                ) {
+                                                                    Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                                        Column {
+                                                                            Text("QUANTITY LOSS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                                            Text(if(oeeIdealCycleSeconds==null) "Standard cycle time unavailable" else "Auto-calculated",color=Muted,fontSize=10.sp)
+                                                                        }
+                                                                        Text(if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.0f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))} pcs",color=Navy,fontSize=18.sp,fontWeight=FontWeight.ExtraBold)
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("QUANTITY LOSS (PCS)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                            }
+                                                            OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("REASON / DETAILS",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End,verticalAlignment=Alignment.CenterVertically) {
+                                                                if(!loss.saved && oeeEntryLosses.size>1) TextButton(onClick={oeeEntryLosses=oeeEntryLosses.filterIndexed{idx,_->idx!=index};editingLossIndex=null}) { Text("REMOVE",color=Danger) }
+                                                                TextButton(onClick={editingLossIndex=null}) { Text("CANCEL",color=Muted) }
+                                                                Button(onClick={editingLossIndex=null},colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text("SAVE LOSS") }
                                                             }
                                                         }
-                                                    } else {
-                                                        OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("QUANTITY LOSS (PCS)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                                     }
-                                                    OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("REASON / DETAILS",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},modifier=Modifier.fillMaxWidth(),minLines=2)
                                                 }
                                             }
                                         }
