@@ -1584,35 +1584,6 @@ class MainActivity : ComponentActivity() {
                                                 Text("${"%.1f".format(availabilityLossTotal)} min",color=Warning,fontSize=18.sp,fontWeight=FontWeight.ExtraBold)
                                             }
                                         }
-                                        val liveGood = oeeGoodCount.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
-                                        val liveReject = oeeRejectCount.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
-                                        val liveTotal = liveGood + liveReject
-                                        val livePlanned = ((oeeShiftMinutes.toDoubleOrNull() ?: 0.0) - (oeeBreakMinutes.toDoubleOrNull() ?: 0.0)).coerceAtLeast(0.0)
-                                        val liveRun = (livePlanned - availabilityLossTotal).coerceAtLeast(0.0)
-                                        val liveAvailability = if(livePlanned > 0) liveRun / livePlanned else 0.0
-                                        val liveTheoreticalRun = ((oeeIdealCycleSeconds ?: 0.0) * liveTotal) / 60.0
-                                        val livePerformanceRaw = if(liveRun > 0) liveTheoreticalRun / liveRun else 0.0
-                                        val livePerformance = livePerformanceRaw.coerceIn(0.0,1.0)
-                                        val liveQuality = if(liveTotal > 0) liveGood / liveTotal else 0.0
-                                        val liveOee = liveAvailability * livePerformance * liveQuality
-                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF4F6)),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFB9DDE0))) {
-                                            Column(Modifier.fillMaxWidth().padding(13.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                                                    Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
-                                                        Text("LIVE ENTRY OEE",color=Teal,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=0.7.sp)
-                                                        Text("Updates as quantities and losses change",color=Muted,fontSize=10.sp)
-                                                    }
-                                                    Text(if(oeeIdealCycleSeconds==null) "Cycle time unavailable" else "${"%.1f".format(liveOee*100)}%",color=Navy,fontSize=25.sp,fontWeight=FontWeight.ExtraBold)
-                                                }
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                                                    MetricTile("Availability","${"%.1f".format(liveAvailability*100)}%",Teal,Modifier.weight(1f),compact=true)
-                                                    MetricTile("Performance",if(oeeIdealCycleSeconds==null) "—" else "${"%.1f".format(livePerformance*100)}%",Warning,Modifier.weight(1f),compact=true)
-                                                    MetricTile("Quality","${"%.1f".format(liveQuality*100)}%",Success,Modifier.weight(1f),compact=true)
-                                                }
-                                                if(oeeIdealCycleSeconds==null) Text("Effective standard cycle time is not available for this part, operation and machine. Live OEE will appear when the master cycle time is configured.",color=Warning,fontSize=10.sp)
-                                                else if(livePerformanceRaw>1.10) Text("Performance is above 110%. Please verify the standard cycle time and production quantity.",color=Warning,fontSize=10.sp)
-                                            }
-                                        }
                                         Button(onClick={
                                             val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
                                             if(auth==null||p==null||op==null||m==null)oeeError="Select product, operation and machine first."
