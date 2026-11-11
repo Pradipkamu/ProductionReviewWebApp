@@ -578,12 +578,21 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
 
 @router.get("/{action_id}/history")
 def action_history(action_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    rows = db.scalars(select(ActionHistory).where(ActionHistory.action_id == action_id).order_by(ActionHistory.changed_at.desc())).all()
+    rows = db.execute(
+        select(ActionHistory, User)
+        .outerjoin(User, User.id == ActionHistory.changed_by_id)
+        .where(ActionHistory.action_id == action_id)
+        .order_by(ActionHistory.changed_at.desc(), ActionHistory.id.desc())
+    ).all()
     return [{
-        "id": x.id, "changed_at": x.changed_at,
-        "old_status": x.old_status.value if x.old_status else None,
-        "new_status": x.new_status.value if x.new_status else None,
-        "comment": x.comment,
-        "kpi_value_at_followup": float(x.kpi_value_at_followup) if x.kpi_value_at_followup is not None else None,
-        "gap_at_followup": float(x.gap_at_followup) if x.gap_at_followup is not None else None,
-    } for x in rows]
+        "id": history.id,
+        "changed_at": history.changed_at,
+        "changed_by_id": history.changed_by_id,
+        "changed_by_name": changed_by.full_name if changed_by else None,
+        "changed_by_username": changed_by.username if changed_by else None,
+        "old_status": history.old_status.value if history.old_status else None,
+        "new_status": history.new_status.value if history.new_status else None,
+        "comment": history.comment,
+        "kpi_value_at_followup": float(history.kpi_value_at_followup) if history.kpi_value_at_followup is not None else None,
+        "gap_at_followup": float(history.gap_at_followup) if history.gap_at_followup is not None else None,
+    } for history, changed_by in rows]
