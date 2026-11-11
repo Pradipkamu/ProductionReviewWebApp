@@ -1061,7 +1061,7 @@ class MainActivity : ComponentActivity() {
                                                 verticalAlignment=Alignment.CenterVertically,
                                                 horizontalArrangement=Arrangement.spacedBy(6.dp)
                                             ) {
-                                                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFF65F0B8).copy(alpha=liveAlpha)))
+                                                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFFF3B30).copy(alpha=liveAlpha)))
                                                 Text(
                                                     if(oeeIdealCycleSeconds==null) "LIVE • CYCLE TIME NEEDED" else "LIVE • ${headerTotal.toInt()} PCS",
                                                     color=Color(0xFF8BFFD0).copy(alpha=liveAlpha),
@@ -1471,7 +1471,7 @@ class MainActivity : ComponentActivity() {
                                                 verticalAlignment=Alignment.CenterVertically,
                                                 horizontalArrangement=Arrangement.spacedBy(8.dp)
                                             ) {
-                                                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFF20C997).copy(alpha=readyAlpha)))
+                                                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFFFF3B30).copy(alpha=readyAlpha)))
                                                 Text("NEW ENTRY  •  READY TO CAPTURE",color=Color(0xFF087F70).copy(alpha=readyAlpha),fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
                                             }
                                         } else {
