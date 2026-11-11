@@ -40,9 +40,12 @@ usage() {
 Usage:
   bash /tmp/server_update.sh check
   bash /tmp/server_update.sh deploy <target-branch> --reuse-db-backup <dump-file> --code-snapshot <snapshot-dir> --confirm
+  bash /tmp/server_update.sh backend-only <target-branch> --reuse-db-backup <dump-file> --code-snapshot <snapshot-dir> --confirm
 
-The deploy command reuses the supplied existing backup and code snapshot.
-It does not create another database backup.
+The deploy command performs the full backend + frontend deployment and migrations.
+The backend-only command builds/restarts ONLY the backend and NEVER runs migrations
+or restarts the frontend. Both commands reuse the supplied existing DB backup
+and code snapshot; neither creates a duplicate backup.
 EOF
 }
 init() {
@@ -78,7 +81,7 @@ verify_existing_backups() {
   log "Verified code-preservation snapshot: $code_snapshot"
 }
 deploy() {
-  local branch="$1" db_backup="$2" code_snapshot="$3"
+  local mode="$1" branch="$2" db_backup="$3" code_snapshot="$4"
   local target_ref current_branch current_head target_head changed_files file
 
   [[ -n "$branch" && "$branch" != -* ]] || stop "Invalid target branch."
@@ -128,24 +131,46 @@ deploy() {
   log "Validating Docker Compose."
   docker compose config --quiet || stop "Docker Compose configuration is invalid."
 
-  log "Building backend and frontend."
-  docker compose build backend frontend || stop "Image build failed; existing DB backup retained."
+  if [[ "$mode" == "backend-only" ]]; then
+    log "BACKEND-ONLY MODE: building backend image only."
+    docker compose build backend || stop "Backend image build failed; running containers were not intentionally changed."
 
-  log "Applying Alembic migrations."
-  docker compose run --rm backend alembic upgrade head ||
-    stop "Migration failed. Stop and inspect; backup retained."
+    log "BACKEND-ONLY MODE: migrations are explicitly skipped."
+    log "BACKEND-ONLY MODE: restarting backend only; frontend and database services will not be restarted."
+    docker compose up -d --no-deps backend || stop "Backend restart failed; backup retained."
+  else
+    log "Building backend and frontend."
+    docker compose build backend frontend || stop "Image build failed; existing DB backup retained."
 
-  log "Restarting backend and frontend."
-  docker compose up -d --no-deps backend frontend ||
-    stop "Service restart failed; backup retained."
+    log "Applying Alembic migrations."
+    docker compose run --rm backend alembic upgrade head ||
+      stop "Migration failed. Stop and inspect; backup retained."
+
+    log "Restarting backend and frontend."
+    docker compose up -d --no-deps backend frontend ||
+      stop "Service restart failed; backup retained."
+  fi
 
   log "Waiting briefly for containers to settle."
   sleep 8
-  docker compose ps | tee -a "$LOG_FILE"
-  docker compose logs --tail=80 backend frontend 2>&1 | tee -a "$LOG_FILE"
+  if [[ "$mode" == "backend-only" ]]; then
+    docker compose ps backend db | tee -a "$LOG_FILE"
+    docker compose logs --tail=100 backend 2>&1 | tee -a "$LOG_FILE"
+    docker compose exec -T backend python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=10).read(1)" ||
+      stop "Backend OpenAPI health probe failed. Inspect backend logs; backup retained."
+    log "Backend OpenAPI health probe passed."
+    log "Frontend and database containers were not restarted; no Alembic migration was run."
+  else
+    docker compose ps | tee -a "$LOG_FILE"
+    docker compose logs --tail=80 backend frontend 2>&1 | tee -a "$LOG_FILE"
+  fi
 
   log "Deployment command sequence completed."
-  log "Verify web login, OEE entry/edit, rejection images, and key production pages in browser."
+  if [[ "$mode" == "backend-only" ]]; then
+    log "Verify Action History API returns changed_by_id, changed_by_name, and changed_by_username for a known action."
+  else
+    log "Verify web login, OEE entry/edit, rejection images, and key production pages in browser."
+  fi
   log "Database backup retained at: $db_backup"
   log "Code snapshot retained at: $code_snapshot"
   log "No database rows, Docker volumes, attachments, or backup files were deleted."
@@ -173,7 +198,23 @@ main() {
         esac
       done
       [[ "$confirm" == yes ]] || stop "Explicit --confirm is required."
-      deploy "$branch" "$db_backup" "$code_snapshot"
+      deploy "full" "$branch" "$db_backup" "$code_snapshot"
+      ;;
+    backend-only)
+      [[ "${2:-}" != "" ]] || { usage; exit 2; }
+      shift
+      branch="$1"; shift
+      db_backup=""; code_snapshot=""; confirm=""
+      while (($#)); do
+        case "$1" in
+          --reuse-db-backup) db_backup="${2:-}"; shift 2 ;;
+          --code-snapshot) code_snapshot="${2:-}"; shift 2 ;;
+          --confirm) confirm="yes"; shift ;;
+          *) stop "Unknown argument: $1" ;;
+        esac
+      done
+      [[ "$confirm" == yes ]] || stop "Explicit --confirm is required."
+      deploy "backend-only" "$branch" "$db_backup" "$code_snapshot"
       ;;
     *) usage; exit 2 ;;
   esac
