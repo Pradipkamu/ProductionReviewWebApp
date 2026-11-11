@@ -100,3 +100,30 @@ def test_standard_whywhy_required_for_action_closure(tmp_path, monkeypatch):
     })
     assert closed.status_code == 200, closed.text
     assert closed.json()['status'] == 'CLOSED'
+
+def test_action_history_returns_authenticated_actor_identity():
+    with SessionLocal() as db:
+        customer = Customer(code=f'HIST-C-{__import__("uuid").uuid4().hex[:8]}', name='History Customer')
+        db.add(customer); db.flush()
+        product = Product(code=f'HIST-P-{__import__("uuid").uuid4().hex[:8]}', name='History Part', customer_id=customer.id, plant='P1', product_group='CI')
+        db.add(product); db.commit(); product_id = product.id
+
+    client = TestClient(app)
+    headers = auth_headers(client)
+    created = client.post('/api/actions', headers=headers, json={
+        'reference_date':'2026-11-11',
+        'problem_category':'Production',
+        'problem_description':'History actor attribution check',
+        'action_description':'Verify authenticated user is recorded',
+        'priority':'MEDIUM',
+        'contexts':[{'context_date':'2026-11-11','product_id':product_id}]
+    })
+    assert created.status_code == 200, created.text
+
+    history = client.get(f"/api/actions/{created.json()['id']}/history", headers=headers)
+    assert history.status_code == 200, history.text
+    assert history.json(), 'Action creation should create a history row'
+    first = history.json()[0]
+    assert first['changed_by_id'] not in (None, 0)
+    assert first['changed_by_username'] == 'admin'
+    assert first['changed_by_name']
