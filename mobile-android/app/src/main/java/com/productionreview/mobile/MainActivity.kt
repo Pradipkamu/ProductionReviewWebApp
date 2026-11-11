@@ -1334,7 +1334,7 @@ class MainActivity : ComponentActivity() {
                                             if(oeeMachines.isNotEmpty()) ChoiceDropdown("Machine",oeeMachines,oeeMachine,{oeeMachine=it;oeeSummary=null})
 
                                             Button(onClick={token?.let{refreshOee(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&oeeMachine!=null,modifier=Modifier.fillMaxWidth()) { Text("REFRESH OEE") }
-                                            oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
+                                            
                                         }
                                     }
                                     Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),color=Color(0xFFE8EEF3),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
@@ -1932,6 +1932,26 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     }
+                }
+                if (oeeError != null) {
+                    AlertDialog(
+                        onDismissRequest = { oeeError = null },
+                        title = { Text("OEE needs attention", color=Navy, fontWeight=FontWeight.Bold) },
+                        text = { Text(oeeError.orEmpty(), color=Navy) },
+                        confirmButton = {
+                            TextButton(onClick = { oeeError = null }) {
+                                Text("OK", color=Teal, fontWeight=FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            if (oeeMachine != null && token != null && !oeeLoading) {
+                                TextButton(onClick = {
+                                    oeeError = null
+                                    token?.let { refreshOee(it) }
+                                }) { Text("REFRESH OEE", color=Teal) }
+                            }
+                        }
+                    )
                 }
                 if (showLogoutConfirm) {
                     AlertDialog(
