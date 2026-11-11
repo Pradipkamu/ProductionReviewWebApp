@@ -1098,24 +1098,43 @@ class MainActivity : ComponentActivity() {
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
                                 }
                                 if(homeTab=="OEE") {
-                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                            Divider(color=Border)
-                                            oeeManagement?.optJSONObject("overall")?.let { overall ->
-                                                Text("CURRENT MONTH OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
-                                                Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f),compact=true)
-                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f),compact=true)
-                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f),compact=true)
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Navy),elevation=CardDefaults.cardElevation(defaultElevation=3.dp)) {
+                                        Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF193B5B),Color(0xFF087F8C)))).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                Column(verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                                    Text("PRODUCTION PERFORMANCE",color=Color(0xFFD4E7F1),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                                                    Text("OEE overview",color=Color.White,fontSize=20.sp,fontWeight=FontWeight.Bold)
                                                 }
-                                                Text("This month • ${LocalDate.now().withDayOfMonth(1)} to ${LocalDate.now()}",color=Muted,fontSize=11.sp)
-                                            } ?: Text(if(oeeLoading) "Loading current-month OEE…" else oeeError ?: "Select a part number to view OEE.",color=Muted,fontSize=12.sp)
+                                                Icon(Icons.Filled.Speed,contentDescription="OEE",tint=Color.White,modifier=Modifier.size(30.dp))
+                                            }
+                                            oeeManagement?.optJSONObject("overall")?.let { overall ->
+                                                Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Color.White,fontSize=38.sp,fontWeight=FontWeight.ExtraBold,lineHeight=40.sp)
+                                                    Text("CURRENT MONTH",color=Color(0xFFD4E7F1),fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(bottom=7.dp))
+                                                }
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    listOf(
+                                                        "AVAILABILITY" to overall.optDouble("availability"),
+                                                        "PERFORMANCE" to overall.optDouble("performance_raw"),
+                                                        "QUALITY" to overall.optDouble("quality")
+                                                    ).forEach { (label,value) ->
+                                                        Column(Modifier.weight(1f).clip(RoundedCornerShape(11.dp)).background(Color(0x22FFFFFF)).padding(9.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                            Text("${"%.1f".format(value*100)}%",color=Color.White,fontSize=16.sp,fontWeight=FontWeight.Bold)
+                                                            Text(label,color=Color(0xFFD4E7F1),fontSize=8.sp,fontWeight=FontWeight.Bold,maxLines=1)
+                                                        }
+                                                    }
+                                                }
+                                                Text("Period  ${LocalDate.now().withDayOfMonth(1)}  –  ${LocalDate.now()}",color=Color(0xFFD4E7F1),fontSize=10.sp)
+                                            } ?: Text(if(oeeLoading) "Loading current-month performance…" else oeeError ?: "Select a part to view current-month OEE.",color=Color.White,fontSize=12.sp)
                                         }
                                     }
-                                    ScreenTitle("Machine / OEE", "Live machine effectiveness from production records")
+                                    ScreenTitle("Machine effectiveness", "Production entry, shift performance and loss analysis")
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                Icon(Icons.Filled.Settings,contentDescription=null,tint=Teal,modifier=Modifier.size(19.dp))
+                                                Text("PRODUCTION SCOPE",color=Navy,fontSize=12.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=0.8.sp)
+                                            }
                                             ChoiceDropdown("Product / Part number",masters?.products.orEmpty(),oeeProduct,{selected ->
                                                 oeeProduct=selected
                                                 oeeOperation=null
@@ -1131,7 +1150,7 @@ class MainActivity : ComponentActivity() {
                                                 if(auth!=null) loadOeeScope(auth,selected)
                                                 else oeeError="Please sign in again."
                                             })
-                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date")},placeholder={Text("YYYY-MM-DD")},singleLine=true,modifier=Modifier.fillMaxWidth())
                                             Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Text("Shift",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -1175,9 +1194,14 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
-                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        listOf("ENTRY","SUMMARY","MANAGEMENT").forEach { mode ->
-                                            FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
+                                    Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),color=Color(0xFFE8EEF3),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Row(Modifier.fillMaxWidth().padding(5.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                            listOf("ENTRY","SUMMARY","MANAGEMENT").forEach { mode ->
+                                                val active=oeeMode==mode
+                                                Surface(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { oeeMode=mode },shape=RoundedCornerShape(10.dp),color=if(active)Color.White else Color.Transparent,shadowElevation=if(active)2.dp else 0.dp) {
+                                                    Text(if(mode=="ENTRY")"NEW ENTRY" else mode,modifier=Modifier.padding(vertical=11.dp,horizontal=3.dp),color=if(active)Teal else Muted,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,textAlign=androidx.compose.ui.text.style.TextAlign.Center,maxLines=1)
+                                                }
+                                            }
                                         }
                                     }
                                         oeeSuccess?.let { success ->
@@ -1283,8 +1307,11 @@ class MainActivity : ComponentActivity() {
                                             Text("${loss.optString("category")} • ${loss.optString("component")} • ${"%.1f".format(loss.optDouble("duration_min"))} min",color=Navy,fontSize=12.sp)
                                         }
                                     } else if(oeeMode=="ENTRY") {
-                                        SectionLabel("Production entry", "Enter good and rejected output. Total and downtime are calculated automatically.")
-                                        Text(if(oeeLoading) "Loading production entry…" else if(oeeEntryId!=null) "Editing saved entry #$oeeEntryId" else "New production entry",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
+                                        SectionLabel(if(oeeEntryId!=null) "Correct production record" else "New production entry", "Enter operator, shift time and production quantities. Calculations update from your inputs.")
+                                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if(oeeEntryId!=null)Color(0xFFFFF4E5) else Color(0xFFEAF5F5)).padding(11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                            Icon(if(oeeEntryId!=null)Icons.Filled.History else Icons.Filled.Assignment,contentDescription=null,tint=if(oeeEntryId!=null)Warning else Teal,modifier=Modifier.size(18.dp))
+                                            Text(if(oeeLoading) "Loading production record…" else if(oeeEntryId!=null) "CORRECTION MODE  •  RECORD #$oeeEntryId" else "NEW ENTRY  •  READY TO CAPTURE",color=if(oeeEntryId!=null)Warning else Teal,fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
+                                        }
                                         if(oeeEntryId!=null) {
                                             Text("Editing saved entry #${oeeEntryId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
                                             OutlinedTextField(oeeCorrectionReason,{oeeCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
@@ -1399,7 +1426,15 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                         val availabilityLossTotal=oeeEntryLosses.filter{it.categoryId!=null && (it.component=="AVAILABILITY" || oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY")}.sumOf{it.duration.toDoubleOrNull()?:0.0}
-                                        Text("Total availability downtime: ${"%.1f".format(availabilityLossTotal)} min",color=Warning,fontWeight=FontWeight.Bold)
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF5E8)),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFF2D8B5))) {
+                                            Row(Modifier.fillMaxWidth().padding(13.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                                    Text("AVAILABILITY DOWNTIME",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                    Text("Classified machine losses",color=Muted,fontSize=10.sp)
+                                                }
+                                                Text("${"%.1f".format(availabilityLossTotal)} min",color=Warning,fontSize=18.sp,fontWeight=FontWeight.ExtraBold)
+                                            }
+                                        }
                                         Button(onClick={
                                             val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
                                             if(auth==null||p==null||op==null||m==null)oeeError="Select product, operation and machine first."
@@ -1460,8 +1495,8 @@ class MainActivity : ComponentActivity() {
                                                 } catch(e:Exception){oeeError=e.message ?: "Unable to save production entry and losses."}
                                                 finally{oeeLoading=false}
                                             }
-                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"SAVING…" else "SAVE PRODUCTION ENTRY") }
-                                        Text("Total production = good + rejected. Availability downtime is the sum of Availability-category loss cards.",color=Muted,fontSize=11.sp)
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(13.dp)) { Text(if(oeeLoading)"SAVING PRODUCTION…" else if(oeeEntryId!=null)"SAVE CORRECTION" else "SAVE PRODUCTION ENTRY",fontWeight=FontWeight.Bold) }
+                                        Text("Total production = good + rejected. Availability downtime is calculated from Availability-category loss events.",color=Muted,fontSize=10.sp)
                                     } else if(oeeMode=="MANAGEMENT") {
                                         SectionLabel("OEE management", "Period trend, machine ranking and classified loss Pareto")
                                         OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth())
