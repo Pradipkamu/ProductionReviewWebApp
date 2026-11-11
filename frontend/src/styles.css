@@ -569,3 +569,12 @@ button.ghost{color:inherit}
 .oee-dialog-actions{display:flex;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-top:20px;padding-top:14px;border-top:1px solid #e6ebf1}
 .oee-success-score{display:grid;gap:3px;padding:14px 16px;margin:14px 0;border-radius:10px;background:#eaf5f5;border:1px solid #c9e5e2}.oee-success-score strong{font-size:32px;color:#087f8c}.oee-success-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.oee-success-grid>div{display:grid;gap:5px;padding:11px;border:1px solid #e1e8ef;border-radius:8px}.oee-success-grid small{font-size:10px;color:#718096}.oee-success-grid b{font-size:16px;color:#142b45}
 @media(max-width:600px){.oee-live-hero{align-items:flex-start;flex-direction:column;padding:15px}.oee-live-metrics{width:100%;justify-content:space-between;gap:8px}.oee-success-grid{grid-template-columns:1fr 1fr}}
+
+
+/* OEE live card: remain visible while the entry page scrolls */
+.oee-live-sticky{position:sticky;top:8px;z-index:80;isolation:isolate;}
+.oee-live-sticky>div:first-child{position:relative;padding-left:18px}
+.oee-live-sticky>div:first-child:before{content:"";position:absolute;left:0;top:5px;width:9px;height:9px;border-radius:50%;background:#55e39b;box-shadow:0 0 0 0 rgba(85,227,155,.65);animation:oee-live-pulse 1.5s infinite}
+.oee-live-sticky strong{font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(255,255,255,.18)}
+@keyframes oee-live-pulse{0%{box-shadow:0 0 0 0 rgba(85,227,155,.65);opacity:1}70%{box-shadow:0 0 0 9px rgba(85,227,155,0);opacity:.82}100%{box-shadow:0 0 0 0 rgba(85,227,155,0);opacity:1}}
+@media(prefers-reduced-motion:reduce){.oee-live-sticky>div:first-child:before{animation:none}}
