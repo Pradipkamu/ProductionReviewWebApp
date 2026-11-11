@@ -1204,7 +1204,23 @@ class MainActivity : ComponentActivity() {
                                             OutlinedTextField(value=oeeDate,onValueChange={},readOnly=true,label={Text("Production date")},singleLine=true,trailingIcon={IconButton(onClick={showOeeDatePicker=true}){Icon(Icons.Filled.DateRange,contentDescription="Choose production date")}},modifier=Modifier.fillMaxWidth().clickable{showOeeDatePicker=true})
                                             if(showOeeDatePicker) {
                                                 val pickerState=rememberDatePickerState(initialSelectedDateMillis=runCatching{LocalDate.parse(oeeDate).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()}.getOrDefault(System.currentTimeMillis()))
-                                                DatePickerDialog(onDismissRequest={showOeeDatePicker=false},confirmButton={TextButton(onClick={pickerState.selectedDateMillis?.let{millis->oeeDate=Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString();oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null};showOeeDatePicker=false}){Text("OK")}},dismissButton={TextButton(onClick={showOeeDatePicker=false}){Text("CANCEL")}}){DatePicker(state=pickerState)}
+                                                DatePickerDialog(onDismissRequest={showOeeDatePicker=false},confirmButton={TextButton(onClick={
+                                                    pickerState.selectedDateMillis?.let{millis->
+                                                        val selectedDate=Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString()
+                                                        if(selectedDate!=oeeDate){
+                                                            oeeDate=selectedDate
+                                                            oeeSummary=null
+                                                            oeeRoutes=emptyList()
+                                                            oeeMachines=emptyList()
+                                                            oeeOperation=null
+                                                            oeeMachine=null
+                                                            val auth=token
+                                                            val product=oeeProduct
+                                                            if(auth!=null && product!=null) loadOeeScope(auth,product)
+                                                        }
+                                                    }
+                                                    showOeeDatePicker=false
+                                                }){Text("OK")}},dismissButton={TextButton(onClick={showOeeDatePicker=false}){Text("CANCEL")}}){DatePicker(state=pickerState)}
                                             }
                                             Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Text("Shift",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
