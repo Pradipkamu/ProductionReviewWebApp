@@ -1514,12 +1514,12 @@ class MainActivity : ComponentActivity() {
                                             oeeOperatorError?.let { Text(it,color=Danger,fontSize=12.sp) }
                                             Text("Use the microphone on your Android keyboard for voice typing. Review the name, then select or add it.",color=Muted,fontSize=10.sp)
                                         }
-                                        OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("Shift duration (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("Planned breaks (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("Good quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeRejectCount,{oeeRejectCount=it},label={Text("Rejected quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("SHIFT DURATION (MIN)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("PLANNED BREAKS (MIN)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("GOOD QUANTITY",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeRejectCount,{oeeRejectCount=it},label={Text("REJECTED QUANTITY",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         Text("Total production: ${"%.3f".format((oeeGoodCount.toDoubleOrNull()?:0.0)+(oeeRejectCount.toDoubleOrNull()?:0.0)).trimEnd('0').trimEnd('.')} pcs",color=Success,fontWeight=FontWeight.Bold)
-                                        OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("Production remarks (optional)")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("PRODUCTION REMARKS (OPTIONAL)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         SectionLabel("Machine losses", "Choose a reason and enter minutes. A new card appears after completing a loss.")
                                         oeeEntryLosses.forEachIndexed { index, loss ->
                                             Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
@@ -1541,7 +1541,7 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                     OutlinedTextField(loss.duration,{value->
                                                         val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(!loss.saved&&value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
-                                                    },label={Text("Loss time (minutes)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                    },label={Text("LOSS TIME (MINUTES)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                                     if(isAvailabilityOeeLoss(loss, oeeLossCategories)) {
                                                         Card(
                                                             modifier=Modifier.fillMaxWidth(),
@@ -1562,15 +1562,15 @@ class MainActivity : ComponentActivity() {
                                                                     )
                                                                 }
                                                                 Text(
-                                                                    if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.2f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))} pcs",
+                                                                    if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.0f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))} pcs",
                                                                     color=Navy,fontSize=18.sp,fontWeight=FontWeight.ExtraBold
                                                                 )
                                                             }
                                                         }
                                                     } else {
-                                                        OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("Quantity loss (pcs)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                        OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("QUANTITY LOSS (PCS)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                                     }
-                                                    OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("Reason / details")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                                    OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("REASON / DETAILS",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},modifier=Modifier.fillMaxWidth(),minLines=2)
                                                 }
                                             }
                                         }
