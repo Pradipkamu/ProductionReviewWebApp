@@ -120,6 +120,9 @@ def test_action_history_returns_authenticated_actor_identity():
     })
     assert created.status_code == 200, created.text
 
+    followup = client.patch(f"/api/actions/{created.json()['id']}", headers=headers, json={'comment':'discussed with meeting'})
+    assert followup.status_code == 200, followup.text
+
     history = client.get(f"/api/actions/{created.json()['id']}/history", headers=headers)
     assert history.status_code == 200, history.text
     assert history.json(), 'Action creation should create a history row'
