@@ -230,11 +230,15 @@ private object ApiClient {
     }
     fun loadOeeMachines(routeOperationId: Int, date: String, token: String): List<Choice> {
         val response = request("/oee/available-machines?route_operation_id=$routeOperationId&production_date=$date", "GET", token=token)
+        // Never accept fallback lists from older APIs: only an explicit mapped=true
+        // response is valid for OEE operation/machine selection.
+        if (!response.optBoolean("mapped", false)) return emptyList()
         val rows = response.optJSONArray("machines") ?: JSONArray()
-        return (0 until rows.length()).map { i ->
+        return (0 until rows.length()).mapNotNull { i ->
             val row = rows.getJSONObject(i)
-            Choice(row.getInt("id"), row.optString("code") + " • " + row.optString("name"))
-        }
+            val id = row.optInt("id", 0)
+            if (id <= 0) null else Choice(id, row.optString("code") + " • " + row.optString("name"))
+        }.distinctBy { it.id }
     }
     fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
         request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
