@@ -569,6 +569,7 @@ class MainActivity : ComponentActivity() {
             var oeeCorrectionReason by remember { mutableStateOf("") }
             var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
+            var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if(uri!=null) {
@@ -1349,6 +1350,23 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     }
+                                        oeeSavedSummary?.let { summary ->
+                                            AlertDialog(
+                                                onDismissRequest = { oeeSavedSummary = null },
+                                                title = { Text("Production saved", color = Navy, fontWeight = FontWeight.Bold) },
+                                                text = {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Text("OEE PERFORMANCE SUMMARY", color = Teal, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                                        summary.lines().forEachIndexed { index, line ->
+                                                            Text(line, color = if(index == 1) Teal else Muted, fontSize = if(index == 1) 17.sp else 13.sp, fontWeight = if(index == 1) FontWeight.Bold else FontWeight.Medium)
+                                                        }
+                                                    }
+                                                },
+                                                confirmButton = { TextButton(onClick = { oeeSavedSummary = null }) { Text("OK", color = Teal, fontWeight = FontWeight.Bold) } },
+                                                containerColor = Color.White,
+                                                shape = RoundedCornerShape(16.dp)
+                                            )
+                                        }
                                         oeeSuccess?.let { success ->
                                             Card(
                                                 colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF6F2)),
@@ -1694,6 +1712,24 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                     val entry=saved.optJSONObject("entry")
                                                     val savedEntryId = entry?.optInt("id")?.takeIf { it > 0 } ?: oeeEntryId
+                                                    val summaryGood=oeeGoodCount.toDoubleOrNull()?:0.0
+                                                    val summaryReject=oeeRejectCount.toDoubleOrNull()?:0.0
+                                                    val summaryTotal=summaryGood+summaryReject
+                                                    val summaryPlanned=((oeeShiftMinutes.toDoubleOrNull()?:0.0)-(oeeBreakMinutes.toDoubleOrNull()?:0.0)).coerceAtLeast(0.0)
+                                                    val summaryRun=(summaryPlanned-availabilityLossTotal).coerceAtLeast(0.0)
+                                                    val summaryAvailability=if(summaryPlanned>0)summaryRun/summaryPlanned else 0.0
+                                                    val summaryPerformance=if(summaryRun>0)((oeeIdealCycleSeconds?:0.0)*summaryTotal/60.0/summaryRun).coerceIn(0.0,1.0) else 0.0
+                                                    val summaryQuality=if(summaryTotal>0)summaryGood/summaryTotal else 0.0
+                                                    val summaryOee=summaryAvailability*summaryPerformance*summaryQuality
+                                                    oeeSavedSummary=listOf(
+                                                        if(savedEntryId!=null)"Production entry #$savedEntryId saved successfully." else "Production entry saved successfully.",
+                                                        "OEE: ${"%.1f".format(summaryOee*100)}%",
+                                                        "Availability: ${"%.1f".format(summaryAvailability*100)}%",
+                                                        "Performance: ${"%.1f".format(summaryPerformance*100)}%",
+                                                        "Quality: ${"%.1f".format(summaryQuality*100)}%",
+                                                        "Good: ${summaryGood.toInt()}  •  Rejected: ${summaryReject.toInt()}  •  Total: ${summaryTotal.toInt()}",
+                                                        "Availability loss: ${"%.1f".format(availabilityLossTotal)} min"
+                                                    ).joinToString("\n")
                                                     // A successful correction must leave edit mode. Keeping the returned ID
                                                     // here made the form look as though the save had not completed.
                                                     oeeEntryId = null
