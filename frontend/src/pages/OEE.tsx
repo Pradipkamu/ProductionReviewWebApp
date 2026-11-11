@@ -14,7 +14,7 @@ export default function OEE(){
  const [m,setM]=useState(''),[p,setP]=useState(''),[op,setOp]=useState(''),[d,setD]=useState(today()),[shift,setShift]=useState('A')
  const [sum,setSum]=useState<any>(null),[context,setContext]=useState<any>(null),[entryId,setEntryId]=useState<number|null>(null)
  const [operators,setOperators]=useState<any[]>([]),[operatorName,setOperatorName]=useState(''),[operatorId,setOperatorId]=useState<number|null>(null),[operatorBusy,setOperatorBusy]=useState(false)
- const [entry,setEntry]=useState<any>(emptyEntry),[losses,setLosses]=useState<any[]>([emptyLoss]),[reason,setReason]=useState(''),[msg,setMsg]=useState(''),[error,setError]=useState(''),[lossDialog,setLossDialog]=useState<number|null>(null),[savedSummary,setSavedSummary]=useState<any>(null)
+ const [entry,setEntry]=useState<any>(emptyEntry),[losses,setLosses]=useState<any[]>([emptyLoss]),[reason,setReason]=useState(''),[msg,setMsg]=useState(''),[error,setError]=useState(''),[lossDialog,setLossDialog]=useState<number|null>(null),[lossCorrectionReason,setLossCorrectionReason]=useState(''),[savedSummary,setSavedSummary]=useState<any>(null)
  const [mgmt,setMgmt]=useState<any>(null),[fromDate,setFromDate]=useState(today().slice(0,8)+'01')
  const selectedProduct=products.find(x=>String(x.id)===p),selectedMachine=machines.find(x=>String(x.id)===m),selectedRoute=routes.find(x=>String(x.route_operation_id)===op)
 
@@ -94,6 +94,18 @@ export default function OEE(){
  function updateLoss(index:number,patch:any){
   setLosses(old=>{const next=old.map((x,i)=>i===index?{...x,...patch}:x);const last=next[next.length-1];if(last&&!last.saved&&last.loss_category_id&&Number(last.duration_min)>0)next.push({...emptyLoss});return next})
  }
+ async function saveLossDialog(){
+  if(lossDialog===null)return
+  const loss=losses[lossDialog];if(!loss)return
+  if(!loss.loss_category_id||Number(loss.duration_min)<=0){setError('Select a loss reason and enter a duration greater than zero.');return}
+  if(loss.saved){
+   if(lossCorrectionReason.trim().length<5){setError('Enter a correction reason of at least 5 characters to update this saved loss.');return}
+   const category=lossCategories.find((x:any)=>String(x.id)===String(loss.loss_category_id))
+   const payload={loss_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),loss_category_id:Number(loss.loss_category_id),duration_min:Number(loss.duration_min),qty_loss:Number(loss.qty_loss||0),remark:loss.remark||''}
+   try{sessionStorage.setItem('changeReason',lossCorrectionReason.trim());await api(`/oee/loss-events/${loss.id}`,{method:'PUT',body:JSON.stringify(payload)});setLosses(old=>old.map((x,i)=>i===lossDialog?{...x,category:category?.name||x.category,component:category?.component||x.component}:x));setLossCorrectionReason('');setError('');setMsg(`Loss event #${loss.id} updated with an audit reason.`);await refresh();setLossDialog(null)}
+   catch(e:any){setError(e.message)}finally{sessionStorage.removeItem('changeReason')}
+  }else{setLossDialog(null);setError('')}
+ }
  async function raiseOeeAction(){try{const r:any=await api('/oee/raise-action',{method:'POST',body:JSON.stringify({production_date:d,shift,product_id:Number(p),route_operation_id:Number(op),machine_id:Number(m),target_oee:.85})});setMsg(`${r.action_no} ${r.status==='already_linked'?'is already open':'created with a standard Why-Why plan'}`);await refresh()}catch(e:any){setError(e.message)}}
  async function raiseLossAction(id:number){try{const r:any=await api(`/oee/loss-events/${id}/raise-action`,{method:'POST',body:JSON.stringify({priority:'HIGH'})});setMsg(`${r.action_no} ${r.status==='already_linked'?'is already linked':'created with a standard Why-Why plan'}`);await refresh()}catch(e:any){setError(e.message)}}
  const s=sum?.summary
@@ -129,11 +141,11 @@ export default function OEE(){
     {lossDialog!==null&&losses[lossDialog]&&(()=>{const x=losses[lossDialog];return <div className="oee-dialog-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setLossDialog(null)}}><section className="oee-dialog" role="dialog" aria-modal="true" aria-labelledby="loss-dialog-title">
       <header><span>PRODUCTION REVIEW</span><button type="button" aria-label="Close" onClick={()=>setLossDialog(null)}>×</button></header>
       <div className="oee-dialog-body"><small>MACHINE DOWNTIME CAPTURE</small><h3 id="loss-dialog-title">{x.saved?'EDIT MACHINE LOSS':'ADD MACHINE LOSS'}</h3>
-      {x.saved&&<p className="warning-box">Editing recorded loss #{x.id}. A correction reason is required.</p>}
+      {x.saved&&<><p className="warning-box">Editing recorded loss #{x.id}. A correction reason is required.</p><label>Correction reason<input value={lossCorrectionReason} onChange={e=>setLossCorrectionReason(e.target.value)} placeholder="Explain why this loss is being corrected"/></label></>}
       <label>Loss reason<select value={x.loss_category_id} onChange={e=>updateLoss(lossDialog,{loss_category_id:e.target.value})}><option value="">Select loss reason</option>{lossCategories.map((v:any)=><option key={v.id} value={String(v.id)}>{v.name} — {v.component}</option>)}</select></label>
       <label>Duration (minutes)<input type="number" min="0" step="0.1" value={x.duration_min||''} onChange={e=>updateLoss(lossDialog,{duration_min:Number(e.target.value)})}/></label>
       <label>Reason / details<textarea value={x.remark||''} onChange={e=>updateLoss(lossDialog,{remark:e.target.value})} placeholder="Describe the breakdown or loss"/></label>
-      <div className="oee-dialog-actions">{!x.saved&&losses.length>1&&<button type="button" className="secondary" onClick={()=>{setLosses(old=>old.filter((_,j)=>j!==lossDialog));setLossDialog(null)}}>REMOVE</button>}<button type="button" className="secondary" onClick={()=>setLossDialog(null)}>CANCEL</button><button type="button" onClick={()=>setLossDialog(null)}>SAVE LOSS</button></div>
+      <div className="oee-dialog-actions">{!x.saved&&losses.length>1&&<button type="button" className="secondary" onClick={()=>{setLosses(old=>old.filter((_,j)=>j!==lossDialog));setLossDialog(null)}}>REMOVE</button>}<button type="button" className="secondary" onClick={()=>setLossDialog(null)}>CANCEL</button><button type="button" onClick={saveLossDialog}>SAVE LOSS</button></div>
       </div></section></div>})()}
     <p className="muted">Availability-category loss minutes are used as machine downtime. Performance and Quality losses are recorded separately.</p>
     <p><b>Total Availability downtime:</b> {num(losses.reduce((n:number,x:any)=>n+(x.component==='AVAILABILITY'?Number(x.duration_min||0):(!x.saved&&lossCategories.find((z:any)=>String(z.id)===String(x.loss_category_id))?.component==='AVAILABILITY'?Number(x.duration_min||0):0)),0))} min</p>
