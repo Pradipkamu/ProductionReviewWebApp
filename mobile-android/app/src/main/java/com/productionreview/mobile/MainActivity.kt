@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
@@ -405,6 +406,23 @@ private object ApiClient {
         }
     }
 }
+private fun userFriendlyOeeError(error: Exception, fallback: String): String {
+    val detail = error.message.orEmpty()
+    return when {
+        error is java.net.UnknownHostException -> "Cannot reach the production server. Check your internet connection and tap Refresh OEE."
+        error is java.net.SocketTimeoutException -> "The server is taking too long to respond. Please wait a moment and tap Refresh OEE."
+        detail.contains("CoroutineScope left the composition", ignoreCase = true) ->
+            "The screen was refreshed while a request was running. Please tap Refresh OEE again."
+        detail.contains("401") || detail.contains("unauthorized", ignoreCase = true) ->
+            "Your login session may have expired. Please sign out and sign in again."
+        detail.contains("403") || detail.contains("forbidden", ignoreCase = true) ->
+            "You do not have permission for this operation. Contact your administrator."
+        detail.contains("No active machine mapping", ignoreCase = true) ->
+            "No machine is mapped to this operation for the selected date. Ask your administrator to check Machine Allocation."
+        else -> fallback
+    }
+}
+
 private data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
 private data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
@@ -569,7 +587,7 @@ class MainActivity : ComponentActivity() {
                 } else photo?.delete()
                 pendingPhotoFile = null
             }
-            val scope = rememberCoroutineScope()
+            val scope = this@MainActivity.lifecycleScope
             val drawerState = rememberDrawerState(DrawerValue.Closed)
             var showLogoutConfirm by remember { mutableStateOf(false) }
 
@@ -632,7 +650,7 @@ class MainActivity : ComponentActivity() {
                             oeeMachine = null
                             oeeError = "No operations with active machine mapping are available for this part and date."
                         }
-                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE scope." }
+                    } catch (e: Exception) { oeeError = userFriendlyOeeError(e, "Could not load operations and machines. Check your connection, then tap Refresh OEE.") }
                     finally { oeeLoading = false }
                 }
                 scope.launch {
@@ -650,7 +668,7 @@ class MainActivity : ComponentActivity() {
                     oeeLoading = true; oeeError = null
                     try {
                         oeeSummary = withContext(Dispatchers.IO) { ApiClient.loadOeeSummary(selectedMachine.id, oeeDate, oeeShift, selectedProduct.id, selectedOperation.id, auth) }
-                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE summary." }
+                    } catch (e: Exception) { oeeError = userFriendlyOeeError(e, "Could not refresh OEE. Check your connection and try again.") }
                     finally { oeeLoading = false }
                 }
             }
@@ -1305,7 +1323,7 @@ class MainActivity : ComponentActivity() {
                                                 if(auth!=null) scope.launch {
                                                     oeeLoading=true
                                                     try { val loaded=withContext(Dispatchers.IO){ApiClient.loadOeeMachines(selected.id,oeeDate,auth)};oeeMachines=loaded;oeeMachine=loaded.firstOrNull() }
-                                                    catch(e:Exception){oeeError=e.message ?: "Unable to load machines."}
+                                                    catch(e:Exception){oeeError=userFriendlyOeeError(e,"Could not load machines for this operation. Check your connection and try again.")}
                                                     finally{oeeLoading=false}
                                                 }
                                             })
@@ -1315,7 +1333,6 @@ class MainActivity : ComponentActivity() {
                                             oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
                                         }
                                     }
-                                    oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
                                     Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),color=Color(0xFFE8EEF3),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Row(Modifier.fillMaxWidth().padding(5.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
                                             listOf("ENTRY","SUMMARY","MANAGEMENT").forEach { mode ->
