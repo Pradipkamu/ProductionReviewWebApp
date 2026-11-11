@@ -425,6 +425,7 @@ private fun StatusPill(label: String, color: Color) {
     }
 }
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sessionStore = SessionStore(this)
