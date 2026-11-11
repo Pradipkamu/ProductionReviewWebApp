@@ -1525,7 +1525,7 @@ class MainActivity : ComponentActivity() {
                                             Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                 Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                                                        Text(if(loss.saved) "Saved loss #${loss.id}" else "Loss ${index+1}",color=Navy,fontWeight=FontWeight.Bold)
+                                                        Text(if(loss.saved) "Recorded Loss Event #${loss.id}" else "Loss Event ${index+1}",color=Navy,fontWeight=FontWeight.Bold)
                                                         if(!loss.saved && oeeEntryLosses.size>1) TextButton(onClick={oeeEntryLosses=oeeEntryLosses.filterIndexed{idx,_->idx!=index}}){Text("Remove")}
                                                     }
                                                     if(loss.saved) {
