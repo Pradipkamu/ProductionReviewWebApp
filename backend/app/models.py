@@ -32,6 +32,7 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    chat_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
