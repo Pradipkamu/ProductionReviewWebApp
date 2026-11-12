@@ -1,4 +1,5 @@
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 import uuid
@@ -422,14 +423,31 @@ async def chat_socket(socket: WebSocket, token: str = Query(...)):
         user = db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
         session = db.scalar(select(UserSession).where(UserSession.session_id == session_id,
                                                        UserSession.user_id == user_id))
+        now = datetime.utcnow()
         if (not user or not session or session.revoked_at is not None or
-                session.expires_at <= datetime.utcnow() or payload.get("ver") != user.token_version):
+                session.expires_at <= now or
+                session.last_seen_at + timedelta(minutes=settings.session_idle_timeout_minutes) <= now or
+                payload.get("ver") != user.token_version):
             await socket.close(code=4401); return
         if user.chat_disabled:
             await socket.close(code=4403); return
         await hub.connect(user_id, socket)
         while True:
-            await socket.receive_text()
+            try:
+                await asyncio.wait_for(socket.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                # WebSocket connections must not outlive the same session policy as REST.
+                db.expire_all()
+                user = db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
+                session = db.scalar(select(UserSession).where(
+                    UserSession.session_id == session_id, UserSession.user_id == user_id))
+                now = datetime.utcnow()
+                if not user or not session or session.revoked_at is not None or session.expires_at <= now:
+                    await socket.close(code=4401); return
+                if session.last_seen_at + timedelta(minutes=settings.session_idle_timeout_minutes) <= now:
+                    await socket.close(code=4401); return
+                if user.chat_disabled:
+                    await socket.close(code=4403); return
     except WebSocketDisconnect:
         pass
     except Exception:
