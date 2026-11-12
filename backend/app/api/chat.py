@@ -342,6 +342,14 @@ def report_message(message_id: int, payload: ReportCreate, db: Session = Depends
     return {"success": True}
 
 
+@router.get("/admin/users")
+def admin_chat_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _admin(user)
+    rows = db.scalars(select(User).where(User.is_active.is_(True)).order_by(User.full_name, User.username)).all()
+    return [{"id": row.id, "full_name": row.full_name, "username": row.username,
+             "role": row.role.value, "chat_enabled": not row.chat_disabled} for row in rows]
+
+
 @router.get("/admin/reports")
 def admin_reports(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _admin(user)
