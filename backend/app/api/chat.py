@@ -169,7 +169,7 @@ def create_direct(payload: DirectConversationCreate, db: Session = Depends(get_d
                   user: User = Depends(get_current_user)):
     if payload.user_id == user.id:
         raise HTTPException(400, "You cannot start a direct conversation with yourself")
-    target = db.scalar(select(User).where(User.id == payload.user_id, User.is_active.is_(True)))
+    target = db.scalar(select(User).where(User.id == payload.user_id, User.is_active.is_(True), User.chat_disabled.is_(False)))
     if not target:
         raise HTTPException(404, "Employee not found")
     existing = db.scalar(select(ChatConversation).join(ChatParticipant).where(
@@ -192,9 +192,9 @@ def create_direct(payload: DirectConversationCreate, db: Session = Depends(get_d
 def create_group(payload: GroupConversationCreate, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     user_ids = list(dict.fromkeys([user.id, *payload.user_ids]))
-    active_ids = set(db.scalars(select(User.id).where(User.id.in_(user_ids), User.is_active.is_(True))).all())
+    active_ids = set(db.scalars(select(User.id).where(User.id.in_(user_ids), User.is_active.is_(True), User.chat_disabled.is_(False))).all())
     if active_ids != set(user_ids):
-        raise HTTPException(400, "One or more selected employees are unavailable")
+        raise HTTPException(400, "One or more selected employees are unavailable or have chat disabled")
     row = ChatConversation(kind="GROUP", title=payload.title.strip(), created_by_id=user.id)
     db.add(row); db.flush()
     db.add_all([ChatParticipant(conversation_id=row.id, user_id=uid,
@@ -209,11 +209,12 @@ async def add_group_members(conversation_id: int, payload: GroupMemberAdd,
     conversation = db.get(ChatConversation, conversation_id)
     if not conversation or conversation.kind != "GROUP":
         raise HTTPException(404, "Group conversation not found")
-    _participant(db, conversation_id, user.id)
+    if user.role != UserRole.ADMIN:
+        _participant(db, conversation_id, user.id)
     if conversation.created_by_id != user.id and user.role != UserRole.ADMIN:
         raise HTTPException(403, "Only the group creator or an administrator can add members")
     ids = list(dict.fromkeys(payload.user_ids))
-    users = db.scalars(select(User).where(User.id.in_(ids), User.is_active.is_(True))).all()
+    users = db.scalars(select(User).where(User.id.in_(ids), User.is_active.is_(True), User.chat_disabled.is_(False))).all()
     if len(users) != len(ids):
         raise HTTPException(400, "One or more selected employees are unavailable")
     for uid in ids:
@@ -236,6 +237,7 @@ def leave_group(conversation_id: int, db: Session = Depends(get_db), user: User 
         raise HTTPException(404, "Group conversation not found")
     participant = _participant(db, conversation_id, user.id)
     participant.is_active = False
+    conversation.updated_at = datetime.utcnow()
     db.commit()
     return {"success": True}
 
