@@ -1139,6 +1139,14 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(homeTab, token, selectedChatId) {
                             val auth = token ?: return@LaunchedEffect
                             if (homeTab == "CHAT") {
+                                while (homeTab == "CHAT") {
+                                    refreshChatConversations(auth)
+                                    selectedChatId?.let { refreshChatMessages(auth, it) }
+                                    kotlinx.coroutines.delay(5000)
+                                }
+                            }
+                        }
+                        if (homeTab == "CHAT") {
                             Column(Modifier.fillMaxSize().background(Color(0xFFE8F0ED))) {
                                 if (selectedChatId == null) {
                                     Column(Modifier.fillMaxSize().padding(horizontal=12.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -1147,9 +1155,7 @@ class MainActivity : ComponentActivity() {
                                                 Text("CHATS", color=Navy, fontSize=20.sp, fontWeight=FontWeight.Bold)
                                                 Text("Employee and group conversations", color=Muted, fontSize=11.sp)
                                             }
-                                            Button(onClick={chatShowNew=true;chatSearch="";chatEmployees=JSONArray()},colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(22.dp)) {
-                                                Text("+ NEW CHAT",fontSize=11.sp,fontWeight=FontWeight.Bold)
-                                            }
+                                            Button(onClick={chatShowNew=true;chatSearch="";chatEmployees=JSONArray()},colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(22.dp)) { Text("+ NEW CHAT",fontSize=11.sp,fontWeight=FontWeight.Bold) }
                                         }
                                         if (chatShowNew) {
                                             Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
@@ -1159,7 +1165,7 @@ class MainActivity : ComponentActivity() {
                                                         TextButton(onClick={chatShowNew=false;chatEmployees=JSONArray()}) { Text("CLOSE",color=Teal) }
                                                     }
                                                     OutlinedTextField(value=chatSearch,onValueChange={chatSearch=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search employee name or username")})
-                                                    Button(onClick={token?.let{searchChatEmployees(it)},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text("SEARCH EMPLOYEES") }
+                                                    Button(onClick={token?.let{searchChatEmployees(it)}},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text("SEARCH EMPLOYEES") }
                                                     OutlinedTextField(value=chatGroupTitle,onValueChange={chatGroupTitle=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Optional group name")})
                                                     LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                         items((0 until chatEmployees.length()).toList()) { i ->
@@ -1170,17 +1176,13 @@ class MainActivity : ComponentActivity() {
                                                                     if(auth!=null) scope.launch {
                                                                         try {
                                                                             val conversation=withContext(Dispatchers.IO){ApiClient.createDirectChat(employee.optInt("id"),auth)}
-                                                                            selectedChatId=conversation.optInt("id")
-                                                                            chatShowNew=false
-                                                                            refreshChatConversations(auth)
-                                                                            refreshChatMessages(auth,selectedChatId!!)
+                                                                            selectedChatId=conversation.optInt("id");chatShowNew=false
+                                                                            refreshChatConversations(auth);refreshChatMessages(auth,selectedChatId!!)
                                                                             chatEmployees=JSONArray();chatSearch=""
                                                                         } catch(e:Exception){message="Unable to start chat: ${e.message}"}
                                                                     }
                                                                 }.background(Color(0xFFF5F8F7)).padding(11.dp),verticalAlignment=Alignment.CenterVertically) {
-                                                                    Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) {
-                                                                        Text(employee.optString("full_name").trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold)
-                                                                    }
+                                                                    Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(employee.optString("full_name").trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold) }
                                                                     Column(Modifier.weight(1f).padding(start=10.dp)) {
                                                                         Text(employee.optString("full_name"),color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold)
                                                                         Text(employee.optString("username")+" • "+employee.optString("role"),color=Muted,fontSize=10.sp)
@@ -1207,9 +1209,7 @@ class MainActivity : ComponentActivity() {
                                             Text("YOUR CONVERSATIONS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp)
                                             if(chatLoading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Teal)
                                             if(chatConversations.length()==0) {
-                                                Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) {
-                                                    EmptyState("No conversations yet","Tap New Chat to find an employee.")
-                                                }
+                                                Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) { EmptyState("No conversations yet","Tap New Chat to find an employee.") }
                                             } else {
                                                 LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                                                     items((0 until chatConversations.length()).toList()) { i ->
@@ -1217,19 +1217,12 @@ class MainActivity : ComponentActivity() {
                                                         if(conversation!=null) {
                                                             val conversationId=conversation.optInt("id")
                                                             val participants=conversation.optJSONArray("participants") ?: JSONArray()
-                                                            val title=conversation.optString("title").takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}
-                                                                .filter{it.optString("username")!=account?.username}
-                                                                .joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
+                                                            val title=conversation.optString("title").takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}.filter{it.optString("username")!=account?.username}.joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
                                                             val last=conversation.optJSONObject("last_message")
                                                             val preview=last?.optString("body")?.takeIf{it.isNotBlank()} ?: if(last?.optJSONArray("attachments")?.length()?.let{it>0}==true) "Attachment" else "No messages yet"
-                                                            Card(Modifier.fillMaxWidth().clickable {
-                                                                selectedChatId=conversationId
-                                                                token?.let{refreshChatMessages(it,conversationId)}
-                                                            },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedChatId==conversationId)Teal else Border)) {
+                                                            Card(Modifier.fillMaxWidth().clickable { selectedChatId=conversationId;token?.let{refreshChatMessages(it,conversationId)} },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedChatId==conversationId)Teal else Border)) {
                                                                 Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                                                                    Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) {
-                                                                        Text(title.trim().take(1).uppercase(),color=Teal,fontSize=16.sp,fontWeight=FontWeight.Bold)
-                                                                    }
+                                                                    Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(title.trim().take(1).uppercase(),color=Teal,fontSize=16.sp,fontWeight=FontWeight.Bold) }
                                                                     Column(Modifier.weight(1f).padding(start=11.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                                                         Text(title,color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold,maxLines=1)
                                                                         Text(preview,color=Muted,fontSize=11.sp,maxLines=1)
@@ -1249,15 +1242,11 @@ class MainActivity : ComponentActivity() {
                                 } else {
                                     val activeConversation=(0 until chatConversations.length()).mapNotNull{chatConversations.optJSONObject(it)}.firstOrNull{it.optInt("id")==selectedChatId}
                                     val participants=activeConversation?.optJSONArray("participants") ?: JSONArray()
-                                    val chatTitle=activeConversation?.optString("title")?.takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}
-                                        .filter{it.optString("username")!=account?.username}
-                                        .joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
+                                    val chatTitle=activeConversation?.optString("title")?.takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}.filter{it.optString("username")!=account?.username}.joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
                                     Column(Modifier.fillMaxSize()) {
                                         Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=8.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically) {
                                             TextButton(onClick={selectedChatId=null;chatMessages=JSONArray();chatAttachmentUri=null}) { Text("‹",fontSize=28.sp,color=Teal) }
-                                            Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) {
-                                                Text(chatTitle.trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold)
-                                            }
+                                            Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(chatTitle.trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold) }
                                             Column(Modifier.weight(1f).padding(start=10.dp)) {
                                                 Text(chatTitle,color=Navy,fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)
                                                 Text(if(activeConversation?.optString("kind")=="GROUP") "${participants.length()} members" else "Employee conversation",color=Muted,fontSize=10.sp)
@@ -1312,9 +1301,7 @@ class MainActivity : ComponentActivity() {
                                                     }catch(e:Exception){message="Message not sent: ${e.message}"}
                                                     finally{chatLoading=false}
                                                 }
-                                            },enabled=!chatLoading&&(chatDraft.isNotBlank()||chatAttachmentUri!=null),modifier=Modifier.size(44.dp).clip(CircleShape).background(Teal)) {
-                                                Text(if(chatLoading)"…" else "➤",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold)
-                                            }
+                                            },enabled=!chatLoading&&(chatDraft.isNotBlank()||chatAttachmentUri!=null),modifier=Modifier.size(44.dp).clip(CircleShape).background(Teal)) { Text(if(chatLoading)"…" else "➤",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold) }
                                         }
                                     }
                                 }
