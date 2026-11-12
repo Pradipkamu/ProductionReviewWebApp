@@ -131,7 +131,7 @@ def _conversation_summary(db: Session, conversation: ChatConversation, user_id: 
         ChatMessage.conversation_id == conversation.id, ChatMessage.sender_id != user_id,
         ChatMessage.deleted_at.is_(None),
         ChatMessage.created_at > (mine.last_read_at if mine and mine.last_read_at else datetime.min),
-    )) or 0
+    )) or 0 if mine else 0
     return {
         "id": conversation.id, "kind": conversation.kind, "title": conversation.title,
         "created_by_id": conversation.created_by_id,
@@ -278,7 +278,8 @@ def messages(conversation_id: int, before_id: Optional[int] = None,
 @router.post("/conversations/{conversation_id}/messages")
 async def send_message(conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
-    _participant(db, conversation_id, user.id)
+    if user.role != UserRole.ADMIN:
+        _participant(db, conversation_id, user.id)
     require_chat_sender(db, user)
     body = payload.body.strip()
     if not body:
@@ -302,7 +303,8 @@ async def send_message(conversation_id: int, payload: MessageCreate, db: Session
 @router.post("/conversations/{conversation_id}/messages/{message_id}/attachments")
 async def upload_attachment(conversation_id: int, message_id: int, file: UploadFile = File(...),
                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    _participant(db, conversation_id, user.id)
+    if user.role != UserRole.ADMIN:
+        _participant(db, conversation_id, user.id)
     require_chat_sender(db, user)
     msg = db.scalar(select(ChatMessage).where(ChatMessage.id == message_id,
                                                ChatMessage.conversation_id == conversation_id))
