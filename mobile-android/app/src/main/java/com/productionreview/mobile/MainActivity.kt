@@ -201,6 +201,32 @@ private object ApiClient {
         array("/chat/conversations/$conversationId/messages?limit=60", token)
     fun sendChatMessage(conversationId: Int, body: String, token: String): JSONObject =
         request("/chat/conversations/$conversationId/messages", "POST", JSONObject().put("body", body), token)
+    fun uploadChatAttachment(context: android.content.Context, conversationId: Int, messageId: Int, uri: Uri, token: String): JSONObject {
+        val name = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else null
+        } ?: "chat-attachment"
+        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+        val boundary = "----ProductionChat" + System.currentTimeMillis()
+        val connection = (URL(API_BASE + "/chat/conversations/$conversationId/messages/$messageId/attachments").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true; connectTimeout = 20000; readTimeout = 60000
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+        try {
+            connection.outputStream.use { output ->
+                val prefix = "--$boundary\\r\\nContent-Disposition: form-data; name=\\"file\\"; filename=\\"$name\\"\\r\\nContent-Type: $mime\\r\\n\\r\\n"
+                output.write(prefix.toByteArray(Charsets.UTF_8))
+                context.contentResolver.openInputStream(uri)?.use { input -> input.copyTo(output) }
+                    ?: throw IllegalStateException("Unable to read selected attachment")
+                output.write("\\r\\n--$boundary--\\r\\n".toByteArray(Charsets.UTF_8))
+            }
+            val code = connection.responseCode
+            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IllegalStateException(describeApiError(body, code))
+            return JSONObject(body)
+        } finally { connection.disconnect() }
+    }
     fun loadMasters(token: String): Masters {
         val productsJson = array("/masters/products", token)
         val products = (0 until productsJson.length()).map { i ->
