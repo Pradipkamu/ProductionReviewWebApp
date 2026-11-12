@@ -596,6 +596,7 @@ class MainActivity : ComponentActivity() {
             var chatDraft by remember { mutableStateOf("") }
             var chatSearch by remember { mutableStateOf("") }
             var chatLoading by remember { mutableStateOf(false) }
+            var chatError by remember { mutableStateOf<String?>(null) }
             var chatGroupTitle by remember { mutableStateOf("") }
             var chatShowNew by remember { mutableStateOf(false) }
             var chatAttachmentUri by remember { mutableStateOf<Uri?>(null) }
@@ -1254,6 +1255,9 @@ class MainActivity : ComponentActivity() {
                                             TextButton(onClick={token?.let{refreshChatMessages(it,selectedChatId!!)}}) { Text("↻",fontSize=20.sp,color=Teal) }
                                         }
                                         Divider(color=Border)
+                                        chatError?.let { err ->
+                                            Text(err, Modifier.fillMaxWidth().background(Color(0xFFFFE8E6)).padding(horizontal=12.dp, vertical=9.dp), color=Color(0xFF9B2520), fontSize=11.sp)
+                                        }
                                         LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal=10.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                                             items((0 until chatMessages.length()).toList()) { i ->
                                                 val msg=chatMessages.optJSONObject(i)
@@ -1293,12 +1297,13 @@ class MainActivity : ComponentActivity() {
                                             IconButton(onClick={
                                                 val auth=token;val id=selectedChatId;val body=chatDraft.trim();val picked=chatAttachmentUri
                                                 if(auth!=null&&id!=null&&(body.isNotBlank()||picked!=null))scope.launch{
+                                                    chatError=null
                                                     chatLoading=true
                                                     try{
                                                         val sent=withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body.ifBlank{" "},auth)}
                                                         if(picked!=null)withContext(Dispatchers.IO){ApiClient.uploadChatAttachment(chatContext,id,sent.optInt("id"),picked,auth)}
-                                                        chatDraft="";chatAttachmentUri=null;refreshChatMessages(auth,id);refreshChatConversations(auth)
-                                                    }catch(e:Exception){message="Message not sent: ${e.message}"}
+                                                        chatDraft="";chatAttachmentUri=null;chatError=null;refreshChatMessages(auth,id);refreshChatConversations(auth)
+                                                    }catch(e:Exception){chatError="Message not sent: ${e.message ?: "Please try again."}";message=chatError ?: "Message not sent."}
                                                     finally{chatLoading=false}
                                                 }
                                             },enabled=!chatLoading&&(chatDraft.isNotBlank()||chatAttachmentUri!=null),modifier=Modifier.size(44.dp).clip(CircleShape).background(Teal)) { Text(if(chatLoading)"…" else "➤",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold) }
