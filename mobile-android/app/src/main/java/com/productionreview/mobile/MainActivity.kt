@@ -542,6 +542,13 @@ class MainActivity : ComponentActivity() {
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
             var homeTab by remember { mutableStateOf("ACTIONS") }
+            var chatConversations by remember { mutableStateOf(JSONArray()) }
+            var chatMessages by remember { mutableStateOf(JSONArray()) }
+            var chatEmployees by remember { mutableStateOf(JSONArray()) }
+            var selectedChatId by remember { mutableStateOf<Int?>(null) }
+            var chatDraft by remember { mutableStateOf("") }
+            var chatSearch by remember { mutableStateOf("") }
+            var chatLoading by remember { mutableStateOf(false) }
             var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
             var pendingActionGroups by remember { mutableStateOf<List<ActionOwnerGroup>>(emptyList()) }
             var selectedOwner by remember { mutableStateOf<ActionOwnerGroup?>(null) }
@@ -983,6 +990,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun refreshChatConversations(auth: String) {
+                chatLoading = true
+                scope.launch {
+                    try { chatConversations = withContext(Dispatchers.IO) { ApiClient.loadChatConversations(auth) } }
+                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                    finally { chatLoading = false }
+                }
+            }
+            fun refreshChatMessages(auth: String, conversationId: Int) {
+                scope.launch {
+                    try { chatMessages = withContext(Dispatchers.IO) { ApiClient.loadChatMessages(conversationId, auth) } }
+                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                }
+            }
+            fun searchChatEmployees(auth: String) {
+                scope.launch {
+                    try { chatEmployees = withContext(Dispatchers.IO) { ApiClient.loadChatEmployees(chatSearch, auth) } }
+                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                }
+            }
             val normalizedRole = account?.role?.uppercase().orEmpty()
             val isAdminOrManagement = normalizedRole in listOf("ADMIN", "MANAGEMENT")
             val isQualityRole = normalizedRole.contains("QUALITY") || normalizedRole.contains("QA")
