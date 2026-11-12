@@ -195,6 +195,8 @@ private object ApiClient {
         JSONArray(requestText("/chat/employees?q=" + java.net.URLEncoder.encode(query, "UTF-8"), "GET", token=token))
     fun createDirectChat(userId: Int, token: String): JSONObject =
         request("/chat/conversations/direct", "POST", JSONObject().put("user_id", userId), token)
+    fun createChatGroup(title: String, userIds: List<Int>, token: String): JSONObject =
+        request("/chat/conversations/group", "POST", JSONObject().put("title", title).put("user_ids", JSONArray(userIds)), token)
     fun loadChatMessages(conversationId: Int, token: String): JSONArray =
         array("/chat/conversations/$conversationId/messages?limit=60", token)
     fun sendChatMessage(conversationId: Int, body: String, token: String): JSONObject =
@@ -549,6 +551,7 @@ class MainActivity : ComponentActivity() {
             var chatDraft by remember { mutableStateOf("") }
             var chatSearch by remember { mutableStateOf("") }
             var chatLoading by remember { mutableStateOf(false) }
+            var chatGroupTitle by remember { mutableStateOf("") }
             var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
             var pendingActionGroups by remember { mutableStateOf<List<ActionOwnerGroup>>(emptyList()) }
             var selectedOwner by remember { mutableStateOf<ActionOwnerGroup?>(null) }
@@ -1091,8 +1094,20 @@ class MainActivity : ComponentActivity() {
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(13.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                         Text("Start a new conversation",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                        OutlinedTextField(value=chatGroupTitle,onValueChange={chatGroupTitle=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Optional group name")})
                                         OutlinedTextField(value=chatSearch,onValueChange={chatSearch=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search employee name or username")})
                                         Button(onClick={token?.let{searchChatEmployees(it)}},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("SEARCH EMPLOYEES")}
+                                        Button(onClick={
+                                            val auth=token
+                                            if(auth!=null && chatGroupTitle.isNotBlank() && chatEmployees.length()>0) scope.launch {
+                                                try {
+                                                    val ids=(0 until chatEmployees.length()).mapNotNull{chatEmployees.optJSONObject(it)?.optInt("id")?.takeIf{x->x>0}}
+                                                    val group=withContext(Dispatchers.IO){ApiClient.createChatGroup(chatGroupTitle.trim(),ids,auth)}
+                                                    selectedChatId=group.optInt("id");chatGroupTitle=""
+                                                    refreshChatConversations(auth);refreshChatMessages(auth,selectedChatId!!)
+                                                } catch(e:Exception){message="Unable to create group: ${e.message}"}
+                                            }
+                                        },enabled=chatGroupTitle.isNotBlank()&&chatEmployees.length()>0,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Navy)){Text("CREATE GROUP FROM SEARCH RESULTS")}
                                         for(i in 0 until chatEmployees.length()) {
                                             val employee=chatEmployees.optJSONObject(i) ?: continue
                                             Row(Modifier.fillMaxWidth().clickable {
