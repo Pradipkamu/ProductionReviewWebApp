@@ -65,21 +65,32 @@ def test_direct_chat_message_and_unread_count():
     assert listing.json()[0]["unread_count"] == 1
 
 
-def test_chat_disabled_employee_cannot_be_searched_or_added():
+def test_chat_disabled_employee_can_receive_but_cannot_send():
     headers = _headers()
     disabled_id = _employee("chat_disabled_user", chat_disabled=True)
 
     search = client.get("/api/chat/employees?q=chat_disabled_user", headers=headers)
     assert search.status_code == 200, search.text
-    assert all(row["id"] != disabled_id for row in search.json())
+    assert any(row["id"] == disabled_id for row in search.json())
 
     direct = client.post("/api/chat/conversations/direct", headers=headers,
                          json={"user_id": disabled_id})
-    assert direct.status_code == 404
+    assert direct.status_code == 200, direct.text
+    conversation_id = direct.json()["id"]
 
-    group = client.post("/api/chat/conversations/group", headers=headers,
-                        json={"title": "Test group", "user_ids": [disabled_id]})
-    assert group.status_code == 400
+    disabled_login = client.post("/api/auth/login", json={
+        "username": "chat_disabled_user", "password": "Employee123!",
+    })
+    assert disabled_login.status_code == 200, disabled_login.text
+    disabled_headers = {"Authorization": f"Bearer {disabled_login.json()['access_token']}"}
+
+    received = client.get(f"/api/chat/conversations/{conversation_id}/messages",
+                          headers=disabled_headers)
+    assert received.status_code == 200, received.text
+
+    denied = client.post(f"/api/chat/conversations/{conversation_id}/messages",
+                         headers=disabled_headers, json={"body": "I should not send"})
+    assert denied.status_code == 403
 
 
 def test_group_member_permissions_and_private_conversation_access():
