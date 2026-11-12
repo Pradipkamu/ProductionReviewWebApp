@@ -19,7 +19,8 @@ export function PasswordForm({required=false}:{required?:boolean}) {
 
 export default function Security(){
  const [users,setUsers]=useState<any[]>([]),[me,setMe]=useState<any>(null),[status,setStatus]=useState<any>(null)
- const [sessions,setSessions]=useState<any[]>([]),[events,setEvents]=useState<any[]>([])\n const [sessionSearch,setSessionSearch]=useState(''),[auditSearch,setAuditSearch]=useState('')
+ const [sessions,setSessions]=useState<any[]>([]),[events,setEvents]=useState<any[]>([])
+ const [sessionSearch,setSessionSearch]=useState(''),[auditSearch,setAuditSearch]=useState('')
  const [pageConfig,setPageConfig]=useState<any>(null),[accessReason,setAccessReason]=useState('')
  const [error,setError]=useState(''),[message,setMessage]=useState('')
  const [form,setForm]=useState({username:'',full_name:'',password:'',role:'VIEW_ONLY'})
