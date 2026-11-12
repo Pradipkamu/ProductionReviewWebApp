@@ -80,3 +80,24 @@ def page_access_configuration(db: Session) -> dict:
         "pages": list(PAGE_CATALOG),
         "access": {role.value: effective_page_keys(db, role) for role in UserRole},
     }
+
+
+# Reserved permission stored in the existing page_access_rules table.
+CHAT_SEND_KEY = "chat_send"
+
+def default_chat_send_roles() -> list[str]:
+    return [role.value for role in UserRole if role != UserRole.ADMIN]
+
+def chat_send_roles(db: Session) -> list[str]:
+    enabled = set(default_chat_send_roles())
+    rows = db.scalars(select(PageAccessRule).where(PageAccessRule.page_key == CHAT_SEND_KEY)).all()
+    if rows:
+        for row in rows:
+            if row.role in enabled:
+                if row.is_visible: enabled.add(row.role)
+                else: enabled.discard(row.role)
+    return sorted(enabled)
+
+def can_send_chat(db: Session, user: object) -> bool:
+    role = getattr(user, "role", None)
+    return role == UserRole.ADMIN or (not getattr(user, "chat_disabled", False) and role is not None and role.value in set(chat_send_roles(db)))
