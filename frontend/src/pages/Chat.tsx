@@ -28,6 +28,9 @@ export default function Chat({me}:{me:any}) {
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [attachment,setAttachment]=useState<File|null>(null)
+  const [reports,setReports]=useState<any[]>([])
+  const [showReports,setShowReports]=useState(false)
+  const [chatUsers,setChatUsers]=useState<Person[]>([])
 
   const refreshConversations=useCallback(async()=>{
     try { const rows=await api<Conversation[]>('/chat/conversations');setItems(rows); }
@@ -38,6 +41,7 @@ export default function Chat({me}:{me:any}) {
     catch(e:any){setError(e.message||'Unable to load messages')}
   },[])
   useEffect(()=>{refreshConversations();const t=window.setInterval(refreshConversations,7000);return()=>window.clearInterval(t)},[refreshConversations])
+  useEffect(()=>{if(me?.role==='ADMIN'){api<any[]>('/chat/admin/reports').then(setReports).catch(()=>{});api<Person[]>('/chat/employees').then(setChatUsers).catch(()=>{})}},[me?.role])
   useEffect(()=>{const token=localStorage.getItem('token');if(!token)return;const scheme=window.location.protocol==='https:'?'wss':'ws';const socket=new WebSocket(`${scheme}://${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}`);socket.onmessage=(event)=>{try{const data=JSON.parse(event.data);if(data.type==='new_message'){refreshConversations();if(data.conversation_id===selected)refreshMessages(selected);else if('Notification' in window&&Notification.permission==='granted')new Notification('New chat message',{body:data.message?.sender_name+': '+(data.message?.body||'Attachment')})}else{refreshConversations();if(data.conversation_id===selected)refreshMessages(selected)}}catch{}};return()=>socket.close()},[selected,refreshConversations,refreshMessages])
   useEffect(()=>{if(selected===null){setMessages([]);return}refreshMessages(selected);const t=window.setInterval(()=>refreshMessages(selected),4000);return()=>window.clearInterval(t)},[selected,refreshMessages])
   useEffect(()=>{let active=true;const term=search.trim();const t=window.setTimeout(()=>{api<Person[]>(`/chat/employees?q=${encodeURIComponent(term)}`).then(rows=>{if(active)setPeople(rows)}).catch(e=>{if(active)setError(e.message)})},250);return()=>{active=false;window.clearTimeout(t)}},[search])
@@ -64,6 +68,7 @@ export default function Chat({me}:{me:any}) {
   return <section className="chat-page">
     <header className="page-header"><div><span className="eyebrow">TEAM COMMUNICATION</span><h1>Chat</h1><p>Message any employee or create a group conversation.</p></div><button onClick={()=>{setShowPeople(v=>!v);setGroupMode(false)}}>＋ New chat</button></header>
     {error&&<div className="error chat-error">{error}<button className="ghost" onClick={()=>setError('')}>Dismiss</button></div>}
+    {me?.role==='ADMIN'&&<section className="chat-admin-tools"><button type="button" onClick={()=>setShowReports(v=>!v)}>Admin moderation ({reports.filter(r=>r.status==='OPEN').length} open reports)</button>{showReports&&<div className="chat-report-list">{reports.map(r=><article key={r.id}><b>{r.sender}</b><small>Reported by {r.reporter} · {r.status}</small><p>{r.reason}</p><blockquote>{r.message}</blockquote>{r.status==='OPEN'&&<><button type="button" onClick={async()=>{await api('/chat/admin/messages/'+r.message_id,{method:'DELETE'});await api('/chat/admin/reports/'+r.id,{method:'PATCH',body:JSON.stringify({status:'RESOLVED'})});setReports(await api('/chat/admin/reports'))}}>Remove message & resolve</button><button type="button" className="secondary" onClick={async()=>{await api('/chat/admin/reports/'+r.id,{method:'PATCH',body:JSON.stringify({status:'DISMISSED'})});setReports(await api('/chat/admin/reports'))}}>Dismiss</button></>}</article>)}</div>}<div className="chat-user-access"><b>Employee chat access</b>{chatUsers.map(p=><button type="button" key={p.id} onClick={async()=>{await api('/chat/admin/users/'+p.id+'/chat-access?enabled=false',{method:'PATCH'});setChatUsers(v=>v.filter(x=>x.id!==p.id))}}>Disable {p.full_name}</button>)}</div></section>}
     <div className="chat-workspace">
       <aside className="chat-list-panel">
         <div className="chat-panel-heading"><b>Conversations</b><span>{items.length}</span></div>
