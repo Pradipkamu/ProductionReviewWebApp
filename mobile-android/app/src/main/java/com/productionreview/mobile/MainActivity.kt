@@ -597,6 +597,7 @@ class MainActivity : ComponentActivity() {
             var chatSearch by remember { mutableStateOf("") }
             var chatLoading by remember { mutableStateOf(false) }
             var chatGroupTitle by remember { mutableStateOf("") }
+            var chatShowNew by remember { mutableStateOf(false) }
             var chatAttachmentUri by remember { mutableStateOf<Uri?>(null) }
             val chatContext = LocalContext.current
             val chatAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> chatAttachmentUri = uri }
@@ -1138,123 +1139,184 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(homeTab, token, selectedChatId) {
                             val auth = token ?: return@LaunchedEffect
                             if (homeTab == "CHAT") {
-                                while (homeTab == "CHAT") {
-                                    refreshChatConversations(auth)
-                                    selectedChatId?.let { refreshChatMessages(auth, it) }
-                                    kotlinx.coroutines.delay(5000)
-                                }
-                            }
-                        }
-                        if (homeTab == "CHAT") {
-                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                                    ScreenTitle("Employee Chat","Message any employee or continue a conversation")
-                                    TextButton(onClick={token?.let{refreshChatConversations(it)}}){Text("REFRESH",color=Teal)}
-                                }
-                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(13.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        Text("Start a new conversation",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
-                                        OutlinedTextField(value=chatGroupTitle,onValueChange={chatGroupTitle=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Optional group name")})
-                                        OutlinedTextField(value=chatSearch,onValueChange={chatSearch=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search employee name or username")})
-                                        Button(onClick={token?.let{searchChatEmployees(it)}},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("SEARCH EMPLOYEES")}
-                                        Button(onClick={
-                                            val auth=token
-                                            if(auth!=null && chatGroupTitle.isNotBlank() && chatEmployees.length()>0) scope.launch {
-                                                try {
-                                                    val ids=(0 until chatEmployees.length()).mapNotNull{chatEmployees.optJSONObject(it)?.optInt("id")?.takeIf{x->x>0}}
-                                                    val group=withContext(Dispatchers.IO){ApiClient.createChatGroup(chatGroupTitle.trim(),ids,auth)}
-                                                    selectedChatId=group.optInt("id");chatGroupTitle=""
-                                                    refreshChatConversations(auth);refreshChatMessages(auth,selectedChatId!!)
-                                                } catch(e:Exception){message="Unable to create group: ${e.message}"}
+                            Column(Modifier.fillMaxSize().background(Color(0xFFE8F0ED))) {
+                                if (selectedChatId == null) {
+                                    Column(Modifier.fillMaxSize().padding(horizontal=12.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                        Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
+                                            Column {
+                                                Text("CHATS", color=Navy, fontSize=20.sp, fontWeight=FontWeight.Bold)
+                                                Text("Employee and group conversations", color=Muted, fontSize=11.sp)
                                             }
-                                        },enabled=chatGroupTitle.isNotBlank()&&chatEmployees.length()>0,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Navy)){Text("CREATE GROUP FROM SEARCH RESULTS")}
-                                        for(i in 0 until chatEmployees.length()) {
-                                            val employee=chatEmployees.optJSONObject(i) ?: continue
-                                            Row(Modifier.fillMaxWidth().clickable {
-                                                val auth=token
-                                                if(auth!=null) scope.launch {
-                                                    try {
-                                                        val conversation=withContext(Dispatchers.IO){ApiClient.createDirectChat(employee.optInt("id"),auth)}
-                                                        selectedChatId=conversation.optInt("id")
-                                                        refreshChatConversations(auth)
-                                                        refreshChatMessages(auth,selectedChatId!!)
-                                                        chatEmployees=JSONArray()
-                                                        chatSearch=""
-                                                    } catch(e:Exception){message="Unable to start chat: ${e.message}"}
-                                                }
-                                            }.padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
-                                                Column(Modifier.weight(1f)) {
-                                                    Text(employee.optString("full_name"),color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
-                                                    Text(employee.optString("username")+" • "+employee.optString("role"),color=Muted,fontSize=11.sp)
-                                                }
-                                                Text("MESSAGE →",color=Teal,fontWeight=FontWeight.Bold,fontSize=10.sp)
+                                            Button(onClick={chatShowNew=true;chatSearch="";chatEmployees=JSONArray()},colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(22.dp)) {
+                                                Text("+ NEW CHAT",fontSize=11.sp,fontWeight=FontWeight.Bold)
                                             }
-                                            Divider(color=Border)
                                         }
-                                    }
-                                }
-                                Text("CONVERSATIONS",color=Navy,fontWeight=FontWeight.Bold,fontSize=12.sp,letterSpacing=0.8.sp)
-                                if(chatConversations.length()==0) EmptyState("No conversations yet","Search for an employee above to start chatting.")
-                                for(i in 0 until chatConversations.length()) {
-                                    val conversation=chatConversations.optJSONObject(i) ?: continue
-                                    val conversationId=conversation.optInt("id")
-                                    val title=conversation.optString("title").ifBlank {
-                                        val participants=conversation.optJSONArray("participants") ?: JSONArray()
-                                        (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}
-                                            .filter{it.optString("username")!=account?.username}
-                                            .joinToString(", "){it.optString("full_name")}
-                                    }
-                                    Card(Modifier.fillMaxWidth().clickable {
-                                        selectedChatId=conversationId
-                                        token?.let{refreshChatMessages(it,conversationId)}
-                                    },shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=if(selectedChatId==conversationId)Color(0xFFEAF5F5) else Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                                                Text(title.ifBlank{"Conversation"},color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
-                                                if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Teal)
-                                            }
-                                            Text(conversation.optJSONObject("last_message")?.optString("body")?.ifBlank{"No messages yet"} ?: "No messages yet",color=Muted,fontSize=11.sp,maxLines=1)
-                                        }
-                                    }
-                                }
-                                if(selectedChatId!=null) {
-                                    Divider(color=Border,thickness=1.dp)
-                                    Text("MESSAGES",color=Navy,fontWeight=FontWeight.Bold,fontSize=12.sp)
-                                    for(i in 0 until chatMessages.length()) {
-                                        val msg=chatMessages.optJSONObject(i) ?: continue
-                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp),colors=CardDefaults.cardColors(containerColor=if(msg.optString("sender_username")==account?.username )Color(0xFFEAF5F5) else Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                            Column(Modifier.padding(10.dp)) {
-                                                Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
-                                                Text(msg.optString("body"),color=Navy,fontSize=13.sp)
-                                                val chatFiles=msg.optJSONArray("attachments") ?: JSONArray()
-                                                for(fileIndex in 0 until chatFiles.length()) {
-                                                    val fileItem=chatFiles.optJSONObject(fileIndex) ?: continue
-                                                    TextButton(onClick={
-                                                        val auth=token
-                                                        if(auth!=null) scope.launch {
-                                                            try {
-                                                                val file=withContext(Dispatchers.IO){ApiClient.downloadChatAttachment(fileItem.optInt("id"),fileItem.optString("file_name"),chatContext.cacheDir,auth)}
-                                                                val uri=FileProvider.getUriForFile(chatContext,chatContext.packageName+".fileprovider",file)
-                                                                val mime=fileItem.optString("mime_type").ifBlank{"application/octet-stream"}
-                                                                chatContext.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-                                                            } catch(e:Exception){message=e.message ?: "Unable to open chat attachment."}
+                                        if (chatShowNew) {
+                                            Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.fillMaxSize().padding(12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                                                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                                                        Text("Start a conversation",Modifier.weight(1f),color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
+                                                        TextButton(onClick={chatShowNew=false;chatEmployees=JSONArray()}) { Text("CLOSE",color=Teal) }
+                                                    }
+                                                    OutlinedTextField(value=chatSearch,onValueChange={chatSearch=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search employee name or username")})
+                                                    Button(onClick={token?.let{searchChatEmployees(it)},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text("SEARCH EMPLOYEES") }
+                                                    OutlinedTextField(value=chatGroupTitle,onValueChange={chatGroupTitle=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Optional group name")})
+                                                    LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                        items((0 until chatEmployees.length()).toList()) { i ->
+                                                            val employee=chatEmployees.optJSONObject(i)
+                                                            if(employee!=null) {
+                                                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                                                                    val auth=token
+                                                                    if(auth!=null) scope.launch {
+                                                                        try {
+                                                                            val conversation=withContext(Dispatchers.IO){ApiClient.createDirectChat(employee.optInt("id"),auth)}
+                                                                            selectedChatId=conversation.optInt("id")
+                                                                            chatShowNew=false
+                                                                            refreshChatConversations(auth)
+                                                                            refreshChatMessages(auth,selectedChatId!!)
+                                                                            chatEmployees=JSONArray();chatSearch=""
+                                                                        } catch(e:Exception){message="Unable to start chat: ${e.message}"}
+                                                                    }
+                                                                }.background(Color(0xFFF5F8F7)).padding(11.dp),verticalAlignment=Alignment.CenterVertically) {
+                                                                    Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) {
+                                                                        Text(employee.optString("full_name").trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold)
+                                                                    }
+                                                                    Column(Modifier.weight(1f).padding(start=10.dp)) {
+                                                                        Text(employee.optString("full_name"),color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold)
+                                                                        Text(employee.optString("username")+" • "+employee.optString("role"),color=Muted,fontSize=10.sp)
+                                                                    }
+                                                                    Text("MESSAGE",color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                                }
+                                                            }
                                                         }
-                                                    }) { Text("📎 "+fileItem.optString("file_name"),color=Teal,fontSize=11.sp) }
+                                                    }
+                                                    Button(onClick={
+                                                        val auth=token
+                                                        if(auth!=null&&chatGroupTitle.isNotBlank()&&chatEmployees.length()>0) scope.launch {
+                                                            try {
+                                                                val ids=(0 until chatEmployees.length()).mapNotNull{chatEmployees.optJSONObject(it)?.optInt("id")?.takeIf{x->x>0}}
+                                                                val group=withContext(Dispatchers.IO){ApiClient.createChatGroup(chatGroupTitle.trim(),ids,auth)}
+                                                                selectedChatId=group.optInt("id");chatGroupTitle="";chatShowNew=false
+                                                                refreshChatConversations(auth);refreshChatMessages(auth,selectedChatId!!)
+                                                            } catch(e:Exception){message="Unable to create group: ${e.message}"}
+                                                        }
+                                                    },enabled=chatGroupTitle.isNotBlank()&&chatEmployees.length()>0,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Navy)) { Text("CREATE GROUP FROM RESULTS") }
+                                                }
+                                            }
+                                        } else {
+                                            Text("YOUR CONVERSATIONS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp)
+                                            if(chatLoading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Teal)
+                                            if(chatConversations.length()==0) {
+                                                Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) {
+                                                    EmptyState("No conversations yet","Tap New Chat to find an employee.")
+                                                }
+                                            } else {
+                                                LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                                                    items((0 until chatConversations.length()).toList()) { i ->
+                                                        val conversation=chatConversations.optJSONObject(i)
+                                                        if(conversation!=null) {
+                                                            val conversationId=conversation.optInt("id")
+                                                            val participants=conversation.optJSONArray("participants") ?: JSONArray()
+                                                            val title=conversation.optString("title").takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}
+                                                                .filter{it.optString("username")!=account?.username}
+                                                                .joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
+                                                            val last=conversation.optJSONObject("last_message")
+                                                            val preview=last?.optString("body")?.takeIf{it.isNotBlank()} ?: if(last?.optJSONArray("attachments")?.length()?.let{it>0}==true) "Attachment" else "No messages yet"
+                                                            Card(Modifier.fillMaxWidth().clickable {
+                                                                selectedChatId=conversationId
+                                                                token?.let{refreshChatMessages(it,conversationId)}
+                                                            },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedChatId==conversationId)Teal else Border)) {
+                                                                Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                                                                    Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) {
+                                                                        Text(title.trim().take(1).uppercase(),color=Teal,fontSize=16.sp,fontWeight=FontWeight.Bold)
+                                                                    }
+                                                                    Column(Modifier.weight(1f).padding(start=11.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                                        Text(title,color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold,maxLines=1)
+                                                                        Text(preview,color=Muted,fontSize=11.sp,maxLines=1)
+                                                                    }
+                                                                    Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                                        Text(last?.optString("created_at")?.take(16)?.takeLast(5).orEmpty(),color=Muted,fontSize=9.sp)
+                                                                        if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Teal)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
                                     }
-                                    OutlinedTextField(value=chatDraft,onValueChange={chatDraft=it},modifier=Modifier.fillMaxWidth(),label={Text("Write a message")})
-                                    OutlinedButton(onClick={chatAttachmentPicker.launch("*/*")},modifier=Modifier.fillMaxWidth()){Text(if(chatAttachmentUri==null) "ATTACH PHOTO / DOCUMENT" else "ATTACHMENT SELECTED")}
-                                    Button(onClick={
-                                        val auth=token;val id=selectedChatId;val body=chatDraft.trim()
-                                        if(auth!=null&&id!=null&&body.isNotBlank())scope.launch{
-                                            chatLoading=true
-                                            try{val sent=withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body,auth)};val picked=chatAttachmentUri;if(picked!=null)withContext(Dispatchers.IO){ApiClient.uploadChatAttachment(chatContext,id,sent.optInt("id"),picked,auth)};chatDraft="";chatAttachmentUri=null;refreshChatMessages(auth,id);refreshChatConversations(auth)}
-                                            catch(e:Exception){message="Message not sent: ${e.message}"}
-                                            finally{chatLoading=false}
+                                } else {
+                                    val activeConversation=(0 until chatConversations.length()).mapNotNull{chatConversations.optJSONObject(it)}.firstOrNull{it.optInt("id")==selectedChatId}
+                                    val participants=activeConversation?.optJSONArray("participants") ?: JSONArray()
+                                    val chatTitle=activeConversation?.optString("title")?.takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}
+                                        .filter{it.optString("username")!=account?.username}
+                                        .joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
+                                    Column(Modifier.fillMaxSize()) {
+                                        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=8.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically) {
+                                            TextButton(onClick={selectedChatId=null;chatMessages=JSONArray();chatAttachmentUri=null}) { Text("‹",fontSize=28.sp,color=Teal) }
+                                            Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) {
+                                                Text(chatTitle.trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold)
+                                            }
+                                            Column(Modifier.weight(1f).padding(start=10.dp)) {
+                                                Text(chatTitle,color=Navy,fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)
+                                                Text(if(activeConversation?.optString("kind")=="GROUP") "${participants.length()} members" else "Employee conversation",color=Muted,fontSize=10.sp)
+                                            }
+                                            TextButton(onClick={token?.let{refreshChatMessages(it,selectedChatId!!)}}) { Text("↻",fontSize=20.sp,color=Teal) }
                                         }
-                                    },enabled=chatDraft.isNotBlank()&&!chatLoading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text(if(chatLoading)"SENDING…" else "SEND MESSAGE")}
+                                        Divider(color=Border)
+                                        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal=10.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                                            items((0 until chatMessages.length()).toList()) { i ->
+                                                val msg=chatMessages.optJSONObject(i)
+                                                if(msg!=null) {
+                                                    val mine=msg.optString("sender_username")==account?.username
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=if(mine)Arrangement.End else Arrangement.Start) {
+                                                        Card(Modifier.widthIn(max=320.dp).fillMaxWidth(0.88f),shape=RoundedCornerShape(topStart=12.dp,topEnd=12.dp,bottomStart=if(mine)12.dp else 3.dp,bottomEnd=if(mine)3.dp else 12.dp),colors=CardDefaults.cardColors(containerColor=if(mine)Color(0xFFD9FDD3) else Color.White),elevation=CardDefaults.cardElevation(defaultElevation=1.dp)) {
+                                                            Column(Modifier.padding(horizontal=11.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                                if(!mine&&activeConversation?.optString("kind")=="GROUP") Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                                Text(msg.optString("body"),color=Navy,fontSize=13.sp)
+                                                                val chatFiles=msg.optJSONArray("attachments") ?: JSONArray()
+                                                                for(fileIndex in 0 until chatFiles.length()) {
+                                                                    val fileItem=chatFiles.optJSONObject(fileIndex) ?: continue
+                                                                    TextButton(onClick={
+                                                                        val auth=token
+                                                                        if(auth!=null) scope.launch {
+                                                                            try {
+                                                                                val file=withContext(Dispatchers.IO){ApiClient.downloadChatAttachment(fileItem.optInt("id"),fileItem.optString("file_name"),chatContext.cacheDir,auth)}
+                                                                                val uri=FileProvider.getUriForFile(chatContext,chatContext.packageName+".fileprovider",file)
+                                                                                val mime=fileItem.optString("mime_type").ifBlank{"application/octet-stream"}
+                                                                                chatContext.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                                                            } catch(e:Exception){message=e.message ?: "Unable to open chat attachment."}
+                                                                        }
+                                                                    }) { Text("📎 "+fileItem.optString("file_name"),color=Teal,fontSize=11.sp) }
+                                                                }
+                                                                Text(msg.optString("created_at").take(16).takeLast(5),Modifier.align(Alignment.End),color=Muted,fontSize=9.sp)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Row(Modifier.fillMaxWidth().background(Color(0xFFF7FAF8)).padding(horizontal=7.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                                            IconButton(onClick={chatAttachmentPicker.launch("*/*")}) { Text("＋",fontSize=25.sp,color=Teal) }
+                                            OutlinedTextField(value=chatDraft,onValueChange={chatDraft=it},modifier=Modifier.weight(1f),placeholder={Text(if(chatAttachmentUri==null)"Message" else "Attachment selected")},maxLines=4,shape=RoundedCornerShape(22.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            IconButton(onClick={
+                                                val auth=token;val id=selectedChatId;val body=chatDraft.trim();val picked=chatAttachmentUri
+                                                if(auth!=null&&id!=null&&(body.isNotBlank()||picked!=null))scope.launch{
+                                                    chatLoading=true
+                                                    try{
+                                                        val sent=withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body.ifBlank{" "},auth)}
+                                                        if(picked!=null)withContext(Dispatchers.IO){ApiClient.uploadChatAttachment(chatContext,id,sent.optInt("id"),picked,auth)}
+                                                        chatDraft="";chatAttachmentUri=null;refreshChatMessages(auth,id);refreshChatConversations(auth)
+                                                    }catch(e:Exception){message="Message not sent: ${e.message}"}
+                                                    finally{chatLoading=false}
+                                                }
+                                            },enabled=!chatLoading&&(chatDraft.isNotBlank()||chatAttachmentUri!=null),modifier=Modifier.size(44.dp).clip(CircleShape).background(Teal)) {
+                                                Text(if(chatLoading)"…" else "➤",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold)
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         } else if (homeTab == "OEE") {
