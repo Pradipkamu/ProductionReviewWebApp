@@ -578,6 +578,9 @@ class MainActivity : ComponentActivity() {
             var chatSearch by remember { mutableStateOf("") }
             var chatLoading by remember { mutableStateOf(false) }
             var chatGroupTitle by remember { mutableStateOf("") }
+            var chatAttachmentUri by remember { mutableStateOf<Uri?>(null) }
+            val chatContext = LocalContext.current
+            val chatAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> chatAttachmentUri = uri }
             var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
             var pendingActionGroups by remember { mutableStateOf<List<ActionOwnerGroup>>(emptyList()) }
             var selectedOwner by remember { mutableStateOf<ActionOwnerGroup?>(null) }
