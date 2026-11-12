@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api, downloadApi } from '../api'
 
-type Person = { id:number; full_name:string; username:string; role?:string }
+type Person = { id:number; full_name:string; username:string; role?:string; chat_enabled?:boolean }
 type Message = { id:number; sender_id:number; sender_name:string; body:string; created_at:string }
 type Conversation = { id:number; kind:'DIRECT'|'GROUP'; title?:string|null; participants:Person[]; last_message?:Message|null; unread_count:number }
 
@@ -42,7 +42,7 @@ export default function Chat({me}:{me:any}) {
   },[])
   useEffect(()=>{refreshConversations();const t=window.setInterval(refreshConversations,7000);return()=>window.clearInterval(t)},[refreshConversations])
   useEffect(()=>{if(me?.role==='ADMIN'){api<any[]>('/chat/admin/reports').then(setReports).catch(()=>{});api<Person[]>('/chat/admin/users').then(setChatUsers).catch(()=>{})}},[me?.role])
-  useEffect(()=>{const token=localStorage.getItem('token');if(!token)return;const scheme=window.location.protocol==='https:'?'wss':'ws';const socket=new WebSocket(`${scheme}://${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}`);socket.onmessage=(event)=>{try{const data=JSON.parse(event.data);if(data.type==='new_message'){refreshConversations();if(data.conversation_id===selected)refreshMessages(selected);else if('Notification' in window&&Notification.permission==='granted')new Notification('New chat message',{body:data.message?.sender_name+': '+(data.message?.body||'Attachment')})}else{refreshConversations();if(data.conversation_id===selected)refreshMessages(selected)}}catch{}};return()=>socket.close()},[selected,refreshConversations,refreshMessages])
+  useEffect(()=>{const token=localStorage.getItem('token');if(!token)return;const scheme=window.location.protocol==='https:'?'wss':'ws';const socket=new WebSocket(`${scheme}://${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}`);socket.onmessage=(event)=>{try{const data=JSON.parse(event.data);if(data.type==='new_message'){refreshConversations();if(selected!==null&&data.conversation_id===selected)refreshMessages(selected);else if('Notification' in window&&Notification.permission==='granted')new Notification('New chat message',{body:data.message?.sender_name+': '+(data.message?.body||'Attachment')})}else{refreshConversations();if(data.conversation_id===selected)refreshMessages(selected)}}catch{}};return()=>socket.close()},[selected,refreshConversations,refreshMessages])
   useEffect(()=>{if(selected===null){setMessages([]);return}refreshMessages(selected);const t=window.setInterval(()=>refreshMessages(selected),4000);return()=>window.clearInterval(t)},[selected,refreshMessages])
   useEffect(()=>{let active=true;const term=search.trim();const t=window.setTimeout(()=>{api<Person[]>(`/chat/employees?q=${encodeURIComponent(term)}`).then(rows=>{if(active)setPeople(rows)}).catch(e=>{if(active)setError(e.message)})},250);return()=>{active=false;window.clearTimeout(t)}},[search])
 
