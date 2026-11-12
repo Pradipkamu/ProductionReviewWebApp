@@ -27,6 +27,7 @@ export default function Chat({me}:{me:any}) {
   const [groupMembers,setGroupMembers]=useState<number[]>([])
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
+  const [attachment,setAttachment]=useState<File|null>(null)
 
   const refreshConversations=useCallback(async()=>{
     try { const rows=await api<Conversation[]>('/chat/conversations');setItems(rows); }
@@ -55,7 +56,7 @@ export default function Chat({me}:{me:any}) {
   async function send(e:React.FormEvent){
     e.preventDefault();if(!selected||!draft.trim()||busy)return
     setBusy(true);setError('')
-    try{await api(`/chat/conversations/${selected}/messages`,{method:'POST',body:JSON.stringify({body:draft.trim()})});setDraft('');await refreshMessages(selected);await refreshConversations()}
+    try{const sent=await api<any>(`/chat/conversations/${selected}/messages`,{method:'POST',body:JSON.stringify({body:draft.trim()})});if(attachment){const fd=new FormData();fd.append('file',attachment);await api(`/chat/conversations/${selected}/messages/${sent.id}/attachments`,{method:'POST',body:fd});setAttachment(null)}setDraft('');await refreshMessages(selected);await refreshConversations()}
     catch(e:any){setError(e.message)}finally{setBusy(false)}
   }
 
@@ -84,7 +85,7 @@ export default function Chat({me}:{me:any}) {
         </div>:current?<>
           <div className="chat-thread-heading"><div className="chat-avatar">{conversationLabel(current,me.id).slice(0,1).toUpperCase()}</div><div><b>{conversationLabel(current,me.id)}</b><small>{current.kind==='GROUP'?current.participants.length+' members':'Direct conversation'}</small></div></div>
           <div className="chat-message-list">{messages.map(m=><div key={m.id} className={`chat-message-row ${m.sender_id===me.id?'mine':''}`}><div className="chat-bubble"><small>{m.sender_id===me.id?'You':m.sender_name}</small><p>{m.body}</p><time>{timeLabel(m.created_at)}</time></div></div>)}</div>
-          <form className="chat-composer" onSubmit={send}><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a message…" rows={2} maxLength={10000}/><button disabled={busy||!draft.trim()}>Send</button></form>
+          <form className="chat-composer" onSubmit={send}><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a message…" rows={2} maxLength={10000}/><label className="chat-attach-label">＋<input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.pptx,.txt,.csv" onChange={e=>setAttachment(e.target.files?.[0]||null)}/></label>{attachment&&<small>{attachment.name}</small>}<button disabled={busy||!draft.trim()}>Send</button></form>
         </>:<div className="chat-welcome"><div className="chat-welcome-icon">✉</div><h2>Your team conversations</h2><p>Select a conversation or start a new chat with any employee.</p><button onClick={()=>setShowPeople(true)}>Start new chat</button></div>}
       </section>
     </div>
