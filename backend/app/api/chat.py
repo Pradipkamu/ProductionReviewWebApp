@@ -150,7 +150,7 @@ def _admin(user: User):
 def employees(q: str = Query(default="", max_length=100), db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     term = q.strip()
-    stmt = select(User).where(User.is_active.is_(True), User.chat_disabled.is_(False), User.id != user.id)
+    stmt = select(User).where(User.is_active.is_(True), User.id != user.id)
     if term:
         pattern = f"%{term}%"
         stmt = stmt.where(or_(User.full_name.ilike(pattern), User.username.ilike(pattern)))
@@ -174,7 +174,7 @@ def create_direct(payload: DirectConversationCreate, db: Session = Depends(get_d
     require_chat_sender(db, user)
     if payload.user_id == user.id:
         raise HTTPException(400, "You cannot start a direct conversation with yourself")
-    target = db.scalar(select(User).where(User.id == payload.user_id, User.is_active.is_(True), User.chat_disabled.is_(False)))
+    target = db.scalar(select(User).where(User.id == payload.user_id, User.is_active.is_(True)))
     if not target:
         raise HTTPException(404, "Employee not found")
     existing = db.scalar(select(ChatConversation).join(ChatParticipant).where(
@@ -198,7 +198,7 @@ def create_group(payload: GroupConversationCreate, db: Session = Depends(get_db)
                  user: User = Depends(get_current_user)):
     require_chat_sender(db, user)
     user_ids = list(dict.fromkeys([user.id, *payload.user_ids]))
-    active_ids = set(db.scalars(select(User.id).where(User.id.in_(user_ids), User.is_active.is_(True), User.chat_disabled.is_(False))).all())
+    active_ids = set(db.scalars(select(User.id).where(User.id.in_(user_ids), User.is_active.is_(True))).all())
     if active_ids != set(user_ids):
         raise HTTPException(400, "One or more selected employees are unavailable or have chat disabled")
     row = ChatConversation(kind="GROUP", title=payload.title.strip(), created_by_id=user.id)
@@ -221,7 +221,7 @@ async def add_group_members(conversation_id: int, payload: GroupMemberAdd,
     if conversation.created_by_id != user.id and user.role != UserRole.ADMIN:
         raise HTTPException(403, "Only the group creator or an administrator can add members")
     ids = list(dict.fromkeys(payload.user_ids))
-    users = db.scalars(select(User).where(User.id.in_(ids), User.is_active.is_(True), User.chat_disabled.is_(False))).all()
+    users = db.scalars(select(User).where(User.id.in_(ids), User.is_active.is_(True))).all()
     if len(users) != len(ids):
         raise HTTPException(400, "One or more selected employees are unavailable")
     for uid in ids:
