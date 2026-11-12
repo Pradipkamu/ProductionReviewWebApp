@@ -1065,3 +1065,41 @@ class BusinessDataRevision(Base):
     __tablename__ = 'business_data_revision'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+
+class ChatConversation(Base, TimestampMixin):
+    __tablename__ = "chat_conversations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, default="DIRECT", index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
+
+
+class ChatParticipant(Base):
+    __tablename__ = "chat_participants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "user_id", name="uq_chat_participant"),
+        Index("ix_chat_participant_user_active", "user_id", "is_active"),
+    )
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    message_type: Mapped[str] = mapped_column(String(20), nullable=False, default="TEXT")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    edited_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (
+        Index("ix_chat_message_conversation_created", "conversation_id", "created_at", "id"),
+    )
