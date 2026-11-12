@@ -1223,6 +1223,21 @@ class MainActivity : ComponentActivity() {
                                             Column(Modifier.padding(10.dp)) {
                                                 Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
                                                 Text(msg.optString("body"),color=Navy,fontSize=13.sp)
+                                                val chatFiles=msg.optJSONArray("attachments") ?: JSONArray()
+                                                for(fileIndex in 0 until chatFiles.length()) {
+                                                    val fileItem=chatFiles.optJSONObject(fileIndex) ?: continue
+                                                    TextButton(onClick={
+                                                        val auth=token
+                                                        if(auth!=null) scope.launch {
+                                                            try {
+                                                                val file=withContext(Dispatchers.IO){ApiClient.downloadChatAttachment(fileItem.optInt("id"),fileItem.optString("file_name"),chatContext.cacheDir,auth)}
+                                                                val uri=FileProvider.getUriForFile(chatContext,chatContext.packageName+".fileprovider",file)
+                                                                val mime=fileItem.optString("mime_type").ifBlank{"application/octet-stream"}
+                                                                chatContext.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                                            } catch(e:Exception){message=e.message ?: "Unable to open chat attachment."}
+                                                        }
+                                                    }) { Text("📎 "+fileItem.optString("file_name"),color=Teal,fontSize=11.sp) }
+                                                }
                                             }
                                         }
                                     }
