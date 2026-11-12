@@ -102,18 +102,19 @@ def test_group_member_permissions_and_private_conversation_access():
                         headers=first_headers, json={"user_ids": [second_id]})
     assert added.status_code == 403
 
+    second_login = client.post("/api/auth/login", json={
+        "username": "chat_group_second", "password": "Employee123!",
+    })
+    assert second_login.status_code == 200, second_login.text
+    second_headers = {"Authorization": f"Bearer {second_login.json()['access_token']}"}
     private_read = client.get(f"/api/chat/conversations/{conversation_id}/messages",
-                              headers={"Authorization": "Bearer invalid"})
-    assert private_read.status_code == 401
+                              headers=second_headers)
+    assert private_read.status_code == 404
 
     with SessionLocal() as db:
         participants = db.scalars(select(ChatParticipant).where(
             ChatParticipant.conversation_id == conversation_id,
             ChatParticipant.is_active.is_(True),
         )).all()
-        assert {row.user_id for row in participants} == {
-            int(client.post("/api/auth/login", json={
-                "username": "admin", "password": "ChangeMe123!",
-            }).json()["user"]["id"]),
-            first_id,
-        }
+        admin_id = db.scalar(select(User.id).where(User.username == "admin"))
+        assert {row.user_id for row in participants} == {admin_id, first_id}
