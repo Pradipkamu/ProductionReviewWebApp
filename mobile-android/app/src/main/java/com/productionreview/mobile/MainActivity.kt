@@ -1126,7 +1126,7 @@ class MainActivity : ComponentActivity() {
                                     val title=conversation.optString("title").ifBlank {
                                         val participants=conversation.optJSONArray("participants") ?: JSONArray()
                                         (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}
-                                            .filter{it.optInt("id")!=account?.let{_->-1}}
+                                            .filter{it.optString("username")!=account?.username}
                                             .joinToString(", "){it.optString("full_name")}
                                     }
                                     Card(Modifier.fillMaxWidth().clickable {
@@ -1147,7 +1147,7 @@ class MainActivity : ComponentActivity() {
                                     Text("MESSAGES",color=Navy,fontWeight=FontWeight.Bold,fontSize=12.sp)
                                     for(i in 0 until chatMessages.length()) {
                                         val msg=chatMessages.optJSONObject(i) ?: continue
-                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp),colors=CardDefaults.cardColors(containerColor=if(msg.optInt("sender_id")==account?.let{0} )Color(0xFFEAF5F5) else Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp),colors=CardDefaults.cardColors(containerColor=if(msg.optString("sender_username")==account?.username )Color(0xFFEAF5F5) else Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                             Column(Modifier.padding(10.dp)) {
                                                 Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
                                                 Text(msg.optString("body"),color=Navy,fontSize=13.sp)
