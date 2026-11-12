@@ -215,11 +215,11 @@ private object ApiClient {
         }
         try {
             connection.outputStream.use { output ->
-                val prefix = "--$boundary\\r\\nContent-Disposition: form-data; name=\\"file\\"; filename=\\"$name\\"\\r\\nContent-Type: $mime\\r\\n\\r\\n"
+                val prefix = "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$name\"\r\nContent-Type: $mime\r\n\r\n"
                 output.write(prefix.toByteArray(Charsets.UTF_8))
                 context.contentResolver.openInputStream(uri)?.use { input -> input.copyTo(output) }
                     ?: throw IllegalStateException("Unable to read selected attachment")
-                output.write("\\r\\n--$boundary--\\r\\n".toByteArray(Charsets.UTF_8))
+                output.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
             }
             val code = connection.responseCode
             val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
