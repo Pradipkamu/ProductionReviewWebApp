@@ -19,7 +19,7 @@ export function PasswordForm({required=false}:{required?:boolean}) {
 
 export default function Security(){
  const [users,setUsers]=useState<any[]>([]),[me,setMe]=useState<any>(null),[status,setStatus]=useState<any>(null)
- const [sessions,setSessions]=useState<any[]>([]),[events,setEvents]=useState<any[]>([])
+ const [sessions,setSessions]=useState<any[]>([]),[events,setEvents]=useState<any[]>([])\n const [sessionSearch,setSessionSearch]=useState(''),[auditSearch,setAuditSearch]=useState('')
  const [pageConfig,setPageConfig]=useState<any>(null),[accessReason,setAccessReason]=useState('')
  const [error,setError]=useState(''),[message,setMessage]=useState('')
  const [form,setForm]=useState({username:'',full_name:'',password:'',role:'VIEW_ONLY'})
@@ -99,19 +99,18 @@ export default function Security(){
 
   <section className="panel">
    <div className="panel-title"><div><h2>Active / Recent Sessions</h2><p>{me?.role==='ADMIN'?'Administrator view of user sessions.':'Your current and recent sessions.'}</p></div><button className="small secondary" onClick={load}>Refresh</button></div>
-   <p className="data-note">Showing all active sessions plus the 20 most recent revoked sessions. Older session records remain in the database. Times are shown in IST.</p>
-   <div className="table-wrap" style={{maxHeight:'520px',overflowY:'auto'}}><table><thead><tr><th>User</th><th>Created</th><th>Last Seen</th><th>Expires</th><th>IP</th><th>Client</th><th>Status</th><th></th></tr></thead><tbody>
-    {[...sessions.filter(s=>!s.revoked_at),...sessions.filter(s=>s.revoked_at).slice(0,20)].map(s=><tr key={s.id}><td>{s.username||me?.username}{s.is_current&&<><br/><small>Current session</small></>}</td><td>{stamp(s.created_at)}</td><td>{stamp(s.last_seen_at)}</td><td>{stamp(s.expires_at)}</td><td>{s.ip_address||'—'}</td><td><small>{s.user_agent||'—'}</small></td><td><span className={`status ${s.revoked_at?'bad':'good'}`}>{s.revoked_at?'REVOKED':'ACTIVE'}</span></td><td>{!s.revoked_at&&<button className="small danger" onClick={()=>revoke(s)}>Revoke</button>}</td></tr>)}
-    {!sessions.length&&<tr><td colSpan={8} className="muted">No sessions found.</td></tr>}
-   </tbody></table></div>
+   <label className="search-field">Search sessions<input value={sessionSearch} onChange={e=>setSessionSearch(e.target.value)} placeholder="Search username, IP, device, date or status"/></label>
+   {sessionSearch.trim()&&<div className="table-wrap" style={{maxHeight:'520px',overflowY:'auto'}}><table><thead><tr><th>User</th><th>Created</th><th>Last Seen</th><th>Expires</th><th>IP</th><th>Client</th><th>Status</th><th></th></tr></thead><tbody>
+    {[...sessions.filter(s=>!s.revoked_at),...sessions.filter(s=>s.revoked_at).slice(0,20)].filter(s=>[s.username,me?.username,s.ip_address,s.user_agent,s.created_at,s.last_seen_at,s.expires_at,s.revoked_at?'REVOKED':'ACTIVE'].join(' ').toLowerCase().includes(sessionSearch.trim().toLowerCase())).map(s=><tr key={s.id}><td>{s.username||me?.username}{s.is_current&&<><br/><small>Current session</small></>}</td><td>{stamp(s.created_at)}</td><td>{stamp(s.last_seen_at)}</td><td>{stamp(s.expires_at)}</td><td>{s.ip_address||'—'}</td><td><small>{s.user_agent||'—'}</small></td><td><span className={`status ${s.revoked_at?'bad':'good'}`}>{s.revoked_at?'REVOKED':'ACTIVE'}</span></td><td>{!s.revoked_at&&<button className="small danger" onClick={()=>revoke(s)}>Revoke</button>}</td></tr>)}
+    </tbody></table></div>}
   </section>
 
   {['ADMIN','MANAGEMENT'].includes(me?.role)&&<section className="panel">
    <div className="panel-title"><div><h2>Login / Security Audit</h2><p>Latest successful and failed sign-ins, lockouts, password changes and session revocations.</p></div></div>
-   <div className="table-wrap"><table><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Result</th><th>IP</th><th>Detail</th></tr></thead><tbody>
-    {events.map(e=><tr key={e.id}><td>{stamp(e.occurred_at)}</td><td>{e.event_type}</td><td>{e.username||'—'}</td><td><span className={`status ${e.success?'good':'bad'}`}>{e.success?'SUCCESS':'FAILED'}</span></td><td>{e.ip_address||'—'}</td><td>{e.detail||'—'}</td></tr>)}
-    {!events.length&&<tr><td colSpan={6} className="muted">No security events recorded yet.</td></tr>}
-   </tbody></table></div>
+   <label className="search-field">Search login / security audit<input value={auditSearch} onChange={e=>setAuditSearch(e.target.value)} placeholder="Search username, event, result, IP or detail"/></label>
+   {auditSearch.trim()&&<div className="table-wrap"><table><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Result</th><th>IP</th><th>Detail</th></tr></thead><tbody>
+    {events.filter(e=>[e.occurred_at,e.event_type,e.username,e.success?'SUCCESS':'FAILED',e.ip_address,e.user_agent,e.detail].join(' ').toLowerCase().includes(auditSearch.trim().toLowerCase())).map(e=><tr key={e.id}><td>{stamp(e.occurred_at)}</td><td>{e.event_type}</td><td>{e.username||'—'}</td><td><span className={`status ${e.success?'good':'bad'}`}>{e.success?'SUCCESS':'FAILED'}</span></td><td>{e.ip_address||'—'}</td><td>{e.detail||'—'}</td></tr>)}
+   </tbody></table></div>}
   </section>}
 
   {me?.role==='ADMIN'&&<><section className="panel"><h2>Users & Roles</h2><div className="table-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Active</th><th>Last Login</th><th>Lock</th><th>Password</th></tr></thead><tbody>{users.map(u=><tr key={u.id}><td>{u.full_name}<br/><small>{u.username}</small></td><td><select value={u.role} onChange={e=>update(u,e.target.value,u.is_active)}>{roles.map(r=><option key={r}>{r}</option>)}</select></td><td><input type="checkbox" checked={u.is_active} onChange={e=>update(u,u.role,e.target.checked)}/></td><td>{stamp(u.last_login_at)}</td><td>{u.locked_until?<><span className="status bad">Until {stamp(u.locked_until)}</span><br/><button className="small secondary" onClick={()=>unlock(u)}>Unlock</button></>:<span className="status good">OK</span>}<br/><small>{u.failed_login_attempts||0} failed</small></td><td><button onClick={()=>reset(u)}>Reset</button></td></tr>)}</tbody></table></div></section>
