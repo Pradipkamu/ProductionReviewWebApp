@@ -1060,6 +1060,7 @@ class MainActivity : ComponentActivity() {
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Chat",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="CHAT",icon={Text("✉",fontSize=19.sp,color=Teal)},onClick={scope.launch { drawerState.close(); homeTab="CHAT"; token?.let{refreshChatConversations(it)}; chatSearch=""; chatEmployees=JSONArray() }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("History",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HISTORY",icon={Icon(Icons.Filled.History,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="HISTORY" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                 }
                                 Divider(color=Color(0xFFCBD5DF))
@@ -1078,10 +1079,94 @@ class MainActivity : ComponentActivity() {
                             if (account != null) IconButton(onClick={scope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
                                 Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
-                        if (homeTab == "OEE") {
+                        if (homeTab == "CHAT") {
+                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                    ScreenTitle("Employee Chat","Message any employee or continue a conversation")
+                                    TextButton(onClick={token?.let{refreshChatConversations(it)}}){Text("REFRESH",color=Teal)}
+                                }
+                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(13.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                        Text("Start a new conversation",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                        OutlinedTextField(value=chatSearch,onValueChange={chatSearch=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search employee name or username")})
+                                        Button(onClick={token?.let{searchChatEmployees(it)}},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("SEARCH EMPLOYEES")}
+                                        for(i in 0 until chatEmployees.length()) {
+                                            val employee=chatEmployees.optJSONObject(i) ?: continue
+                                            Row(Modifier.fillMaxWidth().clickable {
+                                                val auth=token
+                                                if(auth!=null) scope.launch {
+                                                    try {
+                                                        val conversation=withContext(Dispatchers.IO){ApiClient.createDirectChat(employee.optInt("id"),auth)}
+                                                        selectedChatId=conversation.optInt("id")
+                                                        refreshChatConversations(auth)
+                                                        refreshChatMessages(auth,selectedChatId!!)
+                                                        chatEmployees=JSONArray()
+                                                        chatSearch=""
+                                                    } catch(e:Exception){message="Unable to start chat: ${e.message}"}
+                                                }
+                                            }.padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(employee.optString("full_name"),color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                                                    Text(employee.optString("username")+" • "+employee.optString("role"),color=Muted,fontSize=11.sp)
+                                                }
+                                                Text("MESSAGE →",color=Teal,fontWeight=FontWeight.Bold,fontSize=10.sp)
+                                            }
+                                            Divider(color=Border)
+                                        }
+                                    }
+                                }
+                                Text("CONVERSATIONS",color=Navy,fontWeight=FontWeight.Bold,fontSize=12.sp,letterSpacing=0.8.sp)
+                                if(chatConversations.length()==0) EmptyState("No conversations yet","Search for an employee above to start chatting.")
+                                for(i in 0 until chatConversations.length()) {
+                                    val conversation=chatConversations.optJSONObject(i) ?: continue
+                                    val conversationId=conversation.optInt("id")
+                                    val title=conversation.optString("title").ifBlank {
+                                        val participants=conversation.optJSONArray("participants") ?: JSONArray()
+                                        (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}
+                                            .filter{it.optInt("id")!=account?.let{_->-1}}
+                                            .joinToString(", "){it.optString("full_name")}
+                                    }
+                                    Card(Modifier.fillMaxWidth().clickable {
+                                        selectedChatId=conversationId
+                                        token?.let{refreshChatMessages(it,conversationId)}
+                                    },shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=if(selectedChatId==conversationId)Color(0xFFEAF5F5) else Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                                                Text(title.ifBlank{"Conversation"},color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Teal)
+                                            }
+                                            Text(conversation.optJSONObject("last_message")?.optString("body")?.ifBlank{"No messages yet"} ?: "No messages yet",color=Muted,fontSize=11.sp,maxLines=1)
+                                        }
+                                    }
+                                }
+                                if(selectedChatId!=null) {
+                                    Divider(color=Border,thickness=1.dp)
+                                    Text("MESSAGES",color=Navy,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                    for(i in 0 until chatMessages.length()) {
+                                        val msg=chatMessages.optJSONObject(i) ?: continue
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp),colors=CardDefaults.cardColors(containerColor=if(msg.optInt("sender_id")==account?.let{0} )Color(0xFFEAF5F5) else Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Column(Modifier.padding(10.dp)) {
+                                                Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                Text(msg.optString("body"),color=Navy,fontSize=13.sp)
+                                            }
+                                        }
+                                    }
+                                    OutlinedTextField(value=chatDraft,onValueChange={chatDraft=it},modifier=Modifier.fillMaxWidth(),label={Text("Write a message")})
+                                    Button(onClick={
+                                        val auth=token;val id=selectedChatId;val body=chatDraft.trim()
+                                        if(auth!=null&&id!=null&&body.isNotBlank())scope.launch{
+                                            chatLoading=true
+                                            try{withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body,auth)};chatDraft="";refreshChatMessages(auth,id);refreshChatConversations(auth)}
+                                            catch(e:Exception){message="Message not sent: ${e.message}"}
+                                            finally{chatLoading=false}
+                                        }
+                                    },enabled=chatDraft.isNotBlank()&&!chatLoading,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text(if(chatLoading)"SENDING…" else "SEND MESSAGE")}
+                                }
+                            }
+                        } else if (homeTab == "OEE") {
                             val monthOee = oeeManagement?.optJSONObject("overall")
                             val headerGood=oeeGoodCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
                             val headerReject=oeeRejectCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
