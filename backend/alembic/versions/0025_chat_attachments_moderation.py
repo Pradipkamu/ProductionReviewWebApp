@@ -13,6 +13,7 @@ depends_on = None
 
 
 def upgrade():
+    op.add_column("users", sa.Column("chat_disabled", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.create_table(
         "chat_attachments",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -50,5 +51,6 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_column("users", "chat_disabled")
     op.drop_table("chat_reports")
     op.drop_table("chat_attachments")
