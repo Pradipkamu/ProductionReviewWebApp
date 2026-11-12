@@ -34,6 +34,7 @@ export default function Chat({me}:{me:any}) {
   const [draft,setDraft]=useState('')
   const [people,setPeople]=useState<Person[]>([])
   const [search,setSearch]=useState('')
+  const [conversationSearch,setConversationSearch]=useState('')
   const [showPeople,setShowPeople]=useState(false)
   const [groupMode,setGroupMode]=useState(false)
   const [groupTitle,setGroupTitle]=useState('')
@@ -59,10 +60,10 @@ export default function Chat({me}:{me:any}) {
   useEffect(()=>{if(me?.role==='ADMIN'){api<any[]>('/chat/admin/reports').then(setReports).catch(()=>{});api<Person[]>('/chat/admin/users').then(setChatUsers).catch(()=>{})}},[me?.role])
   useEffect(()=>{const token=localStorage.getItem('token');if(!token)return;const scheme=window.location.protocol==='https:'?'wss':'ws';const socket=new WebSocket(`${scheme}://${window.location.host}/api/chat/ws?token=${encodeURIComponent(token)}`);socket.onmessage=(event)=>{try{const data=JSON.parse(event.data);if(data.type==='new_message'){refreshConversations();if(selected!==null&&data.conversation_id===selected)refreshMessages(selected);else if('Notification' in window&&Notification.permission==='granted')new Notification('New chat message',{body:data.message?.sender_name+': '+(data.message?.body||'Attachment')})}else{refreshConversations();if(selected!==null&&data.conversation_id===selected)refreshMessages(selected)}}catch{}};return()=>socket.close()},[selected,refreshConversations,refreshMessages])
   useEffect(()=>{if(selected===null){setMessages([]);return}refreshMessages(selected);const t=window.setInterval(()=>refreshMessages(selected),4000);return()=>window.clearInterval(t)},[selected,refreshMessages])
-  useEffect(()=>{let active=true;const term=search.trim();const t=window.setTimeout(()=>{api<Person[]>(`/chat/employees?q=${encodeURIComponent(term)}`).then(rows=>{if(active)setPeople(rows)}).catch(e=>{if(active)setError(e.message)})},250);return()=>{active=false;window.clearTimeout(t)}},[search])
+  useEffect(()=>{if(!showPeople)return;let active=true;const term=search.trim();const t=window.setTimeout(()=>{api<Person[]>(`/chat/employees?q=${encodeURIComponent(term)}`).then(rows=>{if(active)setPeople(rows)}).catch(e=>{if(active)setError(e.message)})},250);return()=>{active=false;window.clearTimeout(t)}},[search,showPeople])
 
   const current=useMemo(()=>items.find(x=>x.id===selected)||null,[items,selected])
-  const visibleItems=useMemo(()=>items.filter(c=>filter==='UNREAD'?c.unread_count>0:filter==='GROUPS'?c.kind==='GROUP':true),[items,filter])
+  const visibleItems=useMemo(()=>{const term=conversationSearch.trim().toLocaleLowerCase();return items.filter(c=>filter==='UNREAD'?c.unread_count>0:filter==='GROUPS'?c.kind==='GROUP':true).filter(c=>{if(!term)return true;const names=[c.title||'',...c.participants.flatMap(p=>[p.full_name,p.username]),c.last_message?.body||''];return names.join(' ').toLocaleLowerCase().includes(term)})},[items,filter,conversationSearch])
   async function startDirect(person:Person){
     setBusy(true);setError('')
     try{const c=await api<Conversation>('/chat/conversations/direct',{method:'POST',body:JSON.stringify({user_id:person.id})});await refreshConversations();setSelected(c.id);setShowPeople(false);setSearch('')}
@@ -101,7 +102,7 @@ export default function Chat({me}:{me:any}) {
           <div className="chat-people-actions">{groupMode?<button disabled={busy||!groupTitle.trim()||!groupMembers.length} onClick={createGroup}>Create group ({groupMembers.length})</button>:<button className="secondary" onClick={()=>setGroupMode(true)}>＋ Create group</button>}</div>
         </div>:<>
           <div className="chat-wa-list-top"><div><span className="eyebrow">PRODUCTION REVIEW</span><h2>Chats</h2></div><button className="chat-new-button" onClick={()=>{setShowPeople(true);setGroupMode(false)}} aria-label="New chat">＋</button></div>
-          <label className="chat-wa-search-wrap"><span>⌕</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search employees"/></label>
+          <label className="chat-wa-search-wrap"><span>⌕</span><input value={conversationSearch} onChange={e=>setConversationSearch(e.target.value)} placeholder="Search conversations or employees"/></label>
           <div className="chat-wa-filters">{(['ALL','UNREAD','GROUPS'] as const).map(x=><button key={x} className={filter===x?'active':''} onClick={()=>setFilter(x)}>{x==='ALL'?'All chats':x==='UNREAD'?'Unread':'Groups'}</button>)}</div>
           <div className="chat-wa-conversations">
             {visibleItems.length===0?<div className="chat-empty-list">{filter==='UNREAD'?'No unread messages.':filter==='GROUPS'?'No group conversations yet.':'No conversations yet. Start a chat with an employee.'}</div>:visibleItems.map(c=>{
