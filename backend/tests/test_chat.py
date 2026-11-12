@@ -65,6 +65,40 @@ def test_direct_chat_message_and_unread_count():
     assert listing.json()[0]["unread_count"] == 1
 
 
+def test_admin_can_review_and_reply_to_nonparticipant_employee_chat():
+    admin_headers = _headers()
+    first_id = _employee("chat_admin_history_first")
+    second_id = _employee("chat_admin_history_second")
+
+    first_login = client.post("/api/auth/login", json={
+        "username": "chat_admin_history_first", "password": "Employee123!",
+    })
+    assert first_login.status_code == 200, first_login.text
+    first_headers = {"Authorization": f"Bearer {first_login.json()['access_token']}"}
+
+    created = client.post("/api/chat/conversations/direct", headers=first_headers,
+                          json={"user_id": second_id})
+    assert created.status_code == 200, created.text
+    conversation_id = created.json()["id"]
+    sent = client.post(f"/api/chat/conversations/{conversation_id}/messages",
+                       headers=first_headers, json={"body": "Employee shift handover"})
+    assert sent.status_code == 200, sent.text
+
+    admin_list = client.get("/api/chat/conversations", headers=admin_headers)
+    assert admin_list.status_code == 200, admin_list.text
+    assert any(row["id"] == conversation_id for row in admin_list.json())
+
+    history = client.get(f"/api/chat/conversations/{conversation_id}/messages",
+                         headers=admin_headers)
+    assert history.status_code == 200, history.text
+    assert [row["body"] for row in history.json()] == ["Employee shift handover"]
+
+    admin_reply = client.post(f"/api/chat/conversations/{conversation_id}/messages",
+                              headers=admin_headers, json={"body": "Admin reviewed"})
+    assert admin_reply.status_code == 200, admin_reply.text
+    assert admin_reply.json()["body"] == "Admin reviewed"
+
+
 def test_chat_disabled_employee_can_receive_but_cannot_send():
     headers = _headers()
     disabled_id = _employee("chat_disabled_user", chat_disabled=True)
