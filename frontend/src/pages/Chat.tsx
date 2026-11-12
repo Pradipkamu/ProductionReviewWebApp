@@ -74,7 +74,7 @@ export default function Chat({me}:{me:any}) {
     catch(e:any){setError(e.message)}finally{setBusy(false)}
   }
   async function send(e:React.FormEvent){
-    e.preventDefault();if(!selected||(!draft.trim()&&!attachment)||busy)return
+    e.preventDefault();if(!selected||!draft.trim()||busy)return
     setBusy(true);setError('')
     try{
       const sent=await api<any>(`/chat/conversations/${selected}/messages`,{method:'POST',body:JSON.stringify({body:draft.trim()||' '})})
@@ -144,7 +144,7 @@ export default function Chat({me}:{me:any}) {
           <form className="chat-composer chat-wa-composer" onSubmit={send}>
             <label className="chat-attach-label chat-wa-attach" title="Attach photo or document">＋<input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.pptx,.txt,.csv" onChange={e=>setAttachment(e.target.files?.[0]||null)}/></label>
             <div className="chat-wa-compose-field"><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Message" rows={1} maxLength={10000}/>{attachment&&<small className="chat-wa-selected-file">📎 {attachment.name} <button type="button" onClick={()=>setAttachment(null)}>×</button></small>}</div>
-            <button className="chat-wa-send" disabled={busy||(!draft.trim()&&!attachment)} aria-label="Send message">{busy?'…':'➤'}</button>
+            <button className="chat-wa-send" disabled={busy||!draft.trim()} aria-label="Send message">{busy?'…':'➤'}</button>
           </form>
         </>:<div className="chat-welcome chat-wa-welcome"><div className="chat-welcome-icon">✉</div><h2>Keep your team connected</h2><p>Select a conversation or start a new chat with an employee.</p><button onClick={()=>{setShowPeople(true);setGroupMode(false)}}>Start new chat</button></div>}
       </section>
