@@ -1134,10 +1134,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         LaunchedEffect(homeTab, token, selectedChatId) {
-                            if (homeTab == "CHAT" && token != null) {
+                            val auth = token ?: return@LaunchedEffect
+                            if (homeTab == "CHAT") {
                                 while (homeTab == "CHAT") {
-                                    refreshChatConversations(token)
-                                    selectedChatId?.let { refreshChatMessages(token, it) }
+                                    refreshChatConversations(auth)
+                                    selectedChatId?.let { refreshChatMessages(auth, it) }
                                     kotlinx.coroutines.delay(5000)
                                 }
                             }
