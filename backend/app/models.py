@@ -1103,3 +1103,30 @@ class ChatMessage(Base):
     __table_args__ = (
         Index("ix_chat_message_conversation_created", "conversation_id", "created_at", "id"),
     )
+
+
+class ChatAttachment(Base):
+    __tablename__ = "chat_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
+    file_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    stored_name: Mapped[str] = mapped_column(String(180), unique=True, nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ChatReport(Base):
+    __tablename__ = "chat_reports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
+    reported_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="OPEN", server_default="OPEN")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("message_id", "reported_by_id", name="uq_chat_reporter_message"),)
