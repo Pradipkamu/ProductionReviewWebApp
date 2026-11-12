@@ -17,7 +17,13 @@ from ..enums import UserRole
 from ..models import ChatAttachment, ChatConversation, ChatMessage, ChatParticipant, ChatReport, User, UserSession
 from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+def require_chat_access(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.chat_disabled:
+        raise HTTPException(403, "Chat access is disabled for this account")
+    return user
+
+
+router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[Depends(require_chat_access)])
 settings = get_settings()
 CHAT_MAX_BYTES = 12 * 1024 * 1024
 CHAT_ALLOWED = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".docx", ".xlsx", ".pptx", ".txt", ".csv"}
@@ -390,9 +396,7 @@ def set_chat_access(user_id: int, enabled: bool = Query(...), db: Session = Depe
         raise HTTPException(404, "Employee not found")
     if target.id == user.id and not enabled:
         raise HTTPException(400, "You cannot disable your own chat access")
-    target.is_active = target.is_active
-    db.execute(__import__("sqlalchemy").text("UPDATE users SET chat_disabled = :disabled WHERE id = :uid"),
-               {"disabled": not enabled, "uid": user_id})
+    target.chat_disabled = not enabled
     db.commit()
     return {"success": True, "chat_enabled": enabled}
 
@@ -411,9 +415,7 @@ async def chat_socket(socket: WebSocket, token: str = Query(...)):
         if (not user or not session or session.revoked_at is not None or
                 session.expires_at <= datetime.utcnow() or payload.get("ver") != user.token_version):
             await socket.close(code=4401); return
-        disabled = db.execute(__import__("sqlalchemy").text("SELECT chat_disabled FROM users WHERE id=:uid"),
-                              {"uid": user_id}).scalar()
-        if disabled:
+        if user.chat_disabled:
             await socket.close(code=4403); return
         await hub.connect(user_id, socket)
         while True:
