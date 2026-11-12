@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { api, downloadApi } from '../api'
 
 type Person = { id:number; full_name:string; username:string; role?:string }
 type Message = { id:number; sender_id:number; sender_name:string; body:string; created_at:string }
@@ -84,7 +84,7 @@ export default function Chat({me}:{me:any}) {
           <div className="chat-people-actions">{groupMode?<button disabled={busy||!groupTitle.trim()||!groupMembers.length} onClick={createGroup}>Create group ({groupMembers.length})</button>:<button className="secondary" onClick={()=>setGroupMode(true)}>＋ Create group instead</button>}</div>
         </div>:current?<>
           <div className="chat-thread-heading"><div className="chat-avatar">{conversationLabel(current,me.id).slice(0,1).toUpperCase()}</div><div><b>{conversationLabel(current,me.id)}</b><small>{current.kind==='GROUP'?current.participants.length+' members':'Direct conversation'}</small></div></div>
-          <div className="chat-message-list">{messages.map(m=><div key={m.id} className={`chat-message-row ${m.sender_id===me.id?'mine':''}`}><div className="chat-bubble"><small>{m.sender_id===me.id?'You':m.sender_name}</small><p>{m.body}</p><time>{timeLabel(m.created_at)}</time></div></div>)}</div>
+          <div className="chat-message-list">{messages.map((m:any)=><div key={m.id} className={`chat-message-row ${m.sender_id===me.id?'mine':''}`}><div className="chat-bubble"><small>{m.sender_id===me.id?'You':m.sender_name}</small><p>{m.body}</p>{(m.attachments||[]).map((a:any)=><button className="chat-file-link" key={a.id} type="button" onClick={()=>downloadApi(a.download_url,a.file_name)}>📎 {a.file_name}</button>)}<time>{timeLabel(m.created_at)}</time></div></div>)}</div>
           <form className="chat-composer" onSubmit={send}><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Write a message…" rows={2} maxLength={10000}/><label className="chat-attach-label">＋<input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.pptx,.txt,.csv" onChange={e=>setAttachment(e.target.files?.[0]||null)}/></label>{attachment&&<small>{attachment.name}</small>}<button disabled={busy||!draft.trim()}>Send</button></form>
         </>:<div className="chat-welcome"><div className="chat-welcome-icon">✉</div><h2>Your team conversations</h2><p>Select a conversation or start a new chat with any employee.</p><button onClick={()=>setShowPeople(true)}>Start new chat</button></div>}
       </section>
