@@ -45,6 +45,7 @@ export default function Chat({me}:{me:any}) {
   const [showReports,setShowReports]=useState(false)
   const [chatUsers,setChatUsers]=useState<Person[]>([])
   const [filter,setFilter]=useState<'ALL'|'UNREAD'|'GROUPS'>('ALL')
+  const canSend=me?.role==='ADMIN'||me?.chat_send_enabled!==false
 
   const refreshConversations=useCallback(async()=>{
     try { const rows=await api<Conversation[]>('/chat/conversations');setItems(rows); }
@@ -141,11 +142,11 @@ export default function Chat({me}:{me:any}) {
               </div>
             })}
           </div>
-          <form className="chat-composer chat-wa-composer" onSubmit={send}>
+          {canSend?<form className="chat-composer chat-wa-composer" onSubmit={send}>
             <label className="chat-attach-label chat-wa-attach" title="Attach photo or document">＋<input type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.xlsx,.pptx,.txt,.csv" onChange={e=>setAttachment(e.target.files?.[0]||null)}/></label>
             <div className="chat-wa-compose-field"><textarea value={draft} onChange={e=>setDraft(e.target.value)} placeholder="Message" rows={1} maxLength={10000}/>{attachment&&<small className="chat-wa-selected-file">📎 {attachment.name} <button type="button" onClick={()=>setAttachment(null)}>×</button></small>}</div>
             <button className="chat-wa-send" disabled={busy||!draft.trim()} aria-label="Send message">{busy?'…':'➤'}</button>
-          </form>
+          </form>:<div className="chat-readonly-notice">You can receive and read messages, but your role is not currently permitted to send messages.</div>}
         </>:<div className="chat-welcome chat-wa-welcome"><div className="chat-welcome-icon">✉</div><h2>Keep your team connected</h2><p>Select a conversation or start a new chat with an employee.</p><button onClick={()=>{setShowPeople(true);setGroupMode(false)}}>Start new chat</button></div>}
       </section>
     </div>
