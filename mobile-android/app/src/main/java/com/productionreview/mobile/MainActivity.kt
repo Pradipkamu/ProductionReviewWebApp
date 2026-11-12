@@ -201,6 +201,25 @@ private object ApiClient {
         array("/chat/conversations/$conversationId/messages?limit=60", token)
     fun sendChatMessage(conversationId: Int, body: String, token: String): JSONObject =
         request("/chat/conversations/$conversationId/messages", "POST", JSONObject().put("body", body), token)
+    fun downloadChatAttachment(attachmentId:Int,fileName:String,cacheDir:File,token:String):File {
+        val connection=(URL("$API_BASE/chat/attachments/$attachmentId").openConnection() as HttpURLConnection).apply {
+            requestMethod="GET";connectTimeout=15000;readTimeout=45000
+            setRequestProperty("Authorization","Bearer $token")
+        }
+        try {
+            val code=connection.responseCode
+            if(code !in 200..299) {
+                val body=connection.errorStream?.bufferedReader()?.use{it.readText()}.orEmpty()
+                val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty()
+                throw IllegalStateException(detail.ifBlank{"Chat attachment download failed (HTTP $code)"})
+            }
+            val safeName=fileName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"),"_").ifBlank{"chat_file_$attachmentId"}
+            val target=File(cacheDir,"chat_"+attachmentId+"_"+safeName)
+            connection.inputStream.use{input->target.outputStream().use{output->input.copyTo(output)}}
+            if(!target.exists()||target.length()==0L)throw IllegalStateException("Downloaded chat attachment is empty.")
+            return target
+        } finally { connection.disconnect() }
+    }
     fun uploadChatAttachment(context: android.content.Context, conversationId: Int, messageId: Int, uri: Uri, token: String): JSONObject {
         val name = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
