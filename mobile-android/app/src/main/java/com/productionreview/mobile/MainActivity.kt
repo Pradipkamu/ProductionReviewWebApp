@@ -1199,11 +1199,12 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     OutlinedTextField(value=chatDraft,onValueChange={chatDraft=it},modifier=Modifier.fillMaxWidth(),label={Text("Write a message")})
+                                    OutlinedButton(onClick={chatAttachmentPicker.launch("*/*")},modifier=Modifier.fillMaxWidth()){Text(if(chatAttachmentUri==null) "ATTACH PHOTO / DOCUMENT" else "ATTACHMENT SELECTED")}
                                     Button(onClick={
                                         val auth=token;val id=selectedChatId;val body=chatDraft.trim()
                                         if(auth!=null&&id!=null&&body.isNotBlank())scope.launch{
                                             chatLoading=true
-                                            try{withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body,auth)};chatDraft="";refreshChatMessages(auth,id);refreshChatConversations(auth)}
+                                            try{val sent=withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body,auth)};val picked=chatAttachmentUri;if(picked!=null)withContext(Dispatchers.IO){ApiClient.uploadChatAttachment(chatContext,id,sent.optInt("id"),picked,auth)};chatDraft="";chatAttachmentUri=null;refreshChatMessages(auth,id);refreshChatConversations(auth)}
                                             catch(e:Exception){message="Message not sent: ${e.message}"}
                                             finally{chatLoading=false}
                                         }
