@@ -16,12 +16,15 @@ from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..enums import UserRole
 from ..models import ChatAttachment, ChatConversation, ChatMessage, ChatParticipant, ChatReport, User, UserSession
+from ..page_access import can_send_chat
 from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file
 
-def require_chat_access(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if user.chat_disabled:
-        raise HTTPException(403, "Chat access is disabled for this account")
+def require_chat_access(user: User = Depends(get_current_user)):
     return user
+
+def require_chat_sender(db: Session, user: User):
+    if not can_send_chat(db, user):
+        raise HTTPException(403, "Your role is not permitted to send chat messages")
 
 
 router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[Depends(require_chat_access)])
@@ -168,6 +171,7 @@ def conversations(db: Session = Depends(get_db), user: User = Depends(get_curren
 @router.post("/conversations/direct")
 def create_direct(payload: DirectConversationCreate, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
+    require_chat_sender(db, user)
     if payload.user_id == user.id:
         raise HTTPException(400, "You cannot start a direct conversation with yourself")
     target = db.scalar(select(User).where(User.id == payload.user_id, User.is_active.is_(True), User.chat_disabled.is_(False)))
@@ -192,6 +196,7 @@ def create_direct(payload: DirectConversationCreate, db: Session = Depends(get_d
 @router.post("/conversations/group")
 def create_group(payload: GroupConversationCreate, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
+    require_chat_sender(db, user)
     user_ids = list(dict.fromkeys([user.id, *payload.user_ids]))
     active_ids = set(db.scalars(select(User.id).where(User.id.in_(user_ids), User.is_active.is_(True), User.chat_disabled.is_(False))).all())
     if active_ids != set(user_ids):
@@ -210,6 +215,7 @@ async def add_group_members(conversation_id: int, payload: GroupMemberAdd,
     conversation = db.get(ChatConversation, conversation_id)
     if not conversation or conversation.kind != "GROUP":
         raise HTTPException(404, "Group conversation not found")
+    require_chat_sender(db, user)
     if user.role != UserRole.ADMIN:
         _participant(db, conversation_id, user.id)
     if conversation.created_by_id != user.id and user.role != UserRole.ADMIN:
@@ -262,6 +268,7 @@ def messages(conversation_id: int, before_id: Optional[int] = None,
 async def send_message(conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
     _participant(db, conversation_id, user.id)
+    require_chat_sender(db, user)
     body = payload.body.strip()
     if not body:
         raise HTTPException(422, "Message cannot be empty")
@@ -285,6 +292,7 @@ async def send_message(conversation_id: int, payload: MessageCreate, db: Session
 async def upload_attachment(conversation_id: int, message_id: int, file: UploadFile = File(...),
                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _participant(db, conversation_id, user.id)
+    require_chat_sender(db, user)
     msg = db.scalar(select(ChatMessage).where(ChatMessage.id == message_id,
                                                ChatMessage.conversation_id == conversation_id))
     if not msg or msg.sender_id != user.id:
@@ -429,8 +437,7 @@ async def chat_socket(socket: WebSocket, token: str = Query(...)):
                 session.last_seen_at + timedelta(minutes=settings.session_idle_timeout_minutes) <= now or
                 payload.get("ver") != user.token_version):
             await socket.close(code=4401); return
-        if user.chat_disabled:
-            await socket.close(code=4403); return
+        # Receive-only users remain connected for incoming messages.
         await hub.connect(user_id, socket)
         while True:
             try:
@@ -446,8 +453,7 @@ async def chat_socket(socket: WebSocket, token: str = Query(...)):
                     await socket.close(code=4401); return
                 if session.last_seen_at + timedelta(minutes=settings.session_idle_timeout_minutes) <= now:
                     await socket.close(code=4401); return
-                if user.chat_disabled:
-                    await socket.close(code=4403); return
+                # Receive-only users remain connected for incoming messages.
     except WebSocketDisconnect:
         pass
     except Exception:
