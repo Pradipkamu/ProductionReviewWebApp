@@ -4,6 +4,7 @@ import { clearToken, logout } from '../api'
 import { canViewPage, navItems } from '../pageAccess'
 
 const groups=[
+  {label:'Communication',keys:['chat']},
   {label:'Executive & Review',keys:['control_tower','dispatch_intelligence','capacity_intelligence','operations_intelligence','management_assistant','daily_review','daily_meeting','insights','actions','admin_action_review']},
   {label:'Planning & Production',keys:['mis','schedule','capacity','machine_master','product_master','process','process_actuals','vendor']},
   {label:'Quality & OEE',keys:['quality','casting_quality','customer_quality','oee']},
@@ -43,7 +44,7 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
     try{await logout()}finally{clearToken();location.reload()}
   }
 
-  const visible=navItems.filter(item=>canViewPage(me,item.key))
+  const visible=[{key:'chat',to:'/chat',label:'Chat'},...navItems].filter(item=>item.key==='chat'||canViewPage(me,item.key))
   const currentNav=navItems.find(item=>item.to===routeLocation.pathname)
     || navItems.find(item=>item.to!=='/'&&routeLocation.pathname.startsWith(item.to+'/'))
   const currentLabel=routeLocation.pathname==='/quality-salvage'?'Rejection Salvage'
