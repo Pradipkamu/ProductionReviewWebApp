@@ -161,10 +161,17 @@ def employees(q: str = Query(default="", max_length=100), db: Session = Depends(
 
 @router.get("/conversations")
 def conversations(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    rows = db.scalars(select(ChatConversation).join(ChatParticipant).where(
-        ChatParticipant.user_id == user.id, ChatParticipant.is_active.is_(True),
-        ChatConversation.is_active.is_(True)
-    ).order_by(ChatConversation.updated_at.desc(), ChatConversation.id.desc())).unique().all()
+    # Administrators can review all active employee conversations, including
+    # conversations where the administrator is not a participant.
+    if user.role == UserRole.ADMIN:
+        rows = db.scalars(select(ChatConversation).where(
+            ChatConversation.is_active.is_(True)
+        ).order_by(ChatConversation.updated_at.desc(), ChatConversation.id.desc())).all()
+    else:
+        rows = db.scalars(select(ChatConversation).join(ChatParticipant).where(
+            ChatParticipant.user_id == user.id, ChatParticipant.is_active.is_(True),
+            ChatConversation.is_active.is_(True)
+        ).order_by(ChatConversation.updated_at.desc(), ChatConversation.id.desc())).unique().all()
     return [_conversation_summary(db, row, user.id) for row in rows]
 
 
@@ -253,14 +260,18 @@ def leave_group(conversation_id: int, db: Session = Depends(get_db), user: User 
 def messages(conversation_id: int, before_id: Optional[int] = None,
              limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
-    participant = _participant(db, conversation_id, user.id)
+    participant = None if user.role == UserRole.ADMIN else _participant(db, conversation_id, user.id)
+    conversation = db.get(ChatConversation, conversation_id)
+    if not conversation or not conversation.is_active:
+        raise HTTPException(404, "Conversation not found")
     stmt = select(ChatMessage, User.full_name, User.username).join(User, User.id == ChatMessage.sender_id).where(
         ChatMessage.conversation_id == conversation_id, ChatMessage.deleted_at.is_(None))
     if before_id:
         stmt = stmt.where(ChatMessage.id < before_id)
     rows = db.execute(stmt.order_by(ChatMessage.id.desc()).limit(limit)).all()
-    participant.last_read_at = datetime.utcnow()
-    db.commit()
+    if participant:
+        participant.last_read_at = datetime.utcnow()
+        db.commit()
     return [_serialize_message(db, msg, full_name, username) for msg, full_name, username in reversed(rows)]
 
 
@@ -330,7 +341,8 @@ def download_attachment(attachment_id: int, db: Session = Depends(get_db),
     msg = db.get(ChatMessage, row.message_id)
     if not msg:
         raise HTTPException(404, "Attachment not found")
-    _participant(db, msg.conversation_id, user.id)
+    if user.role != UserRole.ADMIN:
+        _participant(db, msg.conversation_id, user.id)
     path = safe_path(Path(settings.attachments_dir).resolve() / "chat", row.relative_path)
     if not path.is_file() or hash_file(path) != row.sha256:
         raise HTTPException(404, "Attachment file is unavailable or failed integrity validation")
