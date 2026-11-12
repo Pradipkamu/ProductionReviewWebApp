@@ -105,7 +105,7 @@ def _serialize_message(db: Session, msg: ChatMessage, full_name: str | None = No
         "sender_username": username or (sender.username if sender else ""),
         "body": msg.body, "message_type": msg.message_type, "created_at": msg.created_at,
         "attachments": [{"id": a.id, "file_name": a.file_name, "mime_type": a.mime_type,
-                         "size_bytes": a.size_bytes, "download_url": f"/api/chat/attachments/{a.id}"}
+                         "size_bytes": a.size_bytes, "download_url": f"/chat/attachments/{a.id}"}
                         for a in attachments],
     }
 
@@ -304,7 +304,7 @@ async def upload_attachment(conversation_id: int, message_id: int, file: UploadF
                          sha256=digest, uploaded_by_id=user.id)
     db.add(row); db.commit(); db.refresh(row)
     result = {"id": row.id, "file_name": row.file_name, "mime_type": row.mime_type,
-              "size_bytes": row.size_bytes, "download_url": f"/api/chat/attachments/{row.id}"}
+              "size_bytes": row.size_bytes, "download_url": f"/chat/attachments/{row.id}"}
     await hub.notify(_active_participant_ids(db, conversation_id),
                      {"type": "attachment_added", "conversation_id": conversation_id, "attachment": result})
     return result
