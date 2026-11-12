@@ -189,6 +189,16 @@ private object ApiClient {
         val me = request("/auth/me", "GET", token=token)
         return Account(me.optString("username"), me.optString("full_name"), me.optString("role"))
     }
+
+    fun loadChatConversations(token: String): JSONArray = array("/chat/conversations", token)
+    fun loadChatEmployees(query: String, token: String): JSONArray =
+        JSONArray(requestText("/chat/employees?q=" + java.net.URLEncoder.encode(query, "UTF-8"), "GET", token=token))
+    fun createDirectChat(userId: Int, token: String): JSONObject =
+        request("/chat/conversations/direct", "POST", JSONObject().put("user_id", userId), token)
+    fun loadChatMessages(conversationId: Int, token: String): JSONArray =
+        array("/chat/conversations/$conversationId/messages?limit=60", token)
+    fun sendChatMessage(conversationId: Int, body: String, token: String): JSONObject =
+        request("/chat/conversations/$conversationId/messages", "POST", JSONObject().put("body", body), token)
     fun loadMasters(token: String): Masters {
         val productsJson = array("/masters/products", token)
         val products = (0 until productsJson.length()).map { i ->
