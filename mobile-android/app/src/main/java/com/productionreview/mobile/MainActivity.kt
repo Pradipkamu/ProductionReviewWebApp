@@ -1114,6 +1114,15 @@ class MainActivity : ComponentActivity() {
                                 Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
+                        LaunchedEffect(homeTab, token, selectedChatId) {
+                            if (homeTab == "CHAT" && token != null) {
+                                while (homeTab == "CHAT") {
+                                    refreshChatConversations(token)
+                                    selectedChatId?.let { refreshChatMessages(token, it) }
+                                    kotlinx.coroutines.delay(5000)
+                                }
+                            }
+                        }
                         if (homeTab == "CHAT") {
                             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
