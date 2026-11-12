@@ -66,7 +66,7 @@ export default function Chat({me}:{me:any}) {
       <aside className="chat-list-panel">
         <div className="chat-panel-heading"><b>Conversations</b><span>{items.length}</span></div>
         {items.length===0?<div className="chat-empty-list">No conversations yet. Start a chat with an employee.</div>:items.map(c=><button key={c.id} className={`chat-conversation ${selected===c.id?'selected':''}`} onClick={()=>setSelected(c.id)}>
-          <span className="chat-avatar">{(c.kind==='GROUP'?c.title:conversationLabel(c,me.id)).slice(0,1).toUpperCase()}</span>
+          <span className="chat-avatar">{(c.kind==='GROUP'?(c.title||'G'):conversationLabel(c,me.id)).slice(0,1).toUpperCase()}</span>
           <span className="chat-conversation-copy"><b>{conversationLabel(c,me.id)}</b><small>{c.last_message?.body||'No messages yet'}</small></span>
           <span className="chat-conversation-meta">{timeLabel(c.last_message?.created_at)}{c.unread_count>0&&<i>{c.unread_count}</i>}</span>
         </button>)}
