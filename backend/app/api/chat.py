@@ -146,12 +146,12 @@ def _admin(user: User):
 def employees(q: str = Query(default="", max_length=100), db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     term = q.strip()
-    stmt = select(User).where(User.is_active.is_(True), User.id != user.id)
+    stmt = select(User).where(User.is_active.is_(True), User.chat_disabled.is_(False), User.id != user.id)
     if term:
         pattern = f"%{term}%"
         stmt = stmt.where(or_(User.full_name.ilike(pattern), User.username.ilike(pattern)))
     rows = db.scalars(stmt.order_by(User.full_name, User.username).limit(100)).all()
-    return [{"id": row.id, "full_name": row.full_name, "username": row.username, "role": row.role.value}
+    return [{"id": row.id, "full_name": row.full_name, "username": row.username, "role": row.role.value, "chat_enabled": not row.chat_disabled}
             for row in rows]
 
 
