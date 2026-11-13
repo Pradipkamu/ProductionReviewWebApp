@@ -750,6 +750,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun openActionById(actionId:Int,auth:String) {
+                scope.launch {
+                    try {
+                        val payload=withContext(Dispatchers.IO){ApiClient.loadActionPlan(actionId,auth)}
+                        val action=payload.optJSONObject("action") ?: throw IllegalStateException("Action not found.")
+                        val item=ActionItem(
+                            action.optInt("id"),
+                            action.optString("action_no"),
+                            action.optString("problem_description").ifBlank{action.optString("action_description")},
+                            action.optString("action_type"),
+                            action.optString("status"),
+                            action.optString("priority"),
+                            action.optString("due_at"),
+                            action.optBoolean("overdue"),
+                            action.optBoolean("requires_whywhy"),
+                            action.optInt("whywhy_completion_percent")
+                        )
+                        openAction(item,auth)
+                    } catch(e:Exception) {
+                        message=e.message ?: "Unable to open the linked action."
+                    }
+                }
+            }
+
             fun loadOeeScope(auth: String, selectedProduct: Choice? = oeeProduct) {
                 if (selectedProduct == null) { oeeError = "Select a product first."; return }
                 scope.launch {
@@ -1267,7 +1291,14 @@ class MainActivity : ComponentActivity() {
                                                         Card(Modifier.widthIn(max=320.dp).fillMaxWidth(0.88f),shape=RoundedCornerShape(topStart=12.dp,topEnd=12.dp,bottomStart=if(mine)12.dp else 3.dp,bottomEnd=if(mine)3.dp else 12.dp),colors=CardDefaults.cardColors(containerColor=if(mine)Color(0xFFD9FDD3) else Color.White),elevation=CardDefaults.cardElevation(defaultElevation=1.dp)) {
                                                             Column(Modifier.padding(horizontal=11.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                                                 if(!mine&&activeConversation?.optString("kind")=="GROUP") Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
-                                                                Text(msg.optString("body"),color=Navy,fontSize=13.sp)
+                                                                val messageBody=msg.optString("body")
+                                                                Text(messageBody,color=Navy,fontSize=13.sp)
+                                                                val linkedActionId=Regex("""Open Action:\\s*/actions\\?action_id=(\\d+)""").find(messageBody)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                                                                if(linkedActionId!=null) {
+                                                                    TextButton(onClick={token?.let{openActionById(linkedActionId,it)}}) {
+                                                                        Text("OPEN ACTION",color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                                                                    }
+                                                                }
                                                                 val chatFiles=msg.optJSONArray("attachments") ?: JSONArray()
                                                                 for(fileIndex in 0 until chatFiles.length()) {
                                                                     val fileItem=chatFiles.optJSONObject(fileIndex) ?: continue
