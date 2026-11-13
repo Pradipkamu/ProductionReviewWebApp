@@ -183,10 +183,10 @@ capture_running_images() {
     stop "Running image metadata is incomplete"
 
   {
-    printf 'BACKEND_IMAGE_REF=%q\\n' "$backend_ref"
-    printf 'FRONTEND_IMAGE_REF=%q\\n' "$frontend_ref"
-    printf 'BACKEND_IMAGE_ID=%q\\n' "$backend_id"
-    printf 'FRONTEND_IMAGE_ID=%q\\n' "$frontend_id"
+    printf 'BACKEND_IMAGE_REF=%q\n' "$backend_ref"
+    printf 'FRONTEND_IMAGE_REF=%q\n' "$frontend_ref"
+    printf 'BACKEND_IMAGE_ID=%q\n' "$backend_id"
+    printf 'FRONTEND_IMAGE_ID=%q\n' "$frontend_id"
   } >> "$STATE_FILE"
 
   say "Captured current backend and frontend image IDs for exact rollback."
