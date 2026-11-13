@@ -23,6 +23,15 @@ function conversationLabel(c:Conversation, meId:number) {
   if(c.kind==='GROUP')return c.title||'Group conversation'
   return c.participants.filter(p=>p.id!==meId).map(p=>p.full_name).join(', ')||'Direct conversation'
 }
+function renderMessageBody(body:string) {
+  const marker='Open Action: '
+  const index=body.lastIndexOf(marker)
+  if(index<0)return body
+  const url=body.slice(index+marker.length).trim()
+  if(!/^\/actions\?action_id=\d+$/.test(url))return body
+  return <>{body.slice(0,index)}{marker}<a className="chat-action-link" href={url}>Open Action</a></>
+}
+
 function initials(value:string) {
   return value.trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase()||'PR'
 }
@@ -134,7 +143,7 @@ export default function Chat({me}:{me:any}) {
                 <div className={`chat-message-row chat-wa-message-row ${mine?'mine':''}`}>
                   <div className="chat-bubble chat-wa-bubble">
                     {current.kind==='GROUP'&&!mine&&<small>{m.sender_name}</small>}
-                    {m.body?.trim()&&<p>{m.body}</p>}
+                    {m.body?.trim()&&<p style={{whiteSpace:'pre-wrap'}}>{renderMessageBody(m.body)}</p>}
                     {(m.attachments||[]).map(a=><button className="chat-file-link" key={a.id} type="button" onClick={()=>downloadApi(a.download_url,a.file_name)}>📎 {a.file_name}</button>)}
                     <time>{timeLabel(m.created_at)}{mine&&<span className="chat-read-mark"> ✓</span>}</time>
                     {!mine&&<button className="chat-report-button" type="button" onClick={async()=>{const reason=window.prompt('Why are you reporting this message?');if(reason?.trim())try{await api(`/chat/messages/${m.id}/report`,{method:'POST',body:JSON.stringify({reason:reason.trim()})});setError('Message reported to the administrator.')}catch(e:any){setError(e.message)}}}>Report</button>}
