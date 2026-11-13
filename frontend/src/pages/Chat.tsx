@@ -101,7 +101,7 @@ export default function Chat({me}:{me:any}) {
           </button>)}</div>
           <div className="chat-people-actions">{groupMode?<button disabled={busy||!groupTitle.trim()||!groupMembers.length} onClick={createGroup}>Create group ({groupMembers.length})</button>:<button className="secondary" onClick={()=>setGroupMode(true)}>＋ Create group</button>}</div>
         </div>:<>
-          <div className="chat-wa-list-top"><div><span className="eyebrow">PRODUCTION REVIEW</span><h2>Chats</h2></div><button className="chat-new-button" onClick={()=>{setShowPeople(true);setGroupMode(false)}} aria-label="New chat">＋</button></div>
+          <div className="chat-wa-list-top"><div><span className="eyebrow">PRODUCTION REVIEW</span><h2>Chats</h2></div><button className="chat-new-button" style={{padding:0,lineHeight:1,alignSelf:"center",flex:"0 0 42px"}} onClick={()=>{setShowPeople(true);setGroupMode(false)}} aria-label="New chat">＋</button></div>
           <label className="chat-wa-search-wrap"><span>⌕</span><input value={conversationSearch} onChange={e=>setConversationSearch(e.target.value)} placeholder="Search conversations or employees"/></label>
           <div className="chat-wa-filters">{(['ALL','UNREAD','GROUPS'] as const).map(x=><button key={x} className={filter===x?'active':''} onClick={()=>setFilter(x)}>{x==='ALL'?'All chats':x==='UNREAD'?'Unread':'Groups'}</button>)}</div>
           <div className="chat-wa-conversations">
