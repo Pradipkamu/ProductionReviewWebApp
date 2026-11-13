@@ -167,21 +167,55 @@ health_check() {
   return 1
 }
 
+capture_running_images() {
+  local backend_ref frontend_ref backend_id frontend_id
+
+  backend_ref="$(docker inspect productionreviewwebapp-backend-1 --format '{{.Config.Image}}')" ||
+    stop "Could not identify the running backend image"
+  frontend_ref="$(docker inspect productionreviewwebapp-frontend-1 --format '{{.Config.Image}}')" ||
+    stop "Could not identify the running frontend image"
+  backend_id="$(docker inspect productionreviewwebapp-backend-1 --format '{{.Image}}')" ||
+    stop "Could not identify the running backend image ID"
+  frontend_id="$(docker inspect productionreviewwebapp-frontend-1 --format '{{.Image}}')" ||
+    stop "Could not identify the running frontend image ID"
+
+  [[ -n "$backend_ref" && -n "$frontend_ref" && -n "$backend_id" && -n "$frontend_id" ]] ||
+    stop "Running image metadata is incomplete"
+
+  {
+    printf 'BACKEND_IMAGE_REF=%q\\n' "$backend_ref"
+    printf 'FRONTEND_IMAGE_REF=%q\\n' "$frontend_ref"
+    printf 'BACKEND_IMAGE_ID=%q\\n' "$backend_id"
+    printf 'FRONTEND_IMAGE_ID=%q\\n' "$frontend_id"
+  } >> "$STATE_FILE"
+
+  say "Captured current backend and frontend image IDs for exact rollback."
+}
+
 rollback_to() {
   local old_commit="$1"
+  local backend_id="$2"
+  local frontend_id="$3"
+  local backend_ref="$4"
+  local frontend_ref="$5"
 
-  say "Rolling application code back to $old_commit"
+  say "Restoring application code to $old_commit"
   git reset --hard "$old_commit" ||
     stop "Git rollback failed"
 
-  docker compose build backend frontend ||
-    stop "Previous application images could not be rebuilt"
+  [[ -n "$backend_id" && -n "$frontend_id" && -n "$backend_ref" && -n "$frontend_ref" ]] ||
+    stop "Saved container image rollback metadata is incomplete"
+
+  docker image tag "$backend_id" "$backend_ref" ||
+    stop "Could not restore previous backend image tag"
+  docker image tag "$frontend_id" "$frontend_ref" ||
+    stop "Could not restore previous frontend image tag"
 
   docker compose up -d --no-deps backend frontend ||
     stop "Previous application services could not be restarted"
 
   health_check || stop "Rollback completed but health checks failed"
-  say "CODE ROLLBACK COMPLETED. Database was not changed or restored."
+  say "CODE AND IMAGE ROLLBACK COMPLETED. Database was not changed or restored."
 }
 
 usage() {
@@ -251,33 +285,35 @@ main() {
       git merge-base --is-ancestor HEAD "$REMOTE_REF" ||
         stop "Remote is not a fast-forward. Manual review required."
 
-      [[ "$(git rev-parse HEAD)" != "$(git rev-parse "$REMOTE_REF")" ]] ||
-        stop "Already up to date."
-
       check_untracked_conflicts "$REMOTE_REF"
       old_commit="$(git rev-parse HEAD)"
 
       create_backups
+      capture_running_images
 
-      say "Fast-forwarding application code..."
+      if [[ "$(git rev-parse HEAD)" == "$(git rev-parse "$REMOTE_REF")" ]]; then
+        say "Source is already at the requested commit; rebuilding current source and refreshing containers."
+      else
+        say "Fast-forwarding application code..."
+      fi
       if ! git merge --ff-only "$REMOTE_REF"; then
-        git reset --hard "$old_commit"
-        stop "Code update failed; previous commit restored."
+        rollback_to "$old_commit" "$BACKEND_IMAGE_ID" "$FRONTEND_IMAGE_ID" "$BACKEND_IMAGE_REF" "$FRONTEND_IMAGE_REF"
+        stop "Code update failed; previous code and images restored."
       fi
 
       if ! docker compose build backend frontend; then
-        rollback_to "$old_commit"
-        stop "Build failed; previous code restored."
+        rollback_to "$old_commit" "$BACKEND_IMAGE_ID" "$FRONTEND_IMAGE_ID" "$BACKEND_IMAGE_REF" "$FRONTEND_IMAGE_REF"
+        stop "Build failed; previous code and images restored."
       fi
 
       if ! docker compose up -d --no-deps backend frontend; then
-        rollback_to "$old_commit"
-        stop "Service restart failed; previous code restored."
+        rollback_to "$old_commit" "$BACKEND_IMAGE_ID" "$FRONTEND_IMAGE_ID" "$BACKEND_IMAGE_REF" "$FRONTEND_IMAGE_REF"
+        stop "Service restart failed; previous code and images restored."
       fi
 
       if ! health_check; then
-        rollback_to "$old_commit"
-        stop "Health check failed; previous code restored."
+        rollback_to "$old_commit" "$BACKEND_IMAGE_ID" "$FRONTEND_IMAGE_ID" "$BACKEND_IMAGE_REF" "$FRONTEND_IMAGE_REF"
+        stop "Health check failed; previous code and images restored."
       fi
 
       say "UPDATE COMPLETED."
@@ -299,7 +335,7 @@ main() {
       [[ "$(git branch --show-current)" == "$BRANCH" ]] ||
         stop "Current branch does not match saved update branch."
 
-      rollback_to "$OLD_COMMIT"
+      rollback_to "$OLD_COMMIT" "$BACKEND_IMAGE_ID" "$FRONTEND_IMAGE_ID" "$BACKEND_IMAGE_REF" "$FRONTEND_IMAGE_REF"
       ;;
 
     *)
