@@ -1293,7 +1293,7 @@ class MainActivity : ComponentActivity() {
                                                                 if(!mine&&activeConversation?.optString("kind")=="GROUP") Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
                                                                 val messageBody=msg.optString("body")
                                                                 Text(messageBody,color=Navy,fontSize=13.sp)
-                                                                val linkedActionId=Regex("""Open Action:\\s*/actions\\?action_id=(\\d+)""").find(messageBody)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                                                                val linkedActionId=Regex("""Open Action:\s*/actions\?action_id=(\d+)""").find(messageBody)?.groupValues?.getOrNull(1)?.toIntOrNull()
                                                                 if(linkedActionId!=null) {
                                                                     TextButton(onClick={token?.let{openActionById(linkedActionId,it)}}) {
                                                                         Text("OPEN ACTION",color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)
