@@ -745,6 +745,24 @@ def escalate_whywhy(action_id: int, db: Session = Depends(get_db), user: User = 
         db.add(ActionHistory(action_id=action.id, changed_by_id=user.id, old_status=action.status,
                              new_status=action.status, comment="Escalated from Daily Review to Why-Why"))
         db.commit()
+        if action.owner_id:
+            try:
+                send_action_chat_notification(
+                    db, action, action.owner_id,
+                    kind="WHYWHY_ESCALATED",
+                    event_key=f"action:{action.id}:WHYWHY_ESCALATED",
+                    message=(
+                        "This Daily Review action has been escalated to a standard Why-Why action plan. "
+                        "Please complete the root-cause analysis, corrective actions and verification fields."
+                    ),
+                )
+                db.commit()
+            except Exception:
+                import logging
+                db.rollback()
+                logging.getLogger(__name__).exception(
+                    "Unable to send Why-Why escalation notification for action %s", action.id
+                )
     return {"id": action.id, "requires_whywhy": True}
 
 
