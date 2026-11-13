@@ -69,6 +69,15 @@ import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneOffset
 
+private fun extractChatActionId(messageBody: String): Int? {
+    // Accept both relative and absolute action links, even when action_id is
+    // not the first query parameter. Ignore trailing punctuation.
+    val match = Regex(
+        """(?i)Open Action:\\s*(?:https?://[^/\\s]+)?/actions\\?[^\\s]*?action_id=(\\d+)"""
+    ).find(messageBody) ?: return null
+    return match.groupValues.getOrNull(1)?.toIntOrNull()?.takeIf { it > 0 }
+}
+
 private const val API_BASE = "https://machineshop.duckdns.org/api"
 private val Navy = Color(0xFF142B45)
 private val Teal = Color(0xFF087F8C)
@@ -1293,10 +1302,20 @@ class MainActivity : ComponentActivity() {
                                                                 if(!mine&&activeConversation?.optString("kind")=="GROUP") Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
                                                                 val messageBody=msg.optString("body")
                                                                 Text(messageBody,color=Navy,fontSize=13.sp)
-                                                                val linkedActionId=Regex("""Open Action:\s*/actions\?action_id=(\d+)""").find(messageBody)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                                                                if(linkedActionId!=null) {
-                                                                    TextButton(onClick={token?.let{openActionById(linkedActionId,it)}}) {
-                                                                        Text("OPEN ACTION",color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                                                                val linkedActionId = extractChatActionId(messageBody)
+                                                                if (linkedActionId != null) {
+                                                                    OutlinedButton(
+                                                                        onClick = { token?.let { openActionById(linkedActionId, it) } },
+                                                                        modifier = Modifier.fillMaxWidth(),
+                                                                        shape = RoundedCornerShape(9.dp),
+                                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Teal)
+                                                                    ) {
+                                                                        Text(
+                                                                            "↗  OPEN ACTION  #$linkedActionId",
+                                                                            fontSize = 12.sp,
+                                                                            fontWeight = FontWeight.Bold
+                                                                        )
                                                                     }
                                                                 }
                                                                 val chatFiles=msg.optJSONArray("attachments") ?: JSONArray()
