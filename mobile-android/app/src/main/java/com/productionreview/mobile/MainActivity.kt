@@ -73,7 +73,7 @@ private fun extractChatActionId(messageBody: String): Int? {
     // Accept both relative and absolute action links, even when action_id is
     // not the first query parameter. Ignore trailing punctuation.
     val match = Regex(
-        """(?i)Open Action:\\s*(?:https?://[^/\\s]+)?/actions\\?[^\\s]*?action_id=(\\d+)"""
+        """(?i)Open Action:\s*(?:https?://[^/\s]+)?/actions\?[^\s]*?action_id=(\d+)"""
     ).find(messageBody) ?: return null
     return match.groupValues.getOrNull(1)?.toIntOrNull()?.takeIf { it > 0 }
 }
