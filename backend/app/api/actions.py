@@ -560,6 +560,7 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
     if not a:
         raise HTTPException(404, "Action not found")
     old_status = a.status
+    old_owner_id = a.owner_id
     data = payload.model_dump(exclude_unset=True)
     for field in ["action_description", "owner_id", "due_at", "priority", "effectiveness_status"]:
         if field in data:
@@ -599,6 +600,50 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
         gap_at_followup=payload.gap_at_followup,
     ))
     db.commit(); db.refresh(a)
+
+    # Assignment changes are communicated to the newly responsible employee.
+    if a.owner_id and a.owner_id != old_owner_id:
+        try:
+            event_kind = "ACTION_ASSIGNED" if old_owner_id is None else "ACTION_REASSIGNED"
+            send_action_chat_notification(
+                db,
+                a,
+                a.owner_id,
+                kind=event_kind,
+                event_key=f"action:{a.id}:{event_kind}:user:{a.owner_id}:updated:{a.updated_at.isoformat() if a.updated_at else ''}",
+                message=(
+                    "A new action has been assigned to you. Please review the action and due date."
+                    if old_owner_id is None else
+                    "An action has been reassigned to you. Please review the updated responsibility and due date."
+                ),
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send assignment-change notification for action %s", a.id
+            )
+
+    # Reopened actions require the responsible employee to resume follow-up.
+    if old_status == ActionStatus.CLOSED and a.status != ActionStatus.CLOSED and a.owner_id:
+        try:
+            send_action_chat_notification(
+                db,
+                a,
+                a.owner_id,
+                kind="ACTION_REOPENED",
+                event_key=f"action:{a.id}:REOPENED:{datetime.utcnow().date().isoformat()}",
+                message="This action has been reopened. Please resume the corrective-action follow-up and closure work.",
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send reopened-action notification for action %s", a.id
+            )
+
     return serialize_action(db, a)
 
 
