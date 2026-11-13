@@ -21,6 +21,7 @@ from ..db import get_db
 from ..enums import ActionStatus, Priority, UserRole
 from ..models import Action, ActionContext, ActionHistory, ActionWhyWhy, GovernanceAudit, Product, ReviewActionLink, ReviewMeetingRequest, ReviewParticipantPresence, ReviewPoint, ReviewSession, User, UserSession
 from ..schemas import ReviewClose, ReviewStart
+from ..services.action_notifications import send_action_chat_notification
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
@@ -507,6 +508,24 @@ def add_point(review_id: int, payload: ReviewPointCreate, db: Session = Depends(
                         product_id=product.id if product else None,
                         action_id=action.id if action else None, created_by_id=user.id)
     db.add(point); db.commit(); db.refresh(point)
+    if action and action.owner_id:
+        try:
+            send_action_chat_notification(
+                db, action, action.owner_id,
+                kind="ACTION_ASSIGNED",
+                event_key=f"action:{action.id}:ASSIGNED:user:{action.owner_id}",
+                message=(
+                    "A new Daily Review action has been assigned to you. "
+                    "Please review the action and complete the follow-up by its due date."
+                ),
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send Daily Review assignment notification for action %s", action.id
+            )
     return point_data(db, point)
 
 
@@ -532,6 +551,8 @@ def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: 
         raise HTTPException(422, "Selected product is not available in the active Product Master")
 
     action = db.scalar(select(Action).where(Action.id == point.action_id).with_for_update()) if point.action_id else None
+    action_was_new = action is None
+    previous_owner_id = action.owner_id if action else None
     if not payload.action_required and action:
         raise HTTPException(422, "An existing action cannot be removed by editing the MOM point. Close or cancel the action separately.")
 
@@ -635,6 +656,26 @@ def update_point(review_id: int, point_id: int, payload: ReviewPointUpdate, db: 
 
     db.commit()
     db.refresh(point)
+    if action and action.owner_id and (action_was_new or previous_owner_id != action.owner_id):
+        try:
+            event_kind = "ACTION_ASSIGNED" if action_was_new else "ACTION_REASSIGNED"
+            send_action_chat_notification(
+                db, action, action.owner_id,
+                kind=event_kind,
+                event_key=f"action:{action.id}:{event_kind}:user:{action.owner_id}",
+                message=(
+                    "A new Daily Review action has been assigned to you."
+                    if action_was_new else
+                    "A Daily Review action has been reassigned to you. Please review the updated responsibility and due date."
+                ),
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send Daily Review assignment notification for action %s", action.id
+            )
     return point_data(db, point)
 
 
