@@ -21,6 +21,7 @@ from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
 from ..services.action_pdf import build_action_plan_pdf
 from ..services.action_evidence import build_evidence_pdf, EvidenceError
+from ..services.action_notifications import send_action_chat_notification
 from ..services.document_search import extract_searchable_text, matching_excerpt
 from ..services.file_security import (
     UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
@@ -308,6 +309,31 @@ def create_action(payload: ActionCreate, db: Session = Depends(get_db), user: Us
         db.add(ReviewActionLink(review_session_id=active_review.id, action_id=a.id))
 
     db.commit(); db.refresh(a)
+
+    # Notify the assigned employee after the action is safely committed.
+    # Notification failure must never roll back or fail action creation.
+    if a.owner_id:
+        try:
+            send_action_chat_notification(
+                db,
+                a,
+                a.owner_id,
+                kind="ACTION_ASSIGNED",
+                event_key=f"action:{a.id}:ASSIGNED:user:{a.owner_id}",
+                message=(
+                    "A new action plan has been assigned to you. "
+                    "Please review the problem, complete the Why-Why plan, "
+                    "and track closure by the due date."
+                ),
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send assignment notification for action %s", a.id
+            )
+
     return serialize_action(db, a)
 
 
