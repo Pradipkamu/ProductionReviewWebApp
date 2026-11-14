@@ -655,7 +655,7 @@ class MainActivity : ComponentActivity() {
             var oeeSuccess by remember { mutableStateOf<String?>(null) }
             var oeeLoading by remember { mutableStateOf(false) }
             var oeeMode by remember { mutableStateOf("SUMMARY") }
-            var oeeShiftMinutes by remember { mutableStateOf("480") }
+            var oeeShiftMinutes by remember { mutableStateOf("440") }
             var oeeBreakMinutes by remember { mutableStateOf("0") }
             var oeeDowntimeMinutes by remember { mutableStateOf("0") }
             var oeeTotalCount by remember { mutableStateOf("0") }
@@ -859,7 +859,7 @@ class MainActivity : ComponentActivity() {
                         oeeOperatorName = entry.optString("operator_name").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
                         oeeOperatorId = oeeOperators.firstOrNull { it.label.equals(oeeOperatorName, ignoreCase = true) }?.id
                         if (oeeOperatorId == null) throw IllegalStateException("Could not match the saved operator to Personnel Master. Refresh and try again.")
-                        oeeShiftMinutes = entry.optDouble("shift_duration_min", 480.0).toString()
+                        oeeShiftMinutes = entry.optDouble("shift_duration_min", 440.0).toString()
                         oeeBreakMinutes = entry.optDouble("planned_break_min", 0.0).toString()
                         oeeGoodCount = entry.optDouble("good_count", 0.0).toString()
                         oeeRejectCount = entry.optDouble("reject_count", 0.0).toString()
@@ -965,7 +965,7 @@ class MainActivity : ComponentActivity() {
                             oeeEntryId = null
                             oeeBreakMinutes = "0"
                             oeeCorrectionReason = ""
-                            oeeShiftMinutes = "480"
+                            oeeShiftMinutes = "440"
                             oeeGoodCount = "0"
                             oeeRejectCount = "0"
                             oeeEntryRemarks = ""
