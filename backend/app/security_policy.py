@@ -28,6 +28,10 @@ def enforce_api_policy(user, request: Request):
     section = path.split('/')[2] if len(path.split('/')) > 2 else ''
     if user.role == UserRole.ADMIN:
         return
+    # Production users may add an operator from the OEE entry workflow.
+    # Keep this exception limited to personnel creation only.
+    if path == '/api/personnel' and request.method == 'POST' and user.role == UserRole.PRODUCTION:
+        return
     # OEE/loss action creation is an action-management write even though the
     # source endpoint lives under /oee. Management may raise the action without
     # receiving permission to edit the underlying production record.
