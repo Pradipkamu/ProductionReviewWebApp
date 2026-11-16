@@ -4,7 +4,7 @@ import json
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Body
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from io import BytesIO
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
@@ -364,6 +364,8 @@ def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_
     seen = set()
     try:
         for item in items:
+            if not isinstance(item, dict) or len(item.get("losses") or []) > 30:
+                raise HTTPException(422, "Each OEE entry may contain no more than 30 loss events")
             entry_payload = MachineEntryCreate.model_validate(item.get("entry") or {})
             scope = (entry_payload.production_date, entry_payload.shift, entry_payload.product_id,
                      entry_payload.route_operation_id, entry_payload.machine_id)
@@ -411,6 +413,9 @@ def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_
     except HTTPException:
         db.rollback()
         raise
+    except ValidationError as exc:
+        db.rollback()
+        raise HTTPException(422, detail=exc.errors())
     except Exception:
         db.rollback()
         raise
