@@ -311,8 +311,17 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
         except Exception as exc:
             errors.append({"sheet":"Loss Details","row":row_no,"entry_ref":key,"error":str(exc)})
     preview = []
+    seen_scopes = set()
     for item in entries.values():
+        scope = (item["production_date"], item["shift"], item["product_id"], item["route_operation_id"], item["machine_id"])
+        if scope in seen_scopes:
+            errors.append({"sheet":"OEE Entries","row":item["row"],"entry_ref":item["ref"],
+                           "error":"Duplicate machine / product / operation / date / shift entry in this workbook"})
+        seen_scopes.add(scope)
         availability = sum((x["duration_min"] for x in item["losses"] if x["component"] == "AVAILABILITY"),Decimal("0"))
+        if availability > item["shift_duration_min"] - item["planned_break_min"]:
+            errors.append({"sheet":"Loss Details","row":item["row"],"entry_ref":item["ref"],
+                           "error":"Total Availability loss minutes exceed planned production time"})
         total_qty = (availability * Decimal("60") / item["cycle"]).quantize(Decimal("1"),rounding=ROUND_HALF_UP)
         preview.append({"entry_ref":item["ref"],"row":item["row"],"date":item["production_date"].isoformat(),
             "shift":item["shift"],"machine_id":item["machine_id"],"product_id":item["product_id"],
