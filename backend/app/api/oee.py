@@ -1,7 +1,7 @@
 from ..time_utils import UTCTimestamp
 from datetime import date, datetime
 import json
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -269,8 +269,14 @@ def save_machine_entry_with_losses(
              if category.oee_component == OEEComponent.AVAILABILITY),
             Decimal("0"),
         )
+    effective_cycle = Decimal(data["ideal_cycle_time_sec"])
     for loss_payload in payload.losses:
         loss_data, category = _validate_loss(db, loss_payload)
+        # Loss quantity is system-calculated from availability minutes and the
+        # effective master cycle. Users do not supply or override this value.
+        loss_data["qty_loss"] = _calculated_loss_qty(
+            loss_payload.duration_min, category, effective_cycle
+        )
         validated_losses.append((loss_data, category))
         if category.oee_component == OEEComponent.AVAILABILITY:
             availability_downtime += loss_payload.duration_min
@@ -353,6 +359,15 @@ def update_machine_entry(entry_id: int, payload: MachineEntryCreate, request: Re
     return {"entry": _entry_json(row, context), "warnings": context["warnings"]}
 
 
+def _calculated_loss_qty(duration_min: Decimal, category: LossCategory, cycle_time_sec: Decimal | None) -> Decimal:
+    """Return whole-piece loss quantity for availability losses only."""
+    if category.oee_component != OEEComponent.AVAILABILITY or not cycle_time_sec or cycle_time_sec <= 0:
+        return Decimal("0")
+    return ((Decimal(duration_min) * Decimal("60")) / Decimal(cycle_time_sec)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+
+
 def _validate_loss(db: Session, payload: LossEventCreate) -> tuple[dict, LossCategory]:
     if payload.product_id is not None and payload.route_operation_id is not None:
         _context(db, payload.product_id, payload.route_operation_id, payload.machine_id, payload.loss_date)
@@ -385,6 +400,11 @@ def update_loss(loss_id: int, payload: LossEventCreate, request: Request,
               for key in ("loss_date", "shift", "product_id", "route_operation_id", "machine_id",
                           "loss_category_id", "start_time", "end_time", "duration_min", "qty_loss", "remark")}
     data, category = _validate_loss(db, payload)
+    effective_cycle = None
+    if payload.product_id is not None and payload.route_operation_id is not None:
+        context = _context(db, payload.product_id, payload.route_operation_id, payload.machine_id, payload.loss_date)
+        effective_cycle = Decimal(context["cycle"].ideal_cycle_time_sec) if context["cycle"] else None
+    data["qty_loss"] = _calculated_loss_qty(payload.duration_min, category, effective_cycle)
     for key, value in data.items():
         setattr(row, key, value)
     after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
