@@ -1,7 +1,7 @@
 import { dateIST } from '../time'
 import { Link } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api'
+import { api, downloadApi } from '../api'
 import { Kpi, PageHeader, num, pct } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
@@ -16,6 +16,7 @@ export default function OEE(){
  const [operators,setOperators]=useState<any[]>([]),[operatorName,setOperatorName]=useState(''),[operatorId,setOperatorId]=useState<number|null>(null),[operatorBusy,setOperatorBusy]=useState(false)
  const [entry,setEntry]=useState<any>(emptyEntry),[losses,setLosses]=useState<any[]>([emptyLoss]),[reason,setReason]=useState(''),[msg,setMsg]=useState(''),[error,setError]=useState(''),[lossDialog,setLossDialog]=useState<number|null>(null),[lossCorrectionReason,setLossCorrectionReason]=useState(''),[savedSummary,setSavedSummary]=useState<any>(null)
  const [mgmt,setMgmt]=useState<any>(null),[fromDate,setFromDate]=useState(today().slice(0,8)+'01')
+ const [bulkFile,setBulkFile]=useState<File|null>(null),[bulkPreview,setBulkPreview]=useState<any>(null),[bulkBusy,setBulkBusy]=useState(false),[bulkResult,setBulkResult]=useState<any>(null)
  const selectedProduct=products.find(x=>String(x.id)===p),selectedMachine=machines.find(x=>String(x.id)===m),selectedRoute=routes.find(x=>String(x.route_operation_id)===op)
 
  useEffect(()=>{Promise.all([api('/masters/machines'),api('/masters/products'),api('/masters/loss-categories'),api('/personnel')]).then(([ms,ps,ls,ops]:any[])=>{setAllMachines(ms);setMachines([]);setProducts(ps);setLossCategories(ls);setOperators(ops);if(ps[0])setP(String(ps[0].id));setLosses([emptyLoss])}).catch((e:any)=>setError(e.message))},[])
@@ -46,6 +47,19 @@ export default function OEE(){
  }
  async function refresh(){if(!m)return;try{const q=new URLSearchParams({machine_id:m,summary_date:d,shift});if(p)q.set('product_id',p);if(op)q.set('route_operation_id',op);setSum(await api(`/oee/machine-summary?${q}`))}catch(e:any){setError(e.message)}}
  useEffect(()=>{loadContext();refresh()},[m,p,op,d,shift])
+ async function previewBulkImport(){
+  if(!bulkFile){setError('Select the completed OEE Excel workbook first.');return}
+  setBulkBusy(true);setBulkResult(null);setBulkPreview(null);setError('')
+  try{const form=new FormData();form.append('file',bulkFile);const result=await api('/oee/bulk-import/preview',{method:'POST',body:form});setBulkPreview(result)}
+  catch(e:any){setError(e.message)}finally{setBulkBusy(false)}
+ }
+ async function confirmBulkImport(){
+  if(!bulkPreview?.valid||!bulkPreview?.commit_payload?.length)return
+  if(!window.confirm(`Import ${bulkPreview.entry_count} OEE entries and ${bulkPreview.loss_event_count} loss events? Existing records will not be overwritten.`))return
+  setBulkBusy(true);setError('')
+  try{const result=await api('/oee/bulk-import/commit',{method:'POST',body:JSON.stringify({entries:bulkPreview.commit_payload})});setBulkResult(result);setBulkPreview(null);setBulkFile(null);await refresh();await loadManagement()}
+  catch(e:any){setError(e.message)}finally{setBulkBusy(false)}
+ }
  async function loadManagement(){try{const q=new URLSearchParams({from_date:fromDate,to_date:d});if(p)q.set('product_id',p);setMgmt(await api(`/oee/management-summary?${q}`))}catch(e:any){setError(e.message)}}
  useEffect(()=>{loadManagement()},[fromDate,d,p])
 
@@ -161,6 +175,16 @@ export default function OEE(){
   </section>}
   {savedSummary&&<div className="oee-dialog-backdrop" role="presentation"><section className="oee-dialog oee-success-dialog" role="dialog" aria-modal="true"><header><span>PRODUCTION REVIEW</span></header><div className="oee-dialog-body"><small>RECORD CONFIRMATION</small><h3>{savedSummary.title}</h3>{savedSummary.id&&<p>Production entry #{savedSummary.id}</p>}<div className="oee-success-score"><small>OVERALL OEE</small><strong>{pct(savedSummary.oee)}</strong></div><div className="oee-success-grid">{[['Availability',savedSummary.availability],['Performance',savedSummary.performance],['Quality',savedSummary.quality]].map(([label,value]:any)=><div key={label}><small>{label}</small><b>{pct(value)}</b></div>)}</div><p>Good: <b>{num(savedSummary.good)}</b> · Rejected: <b>{num(savedSummary.reject)}</b> · Total: <b>{num(savedSummary.total)}</b></p><p>Availability loss: <b>{num(savedSummary.loss)} min</b></p>{savedSummary.warnings.map((w:string)=><p className="warning-box" key={w}>{w}</p>)}<div className="oee-dialog-actions"><button onClick={()=>setSavedSummary(null)}>OK</button></div></div></section></div>}
   {m&&machines.length>0&&<section className="panel"><div className="panel-title"><div><h2>Loss reconciliation and actions</h2><p>Classify every downtime minute; raise an action for major or recurring losses.</p></div><Link to="/actions">Open action register</Link></div><div className="table-wrap"><table><thead><tr><th>Loss</th><th>OEE component</th><th>Minutes</th><th>Qty loss</th><th>Remark</th><th>Action</th></tr></thead><tbody>{(sum?.losses||[]).map((x:any)=><tr key={x.id}><td><b>{x.category}</b></td><td>{x.component}</td><td>{num(x.duration_min)}</td><td>{num(x.qty_loss)}</td><td>{x.remark||'—'}</td><td>{x.action_no?<Link to="/actions">{x.action_no} · {x.action_status}</Link>:<button className="small" onClick={()=>raiseLossAction(x.id)}>Raise action</button>}</td></tr>)}{!sum?.losses?.length&&<tr><td colSpan={6} className="muted">No loss events for this selected scope.</td></tr>}</tbody></table></div></section>}
+  <section className="panel"><div className="panel-title"><div><h2>OEE Excel Bulk Upload</h2><p>Download the master-linked workbook, complete both sheets, preview validation and confirm import.</p></div><button type="button" className="secondary" onClick={()=>downloadApi('/oee/bulk-template','OEE_Bulk_Upload_Template.xlsx')}>Download Excel Template</button></div>
+   <div className="form-row"><label>Completed OEE workbook<input type="file" accept=".xlsx" onChange={e=>{setBulkFile(e.target.files?.[0]||null);setBulkPreview(null);setBulkResult(null)}}/></label><button type="button" onClick={previewBulkImport} disabled={!bulkFile||bulkBusy}>{bulkBusy?'Validating…':'Validate & Preview'}</button></div>
+   {bulkPreview&&<><div className={bulkPreview.valid?'success-box':'error'}><b>{bulkPreview.valid?'Workbook validation passed':'Please correct the following errors'}</b><p>{bulkPreview.entry_count} entries · {bulkPreview.loss_event_count} loss events</p></div>
+    {bulkPreview.preview?.length>0&&<div className="table-wrap"><table><thead><tr><th>Ref</th><th>Date</th><th>Shift</th><th>Good</th><th>Reject</th><th>Availability Loss</th><th>Calculated Qty Loss</th><th>Events</th></tr></thead><tbody>{bulkPreview.preview.map((x:any)=><tr key={x.entry_ref}><td>{x.entry_ref}</td><td>{x.date}</td><td>{x.shift}</td><td>{num(x.good_qty)}</td><td>{num(x.reject_qty)}</td><td>{num(x.availability_loss_min)} min</td><td>{num(x.calculated_loss_qty)} pcs</td><td>{x.loss_events}</td></tr>)}</tbody></table></div>}
+    {bulkPreview.errors?.length>0&&<div className="table-wrap"><table><thead><tr><th>Sheet</th><th>Row</th><th>Entry Ref</th><th>Error</th></tr></thead><tbody>{bulkPreview.errors.map((x:any,i:number)=><tr key={i}><td>{x.sheet}</td><td>{x.row}</td><td>{x.entry_ref||'—'}</td><td className="neg">{x.error}</td></tr>)}</tbody></table></div>}
+    <div className="button-row"><button type="button" onClick={confirmBulkImport} disabled={!bulkPreview.valid||bulkBusy}>Confirm & Import</button><button type="button" className="secondary" onClick={()=>setBulkPreview(null)}>Discard Preview</button></div>
+   </>}
+   {bulkResult&&<div className="success-box">Imported {bulkResult.entry_count} OEE entries and {bulkResult.loss_event_count} loss events. Entry IDs: {bulkResult.entry_ids?.join(', ')}</div>}
+   <p className="muted">Planned break defaults to 0 and shift duration to 440 minutes. Machine mapping and active operator are checked again by the server. Availability loss quantity is calculated from the effective master cycle; it is not entered in Excel. Existing records are never overwritten.</p>
+  </section>
   <section className="panel"><div className="panel-title"><div><h2>OEE Management — Trend & Loss Pareto</h2><p>Period performance across machines using the same controlled shift records.</p></div><div className="form-row compact"><input aria-label="OEE from date" type="date" value={fromDate} onChange={e=>setFromDate(e.target.value)}/><button className="secondary" onClick={loadManagement}>Refresh</button></div></div>
   {mgmt&&<><div className="kpi-grid"><Kpi label="Period OEE" value={pct(mgmt.overall?.oee_reported)}/><Kpi label="Availability" value={pct(mgmt.overall?.availability)}/><Kpi label="Performance" value={pct(mgmt.overall?.performance_raw)}/><Kpi label="Quality" value={pct(mgmt.overall?.quality)}/><Kpi label="Shift Records" value={mgmt.entry_count||0}/><Kpi label="Loss Events" value={mgmt.loss_event_count||0}/><Kpi label="Machines Below 85%" value={mgmt.below_target_machine_count||0} tone={mgmt.below_target_machine_count?'bad':'good'}/><Kpi label="Recurring Losses" value={mgmt.recurring_loss_count||0} tone={mgmt.recurring_loss_count?'warn':'good'}/></div>
   <div className="two-col"><div className="table-wrap"><table><thead><tr><th>Machine</th><th>Records</th><th>A</th><th>P</th><th>Q</th><th>OEE</th><th>Target status</th></tr></thead><tbody>{(mgmt.machines||[]).map((x:any)=><tr key={x.machine_id}><td><b>{x.machine}</b><br/><small className="muted">{allMachines.find((machine:any)=>String(machine.id)===String(x.machine_id))?.name||"Machine name unavailable"}</small></td><td>{x.entry_count}</td><td>{pct(x.availability)}</td><td>{pct(x.performance_raw)}</td><td>{pct(x.quality)}</td><td><b>{pct(x.oee_reported)}</b></td><td><b className={x.status==='BELOW TARGET'?'neg':''}>{x.status}</b>{x.gap_to_target>0&&<><br/><small>{pct(x.gap_to_target)} gap</small></>}</td></tr>)}{!mgmt.machines?.length&&<tr><td colSpan={7} className="muted">No OEE records in this period.</td></tr>}</tbody></table></div>
