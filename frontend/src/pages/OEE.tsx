@@ -136,9 +136,14 @@ export default function OEE(){
    </div>
    <div className="oee-loss-list">
     <div className="panel-title"><div><h3>Machine losses</h3><p>Add each loss reason and its duration. A new row appears after completing the current one.</p></div></div>
-    {losses.map((x:any,i:number)=><button type="button" className="oee-loss-row" key={x.id||i} onClick={()=>setLossDialog(i)}>
-      <span><b>{x.saved?`Recorded Loss Event #${x.id}`:`Loss Event ${i+1}`}</b><small>{x.saved?x.category:(lossCategories.find((z:any)=>String(z.id)===String(x.loss_category_id))?.name||'Select loss reason')} · {num(x.duration_min)} min</small></span><strong>{x.saved?'EDIT':'ADD / EDIT'} →</strong>
-    </button>)}
+    {losses.map((x:any,i:number)=>{
+      const category=lossCategories.find((z:any)=>String(z.id)===String(x.loss_category_id))
+      const cycle=Number(context?.ideal_cycle_time_sec||entry.ideal_cycle_time_sec||0)
+      const calculatedQty=x.saved?Number(x.qty_loss||0):(category?.component==='AVAILABILITY'&&cycle>0?Math.round(Number(x.duration_min||0)*60/cycle):0)
+      return <button type="button" className="oee-loss-row" key={x.id||i} onClick={()=>setLossDialog(i)}>
+       <span><b>{x.saved?`Recorded Loss Event #${x.id}`:`Loss Event ${i+1}`}</b><small>{x.saved?x.category:(category?.name||'Select loss reason')} · {num(x.duration_min)} min · Qty loss: {num(calculatedQty)} pcs</small></span><strong>{x.saved?'EDIT':'ADD / EDIT'} →</strong>
+      </button>
+    })}
     {lossDialog!==null&&losses[lossDialog]&&(()=>{const x=losses[lossDialog];return <div className="oee-dialog-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setLossDialog(null)}}><section className="oee-dialog" role="dialog" aria-modal="true" aria-labelledby="loss-dialog-title">
       <header><span>PRODUCTION REVIEW</span><button type="button" aria-label="Close" onClick={()=>setLossDialog(null)}>×</button></header>
       <div className="oee-dialog-body"><small>MACHINE DOWNTIME CAPTURE</small><h3 id="loss-dialog-title">{x.saved?'EDIT MACHINE LOSS':'ADD MACHINE LOSS'}</h3>
