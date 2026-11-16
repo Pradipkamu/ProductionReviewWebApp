@@ -187,6 +187,9 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
                        o.name if o else None, m.code if m else None, m.name if m else None,
                        person.full_name if person else None, loss.name if loss else None,
                        ["A", "B", "C"][i] if i < 3 else None])
+    # Machine name is informational and follows the selected machine code.
+    for row in range(2, 202):
+        ws.cell(row, 6, f'=IFERROR(VLOOKUP(E{row},\'Master Data\'!$D:$E,2,FALSE),"")')
     # Named ranges keep the dropdowns readable and easy to maintain.
     from openpyxl.workbook.defined_name import DefinedName
     columns = {"Products": (1, len(masters["products"])), "Operations": (3, len(masters["operations"])),
@@ -203,6 +206,8 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
         ws.add_data_validation(dv); dv.add(target)
     dv_loss = DataValidation(type="list", formula1="=LossTypes", allow_blank=True)
     loss_ws.add_data_validation(dv_loss); dv_loss.add("B2:B401")
+    dv_refs = DataValidation(type="list", formula1="'OEE Entries'!$A$2:$A$201", allow_blank=True)
+    loss_ws.add_data_validation(dv_refs); dv_refs.add("A2:A401")
     for sheet in (ws, loss_ws):
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
