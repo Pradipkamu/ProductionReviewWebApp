@@ -281,6 +281,7 @@ def save_machine_entry_with_losses(
         if category.oee_component == OEEComponent.AVAILABILITY:
             availability_downtime += loss_payload.duration_min
 
+    _allocate_availability_loss_qty(validated_losses, effective_cycle)
     planned_minutes = entry_payload.shift_duration_min - entry_payload.planned_break_min
     if availability_downtime > planned_minutes:
         raise HTTPException(422, "Availability loss minutes cannot exceed planned production time")
@@ -366,6 +367,30 @@ def _calculated_loss_qty(duration_min: Decimal, category: LossCategory, cycle_ti
     return ((Decimal(duration_min) * Decimal("60")) / Decimal(cycle_time_sec)).quantize(
         Decimal("1"), rounding=ROUND_HALF_UP
     )
+
+
+def _allocate_availability_loss_qty(losses: list[tuple[dict, LossCategory]], cycle_time_sec: Decimal) -> None:
+    """Allocate the rounded total piece loss across availability events.
+
+    This ensures the sum of event quantities equals the quantity calculated
+    from total availability minutes, rather than rounding each event upward.
+    """
+    eligible = [(data, category) for data, category in losses
+                if category.oee_component == OEEComponent.AVAILABILITY]
+    if not eligible or cycle_time_sec <= 0:
+        return
+    exact = [(data, Decimal(data["duration_min"]) * Decimal("60") / cycle_time_sec)
+             for data, _ in eligible]
+    total_qty = sum((qty for _, qty in exact), Decimal("0")).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    allocated = [int(qty) for _, qty in exact]
+    remaining = int(total_qty) - sum(allocated)
+    order = sorted(range(len(exact)), key=lambda i: exact[i][1] - allocated[i], reverse=True)
+    for i in order[:max(0, remaining)]:
+        allocated[i] += 1
+    for (data, _), qty in zip(eligible, allocated):
+        data["qty_loss"] = Decimal(qty)
 
 
 def _validate_loss(db: Session, payload: LossEventCreate) -> tuple[dict, LossCategory]:
