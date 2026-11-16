@@ -206,7 +206,8 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
         ws.add_data_validation(dv); dv.add(target)
     dv_loss = DataValidation(type="list", formula1="=LossTypes", allow_blank=True)
     loss_ws.add_data_validation(dv_loss); dv_loss.add("B2:B401")
-    dv_refs = DataValidation(type="list", formula1="'OEE Entries'!$A$2:$A$201", allow_blank=True)
+    wb.defined_names.add(DefinedName("EntryRefs", attr_text="'OEE Entries'!$A$2:$A$201"))
+    dv_refs = DataValidation(type="list", formula1="=EntryRefs", allow_blank=True)
     loss_ws.add_data_validation(dv_refs); dv_refs.add("A2:A401")
     for sheet in (ws, loss_ws):
         sheet.freeze_panes = "A2"
