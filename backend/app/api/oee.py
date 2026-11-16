@@ -583,6 +583,35 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
                                 "gap_to_target": max(0.0, target_oee - metric["oee_reported"]), **metric})
     machine_summary.sort(key=lambda x: x["oee_reported"])
 
+    # Additional report dimensions use the same shared-machine-time-safe
+    # aggregator as the overall and machine summaries.
+    by_product = {}
+    by_operator = {}
+    by_shift = {}
+    for row in rows:
+        by_product.setdefault(row.product_id, []).append(row)
+        by_operator.setdefault(row.operator_id, []).append(row)
+        by_shift.setdefault(row.shift, []).append(row)
+    product_rows = {x.id: x for x in db.scalars(select(Product)).all()}
+    personnel_rows = {x.id: x for x in db.scalars(select(Personnel)).all()}
+    product_summary = [
+        {"product_id": pid, "product": product_rows[pid].name if pid in product_rows else str(pid),
+         "entry_count": len(items), **aggregate(items)}
+        for pid, items in by_product.items()
+    ]
+    product_summary.sort(key=lambda x: x["oee_reported"])
+    operator_summary = [
+        {"operator_id": oid, "operator": personnel_rows[oid].full_name if oid in personnel_rows else "Unassigned",
+         "entry_count": len(items), **aggregate(items)}
+        for oid, items in by_operator.items()
+    ]
+    operator_summary.sort(key=lambda x: x["oee_reported"])
+    shift_summary = [
+        {"shift": shift_name, "entry_count": len(items), **aggregate(items)}
+        for shift_name, items in by_shift.items()
+    ]
+    shift_summary.sort(key=lambda x: x["shift"])
+
     pareto = {}
     for loss in losses:
         category = categories.get(loss.loss_category_id)
@@ -600,6 +629,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
             "entry_count": len(rows), "loss_event_count": len(losses),
             "below_target_machine_count": len(below_target), "recurring_loss_count": len(recurring_losses),
             "overall": overall, "trend": trend, "machines": machine_summary,
+            "products": product_summary, "operators": operator_summary, "shifts": shift_summary,
             "loss_pareto": loss_pareto, "recurring_losses": recurring_losses}
 
 
