@@ -167,14 +167,10 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
                "Machine Name", "Shift", "Operator Name", "Shift Duration Min", "Planned Break Min",
                "Good Qty", "Reject Qty", "Remarks"]
     ws.append(headers)
-    for row in range(2, 202):
-        ws.cell(row, 1, f"OE-{row-1:03d}")
-        ws.cell(row, 9, 440)
-        ws.cell(row, 10, 0)
+    # Leave input rows empty: prefilled references/defaults would be mistaken
+    # for submitted records during validation. Server defaults are 440 / 0.
     loss_ws = wb.create_sheet("Loss Details")
     loss_ws.append(["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"])
-    for row in range(2, 402):
-        loss_ws.cell(row, 1, f"OE-{min(row-1,200):03d}")
     master = wb.create_sheet("Master Data")
     master.sheet_state = "hidden"
     master.append(["Product Code", "Product Name", "Operation", "Machine Number", "Machine Name",
@@ -365,6 +361,12 @@ def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_
             availability = Decimal("0")
             for loss_raw in item.get("losses") or []:
                 loss_payload = LossEventCreate.model_validate(loss_raw)
+                if (loss_payload.loss_date != entry_payload.production_date
+                    or loss_payload.shift != entry_payload.shift
+                    or loss_payload.product_id != entry_payload.product_id
+                    or loss_payload.route_operation_id != entry_payload.route_operation_id
+                    or loss_payload.machine_id != entry_payload.machine_id):
+                    raise HTTPException(422, "Loss event does not match its OEE entry scope")
                 loss_data, category = _validate_loss(db, loss_payload)
                 loss_data["qty_loss"] = _calculated_loss_qty(loss_payload.duration_min, category, Decimal(data["ideal_cycle_time_sec"]))
                 validated.append((loss_data, category))
