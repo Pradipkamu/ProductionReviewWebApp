@@ -3,7 +3,7 @@ from datetime import date, datetime
 import json
 from decimal import Decimal, ROUND_HALF_UP
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Body
 from pydantic import BaseModel, Field
 from io import BytesIO
 from fastapi.responses import StreamingResponse
@@ -318,9 +318,80 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
             "availability_loss_min":float(availability),"calculated_loss_qty":int(total_qty),
             "loss_events":len(item["losses"])})
     wb.close()
+    commit_payload = []
+    for item in entries.values():
+        commit_payload.append({
+            "entry": {"production_date":item["production_date"].isoformat(),"shift":item["shift"],
+                "product_id":item["product_id"],"route_operation_id":item["route_operation_id"],
+                "machine_id":item["machine_id"],"operator_id":item["operator_id"],
+                "shift_duration_min":str(item["shift_duration_min"]),"planned_break_min":str(item["planned_break_min"]),
+                "good_count":str(item["good_count"]),"reject_count":str(item["reject_count"]),
+                "ideal_cycle_time_sec":"0","remarks":item["remarks"]},
+            "losses":[{"loss_date":item["production_date"].isoformat(),"shift":item["shift"],
+                "product_id":item["product_id"],"route_operation_id":item["route_operation_id"],
+                "machine_id":item["machine_id"],"loss_category_id":loss["loss_category_id"],
+                "duration_min":str(loss["duration_min"]),"qty_loss":"0","remark":loss["remark"]}
+                for loss in item["losses"]]
+        })
     return {"valid":not errors,"entry_count":len(preview),"loss_event_count":sum(x["loss_events"] for x in preview),
-            "errors":errors,"preview":preview,
-            "message":"Correct all errors before import. This preview does not save any records."}
+            "errors":errors,"preview":preview,"commit_payload":commit_payload if not errors else None,
+            "message":"Correct all errors before import. Preview does not save records."}
+
+
+@router.post("/bulk-import/commit")
+def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    items = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not items or len(items) > 200:
+        raise HTTPException(422, "Import must contain between 1 and 200 validated entries")
+    prepared = []
+    seen = set()
+    try:
+        for item in items:
+            entry_payload = MachineEntryCreate.model_validate(item.get("entry") or {})
+            scope = (entry_payload.production_date, entry_payload.shift, entry_payload.product_id,
+                     entry_payload.route_operation_id, entry_payload.machine_id)
+            if scope in seen:
+                raise HTTPException(422, "The workbook contains duplicate machine / product / operation / date / shift entries")
+            seen.add(scope)
+            duplicate = db.scalar(select(MachineShiftProduction.id).where(
+                MachineShiftProduction.production_date == scope[0], MachineShiftProduction.shift == scope[1],
+                MachineShiftProduction.product_id == scope[2], MachineShiftProduction.route_operation_id == scope[3],
+                MachineShiftProduction.machine_id == scope[4]).limit(1))
+            if duplicate:
+                raise HTTPException(409, f"Entry already exists as #{duplicate}; import stopped without saving")
+            data, context = _prepare_entry(db, entry_payload)
+            validated = []
+            availability = Decimal("0")
+            for loss_raw in item.get("losses") or []:
+                loss_payload = LossEventCreate.model_validate(loss_raw)
+                loss_data, category = _validate_loss(db, loss_payload)
+                loss_data["qty_loss"] = _calculated_loss_qty(loss_payload.duration_min, category, Decimal(data["ideal_cycle_time_sec"]))
+                validated.append((loss_data, category))
+                if category.oee_component == OEEComponent.AVAILABILITY:
+                    availability += loss_payload.duration_min
+            _allocate_availability_loss_qty(validated, Decimal(data["ideal_cycle_time_sec"]))
+            planned = entry_payload.shift_duration_min - entry_payload.planned_break_min
+            if availability > planned:
+                raise HTTPException(422, "Availability loss minutes exceed planned time")
+            data["downtime_min"] = availability
+            prepared.append((data, context, validated))
+        imported = []
+        for data, context, validated in prepared:
+            row = MachineShiftProduction(**data)
+            db.add(row); db.flush()
+            for loss_data, _category in validated:
+                db.add(MachineLossEvent(**loss_data))
+            imported.append(row.id)
+        db.commit()
+        return {"status":"imported","entry_count":len(imported),
+                "loss_event_count":sum(len(x[2]) for x in prepared),"entry_ids":imported}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/available-machines")
