@@ -169,8 +169,13 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
     ws.append(headers)
     # Leave input rows empty: prefilled references/defaults would be mistaken
     # for submitted records during validation. Server defaults are 440 / 0.
+    for _ in range(200):
+        ws.append([None] * len(headers))
     loss_ws = wb.create_sheet("Loss Details")
-    loss_ws.append(["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"])
+    loss_headers = ["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"]
+    loss_ws.append(loss_headers)
+    for _ in range(400):
+        loss_ws.append([None] * len(loss_headers))
     master = wb.create_sheet("Master Data")
     master.sheet_state = "hidden"
     master.append(["Product Code", "Product Name", "Operation", "Machine Number", "Machine Name",
