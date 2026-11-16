@@ -145,7 +145,7 @@ def _oee_workbook_masters(db: Session) -> dict:
     machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.code)).all()
     people = db.scalars(select(Personnel).where(Personnel.is_active.is_(True)).order_by(Personnel.full_name)).all()
     losses = db.scalars(select(LossCategory).where(LossCategory.is_active.is_(True)).order_by(LossCategory.name)).all()
-    operations = db.scalars(select(Operation).order_by(Operation.name)).all()
+    operations = db.scalars(select(Operation).where(Operation.is_active.is_(True)).order_by(Operation.name)).all()
     routes = db.execute(
         select(RouteOperation, RouteVersion, Product, Operation)
         .join(RouteVersion, RouteVersion.id == RouteOperation.route_version_id)
@@ -189,7 +189,7 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
         person = masters["people"][i] if i < len(masters["people"]) else None
         loss = masters["losses"][i] if i < len(masters["losses"]) else None
         master.append([p.code if p else None, p.name if p else None,
-                       o.name if o else None, m.code if m else None, m.name if m else None,
+                       f"{o.code} — {o.name}" if o else None, m.code if m else None, m.name if m else None,
                        person.full_name if person else None, loss.name if loss else None,
                        ["A", "B", "C"][i] if i < 3 else None])
     # Machine name is informational and follows the selected machine code.
@@ -248,7 +248,7 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
     machines = {x.code.strip().casefold(): x for x in masters["machines"]}
     people = {x.full_name.strip().casefold(): x for x in masters["people"]}
     loss_types = {x.name.strip().casefold(): x for x in masters["losses"]}
-    ops_by_name = {x.name.strip().casefold(): x for x in masters["operations"]}
+    ops_by_name = {f"{x.code} — {x.name}".strip().casefold(): x for x in masters["operations"]}
     entries = {}
     errors = []
     for row_no, values in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
