@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..enums import ActionStatus, OEEComponent, Priority
+from ..enums import ActionStatus, OEEComponent, Priority, SourceType
 from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
     MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap, Personnel,
@@ -379,6 +379,7 @@ def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_
             if duplicate:
                 raise HTTPException(409, f"Entry already exists as #{duplicate}; import stopped without saving")
             data, context = _prepare_entry(db, entry_payload)
+            data["source"] = SourceType.EXCEL
             validated = []
             availability = Decimal("0")
             for loss_raw in item.get("losses") or []:
@@ -390,6 +391,7 @@ def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_
                     or loss_payload.machine_id != entry_payload.machine_id):
                     raise HTTPException(422, "Loss event does not match its OEE entry scope")
                 loss_data, category = _validate_loss(db, loss_payload)
+                loss_data["source"] = SourceType.EXCEL
                 loss_data["qty_loss"] = _calculated_loss_qty(loss_payload.duration_min, category, Decimal(data["ideal_cycle_time_sec"]))
                 validated.append((loss_data, category))
                 if category.oee_component == OEEComponent.AVAILABILITY:
