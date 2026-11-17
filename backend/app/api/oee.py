@@ -287,8 +287,12 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
             if isinstance(prod_date, datetime): prod_date = prod_date.date()
             elif isinstance(prod_date, str): prod_date = date.fromisoformat(prod_date.strip())
             if not isinstance(prod_date, date): raise ValueError("Production Date is required")
-            product = next((x for x in masters["products"] if x.name.strip().casefold() == str(product_name or "").strip().casefold()), None)
-            machine = next((x for x in masters["machines"] if x.name.strip().casefold() == str(machine_name or "").strip().casefold()), None)
+            product_matches = [x for x in masters["products"] if x.name.strip().casefold() == str(product_name or "").strip().casefold()]
+            machine_matches = [x for x in masters["machines"] if x.name.strip().casefold() == str(machine_name or "").strip().casefold()]
+            if len(product_matches) > 1: raise ValueError("Product Name is duplicated in the active master; ask the administrator to make names unique")
+            if len(machine_matches) > 1: raise ValueError("Machine Name is duplicated in the active master; ask the administrator to make names unique")
+            product = product_matches[0] if product_matches else None
+            machine = machine_matches[0] if machine_matches else None
             person = people.get(str(operator_name or "").strip().casefold())
             if not product: raise ValueError("Product Name is not in the active master")
             if not machine: raise ValueError("Machine Name is not in the active master")
