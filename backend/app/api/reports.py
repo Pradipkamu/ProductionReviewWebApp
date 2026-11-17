@@ -1138,6 +1138,29 @@ def export_oee_excel(
             float(event.qty_loss), event.remark or "", event.id,
         ])
 
+    # Pivot-style loss matrix: one row per production date, shift and machine;
+    # one dynamic column per loss category, with minutes summed from the linked OEE loss events.
+    matrix_ws = wb.create_sheet("Loss Matrix")
+    category_names = sorted({category.name for _, category, _ in loss_rows}, key=lambda value: value.casefold())
+    matrix_ws.append(["Date", "Shift", "Machine"] + category_names + ["Total Loss (Min)"])
+    matrix_totals = defaultdict(lambda: defaultdict(float))
+    matrix_machine_names = {}
+    for event, category, machine in loss_rows:
+        matrix_key = (event.loss_date, event.shift, event.machine_id)
+        matrix_totals[matrix_key][category.name] += float(event.duration_min or 0)
+        matrix_machine_names[matrix_key] = machine.name
+    for matrix_key in sorted(matrix_totals):
+        loss_date, loss_shift, machine_id_value = matrix_key
+        category_values = [matrix_totals[matrix_key].get(name, 0.0) for name in category_names]
+        matrix_ws.append([
+            loss_date, loss_shift, matrix_machine_names.get(matrix_key, f"Machine {machine_id_value}"),
+            *category_values, sum(category_values),
+        ])
+    for matrix_row in matrix_ws.iter_rows(min_row=2):
+        matrix_row[0].number_format = "dd/mm/yyyy"
+        for cell in matrix_row[3:]:
+            cell.number_format = "0.##"
+
     summary_ws = wb.create_sheet("OEE Summary")
     summary_ws.append(["Group", "Plant / Machine / Part", "Entries", "Good Qty", "Rejected Qty", "Total Qty", "Availability %", "Performance %", "Quality %", "OEE %"])
     summary_groups = defaultdict(list)
