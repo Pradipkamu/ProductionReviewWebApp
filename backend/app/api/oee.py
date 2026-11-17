@@ -267,11 +267,8 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
     except Exception:
         raise HTTPException(422, "Workbook must contain OEE Entries and Loss Details sheets")
     masters = _oee_workbook_masters(db)
-    products = {x.code.strip().casefold(): x for x in masters["products"]}
-    machines = {x.code.strip().casefold(): x for x in masters["machines"]}
     people = {x.full_name.strip().casefold(): x for x in masters["people"]}
     loss_types = {x.name.strip().casefold(): x for x in masters["losses"]}
-    ops_by_name = {f"{x.code} — {x.name}".strip().casefold(): x for x in masters["operations"]}
     entries = {}
     errors = []
     for row_no, values in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
