@@ -150,8 +150,9 @@ def rotate_device_credential(device_id: int, db: Session = Depends(get_db), user
     if not row: raise HTTPException(status_code=404, detail="AFMS device not found")
     secret = "afms_" + secrets.token_urlsafe(32)
     try:
+        # Password rotation must not re-enable a device that an administrator
+        # intentionally disabled. setClientPassword preserves its enabled state.
         set_device_password(row.device_uid, secret)
-        enable_device_client(row.device_uid)
     except MQTTProvisioningError as exc:
         raise HTTPException(status_code=503, detail=f"MQTT credential rotation failed: {exc}") from exc
     row.credential_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
