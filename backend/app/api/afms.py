@@ -5,15 +5,15 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
 from ..enums import UserRole
-from ..models import AFMSDevice, Machine, User
+from ..models import AFMSDevice, AFMSTelemetryEvent, Machine, User
 from ..services.mqtt_dynsec import MQTTProvisioningError, create_device_client, set_device_password, enable_device_client, disable_device_client
 
 router = APIRouter(prefix="/afms", tags=["AFMS"])
@@ -66,11 +66,50 @@ def overview(db: Session = Depends(get_db), _: User = Depends(get_current_user))
     registered = db.scalar(select(func.count(AFMSDevice.id))) or 0
     enabled = db.scalar(select(func.count(AFMSDevice.id)).where(AFMSDevice.is_active.is_(True))) or 0
     online = db.scalar(select(func.count(AFMSDevice.id)).where(AFMSDevice.is_active.is_(True), AFMSDevice.last_seen_at >= datetime.utcnow() - timedelta(minutes=2))) or 0
-    return {"module":"AFMS","status":"INITIALIZED","integration_status":"DEVICE_REGISTRY_READY",
+    latest = db.scalar(select(AFMSTelemetryEvent.received_at).order_by(AFMSTelemetryEvent.received_at.desc()).limit(1))
+    telemetry_count = db.scalar(select(func.count(AFMSTelemetryEvent.id))) or 0
+    telemetry_status = "NOT_RECEIVED" if latest is None else (
+        "RECEIVING" if latest >= datetime.utcnow() - timedelta(minutes=2) else "STALE"
+    )
+    return {"module":"AFMS","status":"INITIALIZED","integration_status":"TELEMETRY_INGESTION",
             "machine_master":{"total":total,"active":active},
             "devices":{"registered":registered,"enabled":enabled,"online":online},
-            "telemetry":{"status":"NOT_CONNECTED","last_received_at":None},
-            "next_phase":"Secure device authentication and MQTT cycle-event ingestion"}
+            "telemetry":{"status":telemetry_status,"last_received_at":latest,"events_received":telemetry_count},
+            "next_phase":"Review telemetry events with pending product/operation mappings"}
+
+
+@router.get("/events")
+def list_telemetry_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    processing_status: Optional[str] = Query(default=None, max_length=32),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    query = select(AFMSTelemetryEvent).join(AFMSDevice).order_by(desc(AFMSTelemetryEvent.received_at))
+    if processing_status:
+        query = query.where(AFMSTelemetryEvent.processing_status == processing_status.strip().upper())
+    rows = db.scalars(query.offset(offset).limit(limit)).all()
+    return {
+        "limit": limit,
+        "offset": offset,
+        "count": len(rows),
+        "events": [{
+            "id": row.id,
+            "device_uid": row.device.device_uid,
+            "machine_id": row.device.machine_id,
+            "machine_number": row.device.machine.code,
+            "machine_name": row.device.machine.name,
+            "event_id": row.event_id,
+            "event_type": row.event_type,
+            "sequence": row.sequence,
+            "occurred_at": row.occurred_at,
+            "received_at": row.received_at,
+            "processing_status": row.processing_status,
+            "processing_error": row.processing_error,
+        } for row in rows],
+    }
+
 
 @router.get("/machines")
 def afms_machines(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
