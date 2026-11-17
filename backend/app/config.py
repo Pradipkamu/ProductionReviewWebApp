@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     mqtt_internal_port: int = 1883
     mqtt_control_username: str = ""
     mqtt_control_password: str = ""
+    mqtt_backend_username: str = ""
+    mqtt_backend_password: str = ""
     mqtt_timeout_seconds: int = 8
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
