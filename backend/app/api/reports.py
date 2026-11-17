@@ -749,13 +749,23 @@ def oee_trends_report(
     plant: str | None = None,
     product_group: str | None = None,
     customer_id: str | None = None,
+    from_date: date | None = None,
+    shift: str | None = None,
+    operator_id: int | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
     products = _scoped_products(db, product_id, plant, product_group, customer_id)
     pids = list(products)
     start, _ = _date_bounds(as_of, months)
+    start = from_date or start
+    if start > as_of:
+        raise HTTPException(422, "From date must be on or before To date")
     q = select(MachineShiftProduction).where(MachineShiftProduction.production_date >= start, MachineShiftProduction.production_date <= as_of)
+    if shift:
+        q = q.where(MachineShiftProduction.shift == shift.strip().upper())
+    if operator_id is not None:
+        q = q.where(MachineShiftProduction.operator_id == operator_id)
     machine_ids = csv_ints(machine_id)
     if machine_ids:
         q = q.where(MachineShiftProduction.machine_id.in_(machine_ids))
@@ -837,18 +847,25 @@ def loss_pareto_report(
     plant: str | None = None,
     product_group: str | None = None,
     customer_id: str | None = None,
+    from_date: date | None = None,
+    shift: str | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
     products = _scoped_products(db, product_id, plant, product_group, customer_id)
     pids = list(products)
     start, _ = _date_bounds(as_of, months)
+    start = from_date or start
+    if start > as_of:
+        raise HTTPException(422, "From date must be on or before To date")
     q = (
         select(MachineLossEvent, LossCategory, Machine)
         .join(LossCategory, LossCategory.id == MachineLossEvent.loss_category_id)
         .join(Machine, Machine.id == MachineLossEvent.machine_id)
         .where(MachineLossEvent.loss_date >= start, MachineLossEvent.loss_date <= as_of)
     )
+    if shift:
+        q = q.where(MachineLossEvent.shift == shift.strip().upper())
     machine_ids = csv_ints(machine_id)
     if machine_ids:
         q = q.where(MachineLossEvent.machine_id.in_(machine_ids))
