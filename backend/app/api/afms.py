@@ -102,7 +102,17 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db), user
         firmware_version=payload.firmware_version.strip() if payload.firmware_version else None, protocol_version=payload.protocol_version.strip(),
         credential_hash=hashlib.sha256(secret.encode("utf-8")).hexdigest(), registered_by_id=user.id,
         notes=payload.notes.strip() if payload.notes else None)
-    db.add(row); db.commit(); db.refresh(row)
+    db.add(row)
+    try:
+        db.commit()
+        db.refresh(row)
+    except Exception:
+        db.rollback()
+        try:
+            disable_device_client(uid)
+        except MQTTProvisioningError:
+            pass
+        raise
     return {"device":_device_out(row),"provisioning_secret":secret,"secret_notice":"Copy this credential now. It is shown only once and cannot be retrieved later."}
 
 @router.patch("/devices/{device_id}")
@@ -120,7 +130,17 @@ def update_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(g
         if isinstance(value, str): value = value.strip()
         if field == 'device_role' and value: value = value.upper()
         setattr(row, field, value)
-    db.commit(); db.refresh(row)
+    try:
+        db.commit()
+        db.refresh(row)
+    except Exception:
+        db.rollback()
+        if "is_active" in changes and changes["is_active"] != row.is_active:
+            try:
+                (disable_device_client if changes["is_active"] else enable_device_client)(row.device_uid)
+            except MQTTProvisioningError:
+                pass
+        raise
     return _device_out(row)
 
 @router.post("/devices/{device_id}/rotate-credential")
@@ -135,5 +155,13 @@ def rotate_device_credential(device_id: int, db: Session = Depends(get_db), user
     except MQTTProvisioningError as exc:
         raise HTTPException(status_code=503, detail=f"MQTT credential rotation failed: {exc}") from exc
     row.credential_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        try:
+            disable_device_client(row.device_uid)
+        except MQTTProvisioningError:
+            pass
+        raise
     return {"device_id":row.id,"device_uid":row.device_uid,"provisioning_secret":secret,"secret_notice":"Previous credential is invalid immediately. Copy this new credential now; it is shown only once."}
