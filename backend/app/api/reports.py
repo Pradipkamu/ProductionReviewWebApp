@@ -821,6 +821,7 @@ def oee_trends_report(
                              r.total_count, r.good_count, r.ideal_cycle_time_sec)
         entries.append({
             "id": r.id, "date": r.production_date.isoformat(), "shift": r.shift,
+            "operator": r.operator.full_name if r.operator else "Unassigned",
             "product": product_map.get(r.product_id, f"Product {r.product_id}"),
             "operation": operation_map.get(r.route_operation_id, f"Operation {r.route_operation_id}"),
             "machine": machine_map.get(r.machine_id, f"Machine {r.machine_id}"),
