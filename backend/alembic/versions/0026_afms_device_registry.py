@@ -32,8 +32,10 @@ def upgrade():
     op.create_index("ix_afms_devices_machine_id", "afms_devices", ["machine_id"])
     op.create_index("ix_afms_devices_device_uid", "afms_devices", ["device_uid"], unique=True)
     op.create_index("ix_afms_devices_is_active", "afms_devices", ["is_active"])
+    op.create_index("uq_afms_devices_active_machine", "afms_devices", ["machine_id"], unique=True, postgresql_where=sa.text("is_active = true"), sqlite_where=sa.text("is_active = 1"))
 
 def downgrade():
+    op.drop_index("uq_afms_devices_active_machine", table_name="afms_devices")
     op.drop_index("ix_afms_devices_is_active", table_name="afms_devices")
     op.drop_index("ix_afms_devices_device_uid", table_name="afms_devices")
     op.drop_index("ix_afms_devices_machine_id", table_name="afms_devices")

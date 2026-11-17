@@ -6,7 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric,
-    String, Text, UniqueConstraint, Index
+    String, Text, UniqueConstraint, Index, text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -183,12 +183,15 @@ class AFMSDevice(Base, TimestampMixin):
     firmware_version: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
     protocol_version: Mapped[str] = mapped_column(String(30), default="1.0", nullable=False)
     credential_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     registered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     machine: Mapped[Machine] = relationship()
     registered_by: Mapped[Optional[User]] = relationship()
+    __table_args__ = (Index("uq_afms_devices_active_machine", "machine_id", unique=True, postgresql_where=text("is_active = true"), sqlite_where=text("is_active = 1")),)
+
+
 class MachineMasterHistory(Base, TimestampMixin):
     __tablename__ = "machine_master_history"
     id: Mapped[int] = mapped_column(primary_key=True)
