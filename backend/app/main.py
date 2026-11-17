@@ -11,7 +11,7 @@ from . import __version__
 from .db import Base, SessionLocal, engine
 from .migrate import upgrade_database
 from .seed import seed_defaults
-from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, quality_salvage, governance, insights, import_preview, flows, diagnostics, capacity, special_quality, personnel, chat
+from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, quality_salvage, governance, insights, import_preview, flows, diagnostics, capacity, special_quality, personnel, chat, afms
 from .api.reviews import release_meeting_participants
 
 settings = get_settings()
