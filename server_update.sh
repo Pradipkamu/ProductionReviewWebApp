@@ -111,7 +111,7 @@ verify_database_backup() {
 
   [[ -s "$db_file" ]] || stop "Backup file is missing or empty: $db_file"
   db_file="$(realpath "$db_file")"
-  scratch="pms_verify_$(date -u +%Y%m%d%H%M%S)_$"
+  scratch="pms_verify_$(date -u +%Y%m%d%H%M%S)_${BASHPID}"
   container_file="/tmp/${scratch}.dump"
 
   say "Verifying backup by restoring into isolated database: $scratch"
