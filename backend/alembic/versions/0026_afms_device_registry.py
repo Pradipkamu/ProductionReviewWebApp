@@ -28,10 +28,9 @@ def upgrade():
         sa.Column("notes", sa.String(500), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint("device_uid", name="uq_afms_devices_device_uid"),
     )
     op.create_index("ix_afms_devices_machine_id", "afms_devices", ["machine_id"])
-    op.create_index("ix_afms_devices_device_uid", "afms_devices", ["device_uid"])
+    op.create_index("ix_afms_devices_device_uid", "afms_devices", ["device_uid"], unique=True)
     op.create_index("ix_afms_devices_is_active", "afms_devices", ["is_active"])
 
 def downgrade():
