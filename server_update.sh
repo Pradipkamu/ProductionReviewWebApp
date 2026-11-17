@@ -168,30 +168,36 @@ health_check() {
 }
 
 capture_running_images() {
+  local backend_container frontend_container
   local backend_ref frontend_ref backend_id frontend_id
 
-  backend_ref="$(docker inspect productionreviewwebapp-backend-1 --format '{{.Config.Image}}')" ||
+  # Resolve containers through Compose service names; never assume generated names.
+  backend_container="$(docker compose ps -q backend | head -n 1)"
+  frontend_container="$(docker compose ps -q frontend | head -n 1)"
+  [[ -n "$backend_container" ]] || stop "Backend container is not running; cannot capture rollback image"
+  [[ -n "$frontend_container" ]] || stop "Frontend container is not running; cannot capture rollback image"
+
+  backend_ref="$(docker inspect "$backend_container" --format '{{.Config.Image}}')" ||
     stop "Could not identify the running backend image"
-  frontend_ref="$(docker inspect productionreviewwebapp-frontend-1 --format '{{.Config.Image}}')" ||
+  frontend_ref="$(docker inspect "$frontend_container" --format '{{.Config.Image}}')" ||
     stop "Could not identify the running frontend image"
-  backend_id="$(docker inspect productionreviewwebapp-backend-1 --format '{{.Image}}')" ||
+  backend_id="$(docker inspect "$backend_container" --format '{{.Image}}')" ||
     stop "Could not identify the running backend image ID"
-  frontend_id="$(docker inspect productionreviewwebapp-frontend-1 --format '{{.Image}}')" ||
+  frontend_id="$(docker inspect "$frontend_container" --format '{{.Image}}')" ||
     stop "Could not identify the running frontend image ID"
 
   [[ -n "$backend_ref" && -n "$frontend_ref" && -n "$backend_id" && -n "$frontend_id" ]] ||
     stop "Running image metadata is incomplete"
 
   {
-    printf 'BACKEND_IMAGE_REF=%q\n' "$backend_ref"
-    printf 'FRONTEND_IMAGE_REF=%q\n' "$frontend_ref"
-    printf 'BACKEND_IMAGE_ID=%q\n' "$backend_id"
-    printf 'FRONTEND_IMAGE_ID=%q\n' "$frontend_id"
+    printf 'BACKEND_IMAGE_REF=%q\\n' "$backend_ref"
+    printf 'FRONTEND_IMAGE_REF=%q\\n' "$frontend_ref"
+    printf 'BACKEND_IMAGE_ID=%q\\n' "$backend_id"
+    printf 'FRONTEND_IMAGE_ID=%q\\n' "$frontend_id"
   } >> "$STATE_FILE"
 
   say "Captured current backend and frontend image IDs for exact rollback."
 }
-
 rollback_to() {
   local old_commit="$1"
   local backend_id="$2"
@@ -290,6 +296,14 @@ main() {
 
       create_backups
       capture_running_images
+
+      # Load the image IDs before any operation that may need automatic rollback.
+      # The state file is generated locally using Bash %q escaping.
+      # shellcheck disable=SC1090
+      source "$STATE_FILE"
+      [[ -n "${BACKEND_IMAGE_ID:-}" && -n "${FRONTEND_IMAGE_ID:-}" &&
+         -n "${BACKEND_IMAGE_REF:-}" && -n "${FRONTEND_IMAGE_REF:-}" ]] ||
+        stop "Rollback image metadata could not be loaded from $STATE_FILE"
 
       if [[ "$(git rev-parse HEAD)" == "$(git rev-parse "$REMOTE_REF")" ]]; then
         say "Source is already at the requested commit; rebuilding current source and refreshing containers."
