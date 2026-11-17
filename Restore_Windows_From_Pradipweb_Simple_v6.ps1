@@ -26,7 +26,7 @@ function Run-Docker([string[]]$DockerArgs) {
     if ($LASTEXITCODE -ne 0) { throw "Docker command failed ($LASTEXITCODE): docker $($DockerArgs -join ' ')" }
 }
 function Save-CurrentStateBackup([string]$Stamp) {
-    $backupRoot = "D:\MIS Machine Shops Back Up"
+    $backupRoot = "D:\Machine Shop MIS\database\backups"
     $backupSet = Join-Path $backupRoot "Pradipweb_Restore_$Stamp"
     New-Item -ItemType Directory -Force -Path $backupSet | Out-Null
 
@@ -166,7 +166,7 @@ try {
     Save-CurrentStateBackup $stamp
 
     Write-Host "Restore commands completed and verified." -ForegroundColor Green
-    Write-Host "MIS backup folder: D:\MIS Machine Shops Back Up\Pradipweb_Restore_$stamp"
+    Write-Host "MIS backup folder: D:\Machine Shop MIS\database\backups\Pradipweb_Restore_$stamp"
     Write-Host "Windows rollback copy: $rollback"
     Write-Host "Downloaded source backups: $LocalDb and $LocalAtt"
     Write-Host "Keep the rollback copy until the application has been checked."
