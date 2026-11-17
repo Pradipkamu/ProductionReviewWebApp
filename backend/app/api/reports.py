@@ -1167,6 +1167,17 @@ def export_oee_excel(
             aggregate["availability"], aggregate["performance_raw"], aggregate["quality"], aggregate["oee_reported"],
         ])
 
+    for row_cells in ws.iter_rows(min_row=2):
+        row_cells[0].number_format = "dd-mmm-yyyy"
+        for offset in range(3):
+            row_cells[16 + loss_columns + offset].number_format = "0.0%"
+        row_cells[19 + loss_columns].number_format = "0.0%"
+    for row_cells in loss_ws.iter_rows(min_row=2):
+        row_cells[1].number_format = "dd-mmm-yyyy"
+    for row_cells in summary_ws.iter_rows(min_row=2):
+        for cell in row_cells[6:10]:
+            cell.number_format = "0.0%"
+
     for sheet in wb.worksheets:
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
