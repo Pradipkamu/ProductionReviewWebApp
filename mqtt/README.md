@@ -50,4 +50,4 @@ Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. 
 
 ## Persistence and backups
 
-Broker state is stored in `mqtt/data/`; logs are stored in `mqtt/log/`. Include `mqtt/data/` in the server backup plan. Never back up or publish private TLS keys or plaintext broker credentials to Git.
+Broker state and logs are stored in Docker-managed named volumes (`mqtt_data` and `mqtt_log`) so container UID/GID permissions do not depend on host bind-directory ownership. Include the `mqtt_data` volume in the server backup plan (for example, archive it using a temporary helper container). Never back up or publish private TLS keys or plaintext broker credentials to Git.
