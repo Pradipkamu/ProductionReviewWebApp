@@ -14,6 +14,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..enums import UserRole
 from ..models import AFMSDevice, Machine, User
+from ..services.mqtt_dynsec import MQTTProvisioningError, create_device_client, set_device_password, enable_device_client, disable_device_client
 
 router = APIRouter(prefix="/afms", tags=["AFMS"])
 
@@ -92,6 +93,10 @@ def register_device(payload: DeviceRegister, db: Session = Depends(get_db), user
     existing = db.scalar(select(AFMSDevice.id).where(AFMSDevice.machine_id == machine.id, AFMSDevice.is_active.is_(True)))
     if existing: raise HTTPException(status_code=409, detail="An active AFMS device is already mapped to this machine. Deactivate it before registering a replacement.")
     secret = "afms_" + secrets.token_urlsafe(32)
+    try:
+        create_device_client(uid, secret)
+    except MQTTProvisioningError as exc:
+        raise HTTPException(status_code=503, detail=f"MQTT broker provisioning failed: {exc}") from exc
     row = AFMSDevice(machine_id=machine.id, device_uid=uid, device_name=payload.device_name.strip() if payload.device_name else None,
         device_role=payload.device_role.strip().upper(), hardware_model=payload.hardware_model.strip() if payload.hardware_model else None,
         firmware_version=payload.firmware_version.strip() if payload.firmware_version else None, protocol_version=payload.protocol_version.strip(),
@@ -106,6 +111,11 @@ def update_device(device_id: int, payload: DeviceUpdate, db: Session = Depends(g
     row = db.get(AFMSDevice, device_id)
     if not row: raise HTTPException(status_code=404, detail="AFMS device not found")
     changes = payload.model_dump(exclude_unset=True)
+    if "is_active" in changes and changes["is_active"] != row.is_active:
+        try:
+            (enable_device_client if changes["is_active"] else disable_device_client)(row.device_uid)
+        except MQTTProvisioningError as exc:
+            raise HTTPException(status_code=503, detail=f"MQTT broker status could not be updated: {exc}") from exc
     for field, value in changes.items():
         if isinstance(value, str): value = value.strip()
         if field == 'device_role' and value: value = value.upper()
@@ -119,6 +129,11 @@ def rotate_device_credential(device_id: int, db: Session = Depends(get_db), user
     row = db.get(AFMSDevice, device_id)
     if not row: raise HTTPException(status_code=404, detail="AFMS device not found")
     secret = "afms_" + secrets.token_urlsafe(32)
+    try:
+        set_device_password(row.device_uid, secret)
+        enable_device_client(row.device_uid)
+    except MQTTProvisioningError as exc:
+        raise HTTPException(status_code=503, detail=f"MQTT credential rotation failed: {exc}") from exc
     row.credential_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
     db.commit()
     return {"device_id":row.id,"device_uid":row.device_uid,"provisioning_secret":secret,"secret_notice":"Previous credential is invalid immediately. Copy this new credential now; it is shown only once."}
