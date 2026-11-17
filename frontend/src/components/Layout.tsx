@@ -8,7 +8,7 @@ const groups=[
   {label:'Executive & Review',keys:['control_tower','dispatch_intelligence','capacity_intelligence','operations_intelligence','management_assistant','daily_review','daily_meeting','insights','actions','admin_action_review']},
   {label:'Planning & Production',keys:['mis','schedule','capacity','machine_master','product_master','process','process_actuals','vendor']},
   {label:'Quality & OEE',keys:['quality','casting_quality','customer_quality','oee']},
-  {label:'Reports',keys:['reports','management_reports','analytics']},
+  {label:'Reports',keys:['reports','oee_reports','management_reports','analytics']},
   {label:'Administration',keys:['masters','import','diagnostics','governance','account']},
 ]
 
