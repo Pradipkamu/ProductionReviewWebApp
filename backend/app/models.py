@@ -171,6 +171,24 @@ class Machine(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class AFMSDevice(Base, TimestampMixin):
+    """Registered controller identity mapped explicitly to a PRW machine."""
+    __tablename__ = "afms_devices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id", ondelete="RESTRICT"), index=True)
+    device_uid: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    device_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    device_role: Mapped[str] = mapped_column(String(40), default="MAIN_CONTROLLER", nullable=False)
+    hardware_model: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    firmware_version: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    protocol_version: Mapped[str] = mapped_column(String(30), default="1.0", nullable=False)
+    credential_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    registered_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    machine: Mapped[Machine] = relationship()
+    registered_by: Mapped[Optional[User]] = relationship()
 class MachineMasterHistory(Base, TimestampMixin):
     __tablename__ = "machine_master_history"
     id: Mapped[int] = mapped_column(primary_key=True)
