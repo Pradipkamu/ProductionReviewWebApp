@@ -202,6 +202,26 @@ class MachineMasterHistory(Base, TimestampMixin):
     changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class AFMSTelemetryEvent(Base):
+    """Durable, deduplicated copy of a telemetry event received from an AFMS device."""
+    __tablename__ = "afms_telemetry_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("afms_devices.id", ondelete="RESTRICT"), nullable=False, index=True)
+    event_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
+    sequence: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    processing_status: Mapped[str] = mapped_column(String(32), nullable=False, default="RECEIVED", index=True)
+    processing_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    device: Mapped[AFMSDevice] = relationship()
+    __table_args__ = (
+        UniqueConstraint("device_id", "event_id", name="uq_afms_telemetry_device_event"),
+        Index("ix_afms_telemetry_device_received", "device_id", "received_at"),
+    )
+
+
 class LossCategory(Base, TimestampMixin):
     __tablename__ = "loss_categories"
     id: Mapped[int] = mapped_column(primary_key=True)
