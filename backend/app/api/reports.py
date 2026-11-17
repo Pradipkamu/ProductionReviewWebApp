@@ -809,7 +809,14 @@ def oee_trends_report(
                          "open_actions": len(action_by_machine[mid]), "overdue_actions": len(overdue_by_machine[mid]), **a})
     machines.sort(key=lambda x: x["oee"])
     summary = _aggregate_oee_rows(rows)
-    product_map = {x.id: x.name for x in db.scalars(select(Product).where(Product.id.in_({r.product_id for r in rows} or {-1}))).all()}
+    product_rows = db.scalars(select(Product).where(Product.id.in_({r.product_id for r in rows} or {-1}))).all()
+    product_map = {x.id: x.name for x in product_rows}
+    plant_by_product = {x.id: (x.plant or "Unassigned") for x in product_rows}
+    by_plant: dict[str, list[MachineShiftProduction]] = defaultdict(list)
+    for row in rows:
+        by_plant[plant_by_product.get(row.product_id, "Unassigned")].append(row)
+    plants = [{"plant": plant_name, **_aggregate_oee_rows(plant_rows)}
+              for plant_name, plant_rows in sorted(by_plant.items())]
     machine_map = {x.id: {"name": x.name, "code": x.code} for x in db.scalars(select(Machine).where(Machine.id.in_({r.machine_id for r in rows} or {-1}))).all()}
     route_rows = db.execute(
         select(RouteOperation.id, Operation.name).join(Operation, Operation.id == RouteOperation.operation_id)
@@ -837,7 +844,7 @@ def oee_trends_report(
             "remarks": r.remarks,
         })
     return {"as_of": as_of.isoformat(), "summary": summary, "daily": daily, "monthly": monthly,
-            "machines": machines, "entries": entries}
+            "machines": machines, "plants": plants, "entries": entries}
 
 
 @router.get("/loss-pareto")
@@ -853,6 +860,8 @@ def loss_pareto_report(
     from_date: date | None = None,
     shift: str | None = None,
     operator_id: int | None = None,
+    loss_category_id: str | None = None,
+    loss_component: str | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -870,6 +879,11 @@ def loss_pareto_report(
     )
     if shift:
         q = q.where(MachineLossEvent.shift == shift.strip().upper())
+    category_ids = csv_ints(loss_category_id)
+    if category_ids:
+        q = q.where(MachineLossEvent.loss_category_id.in_(category_ids))
+    if loss_component:
+        q = q.where(LossCategory.oee_component == loss_component.strip().upper())
     if operator_id is not None:
         q = q.where(exists(select(MachineShiftProduction.id).where(
             MachineShiftProduction.production_date == MachineLossEvent.loss_date,
