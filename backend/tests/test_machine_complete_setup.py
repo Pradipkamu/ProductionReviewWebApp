@@ -64,10 +64,21 @@ def test_complete_machine_setup_only_revises_modified_masters():
             OperatorRequirementHistory.effective_from)).all()
         assert history[0].effective_to == date(2026, 1, 31)
 
-    # Earlier dates must not insert new revisions ahead of the latest.
-    old = client.post(endpoint, json={**changed, "effective_from": "2026-01-15",
-                                      "operators_per_machine": 1}, headers=auth)
-    assert old.status_code == 409, old.text
+    # A backdated revision is inserted into the historical gap without
+    # changing the later February revision.
+    backdated = client.post(endpoint, json={**changed, "effective_from": "2026-01-15",
+                                            "operators_per_machine": 1,
+                                            "reason": "Historical operator correction"}, headers=auth)
+    assert backdated.status_code == 200, backdated.text
+    assert backdated.json()["changed"] == ["operator"]
+    with SessionLocal() as db:
+        history = db.scalars(select(OperatorRequirementHistory).order_by(
+            OperatorRequirementHistory.effective_from)).all()
+        assert [(x.effective_from, x.effective_to, float(x.operators_per_machine)) for x in history] == [
+            (date(2026, 1, 1), date(2026, 1, 14), 0.5),
+            (date(2026, 1, 15), date(2026, 1, 31), 1.0),
+            (date(2026, 2, 1), None, 0.75),
+        ]
 
 
 def test_complete_setup_invalid_values_leave_no_partial_master_updates():

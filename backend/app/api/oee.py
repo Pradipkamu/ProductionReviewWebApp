@@ -1,21 +1,26 @@
 from ..time_utils import UTCTimestamp
 from datetime import date, datetime
 import json
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Body
+from pydantic import BaseModel, Field, ValidationError
+from io import BytesIO
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.worksheet.datavalidation import DataValidation
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..enums import ActionStatus, OEEComponent, Priority
+from ..enums import ActionStatus, OEEComponent, Priority, SourceType
 from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
-    MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap,
+    MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap, Personnel,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
-    StandardCycleTime, User, GovernanceAudit,
+    StandardCycleTime, User, GovernanceAudit ,
 )
 from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate
 from ..services.oee import aggregate_oee_entries, calculate_oee
@@ -94,6 +99,10 @@ def _context(db: Session, product_id: int, route_operation_id: int, machine_id: 
 
 
 def _prepare_entry(db: Session, payload: MachineEntryCreate) -> tuple[dict, dict]:
+    person = db.get(Personnel, payload.operator_id)
+    if not person or not person.is_active:
+        raise HTTPException(422, "Select an active person from the Personnel Master")
+
     context = _context(db, payload.product_id, payload.route_operation_id, payload.machine_id, payload.production_date)
     data = payload.model_dump()
     cycle = context["cycle"]
@@ -113,7 +122,8 @@ def _entry_json(row: MachineShiftProduction, context: dict | None = None) -> dic
     result = {
         "id": row.id, "production_date": row.production_date, "shift": row.shift,
         "product_id": row.product_id, "route_operation_id": row.route_operation_id,
-        "machine_id": row.machine_id, "shift_duration_min": float(row.shift_duration_min),
+        "machine_id": row.machine_id, "operator_id": row.operator_id,
+        "operator_name": row.operator.full_name if row.operator else None, "shift_duration_min": float(row.shift_duration_min),
         "planned_break_min": float(row.planned_break_min), "downtime_min": float(row.downtime_min),
         "total_count": float(row.total_count), "good_count": float(row.good_count),
         "reject_count": float(row.reject_count), "ideal_cycle_time_sec": float(row.ideal_cycle_time_sec),
@@ -127,6 +137,321 @@ def _entry_json(row: MachineShiftProduction, context: dict | None = None) -> dic
             "operation": context["operation"].name, "data_quality_warnings": context["warnings"],
         })
     return result
+
+
+
+def _oee_workbook_masters(db: Session) -> dict:
+    products = db.scalars(select(Product).where(Product.is_active.is_(True)).order_by(Product.name)).all()
+    machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.name)).all()
+    people = db.scalars(select(Personnel).where(Personnel.is_active.is_(True)).order_by(Personnel.full_name)).all()
+    losses = db.scalars(select(LossCategory).where(LossCategory.is_active.is_(True)).order_by(LossCategory.name)).all()
+    routes = db.execute(
+        select(RouteOperation, RouteVersion, Product, Operation)
+        .join(RouteVersion, RouteVersion.id == RouteOperation.route_version_id)
+        .join(Product, Product.id == RouteVersion.product_id)
+        .join(Operation, Operation.id == RouteOperation.operation_id)
+        .where(RouteOperation.is_enabled.is_(True), RouteVersion.is_active.is_(True),
+               Product.is_active.is_(True), Operation.is_active.is_(True))
+    ).all()
+    maps = db.scalars(select(OperationMachineMap).where(OperationMachineMap.is_active.is_(True))).all()
+    return {"products": products, "machines": machines, "people": people,
+            "losses": losses, "routes": routes, "maps": maps}
+
+
+@router.get("/bulk-template")
+def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    masters = _oee_workbook_masters(db)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "OEE Entries"
+    headers = ["Entry Ref (Auto)", "Production Date", "Product Name", "Machine Name",
+               "Shift", "Operator Name", "Shift Duration Min", "Planned Break Min",
+               "Good Qty", "Reject Qty", "Remarks"]
+    ws.append(headers)
+    for row in range(2, 202):
+        ws.append([row - 1, None, None, None, None, None, 440, 0, None, None, None])
+    ws.protection.sheet = True
+    ws.protection.selectLockedCells = False
+    ws.protection.selectUnlockedCells = True
+    # Entry references and standard defaults are locked; input cells are editable.
+    from openpyxl.styles import Protection
+    for row in range(2, 202):
+        for col in range(2, 12):
+            ws.cell(row, col).protection = Protection(locked=False)
+    loss_ws = wb.create_sheet("Loss Details")
+    loss_ws.append(["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"])
+    for _ in range(400):
+        loss_ws.append([None, None, None, None])
+    master = wb.create_sheet("Master Data")
+    master.sheet_state = "hidden"
+    master.append(["Product Name", "Machine Name", "Operator Name", "Loss Type", "Shift", "Product ID"])
+    # A product/machine pair is offered only when an active effective route and
+    # an active machine mapping exist. The importer still checks the selected date.
+    pairs = {}
+    for route, version, product, operation in masters["routes"]:
+        for mapping in masters["maps"]:
+            if mapping.route_operation_id == route.id:
+                machine = next((m for m in masters["machines"] if m.id == mapping.machine_id), None)
+                if machine:
+                    pairs.setdefault(product.id, {})[machine.id] = (product, machine)
+    for product_id in sorted(pairs, key=lambda pid: next(p.name.casefold() for p in masters["products"] if p.id == pid)):
+        product = next(p for p in masters["products"] if p.id == product_id)
+        master.append([product.name, None, None, None, None, product.id])
+        product_row = master.max_row
+        machine_rows = []
+        for machine_id, (p, machine) in sorted(pairs[product_id].items(), key=lambda item: item[1][1].name.casefold()):
+            master.append([None, machine.name, None, None, None])
+            machine_rows.append(master.max_row)
+        # Product-specific named range used by the dependent machine dropdown.
+        if machine_rows:
+            from openpyxl.workbook.defined_name import DefinedName
+            range_name = f"ProductMachines_{product_id}"
+            wb.defined_names.add(DefinedName(range_name,
+                attr_text=f"'Master Data'!$B${machine_rows[0]}:$B${machine_rows[-1]}"))
+    # Separate simple lists are stored in columns C-E.
+    for i, person in enumerate(masters["people"], start=2):
+        master.cell(i, 3, person.full_name)
+    for i, loss in enumerate(masters["losses"], start=2):
+        master.cell(i, 4, loss.name)
+    for i, shift in enumerate(["A", "B", "C"], start=2):
+        master.cell(i, 5, shift)
+    from openpyxl.workbook.defined_name import DefinedName
+    if masters["products"]:
+        wb.defined_names.add(DefinedName("ProductNames",
+            attr_text=f"'Master Data'!$A$2:$A${master.max_row}"))
+    if masters["people"]:
+        wb.defined_names.add(DefinedName("Operators", attr_text=f"'Master Data'!$C$2:$C${len(masters['people'])+1}"))
+    if masters["losses"]:
+        wb.defined_names.add(DefinedName("LossTypes", attr_text=f"'Master Data'!$D$2:$D${len(masters['losses'])+1}"))
+    wb.defined_names.add(DefinedName("Shifts", attr_text="'Master Data'!$E$2:$E$4"))
+    dv_products = DataValidation(type="list", formula1="=ProductNames", allow_blank=True)
+    ws.add_data_validation(dv_products); dv_products.add("C2:C201")
+    dv_machines = DataValidation(type="list",
+        formula1='=INDIRECT("ProductMachines_"&INDEX(\'Master Data\'!$F$2:$F$2000,MATCH(C2,\'Master Data\'!$A$2:$A$2000,0)))', allow_blank=True)
+    ws.add_data_validation(dv_machines); dv_machines.add("D2:D201")
+    for formula, target in [("=Shifts", "E2:E201"), ("=Operators", "F2:F201")]:
+        dv = DataValidation(type="list", formula1=formula, allow_blank=True)
+        ws.add_data_validation(dv); dv.add(target)
+    dv_loss = DataValidation(type="list", formula1="=LossTypes", allow_blank=True)
+    loss_ws.add_data_validation(dv_loss); dv_loss.add("B2:B401")
+    wb.defined_names.add(DefinedName("EntryRefs", attr_text="'OEE Entries'!$A$2:$A$201"))
+    dv_refs = DataValidation(type="list", formula1="=EntryRefs", allow_blank=True)
+    loss_ws.add_data_validation(dv_refs); dv_refs.add("A2:A401")
+    for sheet in (ws, loss_ws):
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="24476B")
+            cell.alignment = Alignment(wrap_text=True)
+        for col in sheet.columns:
+            letter = col[0].column_letter
+            sheet.column_dimensions[letter].width = min(max(max(len(str(x.value or "")) for x in col) + 3, 14), 30)
+    ws.column_dimensions["A"].width = 18
+    output = BytesIO()
+    wb.save(output); output.seek(0)
+    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="OEE_Bulk_Upload_Template.xlsx"'})
+
+@router.post("/bulk-import/preview")
+async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = Depends(get_db),
+                                  _: User = Depends(get_current_user)):
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(422, "Upload an .xlsx OEE template")
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, "OEE workbook must be 10 MB or smaller")
+    try:
+        wb = load_workbook(BytesIO(raw), data_only=True, read_only=True)
+        ws = wb["OEE Entries"]; loss_ws = wb["Loss Details"]
+    except Exception:
+        raise HTTPException(422, "Workbook must contain OEE Entries and Loss Details sheets")
+    masters = _oee_workbook_masters(db)
+    people = {x.full_name.strip().casefold(): x for x in masters["people"]}
+    loss_types = {x.name.strip().casefold(): x for x in masters["losses"]}
+    entries = {}
+    errors = []
+    for row_no, values in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not any(v is not None for v in values):
+            continue
+        ref, prod_date, product_name, machine_name, shift_name, operator_name, shift_min, break_min, good, reject, remarks = (list(values) + [None] * 11)[:11]
+        key = str(ref or "").strip()
+        if not any(v is not None for v in values[1:]):
+            continue
+        if not key:
+            errors.append({"sheet":"OEE Entries","row":row_no,"error":"Entry Ref is required"}); continue
+        try:
+            if isinstance(prod_date, datetime): prod_date = prod_date.date()
+            elif isinstance(prod_date, str): prod_date = date.fromisoformat(prod_date.strip())
+            if not isinstance(prod_date, date): raise ValueError("Production Date is required")
+            product_matches = [x for x in masters["products"] if x.name.strip().casefold() == str(product_name or "").strip().casefold()]
+            machine_matches = [x for x in masters["machines"] if x.name.strip().casefold() == str(machine_name or "").strip().casefold()]
+            if len(product_matches) > 1: raise ValueError("Product Name is duplicated in the active master; ask the administrator to make names unique")
+            if len(machine_matches) > 1: raise ValueError("Machine Name is duplicated in the active master; ask the administrator to make names unique")
+            product = product_matches[0] if product_matches else None
+            machine = machine_matches[0] if machine_matches else None
+            person = people.get(str(operator_name or "").strip().casefold())
+            if not product: raise ValueError("Product Name is not in the active master")
+            if not machine: raise ValueError("Machine Name is not in the active master")
+            if not person: raise ValueError("Operator Name is not in active Personnel Master")
+            shift_value = str(shift_name or "").strip().upper()
+            if shift_value not in {"A","B","C"}: raise ValueError("Shift must be A, B or C")
+            route_rows = []
+            for candidate in masters["routes"]:
+                route, version, route_product, operation = candidate
+                if route_product.id != product.id or version.effective_from > prod_date or (version.effective_to and version.effective_to < prod_date):
+                    continue
+                mapped = any(m.route_operation_id == route.id and m.machine_id == machine.id and m.effective_from <= prod_date and (m.effective_to is None or m.effective_to >= prod_date) for m in masters["maps"])
+                if mapped:
+                    route_rows.append(route)
+            if len(route_rows) != 1:
+                raise ValueError("Product + Machine must resolve to exactly one active operation on the production date; check the machine mapping")
+            route = route_rows[0]
+            ctx = _context(db, product.id, route.id, machine.id, prod_date)
+            if machine.id not in ctx["allowed_machine_ids"]:
+                raise ValueError("Machine is not explicitly mapped to this product operation on this date")
+            if key in entries: raise ValueError("Entry Ref must be unique")
+            entries[key] = {"ref":key,"production_date":prod_date,"product_id":product.id,
+                "route_operation_id":route.id,"machine_id":machine.id,"operator_id":person.id,
+                "shift":shift_value,"shift_duration_min":Decimal(str(shift_min if shift_min is not None else 440)),
+                "planned_break_min":Decimal(str(break_min if break_min is not None else 0)),
+                "good_count":Decimal(str(good or 0)),"reject_count":Decimal(str(reject or 0)),
+                "remarks":str(remarks or ""),"cycle":Decimal(ctx["cycle"].ideal_cycle_time_sec) if ctx["cycle"] else None,
+                "losses":[],"row":row_no}
+            if entries[key]["shift_duration_min"] <= 0 or entries[key]["planned_break_min"] < 0 or entries[key]["planned_break_min"] >= entries[key]["shift_duration_min"]:
+                raise ValueError("Shift duration must be positive and planned break must be smaller")
+            if entries[key]["good_count"] < 0 or entries[key]["reject_count"] < 0:
+                raise ValueError("Good and reject quantities cannot be negative")
+            if not entries[key]["cycle"]: raise ValueError("Effective ideal cycle time is missing in Masters")
+            duplicate = db.scalar(select(MachineShiftProduction.id).where(
+                MachineShiftProduction.production_date == prod_date, MachineShiftProduction.shift == shift_value,
+                MachineShiftProduction.product_id == product.id, MachineShiftProduction.route_operation_id == route.id,
+                MachineShiftProduction.machine_id == machine.id).limit(1))
+            if duplicate: raise ValueError(f"Duplicate: OEE entry #{duplicate} already exists; bulk import will not overwrite it")
+        except Exception as exc:
+            errors.append({"sheet":"OEE Entries","row":row_no,"entry_ref":key,"error":str(exc)})
+    for row_no, values in enumerate(loss_ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not any(v is not None for v in values): continue
+        ref, loss_name, minutes, remark = (list(values) + [None] * 4)[:4]
+        key = str(ref or "").strip()
+        try:
+            if key not in entries: raise ValueError("Entry Ref does not match an OEE Entries row")
+            category = loss_types.get(str(loss_name or "").strip().casefold())
+            if not category: raise ValueError("Loss Type is not in active Loss Category Master")
+            duration = Decimal(str(minutes))
+            if duration <= 0: raise ValueError("Loss Minutes must be greater than zero")
+            qty = (duration * Decimal("60") / entries[key]["cycle"]).quantize(Decimal("1"), rounding=ROUND_HALF_UP) if category.oee_component == OEEComponent.AVAILABILITY else Decimal("0")
+            entries[key]["losses"].append({"loss_category_id":category.id,"duration_min":duration,
+                                           "qty_loss":qty,"remark":str(remark or ""),
+                                           "component":category.oee_component.value})
+        except Exception as exc:
+            errors.append({"sheet":"Loss Details","row":row_no,"entry_ref":key,"error":str(exc)})
+    preview = []
+    seen_scopes = set()
+    for item in entries.values():
+        scope = (item["production_date"], item["shift"], item["product_id"], item["route_operation_id"], item["machine_id"])
+        if scope in seen_scopes:
+            errors.append({"sheet":"OEE Entries","row":item["row"],"entry_ref":item["ref"],
+                           "error":"Duplicate machine / product / operation / date / shift entry in this workbook"})
+        seen_scopes.add(scope)
+        availability = sum((x["duration_min"] for x in item["losses"] if x["component"] == "AVAILABILITY"),Decimal("0"))
+        if availability > item["shift_duration_min"] - item["planned_break_min"]:
+            errors.append({"sheet":"Loss Details","row":item["row"],"entry_ref":item["ref"],
+                           "error":"Total Availability loss minutes exceed planned production time"})
+        total_qty = (availability * Decimal("60") / item["cycle"]).quantize(Decimal("1"),rounding=ROUND_HALF_UP)
+        preview.append({"entry_ref":item["ref"],"row":item["row"],"date":item["production_date"].isoformat(),
+            "shift":item["shift"],"machine_id":item["machine_id"],"product_id":item["product_id"],
+            "operator_id":item["operator_id"],"good_qty":float(item["good_count"]),"reject_qty":float(item["reject_count"]),
+            "availability_loss_min":float(availability),"calculated_loss_qty":int(total_qty),
+            "loss_events":len(item["losses"])})
+    wb.close()
+    commit_payload = []
+    for item in entries.values():
+        commit_payload.append({
+            "entry": {"production_date":item["production_date"].isoformat(),"shift":item["shift"],
+                "product_id":item["product_id"],"route_operation_id":item["route_operation_id"],
+                "machine_id":item["machine_id"],"operator_id":item["operator_id"],
+                "shift_duration_min":str(item["shift_duration_min"]),"planned_break_min":str(item["planned_break_min"]),
+                "good_count":str(item["good_count"]),"reject_count":str(item["reject_count"]),
+                "ideal_cycle_time_sec":"0","remarks":item["remarks"]},
+            "losses":[{"loss_date":item["production_date"].isoformat(),"shift":item["shift"],
+                "product_id":item["product_id"],"route_operation_id":item["route_operation_id"],
+                "machine_id":item["machine_id"],"loss_category_id":loss["loss_category_id"],
+                "duration_min":str(loss["duration_min"]),"qty_loss":"0","remark":loss["remark"]}
+                for loss in item["losses"]]
+        })
+    return {"valid":not errors,"entry_count":len(preview),"loss_event_count":sum(x["loss_events"] for x in preview),
+            "errors":errors,"preview":preview,"commit_payload":commit_payload if not errors else None,
+            "message":"Correct all errors before import. Preview does not save records."}
+
+
+@router.post("/bulk-import/commit")
+def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    items = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(items, list) or not items or len(items) > 200:
+        raise HTTPException(422, "Import must contain between 1 and 200 validated entries")
+    prepared = []
+    seen = set()
+    try:
+        for item in items:
+            if not isinstance(item, dict) or len(item.get("losses") or []) > 30:
+                raise HTTPException(422, "Each OEE entry may contain no more than 30 loss events")
+            entry_payload = MachineEntryCreate.model_validate(item.get("entry") or {})
+            scope = (entry_payload.production_date, entry_payload.shift, entry_payload.product_id,
+                     entry_payload.route_operation_id, entry_payload.machine_id)
+            if scope in seen:
+                raise HTTPException(422, "The workbook contains duplicate machine / product / operation / date / shift entries")
+            seen.add(scope)
+            duplicate = db.scalar(select(MachineShiftProduction.id).where(
+                MachineShiftProduction.production_date == scope[0], MachineShiftProduction.shift == scope[1],
+                MachineShiftProduction.product_id == scope[2], MachineShiftProduction.route_operation_id == scope[3],
+                MachineShiftProduction.machine_id == scope[4]).limit(1))
+            if duplicate:
+                raise HTTPException(409, f"Entry already exists as #{duplicate}; import stopped without saving")
+            data, context = _prepare_entry(db, entry_payload)
+            data["source"] = SourceType.EXCEL
+            validated = []
+            availability = Decimal("0")
+            for loss_raw in item.get("losses") or []:
+                loss_payload = LossEventCreate.model_validate(loss_raw)
+                if (loss_payload.loss_date != entry_payload.production_date
+                    or loss_payload.shift != entry_payload.shift
+                    or loss_payload.product_id != entry_payload.product_id
+                    or loss_payload.route_operation_id != entry_payload.route_operation_id
+                    or loss_payload.machine_id != entry_payload.machine_id):
+                    raise HTTPException(422, "Loss event does not match its OEE entry scope")
+                loss_data, category = _validate_loss(db, loss_payload)
+                loss_data["source"] = SourceType.EXCEL
+                loss_data["qty_loss"] = _calculated_loss_qty(loss_payload.duration_min, category, Decimal(data["ideal_cycle_time_sec"]))
+                validated.append((loss_data, category))
+                if category.oee_component == OEEComponent.AVAILABILITY:
+                    availability += loss_payload.duration_min
+            _allocate_availability_loss_qty(validated, Decimal(data["ideal_cycle_time_sec"]))
+            planned = entry_payload.shift_duration_min - entry_payload.planned_break_min
+            if availability > planned:
+                raise HTTPException(422, "Availability loss minutes exceed planned time")
+            data["downtime_min"] = availability
+            prepared.append((data, context, validated))
+        imported = []
+        for data, context, validated in prepared:
+            row = MachineShiftProduction(**data)
+            db.add(row); db.flush()
+            for loss_data, _category in validated:
+                db.add(MachineLossEvent(**loss_data))
+            imported.append(row.id)
+        db.commit()
+        return {"status":"imported","entry_count":len(imported),
+                "loss_event_count":sum(len(x[2]) for x in prepared),"entry_ids":imported}
+    except HTTPException:
+        db.rollback()
+        raise
+    except ValidationError as exc:
+        db.rollback()
+        raise HTTPException(422, detail=exc.errors())
+    except Exception:
+        db.rollback()
+        raise
 
 
 @router.get("/available-machines")
@@ -145,9 +470,11 @@ def available_machines(route_operation_id: int, production_date: date,
     ).all()
     if rows:
         return {"mapped": True, "machines": [{"id": m.id, "code": m.code, "name": m.name} for _, m in rows]}
-    machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.code)).all()
-    return {"mapped": False, "warning": "No machine mapping exists; showing all active machines",
-            "machines": [{"id": m.id, "code": m.code, "name": m.name} for m in machines]}
+    # OEE entry selection must only offer explicitly mapped machines.
+    # Returning an empty list lets the mobile client exclude this operation
+    # instead of accidentally treating every active machine as a valid mapping.
+    return {"mapped": False, "warning": "No active machine mapping exists for this operation on the selected date.",
+            "machines": []}
 
 
 @router.get("/entry-context")
@@ -181,6 +508,7 @@ def entry_context(product_id: int, route_operation_id: int, machine_id: int, pro
             "id": event.id, "loss_category_id": event.loss_category_id,
             "category": category.name, "component": category.oee_component.value,
             "duration_min": float(event.duration_min), "qty_loss": float(event.qty_loss),
+            "start_time": event.start_time, "end_time": event.end_time,
             "remark": event.remark or "",
         } for event, category in existing_losses],
     }
@@ -228,7 +556,7 @@ def save_machine_entry_with_losses(
         before = {key: str(getattr(row, key)) if getattr(row, key) is not None else None
                   for key in ("production_date", "shift", "product_id", "route_operation_id", "machine_id",
                               "shift_duration_min", "planned_break_min", "downtime_min", "total_count",
-                              "good_count", "reject_count", "ideal_cycle_time_sec", "remarks")}
+                              "good_count", "reject_count", "ideal_cycle_time_sec", "operator_id", "remarks")}
     else:
         duplicate = db.scalar(select(MachineShiftProduction.id).where(
             MachineShiftProduction.production_date == entry_payload.production_date,
@@ -261,12 +589,19 @@ def save_machine_entry_with_losses(
              if category.oee_component == OEEComponent.AVAILABILITY),
             Decimal("0"),
         )
+    effective_cycle = Decimal(data["ideal_cycle_time_sec"])
     for loss_payload in payload.losses:
         loss_data, category = _validate_loss(db, loss_payload)
+        # Loss quantity is system-calculated from availability minutes and the
+        # effective master cycle. Users do not supply or override this value.
+        loss_data["qty_loss"] = _calculated_loss_qty(
+            loss_payload.duration_min, category, effective_cycle
+        )
         validated_losses.append((loss_data, category))
         if category.oee_component == OEEComponent.AVAILABILITY:
             availability_downtime += loss_payload.duration_min
 
+    _allocate_availability_loss_qty(validated_losses, effective_cycle)
     planned_minutes = entry_payload.shift_duration_min - entry_payload.planned_break_min
     if availability_downtime > planned_minutes:
         raise HTTPException(422, "Availability loss minutes cannot exceed planned production time")
@@ -345,6 +680,39 @@ def update_machine_entry(entry_id: int, payload: MachineEntryCreate, request: Re
     return {"entry": _entry_json(row, context), "warnings": context["warnings"]}
 
 
+def _calculated_loss_qty(duration_min: Decimal, category: LossCategory, cycle_time_sec: Decimal | None) -> Decimal:
+    """Return whole-piece loss quantity for availability losses only."""
+    if category.oee_component != OEEComponent.AVAILABILITY or not cycle_time_sec or cycle_time_sec <= 0:
+        return Decimal("0")
+    return ((Decimal(duration_min) * Decimal("60")) / Decimal(cycle_time_sec)).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+
+
+def _allocate_availability_loss_qty(losses: list[tuple[dict, LossCategory]], cycle_time_sec: Decimal) -> None:
+    """Allocate the rounded total piece loss across availability events.
+
+    This ensures the sum of event quantities equals the quantity calculated
+    from total availability minutes, rather than rounding each event upward.
+    """
+    eligible = [(data, category) for data, category in losses
+                if category.oee_component == OEEComponent.AVAILABILITY]
+    if not eligible or cycle_time_sec <= 0:
+        return
+    exact = [(data, Decimal(data["duration_min"]) * Decimal("60") / cycle_time_sec)
+             for data, _ in eligible]
+    total_qty = sum((qty for _, qty in exact), Decimal("0")).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    )
+    allocated = [int(qty) for _, qty in exact]
+    remaining = int(total_qty) - sum(allocated)
+    order = sorted(range(len(exact)), key=lambda i: exact[i][1] - allocated[i], reverse=True)
+    for i in order[:max(0, remaining)]:
+        allocated[i] += 1
+    for (data, _), qty in zip(eligible, allocated):
+        data["qty_loss"] = Decimal(qty)
+
+
 def _validate_loss(db: Session, payload: LossEventCreate) -> tuple[dict, LossCategory]:
     if payload.product_id is not None and payload.route_operation_id is not None:
         _context(db, payload.product_id, payload.route_operation_id, payload.machine_id, payload.loss_date)
@@ -377,6 +745,11 @@ def update_loss(loss_id: int, payload: LossEventCreate, request: Request,
               for key in ("loss_date", "shift", "product_id", "route_operation_id", "machine_id",
                           "loss_category_id", "start_time", "end_time", "duration_min", "qty_loss", "remark")}
     data, category = _validate_loss(db, payload)
+    effective_cycle = None
+    if payload.product_id is not None and payload.route_operation_id is not None:
+        context = _context(db, payload.product_id, payload.route_operation_id, payload.machine_id, payload.loss_date)
+        effective_cycle = Decimal(context["cycle"].ideal_cycle_time_sec) if context["cycle"] else None
+    data["qty_loss"] = _calculated_loss_qty(payload.duration_min, category, effective_cycle)
     for key, value in data.items():
         setattr(row, key, value)
     after = {key: str(getattr(row, key)) if getattr(row, key) is not None else None for key in before}
@@ -555,6 +928,35 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
                                 "gap_to_target": max(0.0, target_oee - metric["oee_reported"]), **metric})
     machine_summary.sort(key=lambda x: x["oee_reported"])
 
+    # Additional report dimensions use the same shared-machine-time-safe
+    # aggregator as the overall and machine summaries.
+    by_product = {}
+    by_operator = {}
+    by_shift = {}
+    for row in rows:
+        by_product.setdefault(row.product_id, []).append(row)
+        by_operator.setdefault(row.operator_id, []).append(row)
+        by_shift.setdefault(row.shift, []).append(row)
+    product_rows = {x.id: x for x in db.scalars(select(Product)).all()}
+    personnel_rows = {x.id: x for x in db.scalars(select(Personnel)).all()}
+    product_summary = [
+        {"product_id": pid, "product": product_rows[pid].name if pid in product_rows else str(pid),
+         "entry_count": len(items), **aggregate(items)}
+        for pid, items in by_product.items()
+    ]
+    product_summary.sort(key=lambda x: x["oee_reported"])
+    operator_summary = [
+        {"operator_id": oid, "operator": personnel_rows[oid].full_name if oid in personnel_rows else "Unassigned",
+         "entry_count": len(items), **aggregate(items)}
+        for oid, items in by_operator.items()
+    ]
+    operator_summary.sort(key=lambda x: x["oee_reported"])
+    shift_summary = [
+        {"shift": shift_name, "entry_count": len(items), **aggregate(items)}
+        for shift_name, items in by_shift.items()
+    ]
+    shift_summary.sort(key=lambda x: x["shift"])
+
     pareto = {}
     for loss in losses:
         category = categories.get(loss.loss_category_id)
@@ -572,6 +974,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
             "entry_count": len(rows), "loss_event_count": len(losses),
             "below_target_machine_count": len(below_target), "recurring_loss_count": len(recurring_losses),
             "overall": overall, "trend": trend, "machines": machine_summary,
+            "products": product_summary, "operators": operator_summary, "shifts": shift_summary,
             "loss_pareto": loss_pareto, "recurring_losses": recurring_losses}
 
 

@@ -21,6 +21,7 @@ from ..services.filtering import csv_enums, csv_ints, csv_strings
 from ..schemas import ActionCreate, ActionUpdate, ActionWhyWhyUpdate
 from ..services.action_pdf import build_action_plan_pdf
 from ..services.action_evidence import build_evidence_pdf, EvidenceError
+from ..services.action_notifications import send_action_chat_notification
 from ..services.document_search import extract_searchable_text, matching_excerpt
 from ..services.file_security import (
     UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file,
@@ -308,6 +309,31 @@ def create_action(payload: ActionCreate, db: Session = Depends(get_db), user: Us
         db.add(ReviewActionLink(review_session_id=active_review.id, action_id=a.id))
 
     db.commit(); db.refresh(a)
+
+    # Notify the assigned employee after the action is safely committed.
+    # Notification failure must never roll back or fail action creation.
+    if a.owner_id:
+        try:
+            send_action_chat_notification(
+                db,
+                a,
+                a.owner_id,
+                kind="ACTION_ASSIGNED",
+                event_key=f"action:{a.id}:ASSIGNED:user:{a.owner_id}",
+                message=(
+                    "A new action plan has been assigned to you. "
+                    "Please review the problem, complete the Why-Why plan, "
+                    "and track closure by the due date."
+                ),
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send assignment notification for action %s", a.id
+            )
+
     return serialize_action(db, a)
 
 
@@ -534,6 +560,7 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
     if not a:
         raise HTTPException(404, "Action not found")
     old_status = a.status
+    old_owner_id = a.owner_id
     data = payload.model_dump(exclude_unset=True)
     for field in ["action_description", "owner_id", "due_at", "priority", "effectiveness_status"]:
         if field in data:
@@ -573,17 +600,70 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
         gap_at_followup=payload.gap_at_followup,
     ))
     db.commit(); db.refresh(a)
+
+    # Assignment changes are communicated to the newly responsible employee.
+    if a.owner_id and a.owner_id != old_owner_id:
+        try:
+            event_kind = "ACTION_ASSIGNED" if old_owner_id is None else "ACTION_REASSIGNED"
+            send_action_chat_notification(
+                db,
+                a,
+                a.owner_id,
+                kind=event_kind,
+                event_key=f"action:{a.id}:{event_kind}:user:{a.owner_id}:updated:{a.updated_at.isoformat() if a.updated_at else ''}",
+                message=(
+                    "A new action has been assigned to you. Please review the action and due date."
+                    if old_owner_id is None else
+                    "An action has been reassigned to you. Please review the updated responsibility and due date."
+                ),
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send assignment-change notification for action %s", a.id
+            )
+
+    # Reopened actions require the responsible employee to resume follow-up.
+    if old_status == ActionStatus.CLOSED and a.status != ActionStatus.CLOSED and a.owner_id:
+        try:
+            send_action_chat_notification(
+                db,
+                a,
+                a.owner_id,
+                kind="ACTION_REOPENED",
+                event_key=f"action:{a.id}:REOPENED:{datetime.utcnow().date().isoformat()}",
+                message="This action has been reopened. Please resume the corrective-action follow-up and closure work.",
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send reopened-action notification for action %s", a.id
+            )
+
     return serialize_action(db, a)
 
 
 @router.get("/{action_id}/history")
 def action_history(action_id: int, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    rows = db.scalars(select(ActionHistory).where(ActionHistory.action_id == action_id).order_by(ActionHistory.changed_at.desc())).all()
+    rows = db.execute(
+        select(ActionHistory, User)
+        .outerjoin(User, User.id == ActionHistory.changed_by_id)
+        .where(ActionHistory.action_id == action_id)
+        .order_by(ActionHistory.changed_at.desc(), ActionHistory.id.desc())
+    ).all()
     return [{
-        "id": x.id, "changed_at": x.changed_at,
-        "old_status": x.old_status.value if x.old_status else None,
-        "new_status": x.new_status.value if x.new_status else None,
-        "comment": x.comment,
-        "kpi_value_at_followup": float(x.kpi_value_at_followup) if x.kpi_value_at_followup is not None else None,
-        "gap_at_followup": float(x.gap_at_followup) if x.gap_at_followup is not None else None,
-    } for x in rows]
+        "id": history.id,
+        "changed_at": history.changed_at,
+        "changed_by_id": history.changed_by_id,
+        "changed_by_name": changed_by.full_name if changed_by else None,
+        "changed_by_username": changed_by.username if changed_by else None,
+        "old_status": history.old_status.value if history.old_status else None,
+        "new_status": history.new_status.value if history.new_status else None,
+        "comment": history.comment,
+        "kpi_value_at_followup": float(history.kpi_value_at_followup) if history.kpi_value_at_followup is not None else None,
+        "gap_at_followup": float(history.gap_at_followup) if history.gap_at_followup is not None else None,
+    } for history, changed_by in rows]

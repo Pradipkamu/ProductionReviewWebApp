@@ -10,6 +10,7 @@ WRITE_ROLES = {
     'reviews': {'MANAGEMENT', 'PRODUCTION', 'QUALITY', 'PLANNING'},
     'masters': {'PLANNING'}, 'governance': {'MANAGEMENT'}, 'insights': {'MANAGEMENT'},
     'capacity': {'PLANNING', 'PRODUCTION'},
+    'chat': {'PRODUCTION', 'QUALITY', 'PLANNING', 'PURCHASE', 'DISPATCH', 'VENDOR', 'MANAGEMENT', 'VIEW_ONLY'},
 }
 
 def enforce_api_policy(user, request: Request):
@@ -26,6 +27,10 @@ def enforce_api_policy(user, request: Request):
         return
     section = path.split('/')[2] if len(path.split('/')) > 2 else ''
     if user.role == UserRole.ADMIN:
+        return
+    # Production users may add an operator from the OEE entry workflow.
+    # Keep this exception limited to personnel creation only.
+    if path == '/api/personnel' and request.method == 'POST' and user.role == UserRole.PRODUCTION:
         return
     # OEE/loss action creation is an action-management write even though the
     # source endpoint lives under /oee. Management may raise the action without

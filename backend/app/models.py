@@ -32,6 +32,7 @@ class User(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    chat_disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -457,6 +458,18 @@ class VendorMovement(Base, TimestampMixin):
     __table_args__ = (Index("ix_vendor_product_expected_return", "product_id", "expected_return_date"),)
 
 
+class Personnel(Base, TimestampMixin):
+    """Shared people master for OEE, training and future workforce modules."""
+    __tablename__ = "personnel"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    last_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(201), nullable=False, index=True)
+    normalized_name: Mapped[str] = mapped_column(String(201), nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
 class MachineShiftProduction(Base, TimestampMixin):
     __tablename__ = "machine_shift_production"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -465,6 +478,8 @@ class MachineShiftProduction(Base, TimestampMixin):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
     route_operation_id: Mapped[int] = mapped_column(ForeignKey("route_operations.id"), index=True)
     machine_id: Mapped[int] = mapped_column(ForeignKey("machines.id"), index=True)
+    operator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("personnel.id", ondelete="SET NULL"), nullable=True, index=True)
+    operator: Mapped[Optional[Personnel]] = relationship()
     shift_duration_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("480"))
     planned_break_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
     downtime_min: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
@@ -1051,3 +1066,68 @@ class BusinessDataRevision(Base):
     __tablename__ = 'business_data_revision'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     revision: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+
+class ChatConversation(Base, TimestampMixin):
+    __tablename__ = "chat_conversations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False, default="DIRECT", index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
+
+
+class ChatParticipant(Base):
+    __tablename__ = "chat_participants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    last_read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "user_id", name="uq_chat_participant"),
+        Index("ix_chat_participant_user_active", "user_id", "is_active"),
+    )
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("chat_conversations.id", ondelete="CASCADE"), index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    message_type: Mapped[str] = mapped_column(String(20), nullable=False, default="TEXT")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    edited_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (
+        Index("ix_chat_message_conversation_created", "conversation_id", "created_at", "id"),
+    )
+
+
+class ChatAttachment(Base):
+    __tablename__ = "chat_attachments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
+    file_name: Mapped[str] = mapped_column(String(180), nullable=False)
+    stored_name: Mapped[str] = mapped_column(String(180), unique=True, nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ChatReport(Base):
+    __tablename__ = "chat_reports"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), index=True)
+    reported_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    reason: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="OPEN", server_default="OPEN")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    resolved_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (UniqueConstraint("message_id", "reported_by_id", name="uq_chat_reporter_message"),)

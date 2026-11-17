@@ -84,3 +84,31 @@ def test_machine_entry_keeps_legacy_unclassified_total_count():
         good_count=970, reject_count=30,
     )
     assert entry.total_count == 1005
+
+
+def test_availability_loss_quantity_uses_effective_cycle_and_whole_pieces():
+    from decimal import Decimal
+    from types import SimpleNamespace
+    from app.api.oee import _calculated_loss_qty
+    from app.enums import OEEComponent
+
+    availability = SimpleNamespace(oee_component=OEEComponent.AVAILABILITY)
+    performance = SimpleNamespace(oee_component=OEEComponent.PERFORMANCE)
+    assert _calculated_loss_qty(Decimal("30"), availability, Decimal("12")) == Decimal("150")
+    assert _calculated_loss_qty(Decimal("30"), performance, Decimal("12")) == Decimal("0")
+
+
+def test_availability_loss_events_sum_to_rounded_total_quantity():
+    from decimal import Decimal
+    from types import SimpleNamespace
+    from app.api.oee import _allocate_availability_loss_qty
+    from app.enums import OEEComponent
+
+    category = SimpleNamespace(oee_component=OEEComponent.AVAILABILITY)
+    events = [
+        ({"duration_min": Decimal("1"), "qty_loss": Decimal("0")}, category),
+        ({"duration_min": Decimal("1"), "qty_loss": Decimal("0")}, category),
+        ({"duration_min": Decimal("1"), "qty_loss": Decimal("0")}, category),
+    ]
+    _allocate_availability_loss_qty(events, Decimal("100"))
+    assert sum(item["qty_loss"] for item, _ in events) == Decimal("2")

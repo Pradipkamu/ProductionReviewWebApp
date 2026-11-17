@@ -19,7 +19,7 @@ from ..config import get_settings
 from ..db import get_db
 from ..enums import UserRole
 from ..models import GovernanceAudit, PageAccessRule, SecurityEvent, User, UserSession
-from ..page_access import PAGE_KEYS, REQUIRED_PAGE_KEYS, effective_page_keys, page_access_configuration
+from ..page_access import PAGE_KEYS, REQUIRED_PAGE_KEYS, CHAT_SEND_KEY, can_send_chat, chat_send_roles, effective_page_keys, page_access_configuration
 from ..schemas import LoginRequest, Token
 from ..security_policy import validate_password
 
@@ -104,11 +104,12 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 @router.get("/me")
 def me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return {**serialize(user), "page_access": effective_page_keys(db, user.role)}
+    return {**serialize(user), "page_access": effective_page_keys(db, user.role), "chat_send_enabled": can_send_chat(db, user)}
 
 
 class PageAccessUpdate(BaseModel):
     access: dict[str, list[str]]
+    chat_send_roles: list[str] | None = None
     reason: str = Field(min_length=5, max_length=1000)
 
 
@@ -116,7 +117,9 @@ class PageAccessUpdate(BaseModel):
 def get_page_access(db: Session = Depends(get_db), admin: User = Depends(get_current_user)):
     if admin.role != UserRole.ADMIN:
         raise HTTPException(403, "Only ADMIN can configure page visibility")
-    return page_access_configuration(db)
+    result = page_access_configuration(db)
+    result["chat_send_roles"] = chat_send_roles(db)
+    return result
 
 
 @router.put("/page-access")
@@ -156,6 +159,20 @@ def update_page_access(
             row.is_visible = page_key in visible or page_key in REQUIRED_PAGE_KEYS
             row.updated_by_id = admin.id
 
+    if payload.chat_send_roles is not None:
+        valid_chat_roles = {role.value for role in UserRole if role != UserRole.ADMIN}
+        unknown = sorted(set(payload.chat_send_roles) - valid_chat_roles)
+        if unknown:
+            raise HTTPException(422, f"Unknown chat-send roles: {unknown}")
+        rows = {row.role: row for row in db.scalars(select(PageAccessRule).where(PageAccessRule.page_key == CHAT_SEND_KEY)).all()}
+        for role in sorted(valid_chat_roles):
+            row = rows.get(role)
+            if row is None:
+                row = PageAccessRule(role=role, page_key=CHAT_SEND_KEY)
+                db.add(row)
+            row.is_visible = role in set(payload.chat_send_roles)
+            row.updated_by_id = admin.id
+
     counts = ", ".join(f"{role}={len(set(keys))}" for role, keys in sorted(payload.access.items()))
     record_security_event(db, request, "PAGE_ACCESS_UPDATED", success=True, user=admin, detail=counts)
     db.add(GovernanceAudit(
@@ -166,7 +183,9 @@ def update_page_access(
         reason=payload.reason,
     ))
     db.commit()
-    return page_access_configuration(db)
+    result = page_access_configuration(db)
+    result["chat_send_roles"] = chat_send_roles(db)
+    return result
 
 
 @router.get("/security-status")

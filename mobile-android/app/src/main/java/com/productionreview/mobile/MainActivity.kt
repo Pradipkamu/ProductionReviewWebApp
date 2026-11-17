@@ -1,13 +1,16 @@
 package com.productionreview.mobile
 
 import android.os.Bundle
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,6 +18,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -28,8 +38,10 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -41,6 +53,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,8 +61,22 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.net.URL
+import java.io.IOException
 import java.time.LocalDate
+import java.time.Instant
+import java.time.ZoneOffset
+
+private fun extractChatActionId(messageBody: String): Int? {
+    // Accept both relative and absolute action links, even when action_id is
+    // not the first query parameter. Ignore trailing punctuation.
+    val match = Regex(
+        """(?i)Open Action:\s*(?:https?://[^/\s]+)?/actions\?[^\s]*?action_id=(\d+)"""
+    ).find(messageBody) ?: return null
+    return match.groupValues.getOrNull(1)?.toIntOrNull()?.takeIf { it > 0 }
+}
 
 private const val API_BASE = "https://machineshop.duckdns.org/api"
 private val Navy = Color(0xFF142B45)
@@ -72,10 +99,58 @@ private data class OeeLossDraft(
     val saved: Boolean = false,
     val id: Int? = null,
     val category: String = "",
-    val component: String = ""
+    val component: String = "",
+    val startTime: String = "",
+    val endTime: String = ""
 )
 
+private fun isAvailabilityOeeLoss(loss: OeeLossDraft, categories: List<Choice>): Boolean {
+    val component = loss.component.ifBlank {
+        categories.firstOrNull { it.id == loss.categoryId }?.extra.orEmpty()
+    }
+    return component.trim().equals("AVAILABILITY", ignoreCase = true)
+}
+
+private fun resolvedOeeLossQuantity(
+    loss: OeeLossDraft,
+    idealCycleSeconds: Double?,
+    categories: List<Choice>
+): Double {
+    if (isAvailabilityOeeLoss(loss, categories)) {
+        val minutes = loss.duration.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+        val cycle = idealCycleSeconds?.takeIf { it > 0.0 } ?: return 0.0
+        return minutes * 60.0 / cycle
+    }
+    return loss.qty.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+}
+
 private object ApiClient {
+    private fun describeApiError(body: String, code: Int): String {
+        fun valueText(value: Any?): String = when (value) {
+            is String -> value.trim()
+            is JSONObject -> listOf("message", "msg", "detail", "error_description", "error")
+                .firstNotNullOfOrNull { key -> value.opt(key)?.let(::valueText)?.takeIf { it.isNotBlank() } }.orEmpty()
+            is JSONArray -> (0 until value.length()).mapNotNull { index ->
+                value.opt(index)?.let(::valueText)?.takeIf { it.isNotBlank() }
+            }.distinct().joinToString("; ")
+            else -> ""
+        }
+        val parsed = runCatching {
+            val json = JSONObject(body)
+            listOf("detail", "message", "error_description", "error")
+                .firstNotNullOfOrNull { key -> json.opt(key)?.let(::valueText)?.takeIf { it.isNotBlank() } }.orEmpty()
+        }.getOrElse { runCatching { valueText(JSONArray(body)) }.getOrDefault("") }
+        if (parsed.isNotBlank()) return parsed
+        return when (code) {
+            400 -> "The request could not be accepted. Check the entered information."
+            401 -> "Incorrect username or password, or your session is no longer valid."
+            403 -> "Your account does not have permission to sign in."
+            404 -> "The sign-in service could not be found. Contact the administrator."
+            in 500..599 -> "The server encountered an error (HTTP $code). Please try again later."
+            else -> "Sign-in failed (HTTP $code). Please check your details and try again."
+        }
+    }
+
     private fun requestText(path: String, method: String, body: JSONObject? = null, token: String? = null,
                              extraHeaders: Map<String, String> = emptyMap()): String {
         val connection = (URL(API_BASE + path).openConnection() as HttpURLConnection).apply {
@@ -96,11 +171,14 @@ private object ApiClient {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                val detail = runCatching { JSONObject(text).optString("detail") }.getOrNull().orEmpty()
-                throw IllegalStateException(detail.ifBlank { "Server returned HTTP $code" })
-            }
+            if (code !in 200..299) throw IllegalStateException(describeApiError(text, code))
             return text
+        } catch (e: SocketTimeoutException) {
+            throw IllegalStateException("Connection timed out. Check your internet connection and try again.", e)
+        } catch (e: UnknownHostException) {
+            throw IllegalStateException("Cannot reach the Production Review server. Check your internet connection.", e)
+        } catch (e: IOException) {
+            throw IllegalStateException("Network error while contacting the server: ${e.localizedMessage ?: "please try again"}.", e)
         } finally { connection.disconnect() }
     }
 
@@ -119,6 +197,63 @@ private object ApiClient {
     fun currentAccount(token: String): Account {
         val me = request("/auth/me", "GET", token=token)
         return Account(me.optString("username"), me.optString("full_name"), me.optString("role"))
+    }
+
+    fun loadChatConversations(token: String): JSONArray = array("/chat/conversations", token)
+    fun loadChatEmployees(query: String, token: String): JSONArray =
+        JSONArray(requestText("/chat/employees?q=" + java.net.URLEncoder.encode(query, "UTF-8"), "GET", token=token))
+    fun createDirectChat(userId: Int, token: String): JSONObject =
+        request("/chat/conversations/direct", "POST", JSONObject().put("user_id", userId), token)
+    fun createChatGroup(title: String, userIds: List<Int>, token: String): JSONObject =
+        request("/chat/conversations/group", "POST", JSONObject().put("title", title).put("user_ids", JSONArray(userIds)), token)
+    fun loadChatMessages(conversationId: Int, token: String): JSONArray =
+        array("/chat/conversations/$conversationId/messages?limit=60", token)
+    fun sendChatMessage(conversationId: Int, body: String, token: String): JSONObject =
+        request("/chat/conversations/$conversationId/messages", "POST", JSONObject().put("body", body), token)
+    fun downloadChatAttachment(attachmentId:Int,fileName:String,cacheDir:File,token:String):File {
+        val connection=(URL("$API_BASE/chat/attachments/$attachmentId").openConnection() as HttpURLConnection).apply {
+            requestMethod="GET";connectTimeout=15000;readTimeout=45000
+            setRequestProperty("Authorization","Bearer $token")
+        }
+        try {
+            val code=connection.responseCode
+            if(code !in 200..299) {
+                val body=connection.errorStream?.bufferedReader()?.use{it.readText()}.orEmpty()
+                val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty()
+                throw IllegalStateException(detail.ifBlank{"Chat attachment download failed (HTTP $code)"})
+            }
+            val safeName=fileName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"),"_").ifBlank{"chat_file_$attachmentId"}
+            val target=File(cacheDir,"chat_"+attachmentId+"_"+safeName)
+            connection.inputStream.use{input->target.outputStream().use{output->input.copyTo(output)}}
+            if(!target.exists()||target.length()==0L)throw IllegalStateException("Downloaded chat attachment is empty.")
+            return target
+        } finally { connection.disconnect() }
+    }
+    fun uploadChatAttachment(context: android.content.Context, conversationId: Int, messageId: Int, uri: Uri, token: String): JSONObject {
+        val name = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else null
+        } ?: "chat-attachment"
+        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+        val boundary = "----ProductionChat" + System.currentTimeMillis()
+        val connection = (URL(API_BASE + "/chat/conversations/$conversationId/messages/$messageId/attachments").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"; doOutput = true; connectTimeout = 20000; readTimeout = 60000
+            setRequestProperty("Authorization", "Bearer $token")
+            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        }
+        try {
+            connection.outputStream.use { output ->
+                val prefix = "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$name\"\r\nContent-Type: $mime\r\n\r\n"
+                output.write(prefix.toByteArray(Charsets.UTF_8))
+                context.contentResolver.openInputStream(uri)?.use { input -> input.copyTo(output) }
+                    ?: throw IllegalStateException("Unable to read selected attachment")
+                output.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+            }
+            val code = connection.responseCode
+            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw IllegalStateException(describeApiError(body, code))
+            return JSONObject(body)
+        } finally { connection.disconnect() }
     }
     fun loadMasters(token: String): Masters {
         val productsJson = array("/masters/products", token)
@@ -164,11 +299,15 @@ private object ApiClient {
     }
     fun loadOeeMachines(routeOperationId: Int, date: String, token: String): List<Choice> {
         val response = request("/oee/available-machines?route_operation_id=$routeOperationId&production_date=$date", "GET", token=token)
+        // Never accept fallback lists from older APIs: only an explicit mapped=true
+        // response is valid for OEE operation/machine selection.
+        if (!response.optBoolean("mapped", false)) return emptyList()
         val rows = response.optJSONArray("machines") ?: JSONArray()
-        return (0 until rows.length()).map { i ->
+        return (0 until rows.length()).mapNotNull { i ->
             val row = rows.getJSONObject(i)
-            Choice(row.getInt("id"), row.optString("code") + " • " + row.optString("name"))
-        }
+            val id = row.optInt("id", 0)
+            if (id <= 0) null else Choice(id, row.optString("code") + " • " + row.optString("name"))
+        }.distinctBy { it.id }
     }
     fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
         request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
@@ -197,6 +336,21 @@ private object ApiClient {
 
     fun correctOeeLoss(lossId: Int, payload: JSONObject, reason: String, token: String): JSONObject =
         request("/oee/loss-events/$lossId", "PUT", payload, token, mapOf("X-Change-Reason" to reason))
+
+    fun loadOeeOperators(token: String): List<Choice> {
+        val rows = array("/personnel", token)
+        return (0 until rows.length()).map { i ->
+            val row = rows.getJSONObject(i)
+            Choice(row.getInt("id"), row.optString("full_name"))
+        }
+    }
+
+    fun createOeeOperator(fullName: String, token: String): Pair<Choice, Boolean> {
+        val parts = fullName.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        require(parts.size >= 2) { "Enter first name and surname." }
+        val response = request("/personnel", "POST", JSONObject().put("first_name", parts.first()).put("last_name", parts.drop(1).joinToString(" ")), token)
+        return Pair(Choice(response.getInt("id"), response.optString("full_name")), response.optBoolean("duplicate_warning"))
+    }
 
     fun loadOeeManagement(
         fromDate: String, toDate: String, token: String,
@@ -247,6 +401,30 @@ private object ApiClient {
     }
 
     fun loadActionPlan(id:Int,token:String): JSONObject = request("/actions/$id/plan","GET",token=token)
+    fun loadActionHistory(id:Int,token:String): List<JSONObject> {
+        val rows=array("/actions/$id/history",token)
+        return (0 until rows.length()).map { rows.getJSONObject(it) }
+    }
+    fun downloadActionAttachment(actionId:Int,attachmentId:Int,fileName:String,cacheDir:File,token:String):File {
+        val connection=(URL("$API_BASE/actions/$actionId/attachments/$attachmentId").openConnection() as HttpURLConnection).apply {
+            requestMethod="GET";connectTimeout=15000;readTimeout=45000
+            setRequestProperty("Accept","application/octet-stream")
+            setRequestProperty("Authorization","Bearer $token")
+        }
+        try {
+            val code=connection.responseCode
+            if(code !in 200..299) {
+                val body=connection.errorStream?.bufferedReader()?.use{it.readText()}.orEmpty()
+                val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty()
+                throw IllegalStateException(detail.ifBlank{"Attachment download failed (HTTP $code)"})
+            }
+            val safeName=fileName.substringAfterLast('/').substringAfterLast(92.toChar()).replace(Regex("[^A-Za-z0-9._-]"),"_").ifBlank{"action_attachment_$attachmentId"}
+            val target=File(cacheDir,"action_" + actionId + "_" + attachmentId + "_" + safeName)
+            connection.inputStream.use{input->target.outputStream().use{output->input.copyTo(output)}}
+            if(!target.exists()||target.length()==0L)throw IllegalStateException("Downloaded attachment is empty.")
+            return target
+        } finally { connection.disconnect() }
+    }
     fun updateAction(id:Int,comment:String,status:String,token:String): JSONObject {
         val body=JSONObject().put("comment",comment).put("status",status)
         return request("/actions/$id","PATCH",body,token)
@@ -325,6 +503,23 @@ private object ApiClient {
         }
     }
 }
+private fun userFriendlyOeeError(error: Exception, fallback: String): String {
+    val detail = error.message.orEmpty()
+    return when {
+        error is java.net.UnknownHostException -> "Cannot reach the production server. Check your internet connection and tap Refresh OEE."
+        error is java.net.SocketTimeoutException -> "The server is taking too long to respond. Please wait a moment and tap Refresh OEE."
+        detail.contains("CoroutineScope left the composition", ignoreCase = true) ->
+            "The screen was refreshed while a request was running. Please tap Refresh OEE again."
+        detail.contains("401") || detail.contains("unauthorized", ignoreCase = true) ->
+            "Your login session may have expired. Please sign out and sign in again."
+        detail.contains("403") || detail.contains("forbidden", ignoreCase = true) ->
+            "You do not have permission for this operation. Contact your administrator."
+        detail.contains("No active machine mapping", ignoreCase = true) ->
+            "No machine is mapped to this operation for the selected date. Ask your administrator to check Machine Allocation."
+        else -> fallback
+    }
+}
+
 private data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
 private data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
 private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
@@ -373,6 +568,7 @@ private fun StatusPill(label: String, color: Color) {
     }
 }
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sessionStore = SessionStore(this)
@@ -402,6 +598,19 @@ class MainActivity : ComponentActivity() {
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
             var homeTab by remember { mutableStateOf("ACTIONS") }
+            var chatConversations by remember { mutableStateOf(JSONArray()) }
+            var chatMessages by remember { mutableStateOf(JSONArray()) }
+            var chatEmployees by remember { mutableStateOf(JSONArray()) }
+            var selectedChatId by remember { mutableStateOf<Int?>(null) }
+            var chatDraft by remember { mutableStateOf("") }
+            var chatSearch by remember { mutableStateOf("") }
+            var chatLoading by remember { mutableStateOf(false) }
+            var chatError by remember { mutableStateOf<String?>(null) }
+            var chatGroupTitle by remember { mutableStateOf("") }
+            var chatShowNew by remember { mutableStateOf(false) }
+            var chatAttachmentUri by remember { mutableStateOf<Uri?>(null) }
+            val chatContext = LocalContext.current
+            val chatAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> chatAttachmentUri = uri }
             var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
             var pendingActionGroups by remember { mutableStateOf<List<ActionOwnerGroup>>(emptyList()) }
             var selectedOwner by remember { mutableStateOf<ActionOwnerGroup?>(null) }
@@ -420,7 +629,18 @@ class MainActivity : ComponentActivity() {
             var verificationMethod by remember { mutableStateOf("") }
             var verificationResult by remember { mutableStateOf("") }
             var evidenceFile by remember { mutableStateOf<File?>(null) }
+            var actionAttachments by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+            var actionHistory by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+            var actionHistoryLoading by remember { mutableStateOf(false) }
+            var actionHistoryError by remember { mutableStateOf<String?>(null) }
+            var whyWhySavedPending by remember { mutableStateOf(false) }
+            var evidenceUploadedPending by remember { mutableStateOf(false) }
+            var actionUpdateSavedPending by remember { mutableStateOf(false) }
+            var pendingFollowupComment by remember { mutableStateOf("") }
+            var pendingActionStatus by remember { mutableStateOf("IN_PROGRESS") }
+            var submissionStarted by remember { mutableStateOf(false) }
             var oeeDate by remember { mutableStateOf(LocalDate.now().toString()) }
+            var showOeeDatePicker by remember { mutableStateOf(false) }
             var oeeShift by remember { mutableStateOf("A") }
             var oeeProduct by remember { mutableStateOf<Choice?>(null) }
             var oeeOperation by remember { mutableStateOf<RouteChoice?>(null) }
@@ -435,15 +655,23 @@ class MainActivity : ComponentActivity() {
             var oeeSuccess by remember { mutableStateOf<String?>(null) }
             var oeeLoading by remember { mutableStateOf(false) }
             var oeeMode by remember { mutableStateOf("SUMMARY") }
-            var oeeShiftMinutes by remember { mutableStateOf("480") }
+            var oeeShiftMinutes by remember { mutableStateOf("440") }
             var oeeBreakMinutes by remember { mutableStateOf("0") }
             var oeeDowntimeMinutes by remember { mutableStateOf("0") }
             var oeeTotalCount by remember { mutableStateOf("0") }
             var oeeGoodCount by remember { mutableStateOf("0") }
             var oeeRejectCount by remember { mutableStateOf("0") }
+            var oeeIdealCycleSeconds by remember { mutableStateOf<Double?>(null) }
             var oeeEntryRemarks by remember { mutableStateOf("") }
+            var oeeOperators by remember { mutableStateOf<List<Choice>>(emptyList()) }
+            var oeeOperatorName by remember { mutableStateOf("") }
+            var oeeOperatorId by remember { mutableStateOf<Int?>(null) }
+            var oeeOperatorMenu by remember { mutableStateOf(false) }
+            var oeeOperatorCreating by remember { mutableStateOf(false) }
+            var oeeOperatorError by remember { mutableStateOf<String?>(null) }
             var oeeLossCategories by remember { mutableStateOf<List<Choice>>(emptyList()) }
             var oeeEntryLosses by remember { mutableStateOf(listOf(OeeLossDraft())) }
+            var editingLossIndex by remember { mutableStateOf<Int?>(null) }
             var oeeLossCategory by remember { mutableStateOf<Choice?>(null) }
             var oeeLossDuration by remember { mutableStateOf("") }
             var oeeLossQty by remember { mutableStateOf("0") }
@@ -452,9 +680,11 @@ class MainActivity : ComponentActivity() {
             var oeeEditingLossId by remember { mutableStateOf<Int?>(null) }
             var oeeLossCorrectionReason by remember { mutableStateOf("") }
             var oeeEntryId by remember { mutableStateOf<Int?>(null) }
+            var oeeLoadingPreviousEntry by remember { mutableStateOf(false) }
             var oeeCorrectionReason by remember { mutableStateOf("") }
             var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
+            var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if(uri!=null) {
@@ -479,7 +709,9 @@ class MainActivity : ComponentActivity() {
                 } else photo?.delete()
                 pendingPhotoFile = null
             }
-            val scope = rememberCoroutineScope()
+            val scope = this@MainActivity.lifecycleScope
+            // Drawer animations require the Compose MonotonicFrameClock; do not use lifecycleScope here.
+            val drawerScope = rememberCoroutineScope()
             val drawerState = rememberDrawerState(DrawerValue.Closed)
             var showLogoutConfirm by remember { mutableStateOf(false) }
 
@@ -502,6 +734,11 @@ class MainActivity : ComponentActivity() {
                     try {
                         val data=withContext(Dispatchers.IO){ApiClient.loadActionPlan(item.id,auth)}
                         actionPlan=data.optJSONObject("plan")
+                        val attachments=data.optJSONArray("attachments") ?: JSONArray()
+                        actionAttachments=(0 until attachments.length()).map{attachments.getJSONObject(it)}
+                        actionHistory=emptyList();actionHistoryError=null
+                        whyWhySavedPending=false;evidenceUploadedPending=false;actionUpdateSavedPending=false
+                        pendingFollowupComment="";pendingActionStatus=item.status;submissionStarted=false
                         val p=actionPlan
                         why1=p?.optString("why1").orEmpty().takeUnless{it=="null"}.orEmpty()
                         why2=p?.optString("why2").orEmpty().takeUnless{it=="null"}.orEmpty()
@@ -519,6 +756,30 @@ class MainActivity : ComponentActivity() {
                         message="Action details loaded."
                     } catch(e:Exception){selectedAction=null;message=e.message ?: "Unable to load action."}
                     finally{busy=false}
+                }
+            }
+
+            fun openActionById(actionId:Int,auth:String) {
+                scope.launch {
+                    try {
+                        val payload=withContext(Dispatchers.IO){ApiClient.loadActionPlan(actionId,auth)}
+                        val action=payload.optJSONObject("action") ?: throw IllegalStateException("Action not found.")
+                        val item=ActionItem(
+                            action.optInt("id"),
+                            action.optString("action_no"),
+                            action.optString("problem_description").ifBlank{action.optString("action_description")},
+                            action.optString("action_type"),
+                            action.optString("status"),
+                            action.optString("priority"),
+                            action.optString("due_at"),
+                            action.optBoolean("overdue"),
+                            action.optBoolean("requires_whywhy"),
+                            action.optInt("whywhy_completion_percent")
+                        )
+                        openAction(item,auth)
+                    } catch(e:Exception) {
+                        message=e.message ?: "Unable to open the linked action."
+                    }
                 }
             }
 
@@ -542,7 +803,7 @@ class MainActivity : ComponentActivity() {
                             oeeMachine = null
                             oeeError = "No operations with active machine mapping are available for this part and date."
                         }
-                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE scope." }
+                    } catch (e: Exception) { oeeError = userFriendlyOeeError(e, "Could not load operations and machines. Check your connection, then tap Refresh OEE.") }
                     finally { oeeLoading = false }
                 }
                 scope.launch {
@@ -560,8 +821,73 @@ class MainActivity : ComponentActivity() {
                     oeeLoading = true; oeeError = null
                     try {
                         oeeSummary = withContext(Dispatchers.IO) { ApiClient.loadOeeSummary(selectedMachine.id, oeeDate, oeeShift, selectedProduct.id, selectedOperation.id, auth) }
-                    } catch (e: Exception) { oeeError = e.message ?: "Unable to load OEE summary." }
+                    } catch (e: Exception) { oeeError = userFriendlyOeeError(e, "Could not refresh OEE. Check your connection and try again.") }
                     finally { oeeLoading = false }
+                }
+            }
+
+            fun editOeeEntry(entryDate: String, entryShift: String, expectedEntryId: Int) {
+                val auth = token
+                val product = oeeProduct
+                val operation = oeeOperation
+                val machine = oeeMachine
+                if (auth == null || product == null || operation == null || machine == null) {
+                    oeeError = "Select product, operation and machine before editing."
+                    return
+                }
+                oeeDate = entryDate
+                oeeShift = entryShift
+                oeeLoadingPreviousEntry = true
+                oeeMode = "ENTRY"
+                scope.launch {
+                    oeeLoading = true
+                    oeeError = null
+                    oeeSuccess = null
+                    try {
+                        val context = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeEntryContext(product.id, operation.id, machine.id, entryDate, entryShift, auth)
+                        }
+                        val entry = context.optJSONObject("existing_entry")
+                        if (entry == null || entry.optInt("id") != expectedEntryId) {
+                            throw IllegalStateException("The selected production record is no longer available in this scope. Refresh Summary and try again.")
+                        }
+                        oeeEntryId = entry.optInt("id")
+                        if (oeeOperators.isEmpty()) {
+                            oeeOperators = withContext(Dispatchers.IO) { ApiClient.loadOeeOperators(auth) }
+                        }
+                        oeeCorrectionReason = ""
+                        oeeOperatorName = entry.optString("operator_name").takeIf { it.isNotBlank() && it != "null" }.orEmpty()
+                        oeeOperatorId = oeeOperators.firstOrNull { it.label.equals(oeeOperatorName, ignoreCase = true) }?.id
+                        if (oeeOperatorId == null) throw IllegalStateException("Could not match the saved operator to Personnel Master. Refresh and try again.")
+                        oeeShiftMinutes = entry.optDouble("shift_duration_min", 440.0).toString()
+                        oeeBreakMinutes = entry.optDouble("planned_break_min", 0.0).toString()
+                        oeeGoodCount = entry.optDouble("good_count", 0.0).toString()
+                        oeeRejectCount = entry.optDouble("reject_count", 0.0).toString()
+                        oeeEntryRemarks = entry.optString("remarks").takeUnless { it == "null" }.orEmpty()
+                        val savedLosses = context.optJSONArray("existing_losses") ?: JSONArray()
+                        val loadedLosses = (0 until savedLosses.length()).map { index ->
+                            val loss = savedLosses.getJSONObject(index)
+                            OeeLossDraft(
+                                categoryId = loss.optInt("loss_category_id").takeIf { it > 0 },
+                                duration = loss.optDouble("duration_min").toString(),
+                                qty = loss.optDouble("qty_loss").toString(),
+                                remark = loss.optString("remark"),
+                                saved = true,
+                                id = loss.optInt("id").takeIf { it > 0 },
+                                category = loss.optString("category"),
+                                component = loss.optString("component"),
+                                startTime = loss.optString("start_time").takeUnless { it == "null" }.orEmpty(),
+                                endTime = loss.optString("end_time").takeUnless { it == "null" }.orEmpty()
+                            )
+                        }
+                        oeeEntryLosses = loadedLosses + listOf(OeeLossDraft())
+                    } catch (e: Exception) {
+                        oeeEntryId = null
+                        oeeError = e.message ?: "Unable to load the selected production record."
+                    } finally {
+                        oeeLoadingPreviousEntry = false
+                        oeeLoading = false
+                    }
                 }
             }
 
@@ -593,6 +919,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate) {
+                val auth = token
+                val p = oeeProduct
+                val op = oeeOperation
+                val m = oeeMachine
+                if (homeTab == "OEE" && auth != null && p != null && op != null && m != null) {
+                    oeeIdealCycleSeconds = null
+                    try {
+                        val context = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeEntryContext(p.id, op.id, m.id, oeeDate, oeeShift, auth)
+                        }
+                        oeeIdealCycleSeconds = context.optDouble("ideal_cycle_time_sec").takeIf { context.has("ideal_cycle_time_sec") && !context.isNull("ideal_cycle_time_sec") && it > 0.0 }
+                    } catch (_: Exception) {
+                        oeeIdealCycleSeconds = null
+                    }
+                } else {
+                    oeeIdealCycleSeconds = null
+                }
+            }
+
             LaunchedEffect(homeTab, oeeMode, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate, oeeShift) {
                 val auth = token
                 val product = oeeProduct
@@ -600,44 +946,32 @@ class MainActivity : ComponentActivity() {
                 val machine = oeeMachine
                 if (homeTab == "OEE" && oeeMode == "ENTRY" && auth != null &&
                     product != null && operation != null && machine != null) {
+                    // Capture the explicit edit intent before any suspending master-data calls.
+                    // The edit loader may finish while this effect is still loading categories/operators.
+                    val preserveSelectedRecord = oeeLoadingPreviousEntry
                     oeeLoading = true
                     try {
                         if (oeeLossCategories.isEmpty()) {
                             oeeLossCategories = withContext(Dispatchers.IO) { ApiClient.loadOeeLossCategories(auth) }
                         }
-                        val context = withContext(Dispatchers.IO) {
-                            ApiClient.loadOeeEntryContext(product.id, operation.id, machine.id, oeeDate, oeeShift, auth)
+                        if (oeeOperators.isEmpty()) {
+                            oeeOperators = withContext(Dispatchers.IO) { ApiClient.loadOeeOperators(auth) }
                         }
-                        val existing = context.optJSONObject("existing_entry")
-                        if (existing == null) {
+                        // ENTRY always opens as a new production record unless the user
+                        // explicitly selected a record to correct. Preserve that intent
+                        // across the asynchronous master-data loading above.
+                        if (!preserveSelectedRecord) {
+                            // Every fresh entry starts with zero planned breaks.
                             oeeEntryId = null
-                            oeeCorrectionReason = ""
-                            oeeShiftMinutes = "480"
                             oeeBreakMinutes = "0"
+                            oeeCorrectionReason = ""
+                            oeeShiftMinutes = "440"
                             oeeGoodCount = "0"
                             oeeRejectCount = "0"
                             oeeEntryRemarks = ""
                             oeeEntryLosses = listOf(OeeLossDraft())
-                            oeeError = "No saved entry exists. Enter production and loss details below."
-                        } else {
-                            oeeEntryId = existing.optInt("id").takeIf { it > 0 }
-                            oeeShiftMinutes = existing.optString("shift_duration_min", "480")
-                            oeeBreakMinutes = existing.optString("planned_break_min", "0")
-                            oeeGoodCount = existing.optString("good_count", "0")
-                            oeeRejectCount = existing.optString("reject_count", "0")
-                            oeeEntryRemarks = existing.optString("remarks", "")
-                            oeeCorrectionReason = ""
-                            val oldLosses = context.optJSONArray("existing_losses") ?: JSONArray()
-                            val loaded = (0 until oldLosses.length()).map { index ->
-                                val row = oldLosses.getJSONObject(index)
-                                OeeLossDraft(row.optInt("loss_category_id").takeIf { it > 0 },
-                                    row.optString("duration_min"), row.optString("qty_loss", "0"),
-                                    row.optString("remark", ""), true, row.optInt("id"),
-                                    row.optString("category"), row.optString("component"))
-                            }
-                            oeeEntryLosses = loaded + OeeLossDraft()
-                            oeeError = "Loaded existing entry #$oeeEntryId."
                         }
+                        oeeError = null
                     } catch (e: Exception) {
                         oeeError = e.message ?: "Unable to load production entry."
                     } finally {
@@ -744,6 +1078,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun refreshChatConversations(auth: String) {
+                chatLoading = true
+                scope.launch {
+                    try { chatConversations = withContext(Dispatchers.IO) { ApiClient.loadChatConversations(auth) } }
+                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                    finally { chatLoading = false }
+                }
+            }
+            fun refreshChatMessages(auth: String, conversationId: Int) {
+                scope.launch {
+                    try { chatMessages = withContext(Dispatchers.IO) { ApiClient.loadChatMessages(conversationId, auth) } }
+                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                }
+            }
+            fun searchChatEmployees(auth: String) {
+                scope.launch {
+                    try { chatEmployees = withContext(Dispatchers.IO) { ApiClient.loadChatEmployees(chatSearch, auth) } }
+                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                }
+            }
             val normalizedRole = account?.role?.uppercase().orEmpty()
             val isAdminOrManagement = normalizedRole in listOf("ADMIN", "MANAGEMENT")
             val isQualityRole = normalizedRole.contains("QUALITY") || normalizedRole.contains("QA")
@@ -791,15 +1145,16 @@ class MainActivity : ComponentActivity() {
                                     Text(account?.role.orEmpty(),color=Color(0xFFB9D5E5),fontSize=11.sp,maxLines=1)
                                 }
                                 Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
-                                    if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
-                                    if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
-                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("History",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HISTORY",icon={Icon(Icons.Filled.History,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="HISTORY" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Chat",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="CHAT",icon={Text("✉",fontSize=19.sp,color=Teal)},onClick={drawerScope.launch { drawerState.close(); homeTab="CHAT"; token?.let{refreshChatConversations(it)}; chatSearch=""; chatEmployees=JSONArray() }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("History",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HISTORY",icon={Icon(Icons.Filled.History,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="HISTORY" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                 }
                                 Divider(color=Color(0xFFCBD5DF))
                                 Column(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=6.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
-                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Account",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACCOUNT",icon={Icon(Icons.Filled.Person,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); homeTab="ACCOUNT" }})
-                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Logout",fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)},selected=false,icon={Icon(Icons.Filled.Logout,contentDescription=null,tint=Color(0xFFB3261E),modifier=Modifier.size(22.dp))},onClick={scope.launch { drawerState.close(); showLogoutConfirm=true }},colors=NavigationDrawerItemDefaults.colors(unselectedTextColor=Color(0xFFB3261E),unselectedIconColor=Color(0xFFB3261E)))
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Account",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACCOUNT",icon={Icon(Icons.Filled.Person,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="ACCOUNT" }})
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Logout",fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)},selected=false,icon={Icon(Icons.Filled.Logout,contentDescription=null,tint=Color(0xFFB3261E),modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); showLogoutConfirm=true }},colors=NavigationDrawerItemDefaults.colors(unselectedTextColor=Color(0xFFB3261E),unselectedIconColor=Color(0xFFB3261E)))
                                 }
                             }
                         }
@@ -809,10 +1164,279 @@ class MainActivity : ComponentActivity() {
                     Column(Modifier.fillMaxSize()) {
                     Column(Modifier.weight(1f).fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Color(0xFF102A43), Navy, Color(0xFF1D4568)))).padding(horizontal=12.dp,vertical=12.dp), verticalAlignment=Alignment.CenterVertically) {
-                            if (account != null) IconButton(onClick={scope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
+                            if (account != null) IconButton(onClick={drawerScope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
                                 Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                            }
+                        }
+                        LaunchedEffect(homeTab, token, selectedChatId) {
+                            val auth = token ?: return@LaunchedEffect
+                            if (homeTab == "CHAT") {
+                                while (homeTab == "CHAT") {
+                                    refreshChatConversations(auth)
+                                    selectedChatId?.let { refreshChatMessages(auth, it) }
+                                    kotlinx.coroutines.delay(5000)
+                                }
+                            }
+                        }
+                        if (homeTab == "CHAT") {
+                            Column(Modifier.fillMaxSize().background(Color(0xFFE8F0ED))) {
+                                if (selectedChatId == null) {
+                                    Column(Modifier.fillMaxSize().padding(horizontal=12.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                        Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
+                                            Column {
+                                                Text("CHATS", color=Navy, fontSize=20.sp, fontWeight=FontWeight.Bold)
+                                                Text("Employee and group conversations", color=Muted, fontSize=11.sp)
+                                            }
+                                            Button(onClick={chatShowNew=true;chatSearch="";chatEmployees=JSONArray()},colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(22.dp)) { Text("+ NEW CHAT",fontSize=11.sp,fontWeight=FontWeight.Bold) }
+                                        }
+                                        if (chatShowNew) {
+                                            Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.fillMaxSize().padding(12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                                                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                                                        Text("Start a conversation",Modifier.weight(1f),color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
+                                                        TextButton(onClick={chatShowNew=false;chatEmployees=JSONArray()}) { Text("CLOSE",color=Teal) }
+                                                    }
+                                                    OutlinedTextField(value=chatSearch,onValueChange={chatSearch=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Search employee name or username")})
+                                                    Button(onClick={token?.let{searchChatEmployees(it)}},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text("SEARCH EMPLOYEES") }
+                                                    OutlinedTextField(value=chatGroupTitle,onValueChange={chatGroupTitle=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("Optional group name")})
+                                                    LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                        items((0 until chatEmployees.length()).toList()) { i ->
+                                                            val employee=chatEmployees.optJSONObject(i)
+                                                            if(employee!=null) {
+                                                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                                                                    val auth=token
+                                                                    if(auth!=null) scope.launch {
+                                                                        try {
+                                                                            val conversation=withContext(Dispatchers.IO){ApiClient.createDirectChat(employee.optInt("id"),auth)}
+                                                                            selectedChatId=conversation.optInt("id");chatShowNew=false
+                                                                            refreshChatConversations(auth);refreshChatMessages(auth,selectedChatId!!)
+                                                                            chatEmployees=JSONArray();chatSearch=""
+                                                                        } catch(e:Exception){message="Unable to start chat: ${e.message}"}
+                                                                    }
+                                                                }.background(Color(0xFFF5F8F7)).padding(11.dp),verticalAlignment=Alignment.CenterVertically) {
+                                                                    Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(employee.optString("full_name").trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold) }
+                                                                    Column(Modifier.weight(1f).padding(start=10.dp)) {
+                                                                        Text(employee.optString("full_name"),color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold)
+                                                                        Text(employee.optString("username")+" • "+employee.optString("role"),color=Muted,fontSize=10.sp)
+                                                                    }
+                                                                    Text("MESSAGE",color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    Button(onClick={
+                                                        val auth=token
+                                                        if(auth!=null&&chatGroupTitle.isNotBlank()&&chatEmployees.length()>0) scope.launch {
+                                                            try {
+                                                                val ids=(0 until chatEmployees.length()).mapNotNull{chatEmployees.optJSONObject(it)?.optInt("id")?.takeIf{x->x>0}}
+                                                                val group=withContext(Dispatchers.IO){ApiClient.createChatGroup(chatGroupTitle.trim(),ids,auth)}
+                                                                selectedChatId=group.optInt("id");chatGroupTitle="";chatShowNew=false
+                                                                refreshChatConversations(auth);refreshChatMessages(auth,selectedChatId!!)
+                                                            } catch(e:Exception){message="Unable to create group: ${e.message}"}
+                                                        }
+                                                    },enabled=chatGroupTitle.isNotBlank()&&chatEmployees.length()>0,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Navy)) { Text("CREATE GROUP FROM RESULTS") }
+                                                }
+                                            }
+                                        } else {
+                                            Text("YOUR CONVERSATIONS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp)
+                                            if(chatLoading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Teal)
+                                            if(chatConversations.length()==0) {
+                                                Box(Modifier.weight(1f).fillMaxWidth(),contentAlignment=Alignment.Center) { EmptyState("No conversations yet","Tap New Chat to find an employee.") }
+                                            } else {
+                                                LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                                                    items((0 until chatConversations.length()).toList()) { i ->
+                                                        val conversation=chatConversations.optJSONObject(i)
+                                                        if(conversation!=null) {
+                                                            val conversationId=conversation.optInt("id")
+                                                            val participants=conversation.optJSONArray("participants") ?: JSONArray()
+                                                            val title=conversation.optString("title").takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}.filter{it.optString("username")!=account?.username}.joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
+                                                            val last=conversation.optJSONObject("last_message")
+                                                            val preview=last?.optString("body")?.takeIf{it.isNotBlank()} ?: if(last?.optJSONArray("attachments")?.length()?.let{it>0}==true) "Attachment" else "No messages yet"
+                                                            Card(Modifier.fillMaxWidth().clickable { selectedChatId=conversationId;token?.let{refreshChatMessages(it,conversationId)} },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedChatId==conversationId)Teal else Border)) {
+                                                                Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
+                                                                    Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(title.trim().take(1).uppercase(),color=Teal,fontSize=16.sp,fontWeight=FontWeight.Bold) }
+                                                                    Column(Modifier.weight(1f).padding(start=11.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                                        Text(title,color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold,maxLines=1)
+                                                                        Text(preview,color=Muted,fontSize=11.sp,maxLines=1)
+                                                                    }
+                                                                    Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                                        Text(last?.optString("created_at")?.take(16)?.takeLast(5).orEmpty(),color=Muted,fontSize=9.sp)
+                                                                        if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Teal)
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    val activeConversation=(0 until chatConversations.length()).mapNotNull{chatConversations.optJSONObject(it)}.firstOrNull{it.optInt("id")==selectedChatId}
+                                    val participants=activeConversation?.optJSONArray("participants") ?: JSONArray()
+                                    val chatTitle=activeConversation?.optString("title")?.takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}.filter{it.optString("username")!=account?.username}.joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
+                                    Column(Modifier.fillMaxSize()) {
+                                        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=8.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically) {
+                                            TextButton(onClick={selectedChatId=null;chatMessages=JSONArray();chatAttachmentUri=null}) { Text("‹",fontSize=28.sp,color=Teal) }
+                                            Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(chatTitle.trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold) }
+                                            Column(Modifier.weight(1f).padding(start=10.dp)) {
+                                                Text(chatTitle,color=Navy,fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)
+                                                Text(if(activeConversation?.optString("kind")=="GROUP") "${participants.length()} members" else "Employee conversation",color=Muted,fontSize=10.sp)
+                                            }
+                                            TextButton(onClick={token?.let{refreshChatMessages(it,selectedChatId!!)}}) { Text("↻",fontSize=20.sp,color=Teal) }
+                                        }
+                                        Divider(color=Border)
+                                        chatError?.let { err ->
+                                            Text(err, Modifier.fillMaxWidth().background(Color(0xFFFFE8E6)).padding(horizontal=12.dp, vertical=9.dp), color=Color(0xFF9B2520), fontSize=11.sp)
+                                        }
+                                        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal=10.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                                            items((0 until chatMessages.length()).toList()) { i ->
+                                                val msg=chatMessages.optJSONObject(i)
+                                                if(msg!=null) {
+                                                    val mine=msg.optString("sender_username")==account?.username
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=if(mine)Arrangement.End else Arrangement.Start) {
+                                                        Card(Modifier.widthIn(max=320.dp).fillMaxWidth(0.88f),shape=RoundedCornerShape(topStart=12.dp,topEnd=12.dp,bottomStart=if(mine)12.dp else 3.dp,bottomEnd=if(mine)3.dp else 12.dp),colors=CardDefaults.cardColors(containerColor=if(mine)Color(0xFFD9FDD3) else Color.White),elevation=CardDefaults.cardElevation(defaultElevation=1.dp)) {
+                                                            Column(Modifier.padding(horizontal=11.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                                if(!mine&&activeConversation?.optString("kind")=="GROUP") Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                                val messageBody=msg.optString("body")
+                                                                Text(messageBody,color=Navy,fontSize=13.sp)
+                                                                val linkedActionId = extractChatActionId(messageBody)
+                                                                if (linkedActionId != null) {
+                                                                    OutlinedButton(
+                                                                        onClick = { token?.let { openActionById(linkedActionId, it) } },
+                                                                        modifier = Modifier.fillMaxWidth(),
+                                                                        shape = RoundedCornerShape(9.dp),
+                                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Teal)
+                                                                    ) {
+                                                                        Text(
+                                                                            "↗  OPEN ACTION  #$linkedActionId",
+                                                                            fontSize = 12.sp,
+                                                                            fontWeight = FontWeight.Bold
+                                                                        )
+                                                                    }
+                                                                }
+                                                                val chatFiles=msg.optJSONArray("attachments") ?: JSONArray()
+                                                                for(fileIndex in 0 until chatFiles.length()) {
+                                                                    val fileItem=chatFiles.optJSONObject(fileIndex) ?: continue
+                                                                    TextButton(onClick={
+                                                                        val auth=token
+                                                                        if(auth!=null) scope.launch {
+                                                                            try {
+                                                                                val file=withContext(Dispatchers.IO){ApiClient.downloadChatAttachment(fileItem.optInt("id"),fileItem.optString("file_name"),chatContext.cacheDir,auth)}
+                                                                                val uri=FileProvider.getUriForFile(chatContext,chatContext.packageName+".fileprovider",file)
+                                                                                val mime=fileItem.optString("mime_type").ifBlank{"application/octet-stream"}
+                                                                                chatContext.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                                                            } catch(e:Exception){message=e.message ?: "Unable to open chat attachment."}
+                                                                        }
+                                                                    }) { Text("📎 "+fileItem.optString("file_name"),color=Teal,fontSize=11.sp) }
+                                                                }
+                                                                Text(msg.optString("created_at").take(16).takeLast(5),Modifier.align(Alignment.End),color=Muted,fontSize=9.sp)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Row(Modifier.fillMaxWidth().background(Color(0xFFF7FAF8)).padding(horizontal=7.dp,vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                                            IconButton(onClick={chatAttachmentPicker.launch("*/*")}) { Text("＋",fontSize=25.sp,color=Teal) }
+                                            OutlinedTextField(value=chatDraft,onValueChange={chatDraft=it},modifier=Modifier.weight(1f),placeholder={Text(if(chatAttachmentUri==null)"Message" else "Attachment selected")},maxLines=4,shape=RoundedCornerShape(22.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            IconButton(onClick={
+                                                val auth=token;val id=selectedChatId;val body=chatDraft.trim();val picked=chatAttachmentUri
+                                                if(auth!=null&&id!=null&&(body.isNotBlank()||picked!=null))scope.launch{
+                                                    chatError=null
+                                                    chatLoading=true
+                                                    try{
+                                                        val sent=withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body.ifBlank{" "},auth)}
+                                                        if(picked!=null)withContext(Dispatchers.IO){ApiClient.uploadChatAttachment(chatContext,id,sent.optInt("id"),picked,auth)}
+                                                        chatDraft="";chatAttachmentUri=null;chatError=null;refreshChatMessages(auth,id);refreshChatConversations(auth)
+                                                    }catch(e:Exception){chatError="Message not sent: ${e.message ?: "Please try again."}";message=chatError ?: "Message not sent."}
+                                                    finally{chatLoading=false}
+                                                }
+                                            },enabled=!chatLoading&&(chatDraft.isNotBlank()||chatAttachmentUri!=null),modifier=Modifier.size(44.dp).clip(CircleShape).background(Teal)) { Text(if(chatLoading)"…" else "➤",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold) }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (homeTab == "OEE") {
+                            val monthOee = oeeManagement?.optJSONObject("overall")
+                            val headerGood=oeeGoodCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
+                            val headerReject=oeeRejectCount.toDoubleOrNull()?.coerceAtLeast(0.0)?:0.0
+                            val headerTotal=headerGood+headerReject
+                            val headerDowntime=oeeEntryLosses.filter{it.categoryId!=null&&(isAvailabilityOeeLoss(it,oeeLossCategories))}.sumOf{it.duration.toDoubleOrNull()?:0.0}
+                            val headerPlanned=((oeeShiftMinutes.toDoubleOrNull()?:0.0)-(oeeBreakMinutes.toDoubleOrNull()?:0.0)).coerceAtLeast(0.0)
+                            val headerRun=(headerPlanned-headerDowntime).coerceAtLeast(0.0)
+                            val headerAvailability=if(headerPlanned>0)headerRun/headerPlanned else 0.0
+                            val headerPerfRaw=if(headerRun>0)((oeeIdealCycleSeconds?:0.0)*headerTotal/60.0)/headerRun else 0.0
+                            val headerPerformance=headerPerfRaw.coerceIn(0.0,1.0)
+                            val headerQuality=if(headerTotal>0)headerGood/headerTotal else 0.0
+                            val showLiveHeader=oeeMode=="ENTRY"&&oeeProduct!=null&&headerTotal>0
+                            val headerOee=if(showLiveHeader&&oeeIdealCycleSeconds!=null)headerAvailability*headerPerformance*headerQuality else monthOee?.optDouble("oee_reported")?:0.0
+                            val headerAvail=if(showLiveHeader)headerAvailability else monthOee?.optDouble("availability")?:0.0
+                            val headerPerf=if(showLiveHeader)headerPerformance else monthOee?.optDouble("performance_raw")?:0.0
+                            val headerQual=if(showLiveHeader)headerQuality else monthOee?.optDouble("quality")?:0.0
+                            Card(
+                                Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=6.dp),
+                                shape=RoundedCornerShape(15.dp),
+                                colors=CardDefaults.cardColors(containerColor=Navy),
+                                elevation=CardDefaults.cardElevation(defaultElevation=2.dp)
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Color(0xFF193B5B),Color(0xFF087F8C)))).padding(horizontal=14.dp, vertical=10.dp),
+                                    verticalAlignment=Alignment.CenterVertically,
+                                    horizontalArrangement=Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                        Text(if(showLiveHeader)"LIVE ENTRY OEE" else "CURRENT-MONTH OEE",color=Color(0xFFD4E7F1),fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=0.8.sp)
+                                        Text(if(showLiveHeader&&oeeIdealCycleSeconds==null)"—" else if(showLiveHeader||monthOee!=null)"${"%.1f".format(headerOee*100)}%" else "—",color=Color.White,fontSize=34.sp,fontWeight=FontWeight.ExtraBold)
+                                    }
+                                    Column(Modifier.weight(2f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                            listOf("AVAIL" to headerAvail,"PERF" to headerPerf,"QUAL" to headerQual).forEach { (label,value) ->
+                                                Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(Color(0x22FFFFFF)).padding(horizontal=6.dp,vertical=5.dp)) {
+                                                    Text(if(if(showLiveHeader)label!="PERF"||oeeIdealCycleSeconds!=null else monthOee!=null)"${"%.1f".format(value*100)}%" else "—",color=Color.White,fontSize=16.sp,fontWeight=FontWeight.ExtraBold)
+                                                    Text(label,color=Color(0xFFD4E7F1),fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                        if(showLiveHeader) {
+                                            val livePulse = rememberInfiniteTransition(label="liveQuantityPulse")
+                                            val liveAlpha by livePulse.animateFloat(
+                                                initialValue=0.58f,
+                                                targetValue=1.0f,
+                                                animationSpec=infiniteRepeatable(
+                                                    animation=tween(durationMillis=850, easing=FastOutSlowInEasing),
+                                                    repeatMode=RepeatMode.Reverse
+                                                ),
+                                                label="liveQuantityAlpha"
+                                            )
+                                            Row(
+                                                modifier=Modifier
+                                                    .clip(RoundedCornerShape(20.dp))
+                                                    .background(Color(0x3348E0B4))
+                                                    .border(1.dp,Color(0x8848E0B4),RoundedCornerShape(20.dp))
+                                                    .padding(horizontal=10.dp,vertical=5.dp),
+                                                verticalAlignment=Alignment.CenterVertically,
+                                                horizontalArrangement=Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Box(Modifier.size(7.dp).clip(CircleShape).background(Color(0xFFFF3B30).copy(alpha=liveAlpha)))
+                                                Text(
+                                                    if(oeeIdealCycleSeconds==null) "LIVE • CYCLE TIME NEEDED" else "LIVE • ${headerTotal.toInt()} PCS",
+                                                    color=Color(0xFF8BFFD0).copy(alpha=liveAlpha),
+                                                    fontSize=12.sp,
+                                                    fontWeight=FontWeight.ExtraBold,
+                                                    letterSpacing=0.35.sp,
+                                                    maxLines=1
+                                                )
+                                            }
+                                        } else {
+                                            Text("Part: ${oeeProduct?.label ?: "Select a part"}",color=Color(0xFFD4E7F1),fontSize=11.sp,maxLines=1)
+                                        }
+                                    }
+                                }
                             }
                         }
                         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal=16.dp, vertical=14.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
@@ -837,10 +1461,21 @@ class MainActivity : ComponentActivity() {
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
                                                     token=result.first; account=result.second; password=""; refreshPendingActions(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
-                                                } catch(e:Exception){message=e.message ?: "Unable to sign in."}
-                                                finally{busy=false}
+                                                } catch(e:Exception){
+                                                    message=e.message?.takeIf { it.isNotBlank() } ?: "Unable to sign in. Check your connection and try again."
+                                                } finally{busy=false}
                                             }}
                                         },enabled=!busy,modifier=Modifier.fillMaxWidth().height(50.dp),colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text(if(busy)"PLEASE WAIT…" else "SIGN IN") }
+                                        if (!busy && message != "Connect securely to your production account." && !message.startsWith("Signed in.")) {
+                                            Card(
+                                                modifier=Modifier.fillMaxWidth(),
+                                                colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF1F0)),
+                                                border=androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF2C7C4)),
+                                                shape=RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text(message, modifier=Modifier.fillMaxWidth().padding(12.dp), color=Danger, fontSize=13.sp, fontWeight=FontWeight.Medium)
+                                            }
+                                        }
                                     }
                                 }
                             } else {
@@ -918,6 +1553,7 @@ class MainActivity : ComponentActivity() {
                                 } else if(homeTab=="DETAIL" && selectedAction!=null) {
                                     val item=selectedAction!!
                                     TextButton(onClick={homeTab=if(account?.role?.uppercase() in listOf("ADMIN","MANAGEMENT")) "USER_ACTIONS" else "ACTIONS";token?.let{refreshPendingActions(it)}}) { Text("← BACK TO ACTIONS") }
+                                    OutlinedButton(onClick={val auth=token;if(auth==null)message="Please sign in again." else scope.launch {homeTab="HISTORY";actionHistoryLoading=true;actionHistoryError=null;try{actionHistory=withContext(Dispatchers.IO){ApiClient.loadActionHistory(item.id,auth)}}catch(e:Exception){actionHistoryError=e.message ?: "Unable to load action history."}finally{actionHistoryLoading=false}}},modifier=Modifier.fillMaxWidth()){Text("VIEW ACTION HISTORY")}
                                     Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), colors=CardDefaults.cardColors(containerColor=Color.White), border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                             Text(item.number,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
@@ -960,42 +1596,49 @@ class MainActivity : ComponentActivity() {
                                         else if(followupComment.isBlank()) message="Enter action taken / progress before submitting."
                                         else scope.launch {
                                             busy=true
+                                            if(!submissionStarted) { pendingFollowupComment=followupComment.trim();pendingActionStatus=actionStatus;submissionStarted=true }
                                             try {
-                                                withContext(Dispatchers.IO){ApiClient.updateAction(item.id,followupComment.trim(),actionStatus,auth)}
-                                                evidenceFile?.let { evidence ->
-                                                    withContext(Dispatchers.IO){ApiClient.uploadActionEvidence(item.id,evidence,auth)}
-                                                    evidence.delete();evidenceFile=null
-                                                }
-                                                if(item.whyWhy) {
+                                                if(item.whyWhy && !whyWhySavedPending) {
                                                     val plan=JSONObject().put("why1",why1).put("why2",why2).put("why3",why3).put("why4",why4).put("why5",why5).put("root_cause",rootCause).put("corrective_action",correctiveAction).put("preventive_action",preventiveAction).put("verification_method",verificationMethod).put("verification_result",verificationResult)
                                                     withContext(Dispatchers.IO){ApiClient.updateWhyWhy(item.id,plan,auth)}
+                                                    whyWhySavedPending=true
                                                 }
+                                                if(evidenceFile!=null && !evidenceUploadedPending) {
+                                                    val evidence=evidenceFile!!
+                                                    withContext(Dispatchers.IO){ApiClient.uploadActionEvidence(item.id,evidence,auth)}
+                                                    evidence.delete();evidenceFile=null;evidenceUploadedPending=true
+                                                }
+                                                if(!actionUpdateSavedPending) {
+                                                    withContext(Dispatchers.IO){ApiClient.updateAction(item.id,pendingFollowupComment,pendingActionStatus,auth)}
+                                                    actionUpdateSavedPending=true
+                                                }
+                                                whyWhySavedPending=false;evidenceUploadedPending=false;actionUpdateSavedPending=false
+                                                pendingFollowupComment="";pendingActionStatus=actionStatus;submissionStarted=false
+                                                followupComment=""
                                                 message="Action update submitted successfully."
-                                                selectedAction=null;homeTab="ACTIONS";refreshPendingActions(auth)
-                                            } catch(e:Exception){message=e.message ?: "Unable to submit action update."}
+                                                refreshPendingActions(auth)
+                                                homeTab="HISTORY";actionHistoryLoading=true;actionHistoryError=null
+                                                try { actionHistory=withContext(Dispatchers.IO){ApiClient.loadActionHistory(item.id,auth)} }
+                                                catch(historyError:Exception){actionHistoryError=historyError.message ?: "Unable to refresh action history."}
+                                                finally{actionHistoryLoading=false}
+                                                try {
+                                                    val refreshed=withContext(Dispatchers.IO){ApiClient.loadActionPlan(item.id,auth)}
+                                                    val rows=refreshed.optJSONArray("attachments") ?: JSONArray()
+                                                    actionAttachments=(0 until rows.length()).map{rows.getJSONObject(it)}
+                                                } catch(refreshError:Exception) { message="Action update saved. Evidence list refresh failed: "+(refreshError.message ?: "Please reopen the action.") }
+                                            } catch(e:Exception){message=e.message ?: "Unable to submit action update. Retry; completed steps will not be repeated."}
                                             finally{busy=false}
                                         }
                                     },enabled=!busy,modifier=Modifier.fillMaxWidth()) { Text(if(busy)"SAVING…" else "SUBMIT ACTION UPDATE") }
                                 }
                                 if(homeTab=="OEE") {
+                                    ScreenTitle("Machine effectiveness", "Production entry, shift performance and loss analysis")
                                     Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                                            Divider(color=Border)
-                                            oeeManagement?.optJSONObject("overall")?.let { overall ->
-                                                Text("CURRENT MONTH OEE",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Bold)
-                                                Text("${"%.1f".format(overall.optDouble("oee_reported")*100)}%",color=Navy,fontSize=32.sp,fontWeight=FontWeight.ExtraBold)
-                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                                                    MetricTile("Availability","${"%.1f".format(overall.optDouble("availability")*100)}%",Teal,Modifier.weight(1f),compact=true)
-                                                    MetricTile("Performance","${"%.1f".format(overall.optDouble("performance_raw")*100)}%",Warning,Modifier.weight(1f),compact=true)
-                                                    MetricTile("Quality","${"%.1f".format(overall.optDouble("quality")*100)}%",Success,Modifier.weight(1f),compact=true)
-                                                }
-                                                Text("This month • ${LocalDate.now().withDayOfMonth(1)} to ${LocalDate.now()}",color=Muted,fontSize=11.sp)
-                                            } ?: Text(if(oeeLoading) "Loading current-month OEE…" else oeeError ?: "Select a part number to view OEE.",color=Muted,fontSize=12.sp)
-                                        }
-                                    }
-                                    ScreenTitle("Machine / OEE", "Live machine effectiveness from production records")
-                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                Icon(Icons.Filled.Settings,contentDescription=null,tint=Teal,modifier=Modifier.size(19.dp))
+                                                Text("PRODUCTION SCOPE",color=Navy,fontSize=12.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=0.8.sp)
+                                            }
                                             ChoiceDropdown("Product / Part number",masters?.products.orEmpty(),oeeProduct,{selected ->
                                                 oeeProduct=selected
                                                 oeeOperation=null
@@ -1011,7 +1654,27 @@ class MainActivity : ComponentActivity() {
                                                 if(auth!=null) loadOeeScope(auth,selected)
                                                 else oeeError="Please sign in again."
                                             })
-                                            OutlinedTextField(oeeDate,{oeeDate=it;oeeSummary=null;oeeRoutes=emptyList();oeeMachines=emptyList();oeeOperation=null;oeeMachine=null},label={Text("Production date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                                            OutlinedTextField(value=oeeDate,onValueChange={},readOnly=true,label={Text("Production date")},singleLine=true,trailingIcon={IconButton(onClick={showOeeDatePicker=true}){Icon(Icons.Filled.DateRange,contentDescription="Choose production date")}},modifier=Modifier.fillMaxWidth().clickable{showOeeDatePicker=true})
+                                            if(showOeeDatePicker) {
+                                                val pickerState=rememberDatePickerState(initialSelectedDateMillis=runCatching{LocalDate.parse(oeeDate).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()}.getOrDefault(System.currentTimeMillis()))
+                                                DatePickerDialog(onDismissRequest={showOeeDatePicker=false},confirmButton={TextButton(onClick={
+                                                    pickerState.selectedDateMillis?.let{millis->
+                                                        val selectedDate=Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString()
+                                                        if(selectedDate!=oeeDate){
+                                                            oeeDate=selectedDate
+                                                            oeeSummary=null
+                                                            oeeRoutes=emptyList()
+                                                            oeeMachines=emptyList()
+                                                            oeeOperation=null
+                                                            oeeMachine=null
+                                                            val auth=token
+                                                            val product=oeeProduct
+                                                            if(auth!=null && product!=null) loadOeeScope(auth,product)
+                                                        }
+                                                    }
+                                                    showOeeDatePicker=false
+                                                }){Text("OK")}},dismissButton={TextButton(onClick={showOeeDatePicker=false}){Text("CANCEL")}}){DatePicker(state=pickerState)}
+                                            }
                                             Column(verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Text("Shift",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -1044,22 +1707,43 @@ class MainActivity : ComponentActivity() {
                                                 if(auth!=null) scope.launch {
                                                     oeeLoading=true
                                                     try { val loaded=withContext(Dispatchers.IO){ApiClient.loadOeeMachines(selected.id,oeeDate,auth)};oeeMachines=loaded;oeeMachine=loaded.firstOrNull() }
-                                                    catch(e:Exception){oeeError=e.message ?: "Unable to load machines."}
+                                                    catch(e:Exception){oeeError=userFriendlyOeeError(e,"Could not load machines for this operation. Check your connection and try again.")}
                                                     finally{oeeLoading=false}
                                                 }
                                             })
                                             if(oeeMachines.isNotEmpty()) ChoiceDropdown("Machine",oeeMachines,oeeMachine,{oeeMachine=it;oeeSummary=null})
 
                                             Button(onClick={token?.let{refreshOee(it)} ?: run{oeeError="Please sign in again."}},enabled=!oeeLoading&&oeeMachine!=null,modifier=Modifier.fillMaxWidth()) { Text("REFRESH OEE") }
-                                            oeeError?.let{Text(it,color=Danger,fontSize=12.sp)}
+                                            
                                         }
                                     }
-                                    oeeError?.takeIf { !oeeLoading }?.let { Text(it,color=Danger,fontSize=12.sp) }
-                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                        listOf("SUMMARY","MANAGEMENT").forEach { mode ->
-                                            FilterChip(selected=oeeMode==mode,onClick={oeeMode=mode},label={Text(mode)})
+                                    Surface(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),color=Color(0xFFE8EEF3),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Row(Modifier.fillMaxWidth().padding(5.dp),horizontalArrangement=Arrangement.spacedBy(5.dp)) {
+                                            listOf("ENTRY","SUMMARY","MANAGEMENT").forEach { mode ->
+                                                val active=oeeMode==mode
+                                                Surface(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { oeeMode=mode },shape=RoundedCornerShape(10.dp),color=if(active)Color.White else Color.Transparent,shadowElevation=if(active)2.dp else 0.dp) {
+                                                    Text(if(mode=="ENTRY")"NEW ENTRY" else mode,modifier=Modifier.padding(vertical=11.dp,horizontal=3.dp),color=if(active)Teal else Muted,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,textAlign=androidx.compose.ui.text.style.TextAlign.Center,maxLines=1)
+                                                }
+                                            }
                                         }
                                     }
+                                        oeeSavedSummary?.let { summary ->
+                                            AlertDialog(
+                                                onDismissRequest = { oeeSavedSummary = null },
+                                                title = { Text("Production saved", color = Navy, fontWeight = FontWeight.Bold) },
+                                                text = {
+                                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Text("OEE PERFORMANCE SUMMARY", color = Teal, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                                                        summary.lines().forEachIndexed { index, line ->
+                                                            Text(line, color = if(index == 1) Teal else Muted, fontSize = if(index == 1) 17.sp else 13.sp, fontWeight = if(index == 1) FontWeight.Bold else FontWeight.Medium)
+                                                        }
+                                                    }
+                                                },
+                                                confirmButton = { TextButton(onClick = { oeeSavedSummary = null }) { Text("OK", color = Teal, fontWeight = FontWeight.Bold) } },
+                                                containerColor = Color.White,
+                                                shape = RoundedCornerShape(16.dp)
+                                            )
+                                        }
                                         oeeSuccess?.let { success ->
                                             Card(
                                                 colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF6F2)),
@@ -1126,8 +1810,10 @@ class MainActivity : ComponentActivity() {
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                         Text("Entry #${entry.optInt("id")} • ${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("Operator: ${entry.optString("operator_name").takeIf{it.isNotBlank() && it!="null"} ?: "Not recorded"}",color=Teal,fontSize=11.sp,fontWeight=FontWeight.SemiBold)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                        OutlinedButton(onClick={editOeeEntry(entry.optString("production_date"), entry.optString("shift"), entry.optInt("id"))}, modifier=Modifier.fillMaxWidth(), enabled=!oeeLoading) { Text("EDIT THIS RECORD") }
                                                     }
                                                 }
                                             }
@@ -1149,6 +1835,7 @@ class MainActivity : ComponentActivity() {
                                                         Text("${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                        OutlinedButton(onClick={editOeeEntry(entry.optString("production_date"), entry.optString("shift"), entry.optInt("id"))}, modifier=Modifier.fillMaxWidth(), enabled=!oeeLoading) { Text("EDIT THIS RECORD") }
                                                     }
                                                 }
                                             }
@@ -1160,69 +1847,279 @@ class MainActivity : ComponentActivity() {
                                             Text("${loss.optString("category")} • ${loss.optString("component")} • ${"%.1f".format(loss.optDouble("duration_min"))} min",color=Navy,fontSize=12.sp)
                                         }
                                     } else if(oeeMode=="ENTRY") {
-                                        SectionLabel("Production entry", "Enter good and rejected output. Total and downtime are calculated automatically.")
-                                        Text(if(oeeLoading) "Loading production entry…" else if(oeeEntryId!=null) "Editing saved entry #$oeeEntryId" else "New production entry",color=Muted,fontSize=12.sp,fontWeight=FontWeight.Medium)
+                                        SectionLabel(if(oeeEntryId!=null) "Correct production record" else "New production entry", "Enter operator, shift time and production quantities. Calculations update from your inputs.")
+                                        if(oeeEntryId==null && !oeeLoading) {
+                                            val readyPulse = rememberInfiniteTransition(label="newEntryReadyPulse")
+                                            val readyAlpha by readyPulse.animateFloat(
+                                                initialValue=0.55f,
+                                                targetValue=1.0f,
+                                                animationSpec=infiniteRepeatable(
+                                                    animation=tween(durationMillis=850,easing=FastOutSlowInEasing),
+                                                    repeatMode=RepeatMode.Reverse
+                                                ),
+                                                label="newEntryReadyAlpha"
+                                            )
+                                            Row(
+                                                Modifier.fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(Color(0xFFEAF5F5))
+                                                    .border(1.dp,Color(0x8848E0B4),RoundedCornerShape(10.dp))
+                                                    .padding(11.dp),
+                                                verticalAlignment=Alignment.CenterVertically,
+                                                horizontalArrangement=Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Box(Modifier.size(9.dp).clip(CircleShape).background(Color(0xFFFF3B30).copy(alpha=readyAlpha)))
+                                                Text("NEW ENTRY  •  READY TO CAPTURE",color=Color(0xFF087F70).copy(alpha=readyAlpha),fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
+                                            }
+                                        } else {
+                                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(if(oeeEntryId!=null)Color(0xFFFFF4E5) else Color(0xFFEAF5F5)).padding(11.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                Icon(if(oeeEntryId!=null)Icons.Filled.History else Icons.Filled.Assignment,contentDescription=null,tint=if(oeeEntryId!=null)Warning else Teal,modifier=Modifier.size(18.dp))
+                                                Text(if(oeeLoading) "Loading production record…" else "CORRECTION MODE  •  RECORD #$oeeEntryId",color=Warning,fontSize=11.sp,fontWeight=FontWeight.ExtraBold)
+                                            }
+                                        }
                                         if(oeeEntryId!=null) {
                                             Text("Editing saved entry #${oeeEntryId}",color=Warning,fontWeight=FontWeight.Bold,fontSize=12.sp)
                                             OutlinedTextField(oeeCorrectionReason,{oeeCorrectionReason=it},label={Text("Correction reason (minimum 5 characters)")},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         }
-                                        OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("Shift duration (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("Planned breaks (min)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("Good quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                        OutlinedTextField(oeeRejectCount,{oeeRejectCount=it},label={Text("Rejected quantity")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                            OutlinedTextField(
+                                                value=oeeOperatorName,
+                                                onValueChange={value->
+                                                    oeeOperatorName=value
+                                                    oeeOperatorError=null
+                                                    oeeOperatorId=oeeOperators.firstOrNull{it.label.equals(value.trim().replace(Regex("\\s+")," "),ignoreCase=true)}?.id
+                                                    oeeOperatorMenu=true
+                                                },
+                                                label={Text("Operator name (first name and surname)")},
+                                                placeholder={Text("Type name or use keyboard microphone")},
+                                                modifier=Modifier.fillMaxWidth(),
+                                                singleLine=true
+                                            )
+                                            val matchingOperators = if (oeeOperatorName.isBlank()) emptyList()
+                                                else oeeOperators.filter { it.label.contains(oeeOperatorName.trim(), ignoreCase=true) }.take(8)
+                                            if (oeeOperatorMenu && matchingOperators.isNotEmpty()) {
+                                                Card(
+                                                    modifier=Modifier.fillMaxWidth(),
+                                                    colors=CardDefaults.cardColors(containerColor=Color.White),
+                                                    border=androidx.compose.foundation.BorderStroke(1.dp, Border),
+                                                    shape=RoundedCornerShape(10.dp)
+                                                ) {
+                                                    Column(Modifier.fillMaxWidth().padding(vertical=4.dp)) {
+                                                        matchingOperators.forEach { option ->
+                                                            TextButton(
+                                                                onClick={
+                                                                    oeeOperatorId=option.id
+                                                                    oeeOperatorError=null
+                                                                    oeeOperatorName=option.label
+                                                                    oeeOperatorMenu=false
+                                                                },
+                                                                modifier=Modifier.fillMaxWidth()
+                                                            ) {
+                                                                Text(option.label, modifier=Modifier.fillMaxWidth(), color=Navy)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if(oeeOperatorId==null && oeeOperatorName.trim().split(Regex("\\s+")).filter{it.isNotBlank()}.size>=2) {
+                                                TextButton(
+                                                    enabled=!oeeOperatorCreating && token!=null,
+                                                    onClick={
+                                                        val auth=token
+                                                        if(auth==null) {
+                                                            oeeOperatorError="Your session is not available. Please sign in again."
+                                                        } else scope.launch {
+                                                            oeeOperatorCreating=true
+                                                            oeeOperatorError=null
+                                                            oeeError=null
+                                                            try {
+                                                                val requestedName=oeeOperatorName.trim().replace(Regex("\\s+")," ")
+                                                                val (created, duplicateWarning)=withContext(Dispatchers.IO){ApiClient.createOeeOperator(requestedName,auth)}
+                                                                val refreshed=withContext(Dispatchers.IO){ApiClient.loadOeeOperators(auth)}
+                                                                val registered=refreshed.firstOrNull{it.id==created.id}
+                                                                    ?: refreshed.firstOrNull{it.label.equals(created.label,ignoreCase=true)}
+                                                                    ?: created
+                                                                oeeOperators=refreshed.ifEmpty { (oeeOperators.filterNot{it.id==registered.id}+registered).sortedBy{it.label} }
+                                                                oeeOperatorId=registered.id
+                                                                oeeOperatorName=registered.label
+                                                                oeeOperatorMenu=false
+                                                                oeeOperatorError=null
+                                                                oeeSuccess=if(duplicateWarning) "Operator added. A matching name already exists; verify the person's identity." else "Operator registered successfully."
+                                                            } catch(e:Exception) {
+                                                                oeeOperatorError=e.message?.takeIf{it.isNotBlank()} ?: "Unable to add operator. Check connection and permissions, then retry."
+                                                            } finally {
+                                                                oeeOperatorCreating=false
+                                                            }
+                                                        }
+                                                    }
+                                                ) { Text(if(oeeOperatorCreating) "ADDING OPERATOR…" else "＋ Add new operator") }
+                                            }
+                                            oeeOperatorError?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                            Text("Use the microphone on your Android keyboard for voice typing. Review the name, then select or add it.",color=Muted,fontSize=10.sp)
+                                        }
+                                        OutlinedTextField(oeeShiftMinutes,{oeeShiftMinutes=it},label={Text("SHIFT DURATION (MIN)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeBreakMinutes,{oeeBreakMinutes=it},label={Text("PLANNED BREAKS (MIN)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeGoodCount,{oeeGoodCount=it},label={Text("GOOD QUANTITY",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                        OutlinedTextField(oeeRejectCount,{oeeRejectCount=it},label={Text("REJECTED QUANTITY",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
                                         Text("Total production: ${"%.3f".format((oeeGoodCount.toDoubleOrNull()?:0.0)+(oeeRejectCount.toDoubleOrNull()?:0.0)).trimEnd('0').trimEnd('.')} pcs",color=Success,fontWeight=FontWeight.Bold)
-                                        OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("Production remarks (optional)")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                        OutlinedTextField(oeeEntryRemarks,{oeeEntryRemarks=it},label={Text("PRODUCTION REMARKS (OPTIONAL)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},modifier=Modifier.fillMaxWidth(),minLines=2)
                                         SectionLabel("Machine losses", "Choose a reason and enter minutes. A new card appears after completing a loss.")
                                         oeeEntryLosses.forEachIndexed { index, loss ->
-                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                                Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-                                                        Text(if(loss.saved) "Saved loss #${loss.id}" else "Loss ${index+1}",color=Navy,fontWeight=FontWeight.Bold)
-                                                        if(!loss.saved && oeeEntryLosses.size>1) TextButton(onClick={oeeEntryLosses=oeeEntryLosses.filterIndexed{idx,_->idx!=index}}){Text("Remove")}
+                                            OutlinedButton(
+                                                onClick = { editingLossIndex = index },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(10.dp),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp,Border),
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor=Navy)
+                                            ) {
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                    Column(horizontalAlignment=Alignment.Start) {
+                                                        Text(if(loss.saved) "Recorded Loss Event #${loss.id}" else "Loss Event ${index+1}",fontWeight=FontWeight.Bold)
+                                                        Text(
+                                                            "${loss.category.ifBlank { "Select loss reason" }} • ${loss.duration.ifBlank { "0" }} min",
+                                                            color=Muted,fontSize=11.sp
+                                                        )
                                                     }
-                                                    if(loss.saved) {
-                                                        Text("${loss.category} • ${loss.duration} min • ${loss.remark}",color=Muted,fontSize=12.sp)
-                                                    } else {
-                                                        ChoiceDropdown("Loss reason",oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},oeeLossCategories.firstOrNull{it.id==loss.categoryId},{selected->
-                                                            oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id);if(index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
-                                                        })
-                                                        OutlinedTextField(loss.duration,{value->
-                                                            val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
-                                                        },label={Text("Duration (minutes)")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
-                                                        OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("Reason / details")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                                    Text(if(loss.saved) "EDIT" else "ADD / EDIT",color=Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                }
+                                            }
+                                            if (editingLossIndex == index) {
+                                                Dialog(onDismissRequest = { editingLossIndex = null }) {
+                                                    Card(
+                                                        modifier=Modifier.fillMaxWidth(),
+                                                        shape=RoundedCornerShape(8.dp),
+                                                        colors=CardDefaults.cardColors(containerColor=Color(0xFFF8FAFC)),
+                                                        border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFCBD5E1)),
+                                                        elevation=CardDefaults.cardElevation(defaultElevation=12.dp)
+                                                    ) {
+                                                        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                            Row(
+                                                                Modifier.fillMaxWidth().background(Color(0xFFE8EEF5),RoundedCornerShape(5.dp)).padding(horizontal=12.dp,vertical=10.dp),
+                                                                horizontalArrangement=Arrangement.SpaceBetween,
+                                                                verticalAlignment=Alignment.CenterVertically
+                                                            ) {
+                                                                Text(if(loss.saved) "EDIT MACHINE LOSS" else "ADD MACHINE LOSS",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=14.sp)
+                                                                TextButton(onClick={editingLossIndex=null}) { Text("✕",color=Navy) }
+                                                            }
+                                                            if(loss.saved) Text("Editing recorded loss event #${loss.id}",color=Warning,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                            ChoiceDropdown(
+                                                                if(loss.saved) "Loss type" else "Loss reason",
+                                                                oeeLossCategories.map{Choice(it.id,"${it.label} • ${it.extra}")},
+                                                                oeeLossCategories.firstOrNull{it.id==loss.categoryId},
+                                                                {selected->
+                                                                    oeeEntryLosses=oeeEntryLosses.toMutableList().also{rows->rows[index]=loss.copy(categoryId=selected.id,category=selected.label,component=selected.extra);if(!loss.saved&&index==rows.lastIndex&&(loss.duration.toDoubleOrNull()?:0.0)>0)rows.add(OeeLossDraft())}
+                                                                }
+                                                            )
+                                                            OutlinedTextField(loss.duration,{value->
+                                                                val rows=oeeEntryLosses.toMutableList();rows[index]=loss.copy(duration=value);if(!loss.saved&&value.toDoubleOrNull()?.let{it>0}==true&&rows.lastOrNull()?.let{it.categoryId!=null&&it.duration.toDoubleOrNull()?.let{n->n>0}==true}==true)rows.add(OeeLossDraft());oeeEntryLosses=rows
+                                                            },label={Text("LOSS TIME (MINUTES)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                            if(isAvailabilityOeeLoss(loss, oeeLossCategories)) {
+                                                                Card(
+                                                                    modifier=Modifier.fillMaxWidth(),
+                                                                    shape=RoundedCornerShape(8.dp),
+                                                                    colors=CardDefaults.cardColors(containerColor=Color(0xFFEAF5F5)),
+                                                                    border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFB9DDE0))
+                                                                ) {
+                                                                    Row(Modifier.fillMaxWidth().padding(12.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                                        Column {
+                                                                            Text("QUANTITY LOSS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                                            Text(if(oeeIdealCycleSeconds==null) "Standard cycle time unavailable" else "Auto-calculated",color=Muted,fontSize=10.sp)
+                                                                        }
+                                                                        Text(if(oeeIdealCycleSeconds==null) "— pcs" else "${"%.0f".format(resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))} pcs",color=Navy,fontSize=18.sp,fontWeight=FontWeight.ExtraBold)
+                                                                    }
+                                                                }
+                                                            } else {
+                                                                OutlinedTextField(loss.qty,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(qty=value)}},label={Text("QUANTITY LOSS (PCS)",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth())
+                                                            }
+                                                            OutlinedTextField(loss.remark,{value->oeeEntryLosses=oeeEntryLosses.toMutableList().also{it[index]=loss.copy(remark=value)}},label={Text("REASON / DETAILS",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)},modifier=Modifier.fillMaxWidth(),minLines=2)
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End,verticalAlignment=Alignment.CenterVertically) {
+                                                                if(!loss.saved && oeeEntryLosses.size>1) TextButton(onClick={oeeEntryLosses=oeeEntryLosses.filterIndexed{idx,_->idx!=index};editingLossIndex=null}) { Text("REMOVE",color=Danger) }
+                                                                TextButton(onClick={editingLossIndex=null}) { Text("CANCEL",color=Muted) }
+                                                                Button(onClick={editingLossIndex=null},colors=ButtonDefaults.buttonColors(containerColor=Teal)) { Text("SAVE LOSS") }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
-                                        val availabilityLossTotal=oeeEntryLosses.filter{it.categoryId!=null && (it.component=="AVAILABILITY" || oeeLossCategories.firstOrNull{c->c.id==it.categoryId}?.extra=="AVAILABILITY")}.sumOf{it.duration.toDoubleOrNull()?:0.0}
-                                        Text("Total availability downtime: ${"%.1f".format(availabilityLossTotal)} min",color=Warning,fontWeight=FontWeight.Bold)
+                                        val availabilityLossTotal=oeeEntryLosses.filter{it.categoryId!=null && (isAvailabilityOeeLoss(it,oeeLossCategories))}.sumOf{it.duration.toDoubleOrNull()?:0.0}
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFFFFF5E8)),border=androidx.compose.foundation.BorderStroke(1.dp,Color(0xFFF2D8B5))) {
+                                            Row(Modifier.fillMaxWidth().padding(13.dp),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                Column(verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                                    Text("AVAILABILITY DOWNTIME",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                    Text("Classified machine losses",color=Muted,fontSize=10.sp)
+                                                }
+                                                Text("${"%.1f".format(availabilityLossTotal)} min",color=Warning,fontSize=18.sp,fontWeight=FontWeight.ExtraBold)
+                                            }
+                                        }
                                         Button(onClick={
                                             val auth=token;val p=oeeProduct;val op=oeeOperation;val m=oeeMachine
                                             if(auth==null||p==null||op==null||m==null)oeeError="Select product, operation and machine first."
+                                            else if(oeeOperatorId==null)oeeError="Select or add an operator name before saving."
                                             else if((oeeGoodCount.toDoubleOrNull()?:-1.0)<0||(oeeRejectCount.toDoubleOrNull()?:-1.0)<0)oeeError="Enter valid non-negative production quantities."
                                             else if(oeeEntryId!=null&&oeeCorrectionReason.trim().length<5)oeeError="Enter a correction reason of at least 5 characters."
                                             else scope.launch {
                                                 oeeLoading=true;oeeError=null
                                                 try {
+                                                    // Correct existing loss events individually before recalculating entry downtime.
+                                                    // The backend correction endpoint appends new losses; saved losses must never be re-posted.
+                                                    val savedLossEdits=oeeEntryLosses.filter{it.saved&&it.id!=null}
+                                                    savedLossEdits.forEach{loss->
+                                                        val lossPayload=JSONObject()
+                                                            .put("loss_date",oeeDate).put("shift",oeeShift)
+                                                            .put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                            .put("loss_category_id",loss.categoryId)
+                                                            .put("duration_min",loss.duration.toDouble())
+                                                            .put("qty_loss",resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories))
+                                                            .put("remark",loss.remark)
+                                                        if(loss.startTime.isNotBlank())lossPayload.put("start_time",loss.startTime)
+                                                        if(loss.endTime.isNotBlank())lossPayload.put("end_time",loss.endTime)
+                                                        withContext(Dispatchers.IO){ApiClient.correctOeeLoss(loss.id!!,lossPayload,oeeCorrectionReason.trim(),auth)}
+                                                    }
                                                     val lossRows=oeeEntryLosses.filter{!it.saved&&it.categoryId!=null&&(it.duration.toDoubleOrNull()?:0.0)>0}
                                                     val losses=JSONArray()
-                                                    lossRows.forEach{loss->losses.put(JSONObject().put("loss_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("loss_category_id",loss.categoryId).put("duration_min",loss.duration.toDouble()).put("qty_loss",loss.qty.toDoubleOrNull()?:0.0).put("remark",loss.remark))}
-                                                    val payload=JSONObject().put("production_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id)
+                                                    lossRows.forEach{loss->losses.put(JSONObject().put("loss_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("loss_category_id",loss.categoryId).put("duration_min",loss.duration.toDouble()).put("qty_loss",resolvedOeeLossQuantity(loss,oeeIdealCycleSeconds,oeeLossCategories)).put("remark",loss.remark))}
+                                                    val payload=JSONObject().put("production_date",oeeDate).put("shift",oeeShift).put("product_id",p.id).put("route_operation_id",op.id).put("machine_id",m.id).put("operator_id",oeeOperatorId)
                                                         .put("shift_duration_min",oeeShiftMinutes.toDouble()).put("planned_break_min",oeeBreakMinutes.toDouble())
                                                         .put("downtime_min",availabilityLossTotal).put("good_count",oeeGoodCount.toDouble()).put("reject_count",oeeRejectCount.toDouble())
-                                                        .put("ideal_cycle_time_sec",0).put("remarks",oeeEntryRemarks)
+                                                        .put("ideal_cycle_time_sec",oeeIdealCycleSeconds ?: 0.0).put("remarks",oeeEntryRemarks)
                                                     if(oeeEntryId!=null) payload.put("downtime_min",availabilityLossTotal)
                                                     val saved=withContext(Dispatchers.IO){
                                                         ApiClient.saveOeeEntryWithLosses(payload,losses,auth,oeeEntryId,oeeEntryId?.let{oeeCorrectionReason.trim()})
                                                     }
                                                     val entry=saved.optJSONObject("entry")
                                                     val savedEntryId = entry?.optInt("id")?.takeIf { it > 0 } ?: oeeEntryId
+                                                    val summaryGood=oeeGoodCount.toDoubleOrNull()?:0.0
+                                                    val summaryReject=oeeRejectCount.toDoubleOrNull()?:0.0
+                                                    val summaryTotal=summaryGood+summaryReject
+                                                    val summaryPlanned=((oeeShiftMinutes.toDoubleOrNull()?:0.0)-(oeeBreakMinutes.toDoubleOrNull()?:0.0)).coerceAtLeast(0.0)
+                                                    val summaryRun=(summaryPlanned-availabilityLossTotal).coerceAtLeast(0.0)
+                                                    val summaryAvailability=if(summaryPlanned>0)summaryRun/summaryPlanned else 0.0
+                                                    val summaryPerformance=if(summaryRun>0)((oeeIdealCycleSeconds?:0.0)*summaryTotal/60.0/summaryRun).coerceIn(0.0,1.0) else 0.0
+                                                    val summaryQuality=if(summaryTotal>0)summaryGood/summaryTotal else 0.0
+                                                    val summaryOee=summaryAvailability*summaryPerformance*summaryQuality
+                                                    oeeSavedSummary=listOf(
+                                                        if(savedEntryId!=null)"Production entry #$savedEntryId saved successfully." else "Production entry saved successfully.",
+                                                        "OEE: ${"%.1f".format(summaryOee*100)}%",
+                                                        "Availability: ${"%.1f".format(summaryAvailability*100)}%",
+                                                        "Performance: ${"%.1f".format(summaryPerformance*100)}%",
+                                                        "Quality: ${"%.1f".format(summaryQuality*100)}%",
+                                                        "Good: ${summaryGood.toInt()}  •  Rejected: ${summaryReject.toInt()}  •  Total: ${summaryTotal.toInt()}",
+                                                        "Availability loss: ${"%.1f".format(availabilityLossTotal)} min"
+                                                    ).joinToString("\n")
                                                     // A successful correction must leave edit mode. Keeping the returned ID
                                                     // here made the form look as though the save had not completed.
                                                     oeeEntryId = null
                                                     oeeCorrectionReason = ""
                                                     oeeEntryLosses = listOf(OeeLossDraft())
-                                                    oeeMode = "SUMMARY"
+                                                    // Keep the selected production scope and operator for quick consecutive entries,
+                                                    // but clear record-specific values and return directly to the entry form.
+                                                    oeeGoodCount = "0"
+                                                    oeeRejectCount = "0"
+                                                    oeeBreakMinutes = "0"
+                                                    oeeEntryRemarks = ""
+                                                    oeeCorrectionReason = ""
+                                                    oeeMode = "ENTRY"
                                                     oeeError = null
                                                     oeeSuccess = if (savedEntryId != null) {
                                                         "Production entry #$savedEntryId saved successfully. Edit mode closed."
@@ -1233,8 +2130,8 @@ class MainActivity : ComponentActivity() {
                                                 } catch(e:Exception){oeeError=e.message ?: "Unable to save production entry and losses."}
                                                 finally{oeeLoading=false}
                                             }
-                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading)"SAVING…" else "SAVE PRODUCTION ENTRY") }
-                                        Text("Total production = good + rejected. Availability downtime is the sum of Availability-category loss cards.",color=Muted,fontSize=11.sp)
+                                        },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth().heightIn(min=54.dp),shape=RoundedCornerShape(13.dp)) { Text(if(oeeLoading)"SAVING PRODUCTION…" else if(oeeEntryId!=null)"SAVE CORRECTION" else "SAVE PRODUCTION ENTRY",fontWeight=FontWeight.Bold) }
+                                        Text("Total production = good + rejected. Availability downtime is calculated from Availability-category loss events.",color=Muted,fontSize=10.sp)
                                     } else if(oeeMode=="MANAGEMENT") {
                                         SectionLabel("OEE management", "Period trend, machine ranking and classified loss Pareto")
                                         OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth())
@@ -1271,13 +2168,53 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else if(homeTab=="HISTORY") {
-                                    ScreenTitle("Action history", "Review previous action updates")
-                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                        Column(Modifier.fillMaxWidth().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                                            Box(Modifier.size(52.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFFE7F1F8)),contentAlignment=Alignment.Center) { Icon(Icons.Filled.History,contentDescription=null,tint=Navy,modifier=Modifier.size(30.dp)) }
-                                            Text("History module not connected",color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
-                                            Text("The action history API is not yet connected to this mobile screen. No records are simulated or hidden.",color=Muted,fontSize=13.sp,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
-                                            StatusPill("AWAITING API INTEGRATION", Warning)
+                                    ScreenTitle("Action history", selectedAction?.number ?: "Open an action to review its history")
+                                    if(selectedAction==null) EmptyState("Select an action first","Open an action and choose VIEW ACTION HISTORY to see its updates.",{Icon(Icons.Filled.History,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp))})
+                                    else {
+                                        TextButton(onClick={homeTab="DETAIL"}){Text("← BACK TO ACTION DETAILS")}
+                                        if(actionHistoryLoading) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Teal)
+                                        actionHistoryError?.let{Text(it,color=Danger,fontSize=12.sp)}
+                                        if(!actionHistoryLoading && actionHistory.isEmpty() && actionHistoryError==null) EmptyState("No history entries yet","Progress updates and status changes will appear here.",{Icon(Icons.Filled.History,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp))})
+                                        actionHistory.forEach { row ->
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                    val changedByName=row.opt("changed_by_name")?.takeUnless{it==JSONObject.NULL}?.toString()?.trim().orEmpty()
+                                                     val changedByUsername=row.opt("changed_by_username")?.takeUnless{it==JSONObject.NULL}?.toString()?.trim().orEmpty()
+                                                     val actorName=changedByName.takeIf{it.isNotBlank()&&it!="null"}?:changedByUsername.takeIf{it.isNotBlank()&&it!="null"}?:"Unknown User"
+                                                     Text(actorName,color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                                    Text(row.optString("changed_at").replace("T"," ").removeSuffix("Z"),color=Muted,fontSize=11.sp)
+                                                    val oldStatus=row.optString("old_status");val newStatus=row.optString("new_status")
+                                                    if(oldStatus.isNotBlank()||newStatus.isNotBlank()) Text(oldStatus.ifBlank{"—"}.replace("_"," ")+" → "+newStatus.ifBlank{"—"}.replace("_"," "),color=Teal,fontWeight=FontWeight.SemiBold,fontSize=12.sp)
+                                                    val comment=row.optString("comment")
+                                                    if(comment.isNotBlank()&&comment!="null") Text(comment,color=Navy,fontSize=13.sp)
+                                                }
+                                            }
+                                        }
+                                        if(actionAttachments.isNotEmpty()) {
+                                            SectionLabel("Evidence attachments","Files linked to this action")
+                                            actionAttachments.forEach { att ->
+                                                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.White).padding(12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    Column(Modifier.weight(1f)) {
+                                                        Text(att.optString("file_name"),color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                                                        Text((att.optLong("size_bytes")/1024).toString()+" KB • "+att.optString("created_at").replace("T"," ").removeSuffix("Z"),color=Muted,fontSize=10.sp)
+                                                    }
+                                                    val context=LocalContext.current
+                                                    OutlinedButton(onClick={
+                                                        val auth=token
+                                                        if(auth==null)message="Please sign in again."
+                                                        else scope.launch {
+                                                            busy=true
+                                                            try {
+                                                                val file=withContext(Dispatchers.IO){ApiClient.downloadActionAttachment(selectedAction!!.id,att.optInt("id"),att.optString("file_name"),cacheDir,auth)}
+                                                                val uri=FileProvider.getUriForFile(context,context.packageName+".fileprovider",file)
+                                                                val mime=att.optString("mime_type").ifBlank{"application/octet-stream"}
+                                                                context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                                                            } catch(e:Exception){message=e.message ?: "Unable to open attachment."}
+                                                            finally{busy=false}
+                                                        }
+                                                    },enabled=!busy){Text("OPEN")}
+                                                }
+                                            }
                                         }
                                     }
                                 } else if(homeTab=="ACCOUNT") {
@@ -1465,7 +2402,7 @@ class MainActivity : ComponentActivity() {
                                 NavigationBarItem(
                                     selected=selected,
                                     onClick={
-                                        if(destination=="MORE") scope.launch { drawerState.open() }
+                                        if(destination=="MORE") drawerScope.launch { drawerState.open() }
                                         else { homeTab=destination; if(destination=="ACTIONS") { selectedOwner=null; token?.let{refreshPendingActions(it)} } }
                                     },
                                     icon={ when(destination) { "ACTIONS"->Icon(Icons.Filled.Assignment,contentDescription=null); "REJECTION"->Icon(Icons.Filled.AssignmentLate,contentDescription=null); "OEE"->Icon(Icons.Filled.Speed,contentDescription=null); else->Icon(Icons.Filled.MoreHoriz,contentDescription=null) } },
@@ -1475,6 +2412,26 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     }
+                }
+                if (oeeError != null) {
+                    AlertDialog(
+                        onDismissRequest = { oeeError = null },
+                        title = { Text("OEE needs attention", color=Navy, fontWeight=FontWeight.Bold) },
+                        text = { Text(oeeError.orEmpty(), color=Navy) },
+                        confirmButton = {
+                            TextButton(onClick = { oeeError = null }) {
+                                Text("OK", color=Teal, fontWeight=FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            if (oeeMachine != null && token != null && !oeeLoading) {
+                                TextButton(onClick = {
+                                    oeeError = null
+                                    token?.let { refreshOee(it) }
+                                }) { Text("REFRESH OEE", color=Teal) }
+                            }
+                        }
+                    )
                 }
                 if (showLogoutConfirm) {
                     AlertDialog(
