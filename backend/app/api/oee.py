@@ -184,7 +184,7 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
         loss_ws.append([None, None, None, None])
     master = wb.create_sheet("Master Data")
     master.sheet_state = "hidden"
-    master.append(["Product Name", "Machine Name", "Operator Name", "Loss Type", "Shift"])
+    master.append(["Product Name", "Machine Name", "Operator Name", "Loss Type", "Shift", "Product ID"])
     # A product/machine pair is offered only when an active effective route and
     # an active machine mapping exist. The importer still checks the selected date.
     pairs = {}
@@ -196,7 +196,7 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
                     pairs.setdefault(product.id, {})[machine.id] = (product, machine)
     for product_id in sorted(pairs, key=lambda pid: next(p.name.casefold() for p in masters["products"] if p.id == pid)):
         product = next(p for p in masters["products"] if p.id == product_id)
-        master.append([product.name, None, None, None, None])
+        master.append([product.name, None, None, None, None, product.id])
         product_row = master.max_row
         machine_rows = []
         for machine_id, (p, machine) in sorted(pairs[product_id].items(), key=lambda item: item[1][1].name.casefold()):
@@ -227,7 +227,7 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
     dv_products = DataValidation(type="list", formula1="=ProductNames", allow_blank=True)
     ws.add_data_validation(dv_products); dv_products.add("C2:C201")
     dv_machines = DataValidation(type="list",
-        formula1='=INDIRECT("ProductMachines_"&MATCH(C2,\'Master Data\'!$A$2:$A$2000,0))', allow_blank=True)
+        formula1='=INDIRECT("ProductMachines_"&INDEX(\'Master Data\'!$F$2:$F$2000,MATCH(C2,\'Master Data\'!$A$2:$A$2000,0)))', allow_blank=True)
     ws.add_data_validation(dv_machines); dv_machines.add("D2:D201")
     for formula, target in [("=Shifts", "E2:E201"), ("=Operators", "F2:F201")]:
         dv = DataValidation(type="list", formula1=formula, allow_blank=True)
