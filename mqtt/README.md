@@ -66,7 +66,7 @@ docker compose ps mqtt
 docker compose logs --tail=100 mqtt
 ```
 
-Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. This backend stage synchronizes device registration, credential rotation and activation/deactivation when MQTT_ENABLED=true. Heartbeat and telemetry ingestion are a later stage.
+Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. When MQTT_ENABLED=true, the backend uses two distinct broker identities:\n\n- `MQTT_CONTROL_USERNAME` / `MQTT_CONTROL_PASSWORD`: privileged Dynamic Security provisioning only.\n- `MQTT_BACKEND_USERNAME` / `MQTT_BACKEND_PASSWORD`: data-plane client assigned the least-privilege `afms-backend-v1` role. It subscribes to device heartbeat, telemetry and acknowledgement topics, and publishes device-specific commands.\n\nThe `afms-backend-v1` role must allow the backend to subscribe to and receive `production/v1/devices/+/heartbeat`, `.../telemetry` and `.../acks`, and to publish on `production/v1/devices/+/commands`. Device topic ACLs must remain scoped to each device UID. The application validates each incoming UID against an active AFMS device mapped to an active PRW machine; heartbeat updates the existing `last_seen_at` field. Telemetry and acknowledgements are currently validated and logged, not persisted as business records. Command publishing is available to backend services and is guarded by the same active-device/machine mapping check.\n\nThe data-plane client reconnects automatically. Keep `MQTT_ENABLED=false` until both broker identities and role ACLs have been verified. This stage introduces no database migration.
 
 ## Persistence and backups
 
