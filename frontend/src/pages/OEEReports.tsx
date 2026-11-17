@@ -41,6 +41,7 @@ export default function OEEReports(){
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [exporting,setExporting]=useState(false)
+  const [oeeView,setOeeView]=useState<'machine'|'operator'>('machine')
 
   useEffect(()=>{
     let active=true
@@ -74,6 +75,35 @@ export default function OEEReports(){
 
   const summary=data?.summary||{}
   const filteredEntries=data?.entries||[]
+  const operatorRows=useMemo(()=>{
+    const grouped=new Map<string,any[]>()
+    for(const entry of filteredEntries){
+      const name=String(entry.operator||'Unassigned').trim()||'Unassigned'
+      const bucket=grouped.get(name)||[]
+      bucket.push(entry)
+      grouped.set(name,bucket)
+    }
+    return [...grouped.entries()].map(([name,rows])=>{
+      const planned=rows.reduce((sum,r)=>sum+Math.max(0,num(r.planned_min)),0)
+      const run=rows.reduce((sum,r)=>sum+Math.max(0,num(r.run_min)),0)
+      const total=rows.reduce((sum,r)=>sum+num(r.total_count),0)
+      const good=rows.reduce((sum,r)=>sum+num(r.good_count),0)
+      const theoretical=rows.reduce((sum,r)=>sum+(num(r.ideal_cycle_time_sec)*num(r.total_count)/60),0)
+      const availability=planned>0?run/planned:0
+      const performanceRaw=run>0?theoretical/run:0
+      const performance=Math.min(1,Math.max(0,performanceRaw))
+      const quality=total>0?good/total:0
+      const machineNames=[...new Set(rows.map(r=>r.machine).filter(Boolean))]
+      const shifts=[...new Set(rows.map(r=>r.shift).filter(Boolean))]
+      const operator=operators.find(p=>String(p.full_name||'').trim().toLowerCase()===name.toLowerCase())
+      return {
+        name,oeePct:availability*performance*quality*100,availability,performance_raw:performanceRaw,
+        quality,good_count:good,total_count:total,reject_count:rows.reduce((sum,r)=>sum+num(r.reject_count),0),
+        entries:rows.length,machines:machineNames.length,shifts:shifts.length,operator_id:operator?.id,
+        sub:` ${rows.length} entries • ${machineNames.length} machines • ${shifts.length} shifts • Good ${num(good)} / Total ${num(total)} pcs`,
+      }
+    }).sort((a,b)=>a.oeePct-b.oeePct||a.name.localeCompare(b.name))
+  },[filteredEntries,operators])
   const selectedMachineLabel=selectedMachineNames.join(', ')
   const machineOptions=machines.map(m=>({value:String(m.id),label:`${m.name} — ${m.code}`}))
   const pageActions=<div className="export-row"><label>From <input aria-label="From date" type="date" value={fromDate} max={toDate} onChange={e=>setFromDate(e.target.value)}/></label><label>To <input aria-label="To date" type="date" value={toDate} min={fromDate} onChange={e=>setToDate(e.target.value)}/></label><button className="primary" disabled={exporting||busy} onClick={exportOeeExcel}>{exporting?'Preparing Excel…':'Download OEE Excel'}</button><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button></div>
@@ -125,7 +155,17 @@ export default function OEEReports(){
     </div>
     <section className="panel report-panel"><div className="panel-title"><div><h2>OEE / Availability / Performance / Quality Trend</h2><p>Daily trend for the selected date range and filters.</p></div></div><PercentTrendChart rows={data?.daily||[]} series={[{key:'oee',label:'OEE'},{key:'availability',label:'Availability'},{key:'performance',label:'Performance'},{key:'quality',label:'Quality'}]} target={85}/></section>
     <section className="panel"><div className="panel-title"><h2>Plant-wise OEE</h2><span>Click a plant to filter the report</span></div><RankedBars rows={(data?.plants||[]).map((r:any)=>({...r,name:r.plant,oeePct:(r.oee||0)*100,sub:`A ${pct(r.availability)} • P ${pct(r.performance_raw)} • Q ${pct(r.quality)} • Good ${num(r.good_count||0)} / Total ${num(r.total_count||0)} pcs`}))} valueKey="oeePct" suffix="%" onSelect={(r:any)=>setScope(old=>({...old,plant:old.plant.length===1&&old.plant[0]===r.plant?[]:[r.plant]}))} selectedName={scope.plant.length===1?scope.plant[0]:undefined}/></section>
-    <section className="panel"><div className="panel-title"><h2>Machine-wise OEE</h2><span>Click a machine to filter</span></div><RankedBars rows={(data?.machines||[]).map((r:any)=>({...r,oeePct:(r.oee||0)*100,sub:`${r.machine_code||''} • ${r.open_actions||0} open actions • ${r.overdue_actions||0} overdue`}))} valueKey="oeePct" suffix="%" onSelect={pickMachine} selectedName={selectedMachineNames.length===1?selectedMachineNames[0]:undefined}/></section>
+    <section className="panel">
+      <div className="panel-title">
+        <div><h2>{oeeView==='machine'?'Machine-wise OEE':'Operator-wise OEE'}</h2><p>{oeeView==='machine'?'Compare OEE across machines.':'Aggregated from each operator’s saved shift entries using total time and quantity, not an average of shift OEE percentages.'}</p></div>
+        <div className="export-row"><button className={oeeView==='machine'?'primary':'secondary'} onClick={()=>setOeeView('machine')}>Machine-wise OEE</button><button className={oeeView==='operator'?'primary':'secondary'} onClick={()=>setOeeView('operator')}>Operator-wise OEE</button></div>
+      </div>
+      {oeeView==='machine'
+        ? <RankedBars rows={(data?.machines||[]).map((r:any)=>({...r,oeePct:(r.oee||0)*100,sub:`${r.machine_code||''} • ${r.open_actions||0} open actions • ${r.overdue_actions||0} overdue`}))} valueKey="oeePct" suffix="%" onSelect={pickMachine} selectedName={selectedMachineNames.length===1?selectedMachineNames[0]:undefined}/>
+        : <><RankedBars rows={operatorRows.map(r=>({...r,sub:r.sub}))} valueKey="oeePct" suffix="%" onSelect={(r:any)=>{const person=operators.find(p=>String(p.id)===String(r.operator_id));if(person)setOperatorId(old=>old===String(person.id)?'':String(person.id))}} selectedName={operators.find(p=>String(p.id)===operatorId)?.full_name}/>
+          <div className="table-wrap"><table><thead><tr><th>Operator</th><th>Entries</th><th>Machines</th><th>Shifts</th><th>Good Qty</th><th>Rejected</th><th>Availability</th><th>Performance</th><th>Quality</th><th>OEE</th></tr></thead><tbody>{operatorRows.map((r:any)=><tr key={r.name} className={operatorId&&String(r.operator_id)===operatorId?'selected':''}><td><b>{r.name}</b></td><td>{r.entries}</td><td>{r.machines}</td><td>{r.shifts}</td><td>{num(r.good_count)}</td><td>{num(r.reject_count)}</td><td>{pct(r.availability)}</td><td>{pct(r.performance_raw)}</td><td>{pct(r.quality)}</td><td><b>{pct(r.oeePct/100)}</b></td></tr>)}{!operatorRows.length&&<tr><td colSpan={10} className="muted">No operator entries in this date range and filter scope.</td></tr>}</tbody></table></div>
+        </>}
+    </section>
     <div className="advanced-grid"><section className="panel"><div className="panel-title"><h2>Loss Pareto</h2><span>Click a loss to see its machine-wise impact; click again to clear</span></div><RankedBars rows={loss?.pareto||[]} valueKey="minutes" suffix=" min" onSelect={(r:any)=>setSelectedLossCategoryId(old=>old===String(r.loss_category_id)?'':String(r.loss_category_id))} selectedName={loss?.pareto?.find((r:any)=>String(r.loss_category_id)===selectedLossCategoryId)?.name}/></section><section className="panel"><div className="panel-title"><div><h2>{selectedLossCategoryId?'Machine Loss Hours — '+(loss?.pareto?.find((r:any)=>String(r.loss_category_id)===selectedLossCategoryId)?.name||'Selected Loss'):'Machine Loss Hours'}</h2><span>{selectedLossCategoryId?'Hours by machine for the selected loss category':'Click a machine to filter'}</span></div>{selectedLossCategoryId&&<button className="secondary" onClick={()=>setSelectedLossCategoryId('')}>Clear loss selection</button>}</div><RankedBars rows={(loss?.machines||[]).map((r:any)=>({...r,sub:r.machine_code||''}))} valueKey="hours" suffix=" h" onSelect={pickMachine} selectedName={selectedMachineNames.length===1?selectedMachineNames[0]:undefined}/></section></div>
     <section className="panel report-panel"><h2>Monthly Loss Hours Trend</h2><ValueTrendChart rows={loss?.monthly||[]} keyName="hours" label="Loss hours" suffix=" h"/></section>
     <section className="panel"><div className="panel-title"><div><h2>Machine Shift OEE Details</h2><p>Raw performance above 110% flags a cycle-time or quantity master check.</p></div></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Product / Operation</th><th>Operator</th><th>Run / Planned</th><th>Total / Good / Reject</th><th>A</th><th>P</th><th>Q</th><th>OEE</th></tr></thead><tbody>{filteredEntries.map((r:any)=><tr key={r.id}><td>{r.date}</td><td>{r.shift}</td><td><b>{r.machine}</b><br/><small>{r.machine_code||''}</small></td><td>{r.product}<br/><small>{r.operation}</small></td><td>{r.operator||'—'}</td><td>{num(r.run_min)} / {num(r.planned_min)} min</td><td>{num(r.total_count)} / {num(r.good_count)} / {num(r.reject_count)}</td><td>{pct(r.availability)}</td><td className={r.performance_master_warning?'neg':''}>{pct(r.performance_raw)}</td><td>{pct(r.quality)}</td><td><b>{pct(r.oee)}</b></td></tr>)}{!filteredEntries.length&&<tr><td colSpan={11} className="muted">No OEE shift entries in this date range and filter scope.</td></tr>}</tbody></table></div></section>
