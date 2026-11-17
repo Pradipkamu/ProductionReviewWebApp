@@ -134,12 +134,21 @@ verify_database_backup() {
     stop "Restore into isolated verification database failed"
   fi
 
-  core_tables="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT CASE WHEN to_regclass('public.users') IS NOT NULL AND to_regclass('public.products') IS NOT NULL AND to_regclass('public.alembic_version') IS NOT NULL THEN 'OK' ELSE 'MISSING' END")" ||
+  if ! core_tables="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT CASE WHEN to_regclass('public.users') IS NOT NULL AND to_regclass('public.products') IS NOT NULL AND to_regclass('public.alembic_version') IS NOT NULL THEN 'OK' ELSE 'MISSING' END")"; then
+    docker compose exec -T db dropdb -U pms --if-exists --force "$scratch" >/dev/null 2>&1 || true
+    docker compose exec -T db rm -f "$container_file" >/dev/null 2>&1 || true
     stop "Could not validate required tables in isolated database"
-  schema_version="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT COALESCE((SELECT version_num FROM public.alembic_version LIMIT 1),'')")" ||
+  fi
+  if ! schema_version="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT COALESCE((SELECT version_num FROM public.alembic_version LIMIT 1),'')")"; then
+    docker compose exec -T db dropdb -U pms --if-exists --force "$scratch" >/dev/null 2>&1 || true
+    docker compose exec -T db rm -f "$container_file" >/dev/null 2>&1 || true
     stop "Could not read Alembic revision from isolated database"
-  table_count="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")" ||
+  fi
+  if ! table_count="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")"; then
+    docker compose exec -T db dropdb -U pms --if-exists --force "$scratch" >/dev/null 2>&1 || true
+    docker compose exec -T db rm -f "$container_file" >/dev/null 2>&1 || true
     stop "Could not count restored public tables"
+  fi
 
   docker compose exec -T db dropdb -U pms --if-exists --force "$scratch" >/dev/null ||
     stop "Verification passed, but temporary database cleanup failed: $scratch"
