@@ -37,9 +37,27 @@ Set a unique high-entropy `MQTT_DYNSEC_PASSWORD` in the server's `.env` before s
 
 The initial Dynamic Security bootstrap also creates a `democlient` with broad read/write access to `#`. Do not expose port 8883 or connect production devices until this demo client has been deleted and least-privilege device roles/ACLs have been provisioned. This is a required pre-production hardening step. Do not expose the broker administration credentials to devices.
 
+## AFMS device role and backend control client
+
+After starting the broker, use the bootstrap administrator interactively to create the device role and control client. The commands below prompt for the bootstrap password; do not put it in shell history:
+
+```bash
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec createRole afms-device-v1
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-device-v1 publishClientSend 'production/v1/devices/%u/heartbeat' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-device-v1 publishClientSend 'production/v1/devices/%u/telemetry' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-device-v1 subscribePattern 'production/v1/devices/%u/commands' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-device-v1 subscribePattern 'production/v1/devices/%u/acks' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-device-v1 publishClientReceive 'production/v1/devices/%u/commands' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-device-v1 publishClientReceive 'production/v1/devices/%u/acks' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec createClient prw-afms-control
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addClientRole prw-afms-control dynsec-admin
+```
+
+Set a separate password for prw-afms-control when prompted, then store it in the server .env. The control client is highly privileged and must never be placed in device firmware or frontend code. Set MQTT_ENABLED=true only after the role and control client have been verified. Remove the default democlient before exposing the broker to external devices.
+
 ## Start and verify (after TLS files and .env are ready)
 
-The broker is in the optional `mqtt` Compose profile. Normal `docker compose up -d` continues to start only the existing application services. The backend explicitly receives an empty `MQTT_DYNSEC_PASSWORD`; the broker bootstrap password is not passed into the application container. The backend is not yet authorised to administer Dynamic Security.
+The broker is in the optional `mqtt` Compose profile. Normal `docker compose up -d` continues to start only the existing application services. The backend explicitly receives an empty `MQTT_DYNSEC_PASSWORD`; the broker bootstrap password is not passed into the application container. The backend uses a dedicated control client, separate from the bootstrap admin account. Before enabling MQTT_ENABLED, create the device role and the backend control client from inside the broker container. Store the control client's credentials in the server .env as MQTT_CONTROL_USERNAME and MQTT_CONTROL_PASSWORD. Keep MQTT_ENABLED=false until this is completed and verified.
 
 ```bash
 docker compose config --services
@@ -48,7 +66,7 @@ docker compose ps mqtt
 docker compose logs --tail=100 mqtt
 ```
 
-Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. The application backend is not yet wired to broker lifecycle/telemetry in this infrastructure stage; that integration is a separate implementation step.
+Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. This backend stage synchronizes device registration, credential rotation and activation/deactivation when MQTT_ENABLED=true. Heartbeat and telemetry ingestion are a later stage.
 
 ## Persistence and backups
 
