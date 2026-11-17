@@ -43,3 +43,11 @@ Upload_data/
 database/oracle_backups/
 database/pre_restore_*/
 database_backups/
+
+# MQTT runtime state and private TLS material must never be committed.
+mqtt/data/*
+!mqtt/data/.gitkeep
+mqtt/log/*
+!mqtt/log/.gitkeep
+mqtt/certs/*
+!mqtt/certs/.gitkeep
