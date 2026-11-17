@@ -1,11 +1,13 @@
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import AFMSDevice, Machine
+from app.enums import SourceType
+from app.models import (AFMSDevice, Machine, MachineShiftProduction, Product, Operation, RouteVersion, RouteOperation, OperationMachineMap, StandardCycleTime)
 from app.services import mqtt_data_plane as mqtt_service
 
 
@@ -175,3 +177,59 @@ def test_invalid_telemetry_gets_permanent_rejection_ack(monkeypatch):
     mqtt_service._handle_message(None, None, _Message("ESP32-MQTT-TEST", "telemetry", payload))
     assert acknowledgements[0]["status"] == "rejected"
     assert acknowledgements[0]["code"] == "invalid-payload"
+
+
+def test_telemetry_snapshot_updates_existing_prw_oee_source_record():
+    device_id = _device()
+    with SessionLocal() as db:
+        device = db.get(AFMSDevice, device_id)
+        product = Product(code="PART-AFMS-01", name="AFMS Test Part", is_active=True)
+        operation = Operation(code="AFMS-WASH", name="Washing", is_active=True)
+        db.add_all([product, operation])
+        db.flush()
+        route = RouteVersion(product_id=product.id, revision_no=1,
+                             effective_from=date(2026, 1, 1), is_active=True)
+        db.add(route)
+        db.flush()
+        route_operation = RouteOperation(route_version_id=route.id,
+                                         operation_id=operation.id,
+                                         sequence_no=1, is_enabled=True)
+        db.add(route_operation)
+        db.flush()
+        db.add(OperationMachineMap(
+            route_operation_id=route_operation.id, machine_id=device.machine_id,
+            effective_from=date(2026, 1, 1), priority=1, is_active=True,
+        ))
+        db.add(StandardCycleTime(
+            route_operation_id=route_operation.id, machine_id=device.machine_id,
+            effective_from=date(2026, 1, 1), ideal_cycle_time_sec=Decimal("12.5"),
+        ))
+        db.commit()
+
+    payload = {
+        "schemaVersion": 1, "eventId": "evt-production-001",
+        "eventType": "PRODUCTION_PULSE", "timestamp": "2026-11-17T10:00:00Z",
+        "sequence": 10, "productionCount": 100, "rejectCount": 5,
+        "goodCount": 95, "shiftId": 1, "partCode": "PART-AFMS-01",
+        "shiftDurationMin": 480, "plannedBreakMin": 30,
+        "downtimeSeconds": 120, "operatorName": "",
+    }
+    mqtt_service._handle_message(
+        None, None, _Message("ESP32-MQTT-TEST", "telemetry", payload)
+    )
+
+    with SessionLocal() as db:
+        rows = db.scalars(select(MachineShiftProduction).where(
+            MachineShiftProduction.machine_id == db.get(AFMSDevice, device_id).machine_id,
+            MachineShiftProduction.source == SourceType.AFMS,
+        )).all()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.production_date == date(2026, 11, 17)
+        assert row.shift == "A"
+        assert row.total_count == Decimal("100")
+        assert row.good_count == Decimal("95")
+        assert row.reject_count == Decimal("5")
+        assert row.planned_break_min == Decimal("30")
+        assert row.downtime_min == Decimal("2")
+        assert row.ideal_cycle_time_sec == Decimal("12.5")
