@@ -23,6 +23,9 @@ services:
   backend:
     build: ./backend
     env_file: .env
+    # The server .env also contains broker bootstrap settings; never pass its admin secret to the app.
+    environment:
+      MQTT_DYNSEC_PASSWORD: ""
     volumes:
       - ./database/imports:/app/uploads
       - ./database/backups:/app/backups
@@ -43,6 +46,7 @@ services:
     restart: unless-stopped
 
   mqtt:
+    profiles: ["mqtt"]
     image: eclipse-mosquitto:2.1.2-alpine
     container_name: productionreviewwebapp-mqtt
     environment:
