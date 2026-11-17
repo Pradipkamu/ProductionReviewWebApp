@@ -4,6 +4,25 @@ export function getToken() { return localStorage.getItem('token') }
 export function setToken(token: string) { localStorage.setItem('token', token) }
 export function clearToken() { localStorage.removeItem('token') }
 
+function readableApiError(detail: any): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail.map((item: any) => {
+      if (typeof item === 'string') return item
+      const message = typeof item?.msg === 'string' ? item.msg : ''
+      const location = Array.isArray(item?.loc) ? item.loc.filter((part: any) => part !== 'body').join(' → ') : ''
+      return [location, message].filter(Boolean).join(': ')
+    }).filter(Boolean)
+    if (messages.length) return messages.join('; ')
+  }
+  if (detail && typeof detail === 'object') {
+    if (typeof detail.message === 'string') return detail.message
+    if (detail.detail !== undefined && detail.detail !== detail) return readableApiError(detail.detail)
+    try { return JSON.stringify(detail) } catch { /* use fallback below */ }
+  }
+  return 'The request failed. Please check the entered values and try again.'
+}
+
 export async function api<T=any>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers || {})
   const token = getToken()
@@ -15,7 +34,11 @@ export async function api<T=any>(path: string, init: RequestInit = {}): Promise<
   }
   const res = await fetch(`${API}${path}`, { ...init, headers })
   if (res.status === 401) { clearToken(); location.reload() }
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const detail = body && typeof body === 'object' && 'detail' in body ? body.detail : body
+    throw new Error(readableApiError(detail) || `${res.status} ${res.statusText}`)
+  }
   if(res.ok && headers.has('X-Correction-ID') && !path.split('?')[0].includes('/preview'))sessionStorage.removeItem('correctionId')
   return res.json()
 }
