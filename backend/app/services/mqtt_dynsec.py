@@ -17,7 +17,7 @@ DEVICE_ROLE = "afms-device-v1"
 
 
 class MQTTProvisioningError(RuntimeError):
-    pass
+    """Raised when the broker cannot confirm a device lifecycle operation."""
 
 
 def _execute(command: dict) -> dict:
@@ -27,7 +27,12 @@ def _execute(command: dict) -> dict:
     if not settings.mqtt_control_username or not settings.mqtt_control_password:
         raise MQTTProvisioningError("MQTT control credentials are not configured")
 
-    connected, response_ready = threading.Event(), threading.Event()
+    # Dynamic Security echoes correlationData. Match it so a concurrent request
+    # or a delayed response cannot be mistaken for this operation's confirmation.
+    correlation_id = uuid.uuid4().hex
+    command = {**command, "correlationData": correlation_id}
+    connected = threading.Event()
+    response_ready = threading.Event()
     state = {"response": None, "error": None}
     client = mqtt.Client(
         callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -48,12 +53,18 @@ def _execute(command: dict) -> dict:
 
     def on_message(client, userdata, message):
         try:
-            state["response"] = json.loads(message.payload.decode("utf-8"))
+            payload = json.loads(message.payload.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            state["error"] = "Invalid Dynamic Security response"
-        response_ready.set()
+            logger.warning("Ignoring malformed Dynamic Security response")
+            return
+        for response in payload.get("responses", []):
+            if response.get("correlationData") == correlation_id:
+                state["response"] = response
+                response_ready.set()
+                return
 
-    client.on_connect, client.on_message = on_connect, on_message
+    client.on_connect = on_connect
+    client.on_message = on_message
     try:
         client.connect(settings.mqtt_host, settings.mqtt_internal_port, keepalive=20)
         client.loop_start()
@@ -61,17 +72,19 @@ def _execute(command: dict) -> dict:
             raise MQTTProvisioningError("Timed out connecting to MQTT broker")
         if state["error"]:
             raise MQTTProvisioningError(state["error"])
+
         info = client.publish(CONTROL_TOPIC, json.dumps({"commands": [command]}), qos=1)
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
             raise MQTTProvisioningError("Could not publish Dynamic Security command")
         info.wait_for_publish(timeout=settings.mqtt_timeout_seconds)
+        if not info.is_published():
+            raise MQTTProvisioningError("Timed out publishing Dynamic Security command")
         if not response_ready.wait(settings.mqtt_timeout_seconds):
             raise MQTTProvisioningError("Timed out waiting for broker confirmation")
-        if state["error"]:
-            raise MQTTProvisioningError(state["error"])
-        responses = (state["response"] or {}).get("responses", [])
-        if len(responses) != 1 or responses[0].get("command") != command["command"] or responses[0].get("error"):
-            detail = responses[0].get("error", "Unexpected response") if responses else "Empty response"
+
+        response = state["response"] or {}
+        if response.get("command") != command["command"] or response.get("error"):
+            detail = response.get("error") or "Unexpected broker response"
             raise MQTTProvisioningError("Broker rejected command: " + detail)
         return {"enabled": True, "synchronized": True}
     except MQTTProvisioningError:
@@ -82,9 +95,12 @@ def _execute(command: dict) -> dict:
     finally:
         try:
             client.disconnect()
+        except Exception:
+            logger.debug("MQTT client disconnect failed", exc_info=True)
+        try:
             client.loop_stop()
         except Exception:
-            logger.debug("MQTT client cleanup failed", exc_info=True)
+            logger.debug("MQTT client loop cleanup failed", exc_info=True)
 
 
 def create_device_client(device_uid: str, password: str) -> dict:
