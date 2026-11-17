@@ -41,3 +41,20 @@ services:
     ports:
       - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
     restart: unless-stopped
+
+  mqtt:
+    image: eclipse-mosquitto:2.1.2-alpine
+    container_name: productionreviewwebapp-mqtt
+    environment:
+      MOSQUITTO_DYNSEC_PASSWORD: ${MQTT_DYNSEC_PASSWORD:?Set a strong MQTT_DYNSEC_PASSWORD in .env before starting the broker}
+    volumes:
+      - ./mqtt/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mqtt/certs:/mosquitto/certs:ro
+      - ./mqtt/data:/mosquitto/data
+      - ./mqtt/log:/mosquitto/log
+    ports:
+      # Only the TLS listener is published. Port 1883 remains Docker-network-only.
+      - "${MQTT_BIND:-0.0.0.0}:${MQTT_PORT:-8883}:8883"
+    expose:
+      - "1883"
+    restart: unless-stopped
