@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { dateIST } from '../time'
-import { api } from '../api'
+import { api, downloadApi } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
 import { PercentTrendChart, RankedBars, ValueTrendChart } from '../components/Charts'
 import { Kpi, PageHeader, num, pct } from '../components/UI'
@@ -40,6 +40,7 @@ export default function OEEReports(){
   const [loss,setLoss]=useState<any>(null)
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
+  const [exporting,setExporting]=useState(false)
 
   useEffect(()=>{
     let active=true
@@ -75,7 +76,23 @@ export default function OEEReports(){
   const filteredEntries=data?.entries||[]
   const selectedMachineLabel=selectedMachineNames.join(', ')
   const machineOptions=machines.map(m=>({value:String(m.id),label:`${m.name} — ${m.code}`}))
-  const pageActions=<div className="export-row"><label>From <input aria-label="From date" type="date" value={fromDate} max={toDate} onChange={e=>setFromDate(e.target.value)}/></label><label>To <input aria-label="To date" type="date" value={toDate} min={fromDate} onChange={e=>setToDate(e.target.value)}/></label><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button></div>
+  const pageActions=<div className="export-row"><label>From <input aria-label="From date" type="date" value={fromDate} max={toDate} onChange={e=>setFromDate(e.target.value)}/></label><label>To <input aria-label="To date" type="date" value={toDate} min={fromDate} onChange={e=>setToDate(e.target.value)}/></label><button className="primary" disabled={exporting||busy} onClick={exportOeeExcel}>{exporting?'Preparing Excel…':'Download OEE Excel'}</button><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button></div>
+
+  async function exportOeeExcel(){
+    const q=new URLSearchParams({from_date:fromDate,as_of:toDate})
+    appendScope(q,scope)
+    if(machineId.length)q.set('machine_id',machineId.join(','))
+    if(operatorId)q.set('operator_id',operatorId)
+    if(shift)q.set('shift',shift)
+    if(selectedLossCategoryId)q.set('loss_category_id',selectedLossCategoryId)
+    else if(lossCategoryIds.length)q.set('loss_category_id',lossCategoryIds.join(','))
+    if(lossComponent)q.set('loss_component',lossComponent)
+    setExporting(true)
+    try{
+      await downloadApi(`/reports/oee-export.xlsx?${q.toString()}`,`OEE_Report_${fromDate}_to_${toDate}.xlsx`)
+    }catch(e:any){setError(e?.message||'Unable to export OEE Excel workbook.')}
+    finally{setExporting(false)}
+  }
 
   function pickMachine(row:any){
     const machine=machines.find(m=>String(m.id)===String(row?.machine_id))
