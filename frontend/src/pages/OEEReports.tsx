@@ -29,6 +29,9 @@ export default function OEEReports(){
   const [products,setProducts]=useState<any[]>([])
   const [machines,setMachines]=useState<any[]>([])
   const [operators,setOperators]=useState<any[]>([])
+  const [lossCategories,setLossCategories]=useState<any[]>([])
+  const [lossCategoryIds,setLossCategoryIds]=useState<string[]>([])
+  const [lossComponent,setLossComponent]=useState('')
   const [machineId,setMachineId]=useState<string[]>([])
   const [operatorId,setOperatorId]=useState('')
   const [shift,setShift]=useState('')
@@ -39,8 +42,8 @@ export default function OEEReports(){
 
   useEffect(()=>{
     let active=true
-    Promise.all([api('/masters/filter-options'),api('/masters/products'),api('/masters/machines'),api('/personnel')])
-      .then(([o,p,m,people]:any[])=>{if(active){setOptions(o);setProducts(p);setMachines(m);setOperators(people)}})
+    Promise.all([api('/masters/filter-options'),api('/masters/products'),api('/masters/machines'),api('/personnel'),api('/masters/loss-categories')])
+      .then(([o,p,m,people,categories]:any[])=>{if(active){setOptions(o);setProducts(p);setMachines(m);setOperators(people);setLossCategories(categories)}})
       .catch((e:any)=>{if(active)setError(e.message)})
     return()=>{active=false}
   },[])
@@ -56,12 +59,15 @@ export default function OEEReports(){
     if(machineId.length)q.set('machine_id',machineId.join(','))
     if(operatorId)q.set('operator_id',operatorId)
     if(shift)q.set('shift',shift)
-    Promise.all([api(`/reports/oee-trends?${q}`),api(`/reports/loss-pareto?${q}`)])
+    const lossQuery=new URLSearchParams(q)
+    if(lossCategoryIds.length)lossQuery.set('loss_category_id',lossCategoryIds.join(','))
+    if(lossComponent)lossQuery.set('loss_component',lossComponent)
+    Promise.all([api(`/reports/oee-trends?${q}`),api(`/reports/loss-pareto?${lossQuery}`)])
       .then(([a,b]:any[])=>{if(active){setData(a);setLoss(b)}})
       .catch((e:any)=>{if(active)setError(e.message)})
       .finally(()=>{if(active)setBusy(false)})
     return()=>{active=false}
-  },[fromDate,toDate,scope.plant,scope.productGroup,scope.customerId,scope.productId,machineId,operatorId,shift])
+  },[fromDate,toDate,scope.plant,scope.productGroup,scope.customerId,scope.productId,machineId,operatorId,shift,lossCategoryIds,lossComponent])
 
   const summary=data?.summary||{}
   const filteredEntries=data?.entries||[]
@@ -82,6 +88,8 @@ export default function OEEReports(){
       <MultiSelect value={machineId} onChange={setMachineId} placeholder="All Machines" options={machineOptions}/>
       <label className="inline-filter">Shift <select value={shift} onChange={e=>setShift(e.target.value)}><option value="">All Shifts</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></label>
       <label className="inline-filter">Operator <select value={operatorId} onChange={e=>setOperatorId(e.target.value)}><option value="">All Operators</option>{operators.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
+      <MultiSelect value={lossCategoryIds} onChange={setLossCategoryIds} placeholder="All Loss Categories" options={lossCategories.map((x:any)=>({value:String(x.id),label:x.name}))}/>
+      <label className="inline-filter">Loss Component <select value={lossComponent} onChange={e=>setLossComponent(e.target.value)}><option value="">All Components</option><option value="AVAILABILITY">Availability</option><option value="PERFORMANCE">Performance</option><option value="QUALITY">Quality</option></select></label>
       <button className="secondary" onClick={()=>downloadCsv('oee_shift_details.csv',filteredEntries)}>Export OEE CSV</button>
       <button className="secondary" onClick={()=>downloadCsv('oee_loss_details.csv',loss?.events||[])}>Export Loss CSV</button>
     </div>
@@ -97,6 +105,7 @@ export default function OEEReports(){
       <Kpi label="Loss Hours" value={`${num(loss?.summary?.loss_hours||0)} h`} tone={(loss?.summary?.loss_hours||0)>0?'warn':'good'}/>
     </div>
     <section className="panel report-panel"><div className="panel-title"><div><h2>OEE / Availability / Performance / Quality Trend</h2><p>Daily trend for the selected date range and filters.</p></div></div><PercentTrendChart rows={data?.daily||[]} series={[{key:'oee',label:'OEE'},{key:'availability',label:'Availability'},{key:'performance',label:'Performance'},{key:'quality',label:'Quality'}]} target={85}/></section>
+    <section className="panel"><div className="panel-title"><h2>Plant-wise OEE</h2><span>Click a plant to filter the report</span></div><RankedBars rows={(data?.plants||[]).map((r:any)=>({...r,name:r.plant,oeePct:(r.oee||0)*100,sub:`A ${pct(r.availability)} • P ${pct(r.performance_raw)} • Q ${pct(r.quality)} • ${num(r.total_count||0)} pcs`}))} valueKey="oeePct" suffix="%" onSelect={(r:any)=>setScope(old=>({...old,plant:[r.plant]}))}/></section>
     <section className="panel"><div className="panel-title"><h2>Machine-wise OEE</h2><span>Click a machine to filter</span></div><RankedBars rows={(data?.machines||[]).map((r:any)=>({...r,oeePct:(r.oee||0)*100,sub:`${r.machine_code||''} • ${r.open_actions||0} open actions • ${r.overdue_actions||0} overdue`}))} valueKey="oeePct" suffix="%" onSelect={pickMachine} selectedName={selectedMachineNames.length===1?selectedMachineNames[0]:undefined}/></section>
     <div className="advanced-grid"><section className="panel"><h2>Loss Pareto</h2><RankedBars rows={loss?.pareto||[]} valueKey="minutes" suffix=" min"/></section><section className="panel"><div className="panel-title"><h2>Machine Loss Hours</h2><span>Click a machine to filter</span></div><RankedBars rows={(loss?.machines||[]).map((r:any)=>({...r,sub:r.machine_code||''}))} valueKey="hours" suffix=" h" onSelect={pickMachine} selectedName={selectedMachineNames.length===1?selectedMachineNames[0]:undefined}/></section></div>
     <section className="panel report-panel"><h2>Monthly Loss Hours Trend</h2><ValueTrendChart rows={loss?.monthly||[]} keyName="hours" label="Loss hours" suffix=" h"/></section>
