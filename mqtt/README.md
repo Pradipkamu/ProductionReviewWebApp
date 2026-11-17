@@ -35,9 +35,11 @@ If using Certbot, copy or securely deploy the renewed full chain and private key
 
 Set a unique high-entropy `MQTT_DYNSEC_PASSWORD` in the server's `.env` before starting the service. Mosquitto 2.1 creates its Dynamic Security configuration on first startup and uses this value for its initial administration client. The Dynamic Security JSON and broker data are persisted under `mqtt/data/`.
 
-The initial Dynamic Security bootstrap also creates a demo client in the default configuration. Before allowing production devices to connect, remove that demo client and provision least-privilege clients/roles/ACLs. Do not expose the broker administration credentials to devices.
+The initial Dynamic Security bootstrap also creates a `democlient` with broad read/write access to `#`. Do not expose port 8883 or connect production devices until this demo client has been deleted and least-privilege device roles/ACLs have been provisioned. This is a required pre-production hardening step. Do not expose the broker administration credentials to devices.
 
 ## Start and verify (after TLS files and .env are ready)
+
+The broker is in the optional `mqtt` Compose profile. Normal `docker compose up -d` continues to start only the existing application services. The backend explicitly receives an empty `MQTT_DYNSEC_PASSWORD`; the broker bootstrap password is not passed into the application container. The backend is not yet authorised to administer Dynamic Security.
 
 ```bash
 docker compose config --services
