@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Guarded ProductionReviewWebApp server update helper.
-# Commands: check | backup | prepare <branch> |
-#           deploy <branch> --confirm | rollback
+# Commands: check | backup | verify-backup <dump> | verify |
+#           prepare <branch> | deploy <branch> --confirm | rollback
 #
 # Safety:
 # - Preserves untracked files/directories (including backups/).
@@ -105,6 +105,56 @@ check_untracked_conflicts() {
   say "No incoming-file conflicts with untracked local files."
 }
 
+verify_database_backup() {
+  local db_file="$1"
+  local scratch container_file core_tables schema_version table_count
+
+  [[ -s "$db_file" ]] || stop "Backup file is missing or empty: $db_file"
+  db_file="$(realpath "$db_file")"
+  scratch="pms_verify_$(date -u +%Y%m%d%H%M%S)_$"
+  container_file="/tmp/${scratch}.dump"
+
+  say "Verifying backup by restoring into isolated database: $scratch"
+  docker compose cp "$db_file" "db:$container_file" ||
+    stop "Could not copy backup into the PostgreSQL container"
+
+  if ! docker compose exec -T db pg_restore --list "$container_file" >/dev/null; then
+    docker compose exec -T db rm -f "$container_file" >/dev/null 2>&1 || true
+    stop "Backup archive cannot be read by pg_restore"
+  fi
+
+  if ! docker compose exec -T db createdb -U pms "$scratch"; then
+    docker compose exec -T db rm -f "$container_file" >/dev/null 2>&1 || true
+    stop "Could not create isolated verification database"
+  fi
+
+  if ! docker compose exec -T db pg_restore -U pms -d "$scratch" --no-owner --no-privileges "$container_file"; then
+    docker compose exec -T db dropdb -U pms --if-exists --force "$scratch" >/dev/null 2>&1 || true
+    docker compose exec -T db rm -f "$container_file" >/dev/null 2>&1 || true
+    stop "Restore into isolated verification database failed"
+  fi
+
+  core_tables="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT CASE WHEN to_regclass('public.users') IS NOT NULL AND to_regclass('public.products') IS NOT NULL AND to_regclass('public.alembic_version') IS NOT NULL THEN 'OK' ELSE 'MISSING' END")" ||
+    stop "Could not validate required tables in isolated database"
+  schema_version="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT COALESCE((SELECT version_num FROM public.alembic_version LIMIT 1),'')")" ||
+    stop "Could not read Alembic revision from isolated database"
+  table_count="$(docker compose exec -T db psql -U pms -d "$scratch" -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")" ||
+    stop "Could not count restored public tables"
+
+  docker compose exec -T db dropdb -U pms --if-exists --force "$scratch" >/dev/null ||
+    stop "Verification passed, but temporary database cleanup failed: $scratch"
+  docker compose exec -T db rm -f "$container_file" >/dev/null ||
+    stop "Verification passed, but temporary dump cleanup failed: $container_file"
+
+  [[ "$core_tables" == "OK" ]] || stop "Restored database is missing users, products, or alembic_version"
+  [[ -n "$schema_version" ]] || stop "Restored database has no Alembic revision"
+  [[ "$table_count" =~ ^[0-9]+$ && "$table_count" -gt 0 ]] ||
+    stop "Restored database has no public tables"
+
+  say "TEMPORARY RESTORE VERIFIED: core tables OK; public tables=$table_count; Alembic revision=$schema_version"
+  say "Live database pms was not modified."
+}
+
 create_backups() {
   local db_file bundle_file
 
@@ -121,7 +171,8 @@ create_backups() {
     stop "Database backup archive verification failed"
 
   chmod 600 "$db_file"
-  say "VERIFIED DATABASE BACKUP: $db_file"
+  say "VERIFIED DATABASE BACKUP ARCHIVE: $db_file"
+  verify_database_backup "$db_file"
 
   say "Creating Git rollback snapshot..."
   git bundle create "$bundle_file" --all ||
@@ -143,7 +194,7 @@ create_backups() {
 }
 
 health_check() {
-  local backend_ok=false frontend_ok=false i
+  local backend_ok=false frontend_ok=false db_ok=false i
 
   for i in $(seq 1 40); do
     if curl -fsS --max-time 3 http://127.0.0.1:8000/api/health >/dev/null; then
@@ -154,8 +205,13 @@ health_check() {
       frontend_ok=true
     fi
 
-    if [[ "$backend_ok" == true && "$frontend_ok" == true ]]; then
-      say "Backend and frontend health checks passed."
+    if docker compose exec -T db pg_isready -U pms -d pms >/dev/null 2>&1; then
+      db_ok=true
+    fi
+
+    if [[ "$backend_ok" == true && "$frontend_ok" == true && "$db_ok" == true ]]; then
+      say "Backend API, frontend HTTP, and PostgreSQL readiness checks passed."
+      docker compose ps 2>&1 | tee -a "$LOG"
       return 0
     fi
 
@@ -229,6 +285,8 @@ usage() {
 Usage:
   bash server_update.sh check
   bash server_update.sh backup
+  bash server_update.sh verify-backup <dump-path>
+  bash server_update.sh verify
   bash server_update.sh prepare <branch>
   bash server_update.sh deploy <branch> --confirm
   bash server_update.sh rollback
@@ -237,8 +295,10 @@ Deployment safeguards:
   - Requested branch must already be checked out.
   - Tracked working tree must be clean.
   - Untracked files/directories are preserved.
-  - Database dump and Git bundle are verified before deployment.
+  - Database dump is restored and checked in an isolated temporary database.
+  - Git bundle is verified before deployment.
   - Backend/frontend are built and restarted.
+  - Post-deploy verification checks API, frontend, and PostgreSQL readiness.
   - Alembic migrations are NOT run.
   - Database restore is NOT run.
 EOF
@@ -255,6 +315,18 @@ main() {
     backup)
       status
       create_backups
+      ;;
+
+    verify-backup)
+      local backup_path="${2:-}"
+      [[ -n "$backup_path" ]] || stop "Usage: verify-backup <dump-path>"
+      verify_database_backup "$backup_path"
+      ;;
+
+    verify)
+      status
+      health_check || stop "Application verification failed; inspect the update log."
+      say "APPLICATION VERIFICATION PASSED."
       ;;
 
     prepare)
