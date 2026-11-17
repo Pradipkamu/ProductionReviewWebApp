@@ -804,12 +804,13 @@ def oee_trends_report(
             overdue_by_machine[mid].add(action.id)
     for mid, rs in by_machine.items():
         machine = db.get(Machine, mid); a = _aggregate_oee_rows(rs)
-        machines.append({"machine_id": mid, "name": machine.code if machine else f"Machine {mid}",
+        machines.append({"machine_id": mid, "name": machine.name if machine else f"Machine {mid}",
+                         "machine_code": machine.code if machine else f"Machine {mid}",
                          "open_actions": len(action_by_machine[mid]), "overdue_actions": len(overdue_by_machine[mid]), **a})
     machines.sort(key=lambda x: x["oee"])
     summary = _aggregate_oee_rows(rows)
     product_map = {x.id: x.name for x in db.scalars(select(Product).where(Product.id.in_({r.product_id for r in rows} or {-1}))).all()}
-    machine_map = {x.id: x.code for x in db.scalars(select(Machine).where(Machine.id.in_({r.machine_id for r in rows} or {-1}))).all()}
+    machine_map = {x.id: {"name": x.name, "code": x.code} for x in db.scalars(select(Machine).where(Machine.id.in_({r.machine_id for r in rows} or {-1}))).all()}
     route_rows = db.execute(
         select(RouteOperation.id, Operation.name).join(Operation, Operation.id == RouteOperation.operation_id)
         .where(RouteOperation.id.in_({r.route_operation_id for r in rows} or {-1}))
@@ -824,7 +825,8 @@ def oee_trends_report(
             "operator": r.operator.full_name if r.operator else "Unassigned",
             "product": product_map.get(r.product_id, f"Product {r.product_id}"),
             "operation": operation_map.get(r.route_operation_id, f"Operation {r.route_operation_id}"),
-            "machine": machine_map.get(r.machine_id, f"Machine {r.machine_id}"),
+            "machine": machine_map.get(r.machine_id, {}).get("name", f"Machine {r.machine_id}"),
+            "machine_code": machine_map.get(r.machine_id, {}).get("code", f"Machine {r.machine_id}"),
             "planned_min": calc["planned_production_min"], "run_min": calc["run_time_min"],
             "downtime_min": float(r.downtime_min), "total_count": float(r.total_count),
             "good_count": float(r.good_count), "reject_count": float(r.reject_count),
@@ -925,7 +927,7 @@ def loss_pareto_report(
     machines = []
     for mid, mins in sorted(machine_b.items(), key=lambda x: x[1], reverse=True):
         machine = db.get(Machine, mid)
-        machines.append({"machine_id": mid, "name": machine.code if machine else f"Machine {mid}", "minutes": float(mins), "hours": float(mins/Decimal("60"))})
+        machines.append({"machine_id": mid, "name": machine.name if machine else f"Machine {mid}", "machine_code": machine.code if machine else f"Machine {mid}", "minutes": float(mins), "hours": float(mins/Decimal("60"))})
     events = []
     for event, loss, machine in sorted(rows, key=lambda x: (x[0].loss_date, x[0].id), reverse=True):
         action = action_map.get(event.id)
@@ -933,7 +935,7 @@ def loss_pareto_report(
             "id": event.id, "date": event.loss_date.isoformat(), "shift": event.shift,
             "product": product_map.get(event.product_id) if event.product_id else None,
             "operation": operation_map.get(event.route_operation_id) if event.route_operation_id else None,
-            "machine": machine.code, "category": loss.name, "component": loss.oee_component.value,
+            "machine": machine.name, "machine_code": machine.code, "category": loss.name, "component": loss.oee_component.value,
             "duration_min": float(event.duration_min), "qty_loss": float(event.qty_loss), "remark": event.remark,
             "action_id": action.id if action else None, "action_no": action.action_no if action else None,
             "action_status": action.status.value if action else None,
