@@ -70,6 +70,17 @@ def test_advanced_reports_endpoints():
     loss=client.get(f'/api/reports/loss-pareto?as_of=2026-09-29&machine_id={mid}',headers=h).json()
     assert loss['summary']['loss_minutes'] == 40.0
 
+    # Dedicated OEE report filters support explicit date ranges and shift scope.
+    ranged=client.get(f'/api/reports/oee-trends?as_of=2026-09-29&from_date=2026-09-28&shift=A&machine_id={mid}',headers=h)
+    assert ranged.status_code == 200, ranged.text
+    assert len(ranged.json()['entries']) == 1
+    wrong_shift=client.get(f'/api/reports/oee-trends?as_of=2026-09-29&from_date=2026-09-28&shift=B&machine_id={mid}',headers=h)
+    assert wrong_shift.status_code == 200, wrong_shift.text
+    assert wrong_shift.json()['entries'] == []
+    ranged_loss=client.get(f'/api/reports/loss-pareto?as_of=2026-09-29&from_date=2026-09-28&shift=A&machine_id={mid}',headers=h)
+    assert ranged_loss.status_code == 200, ranged_loss.text
+    assert ranged_loss.json()['summary']['loss_minutes'] == 40.0
+
 
 def test_funnel_shows_latest_available_process_actuals_when_report_day_is_empty():
     pid, _, _ = seed_core()
