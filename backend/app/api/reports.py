@@ -12,7 +12,7 @@ from fastapi.responses import Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -850,6 +850,7 @@ def loss_pareto_report(
     customer_id: str | None = None,
     from_date: date | None = None,
     shift: str | None = None,
+    operator_id: int | None = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
@@ -867,6 +868,15 @@ def loss_pareto_report(
     )
     if shift:
         q = q.where(MachineLossEvent.shift == shift.strip().upper())
+    if operator_id is not None:
+        q = q.where(exists(select(MachineShiftProduction.id).where(
+            MachineShiftProduction.production_date == MachineLossEvent.loss_date,
+            MachineShiftProduction.shift == MachineLossEvent.shift,
+            MachineShiftProduction.product_id == MachineLossEvent.product_id,
+            MachineShiftProduction.route_operation_id == MachineLossEvent.route_operation_id,
+            MachineShiftProduction.machine_id == MachineLossEvent.machine_id,
+            MachineShiftProduction.operator_id == operator_id,
+        )))
     machine_ids = csv_ints(machine_id)
     if machine_ids:
         q = q.where(MachineLossEvent.machine_id.in_(machine_ids))
