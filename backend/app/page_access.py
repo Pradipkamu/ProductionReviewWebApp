@@ -13,6 +13,7 @@ PAGE_CATALOG = (
     {"key": "management_assistant", "label": "Management Assistant / Alerts", "path": "/management-assistant"},
     {"key": "insights", "label": "Exceptions / Data Quality", "path": "/insights"},
     {"key": "diagnostics", "label": "System Diagnostics", "path": "/diagnostics"},
+    {"key": "afms", "label": "AFMS – Machine & HMI", "path": "/afms"},
     {"key": "account", "label": "Security / Users", "path": "/account", "required": True},
     {"key": "governance", "label": "Month Close / Audit", "path": "/governance"},
     {"key": "daily_review", "label": "Daily Review", "path": "/"},

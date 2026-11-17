@@ -119,7 +119,7 @@ async def security_headers(request: Request, call_next):
     return response
 
 for router in [auth.router, masters.router, personnel.router, imports.router, schedules.router, mis.router,
-               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, quality_salvage.router, special_quality.router, governance.router, insights.router, import_preview.router, flows.router, diagnostics.router, capacity.router, chat.router]:
+               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, quality_salvage.router, special_quality.router, governance.router, insights.router, import_preview.router, flows.router, diagnostics.router, capacity.router, chat.router, afms.router]:
     app.include_router(router, prefix="/api")
 
 

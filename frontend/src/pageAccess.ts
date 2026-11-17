@@ -8,6 +8,7 @@ export const navItems:NavItem[] = [
   {key:'management_assistant',to:'/management-assistant',label:'Management Assistant / Alerts'},
   {key:'insights',to:'/insights',label:'Exceptions / Data Quality'},
   {key:'diagnostics',to:'/diagnostics',label:'System Diagnostics'},
+  {key:'afms',to:'/afms',label:'AFMS – Machine & HMI'},
   {key:'account',to:'/account',label:'Security / Users',required:true},
   {key:'governance',to:'/governance',label:'Month Close / Audit'},
   {key:'daily_review',to:'/',label:'Daily Review'},
