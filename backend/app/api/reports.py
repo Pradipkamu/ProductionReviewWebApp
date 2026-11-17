@@ -1058,14 +1058,14 @@ def export_oee_excel(
         MachineLossEvent.id,
     )).all()
 
-    losses_by_entry = defaultdict(list)
+    losses_by_entry = defaultdict(lambda: defaultdict(float))
+    category_names = sorted({category.name for _, category, _ in loss_rows}, key=lambda value: value.casefold())
     for event, category, machine in loss_rows:
         if event.product_id is None or event.route_operation_id is None:
             continue
         key = (event.loss_date, event.shift, event.machine_id, event.product_id, event.route_operation_id)
-        losses_by_entry[key].append((event, category, machine))
+        losses_by_entry[key][category.name] += float(event.duration_min or 0)
 
-    loss_columns = max((len(v) for v in losses_by_entry.values()), default=0)
     wb = Workbook()
     ws = wb.active
     ws.title = "OEE Shift Details"
@@ -1074,7 +1074,7 @@ def export_oee_excel(
         "Operator", "Shift Time (Min)", "Planned Break (Min)", "Available Time (Min)",
         "Cycle Time (Sec/Pc)", "Good Qty", "Rejected Qty", "Total Produced Qty",
     ]
-    ws.append(base_headers + [f"Loss {i}" for i in range(1, loss_columns + 1)] + [
+    ws.append(base_headers + category_names + [
         "Total Loss (Min)", "Availability %", "Performance %", "Quality %", "OEE %",
         "OEE Entry ID", "Remarks",
     ])
@@ -1086,12 +1086,9 @@ def export_oee_excel(
             row.total_count, row.good_count, row.ideal_cycle_time_sec,
         )
         key = (row.production_date, row.shift, row.machine_id, row.product_id, row.route_operation_id)
-        linked = losses_by_entry.get(key, [])
-        loss_labels = [
-            f"{category.name} - {float(event.duration_min):g} min"
-            for event, category, _ in linked
-        ]
-        total_loss = sum((_value(event.duration_min) for event, _, _ in linked), ZERO)
+        linked_losses = losses_by_entry.get(key, {})
+        category_values = [linked_losses.get(name, 0.0) for name in category_names]
+        total_loss = sum(category_values)
         available_time = max(ZERO, _value(row.shift_duration_min) - _value(row.planned_break_min))
         ws.append([
             row.production_date, row.shift, product.plant or "Unassigned" if product else "Unassigned",
@@ -1101,7 +1098,7 @@ def export_oee_excel(
             row.operator.full_name if row.operator else "Unassigned",
             float(row.shift_duration_min), float(row.planned_break_min), float(available_time),
             float(row.ideal_cycle_time_sec), float(row.good_count), float(row.reject_count),
-            float(row.total_count), *loss_labels,
+            float(row.total_count), *category_values,
             float(total_loss), calc["availability"], calc["performance_raw"],
             calc["quality"], calc["oee_reported"], row.id, row.remarks or "",
         ])
@@ -1138,29 +1135,6 @@ def export_oee_excel(
             float(event.qty_loss), event.remark or "", event.id,
         ])
 
-    # Pivot-style loss matrix: one row per production date, shift and machine;
-    # one dynamic column per loss category, with minutes summed from the linked OEE loss events.
-    matrix_ws = wb.create_sheet("Loss Matrix")
-    category_names = sorted({category.name for _, category, _ in loss_rows}, key=lambda value: value.casefold())
-    matrix_ws.append(["Date", "Shift", "Machine"] + category_names + ["Total Loss (Min)"])
-    matrix_totals = defaultdict(lambda: defaultdict(float))
-    matrix_machine_names = {}
-    for event, category, machine in loss_rows:
-        matrix_key = (event.loss_date, event.shift, event.machine_id)
-        matrix_totals[matrix_key][category.name] += float(event.duration_min or 0)
-        matrix_machine_names[matrix_key] = machine.name
-    for matrix_key in sorted(matrix_totals):
-        loss_date, loss_shift, machine_id_value = matrix_key
-        category_values = [matrix_totals[matrix_key].get(name, 0.0) for name in category_names]
-        matrix_ws.append([
-            loss_date, loss_shift, matrix_machine_names.get(matrix_key, f"Machine {machine_id_value}"),
-            *category_values, sum(category_values),
-        ])
-    for matrix_row in matrix_ws.iter_rows(min_row=2):
-        matrix_row[0].number_format = "dd/mm/yyyy"
-        for cell in matrix_row[3:]:
-            cell.number_format = "0.##"
-
     summary_ws = wb.create_sheet("OEE Summary")
     summary_ws.append(["Group", "Plant / Machine / Part", "Entries", "Good Qty", "Rejected Qty", "Total Qty", "Availability %", "Performance %", "Quality %", "OEE %"])
     summary_groups = defaultdict(list)
@@ -1192,9 +1166,8 @@ def export_oee_excel(
 
     for row_cells in ws.iter_rows(min_row=2):
         row_cells[0].number_format = "dd-mmm-yyyy"
-        for offset in range(3):
-            row_cells[16 + loss_columns + offset].number_format = "0.0%"
-        row_cells[19 + loss_columns].number_format = "0.0%"
+        for cell in row_cells[15 + len(category_names):19 + len(category_names)]:
+            cell.number_format = "0.0%"
     for row_cells in loss_ws.iter_rows(min_row=2):
         row_cells[1].number_format = "dd-mmm-yyyy"
     for row_cells in summary_ws.iter_rows(min_row=2):
