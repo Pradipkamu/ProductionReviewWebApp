@@ -12,6 +12,27 @@ from ..models import (
     OperatorRequirementHistory, MachineCapacitySetting,
 )
 from .capacity import close_previous_revision
+from datetime import timedelta
+
+
+def _insert_effective_revision(db: Session, model, filters: dict, values: dict,
+                               effective_from: date, reason: str, user_id: int) -> None:
+    """Insert a revision into the timeline without overwriting later history."""
+    rows = db.scalars(select(model).where(
+        *(getattr(model, field) == value for field, value in filters.items())
+    ).order_by(model.effective_from.asc(), model.id.asc()).with_for_update()).all()
+
+    covering = next((row for row in rows if row.effective_from <= effective_from
+                     and (row.effective_to is None or row.effective_to >= effective_from)), None)
+    if covering and covering.effective_from == effective_from:
+        raise HTTPException(409, "A revision already starts on this effective date; choose a different date")
+    if covering:
+        covering.effective_to = effective_from - timedelta(days=1)
+
+    next_revision = next((row for row in rows if row.effective_from > effective_from), None)
+    effective_to = next_revision.effective_from - timedelta(days=1) if next_revision else None
+    db.add(model(**filters, **values, effective_from=effective_from,
+                 effective_to=effective_to, reason=reason, entered_by_id=user_id))
 
 
 class CompleteMachineSetup(BaseModel):
@@ -65,9 +86,6 @@ def complete_setup(db: Session, payload: CompleteMachineSetup, user_id: int):
     plans = []
     for name, model, keys, fields in GROUPS:
         filters = {field: getattr(payload, field) for field in keys}
-        latest = db.scalar(select(model).where(
-            *(getattr(model, field) == value for field, value in filters.items())
-        ).order_by(model.effective_from.desc(), model.id.desc()).limit(1))
         current = _current(db, model, filters, payload.effective_from)
         values = {field: getattr(payload, field) for field in fields}
         different = current is None or any(
@@ -77,20 +95,16 @@ def complete_setup(db: Session, payload: CompleteMachineSetup, user_id: int):
              else getattr(current, field) != value)
             for field, value in values.items()
         )
-        # An earlier date must never rewrite or fork an effective-dated master.
-        if different and latest and latest.effective_from >= payload.effective_from:
-            raise HTTPException(409, f"{name.title()} has a revision on or after the selected effective date; choose a later date")
+        if different and current and current.effective_from == payload.effective_from:
+            raise HTTPException(409, f"{name.title()} already has a revision starting on the selected effective date")
         plans.append((name, model, filters, values, different))
     for name, model, filters, values, different in plans:
         if not different:
             unchanged.append(name)
             continue
-        close_previous_revision(
-            db, model, payload.effective_from,
-            *(getattr(model, field) == value for field, value in filters.items()),
+        _insert_effective_revision(
+            db, model, filters, values, payload.effective_from, payload.reason, user_id,
         )
-        db.add(model(**filters, **values, effective_from=payload.effective_from,
-                     reason=payload.reason, entered_by_id=user_id))
         changed.append(name)
     db.flush()
     return {"changed": changed, "unchanged": unchanged, "no_changes": not changed}
