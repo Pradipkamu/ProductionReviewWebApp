@@ -66,15 +66,22 @@ docker compose ps mqtt
 docker compose logs --tail=100 mqtt
 ```
 
-Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. When MQTT_ENABLED=true, the backend uses two distinct broker identities:\n\n- `MQTT_CONTROL_USERNAME` / `MQTT_CONTROL_PASSWORD`: privileged Dynamic Security provisioning only.\n- `MQTT_BACKEND_USERNAME` / `MQTT_BACKEND_PASSWORD`: data-plane client assigned the least-privilege `afms-backend-v1` role. It subscribes to device heartbeat, telemetry and acknowledgement topics, and publishes device-specific commands.\n\nThe `afms-backend-v1` role must allow the backend to subscribe to and receive
-`production/v1/devices/+/heartbeat` and `.../telemetry`, and to publish
-application acknowledgements on `production/v1/devices/+/acks` plus commands on
-`production/v1/devices/+/commands`. It does not need to subscribe to device ACK
-topics. Add the backend ACK publish permission with the bootstrap administrator:
+Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. When MQTT_ENABLED=true, the backend uses two distinct broker identities:\n\n- `MQTT_CONTROL_USERNAME` / `MQTT_CONTROL_PASSWORD`: privileged Dynamic Security provisioning only.\n- `MQTT_BACKEND_USERNAME` / `MQTT_BACKEND_PASSWORD`: data-plane client assigned the least-privilege `afms-backend-v1` role. It subscribes to device heartbeat and telemetry topics, and publishes application acknowledgements and device-specific commands.\n\nThe `afms-backend-v1` role must allow the backend to subscribe to and receive
+device heartbeat and telemetry messages, and to publish application ACKs and
+commands. Add any missing ACL entries with the bootstrap administrator:
 
 ```bash
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-backend-v1 subscribePattern 'production/v1/devices/+/heartbeat' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-backend-v1 subscribePattern 'production/v1/devices/+/telemetry' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-backend-v1 publishClientReceive 'production/v1/devices/+/heartbeat' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-backend-v1 publishClientReceive 'production/v1/devices/+/telemetry' allow
 docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-backend-v1 publishClientSend 'production/v1/devices/+/acks' allow
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-backend-v1 publishClientSend 'production/v1/devices/+/commands' allow
 ```
+
+The backend does not subscribe to device ACK topics: acknowledgements flow from
+the backend to the device. The device role subscribes to its own `acks` and
+`commands` topics.
 
 The device role publishes heartbeat and telemetry and subscribes to its own
 `commands` and `acks` topics. Device topic ACLs must remain scoped to each
