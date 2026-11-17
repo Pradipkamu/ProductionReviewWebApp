@@ -10,7 +10,6 @@ Set these values in the server's untracked `.env` file:
 MQTT_DOMAIN=machineshop.duckdns.org
 MQTT_BIND=0.0.0.0
 MQTT_PORT=8883
-MQTT_INTERNAL_PORT=1883
 MQTT_DYNSEC_PASSWORD=<unique-long-random-secret>
 ```
 
