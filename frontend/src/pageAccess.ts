@@ -43,7 +43,7 @@ const legacyRestrictions:Record<string,string[]> = {
 
 export function canViewPage(me:any,pageKey:string){
   if(me?.role==='ADMIN'||pageKey==='account')return true
-  if(Array.isArray(me?.page_access))return me.page_access.includes(pageKey)
+  if(Array.isArray(me?.page_access))return me.page_access.includes(pageKey)||(pageKey==='oee_reports'&&(me.page_access.includes('reports')||me.page_access.includes('management_reports')))
   return !legacyRestrictions[pageKey]||legacyRestrictions[pageKey].includes(me?.role)
 }
 
