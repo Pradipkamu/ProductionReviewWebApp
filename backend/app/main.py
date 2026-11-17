@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):
     Path(settings.attachments_dir).mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         seed_defaults(db)
+    from .services.mqtt_data_plane import start_mqtt_data_plane, stop_mqtt_data_plane
+    start_mqtt_data_plane()
     import asyncio
     from .services.escalation import refresh_reminders
     async def remind():
@@ -72,6 +74,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        stop_mqtt_data_plane()
         task.cancel()
         meeting_task.cancel()
         from contextlib import suppress
