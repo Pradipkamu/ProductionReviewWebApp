@@ -958,6 +958,236 @@ def loss_pareto_report(
             "summary": {"loss_minutes": float(total), "loss_hours": float(total/Decimal("60")), "events": len(rows)}}
 
 
+
+@router.get("/oee-export.xlsx")
+def export_oee_excel(
+    as_of: date,
+    from_date: date,
+    machine_id: str | None = None,
+    product_id: str | None = None,
+    route_operation_id: int | None = None,
+    plant: str | None = None,
+    product_group: str | None = None,
+    customer_id: str | None = None,
+    shift: str | None = None,
+    operator_id: int | None = None,
+    loss_category_id: str | None = None,
+    loss_component: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Export filtered OEE shift records and their linked loss events."""
+    if from_date > as_of:
+        raise HTTPException(422, "From date must be on or before To date")
+
+    products = _scoped_products(db, product_id, plant, product_group, customer_id)
+    product_ids = list(products)
+    q = select(MachineShiftProduction).where(
+        MachineShiftProduction.production_date >= from_date,
+        MachineShiftProduction.production_date <= as_of,
+    )
+    if shift:
+        q = q.where(MachineShiftProduction.shift == shift.strip().upper())
+    if operator_id is not None:
+        q = q.where(MachineShiftProduction.operator_id == operator_id)
+    machine_ids = csv_ints(machine_id)
+    if machine_ids:
+        q = q.where(MachineShiftProduction.machine_id.in_(machine_ids))
+    if route_operation_id is not None:
+        q = q.where(MachineShiftProduction.route_operation_id == route_operation_id)
+    if product_ids:
+        q = q.where(MachineShiftProduction.product_id.in_(product_ids))
+    elif any([product_id is not None, plant, product_group, customer_id is not None]):
+        rows = []
+    else:
+        rows = db.scalars(q.order_by(
+            MachineShiftProduction.production_date, MachineShiftProduction.shift,
+            MachineShiftProduction.machine_id, MachineShiftProduction.product_id,
+        )).all()
+    if product_ids:
+        rows = db.scalars(q.order_by(
+            MachineShiftProduction.production_date, MachineShiftProduction.shift,
+            MachineShiftProduction.machine_id, MachineShiftProduction.product_id,
+        )).all()
+
+    product_map = {x.id: x for x in db.scalars(select(Product).where(
+        Product.id.in_({r.product_id for r in rows} or {-1})
+    )).all()}
+    machine_map = {x.id: x for x in db.scalars(select(Machine).where(
+        Machine.id.in_({r.machine_id for r in rows} or {-1})
+    )).all()}
+    operation_map = dict(db.execute(
+        select(RouteOperation.id, Operation.name)
+        .join(Operation, Operation.id == RouteOperation.operation_id)
+        .where(RouteOperation.id.in_({r.route_operation_id for r in rows} or {-1}))
+    ).all())
+
+    loss_q = (
+        select(MachineLossEvent, LossCategory, Machine)
+        .join(LossCategory, LossCategory.id == MachineLossEvent.loss_category_id)
+        .join(Machine, Machine.id == MachineLossEvent.machine_id)
+        .where(MachineLossEvent.loss_date >= from_date, MachineLossEvent.loss_date <= as_of)
+    )
+    if shift:
+        loss_q = loss_q.where(MachineLossEvent.shift == shift.strip().upper())
+    if machine_ids:
+        loss_q = loss_q.where(MachineLossEvent.machine_id.in_(machine_ids))
+    if product_ids:
+        loss_q = loss_q.where(or_(
+            MachineLossEvent.product_id.in_(product_ids), MachineLossEvent.product_id.is_(None)
+        ))
+    elif any([product_id is not None, plant, product_group, customer_id is not None]):
+        loss_q = loss_q.where(MachineLossEvent.product_id == -1)
+    if loss_category_id:
+        selected_categories = csv_ints(loss_category_id)
+        if selected_categories:
+            loss_q = loss_q.where(MachineLossEvent.loss_category_id.in_(selected_categories))
+    if loss_component:
+        loss_q = loss_q.where(LossCategory.oee_component == loss_component.strip().upper())
+    if operator_id is not None:
+        loss_q = loss_q.where(exists(select(MachineShiftProduction.id).where(
+            MachineShiftProduction.production_date == MachineLossEvent.loss_date,
+            MachineShiftProduction.shift == MachineLossEvent.shift,
+            MachineShiftProduction.product_id == MachineLossEvent.product_id,
+            MachineShiftProduction.route_operation_id == MachineLossEvent.route_operation_id,
+            MachineShiftProduction.machine_id == MachineLossEvent.machine_id,
+            MachineShiftProduction.operator_id == operator_id,
+        )))
+    loss_rows = db.execute(loss_q.order_by(
+        MachineLossEvent.loss_date, MachineLossEvent.shift, MachineLossEvent.machine_id,
+        MachineLossEvent.id,
+    )).all()
+
+    losses_by_entry = defaultdict(list)
+    for event, category, machine in loss_rows:
+        if event.product_id is None or event.route_operation_id is None:
+            continue
+        key = (event.loss_date, event.shift, event.machine_id, event.product_id, event.route_operation_id)
+        losses_by_entry[key].append((event, category, machine))
+
+    loss_columns = max((len(v) for v in losses_by_entry.values()), default=0)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "OEE Shift Details"
+    base_headers = [
+        "Date", "Shift", "Plant", "Part", "Machine Name", "Machine No.", "Operation",
+        "Operator", "Shift Time (Min)", "Planned Break (Min)", "Available Time (Min)",
+        "Cycle Time (Sec/Pc)", "Good Qty", "Rejected Qty", "Total Produced Qty",
+    ]
+    ws.append(base_headers + [f"Loss {i}" for i in range(1, loss_columns + 1)] + [
+        "Total Loss (Min)", "Availability %", "Performance %", "Quality %", "OEE %",
+        "OEE Entry ID", "Remarks",
+    ])
+    for row in rows:
+        product = product_map.get(row.product_id)
+        machine = machine_map.get(row.machine_id)
+        calc = calculate_oee(
+            row.shift_duration_min, row.planned_break_min, row.downtime_min,
+            row.total_count, row.good_count, row.ideal_cycle_time_sec,
+        )
+        key = (row.production_date, row.shift, row.machine_id, row.product_id, row.route_operation_id)
+        linked = losses_by_entry.get(key, [])
+        loss_labels = [
+            f"{category.name} - {float(event.duration_min):g} min"
+            for event, category, _ in linked
+        ]
+        total_loss = sum((_value(event.duration_min) for event, _, _ in linked), ZERO)
+        available_time = max(ZERO, _value(row.shift_duration_min) - _value(row.planned_break_min))
+        ws.append([
+            row.production_date, row.shift, product.plant or "Unassigned" if product else "Unassigned",
+            product.name if product else f"Product {row.product_id}",
+            machine.name if machine else f"Machine {row.machine_id}",
+            machine.code if machine else "", operation_map.get(row.route_operation_id, ""),
+            row.operator.full_name if row.operator else "Unassigned",
+            float(row.shift_duration_min), float(row.planned_break_min), float(available_time),
+            float(row.ideal_cycle_time_sec), float(row.good_count), float(row.reject_count),
+            float(row.total_count), *loss_labels,
+            float(total_loss), calc["availability"], calc["performance_raw"],
+            calc["quality"], calc["oee_reported"], row.id, row.remarks or "",
+        ])
+
+    loss_ws = wb.create_sheet("Loss Details")
+    loss_ws.append([
+        "OEE Entry ID", "Date", "Shift", "Plant", "Part", "Machine Name", "Machine No.",
+        "Operation", "Loss Category", "OEE Component", "Loss Minutes", "Qty Loss", "Remarks",
+        "Loss Event ID",
+    ])
+    row_lookup = {
+        (r.production_date, r.shift, r.machine_id, r.product_id, r.route_operation_id): r.id
+        for r in rows
+    }
+    loss_product_ids = {event.product_id for event, _, _ in loss_rows if event.product_id}
+    loss_products = {x.id: x for x in db.scalars(select(Product).where(
+        Product.id.in_(loss_product_ids or {-1})
+    )).all()}
+    loss_operation_ids = {event.route_operation_id for event, _, _ in loss_rows if event.route_operation_id}
+    loss_operations = dict(db.execute(
+        select(RouteOperation.id, Operation.name).join(Operation, Operation.id == RouteOperation.operation_id)
+        .where(RouteOperation.id.in_(loss_operation_ids or {-1}))
+    ).all())
+    for event, category, machine in loss_rows:
+        key = (event.loss_date, event.shift, event.machine_id, event.product_id, event.route_operation_id)
+        product = loss_products.get(event.product_id)
+        loss_ws.append([
+            row_lookup.get(key, "Unlinked / not product-specific"), event.loss_date, event.shift,
+            product.plant if product and product.plant else "Unassigned",
+            product.name if product else "Unassigned / shared loss",
+            machine.name, machine.code,
+            loss_operations.get(event.route_operation_id, "") if event.route_operation_id else "",
+            category.name, category.oee_component.value, float(event.duration_min),
+            float(event.qty_loss), event.remark or "", event.id,
+        ])
+
+    summary_ws = wb.create_sheet("OEE Summary")
+    summary_ws.append(["Group", "Plant / Machine / Part", "Entries", "Good Qty", "Rejected Qty", "Total Qty", "Availability %", "Performance %", "Quality %", "OEE %"])
+    summary_groups = defaultdict(list)
+    for row in rows:
+        product = product_map.get(row.product_id)
+        machine = machine_map.get(row.machine_id)
+        summary_groups[("Plant", product.plant or "Unassigned" if product else "Unassigned")].append(row)
+        summary_groups[("Machine", machine.name if machine else f"Machine {row.machine_id}")].append(row)
+        summary_groups[("Part", product.name if product else f"Product {row.product_id}")].append(row)
+    for (group_name, label), group_rows in sorted(summary_groups.items()):
+        calc = calculate_oee(
+            sum((_value(r.shift_duration_min) - _value(r.planned_break_min) for r in group_rows), ZERO),
+            ZERO,
+            sum((_value(r.downtime_min) for r in group_rows), ZERO),
+            sum((_value(r.total_count) for r in group_rows), ZERO),
+            sum((_value(r.good_count) for r in group_rows), ZERO),
+            ZERO,
+        )
+        total_qty = sum((_value(r.total_count) for r in group_rows), ZERO)
+        good_qty = sum((_value(r.good_count) for r in group_rows), ZERO)
+        reject_qty = sum((_value(r.reject_count) for r in group_rows), ZERO)
+        # Reuse the same weighted calculation as the report's aggregate service.
+        from ..services.oee import aggregate_oee_entries
+        aggregate = aggregate_oee_entries(group_rows)
+        summary_ws.append([
+            group_name, label, len(group_rows), float(good_qty), float(reject_qty), float(total_qty),
+            aggregate["availability"], aggregate["performance_raw"], aggregate["quality"], aggregate["oee_reported"],
+        ])
+
+    for sheet in wb.worksheets:
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = sheet.dimensions
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="1F4E78")
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        for column_cells in sheet.columns:
+            max_len = min(max((len(str(cell.value or "")) for cell in column_cells), default=10) + 2, 42)
+            sheet.column_dimensions[column_cells[0].column_letter].width = max(12, max_len)
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"OEE_Report_{from_date.isoformat()}_to_{as_of.isoformat()}.xlsx"
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/action-performance")
 def action_performance_report(
     as_of: date,
