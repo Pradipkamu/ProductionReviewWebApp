@@ -4,13 +4,15 @@ import { Kpi, PageHeader, Status } from '../components/UI'
 
 type Machine = { id:number; machine_number:string; machine_name:string; plant:string|null; is_active:boolean; device_registered:boolean }
 type Device = { id:number; machine_id:number; machine_number:string; machine_name:string; plant:string|null; device_uid:string; device_name:string|null; device_role:string; hardware_model:string|null; firmware_version:string|null; protocol_version:string; is_active:boolean; status:string; last_seen_at:string|null; notes:string|null }
-type Overview = { machine_master:{total:number;active:number}; devices:{registered:number;enabled:number;online:number}; next_phase:string }
+type TelemetryEvent = { id:number; device_uid:string; machine_id:number; machine_number:string; machine_name:string; event_id:string; event_type:string; sequence:number|null; occurred_at:string; received_at:string; processing_status:string; processing_error:string|null }
+type Overview = { machine_master:{total:number;active:number}; devices:{registered:number;enabled:number;online:number}; telemetry:{status:string;last_received_at:string|null;events_received:number}; next_phase:string }
 const empty = { machine_id:'', device_uid:'', device_name:'', device_role:'MAIN_CONTROLLER', hardware_model:'ESP32-S3', firmware_version:'', protocol_version:'1.0', notes:'' }
 
 export default function AFMS({me}:{me:any}) {
   const [overview,setOverview]=useState<Overview|null>(null)
   const [machines,setMachines]=useState<Machine[]>([])
   const [devices,setDevices]=useState<Device[]>([])
+  const [events,setEvents]=useState<TelemetryEvent[]>([])
   const [form,setForm]=useState({...empty})
   const [secret,setSecret]=useState('')
   const [error,setError]=useState('')
@@ -20,13 +22,13 @@ export default function AFMS({me}:{me:any}) {
   const isAdmin=me?.role==='ADMIN'
 
   async function load(){
-    const results:any[] = await Promise.all([api('/afms/overview'),api('/afms/machines'),api('/afms/devices')])
-    setOverview(results[0]); setMachines(results[1]); setDevices(results[2])
+    const results:any[] = await Promise.all([api('/afms/overview'),api('/afms/machines'),api('/afms/devices'),api('/afms/events?limit=50')])
+    setOverview(results[0]); setMachines(results[1]); setDevices(results[2]); setEvents(results[3]?.events||[])
   }
   useEffect(()=>{
     let active=true
-    Promise.all([api('/afms/overview'),api('/afms/machines'),api('/afms/devices')])
-      .then((results:any[])=>{if(active){setOverview(results[0]);setMachines(results[1]);setDevices(results[2])}})
+    Promise.all([api('/afms/overview'),api('/afms/machines'),api('/afms/devices'),api('/afms/events?limit=50')])
+      .then((results:any[])=>{if(active){setOverview(results[0]);setMachines(results[1]);setDevices(results[2]);setEvents(results[3]?.events||[])}})
       .catch((err:any)=>{if(active)setError(err.message||'Unable to load AFMS workspace')})
       .finally(()=>{if(active)setLoading(false)})
     return()=>{active=false}
@@ -64,6 +66,7 @@ export default function AFMS({me}:{me:any}) {
         <Kpi label='Registered devices' value={overview.devices.registered}/>
         <Kpi label='Enabled devices' value={overview.devices.enabled}/>
         <Kpi label='Online devices' value={overview.devices.online} sub='Heartbeat within 2 minutes'/>
+        <Kpi label='Telemetry events' value={overview.telemetry.events_received} sub={overview.telemetry.status.replaceAll('_',' ')}/>
       </div>
       {isAdmin&&<section className='panel'>
         <h2>Register ESP32 / HMI device</h2>
@@ -85,6 +88,21 @@ export default function AFMS({me}:{me:any}) {
         <div className='table-wrap'><table><thead><tr><th>Machine no.</th><th>Machine name</th><th>DB ID</th><th>Device UID</th><th>Role / Hardware</th><th>Firmware</th><th>Connection</th><th>Last seen</th>{isAdmin&&<th>Admin</th>}</tr></thead>
           <tbody>{devices.map(d=><tr key={d.id}><td><b>{d.machine_number}</b></td><td>{d.machine_name}</td><td>{d.machine_id}</td><td>{d.device_uid}</td><td>{d.device_role}<br/><small>{d.hardware_model||'—'}</small></td><td>{d.firmware_version||'—'}</td><td><Status value={d.status.replaceAll('_',' ')}/></td><td>{d.last_seen_at?new Date(d.last_seen_at).toLocaleString():'Never'}</td>{isAdmin&&<td><button type='button' className='small secondary' disabled={busy} onClick={()=>toggle(d)}>{d.is_active?'Deactivate':'Activate'}</button> <button type='button' className='small secondary' disabled={busy||!d.is_active} onClick={()=>rotate(d)}>Rotate key</button></td>}</tr>)}
           {!devices.length&&<tr><td colSpan={isAdmin?9:8}>No ESP32/HMI devices registered yet.</td></tr>}</tbody>
+        </table></div>
+      </section>
+
+      <section className='panel'>
+        <h2>Latest telemetry events</h2>
+        <p>Events are acknowledged only after the raw event is committed. Pending mapping or validation events remain stored for review and are not silently discarded.</p>
+        <div className='table-wrap'><table><thead><tr><th>Received</th><th>Machine</th><th>Device UID</th><th>Event</th><th>Sequence</th><th>Processing</th><th>Details</th></tr></thead>
+          <tbody>{events.map(event=><tr key={event.id}>
+            <td>{new Date(event.received_at).toLocaleString()}</td>
+            <td><b>{event.machine_number}</b><br/><small>{event.machine_name}</small></td>
+            <td>{event.device_uid}</td><td>{event.event_type}</td><td>{event.sequence??'—'}</td>
+            <td><Status value={event.processing_status.replaceAll('_',' ')}/></td>
+            <td>{event.processing_error||'—'}</td>
+          </tr>)}
+          {!events.length&&<tr><td colSpan={7}>No telemetry events received yet.</td></tr>}</tbody>
         </table></div>
       </section>
       <section className='panel'><h2>Cycle-data identity design</h2><p>Each future cycle event will be linked using <b>device_id</b> and <b>machine_id</b>, with the machine number (<b>machines.code</b>) stored as a snapshot. This prevents later machine-master edits from changing the identity on historical cycle records.</p></section>

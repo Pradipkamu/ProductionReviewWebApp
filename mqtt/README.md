@@ -66,7 +66,37 @@ docker compose ps mqtt
 docker compose logs --tail=100 mqtt
 ```
 
-Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. When MQTT_ENABLED=true, the backend uses two distinct broker identities:\n\n- `MQTT_CONTROL_USERNAME` / `MQTT_CONTROL_PASSWORD`: privileged Dynamic Security provisioning only.\n- `MQTT_BACKEND_USERNAME` / `MQTT_BACKEND_PASSWORD`: data-plane client assigned the least-privilege `afms-backend-v1` role. It subscribes to device heartbeat, telemetry and acknowledgement topics, and publishes device-specific commands.\n\nThe `afms-backend-v1` role must allow the backend to subscribe to and receive `production/v1/devices/+/heartbeat`, `.../telemetry` and `.../acks`, and to publish on `production/v1/devices/+/commands`. Device topic ACLs must remain scoped to each device UID. The application validates each incoming UID against an active AFMS device mapped to an active PRW machine; heartbeat updates the existing `last_seen_at` field. Telemetry and acknowledgements are currently validated and logged, not persisted as business records. Command publishing is available to backend services and is guarded by the same active-device/machine mapping check.\n\nThe data-plane client reconnects automatically. Keep `MQTT_ENABLED=false` until both broker identities and role ACLs have been verified. This stage introduces no database migration.
+Do not open TCP 1883 in the server firewall/security list. Allow TCP 8883 only. When MQTT_ENABLED=true, the backend uses two distinct broker identities:\n\n- `MQTT_CONTROL_USERNAME` / `MQTT_CONTROL_PASSWORD`: privileged Dynamic Security provisioning only.\n- `MQTT_BACKEND_USERNAME` / `MQTT_BACKEND_PASSWORD`: data-plane client assigned the least-privilege `afms-backend-v1` role. It subscribes to device heartbeat, telemetry and acknowledgement topics, and publishes device-specific commands.\n\nThe `afms-backend-v1` role must allow the backend to subscribe to and receive
+`production/v1/devices/+/heartbeat` and `.../telemetry`, and to publish
+application acknowledgements on `production/v1/devices/+/acks` plus commands on
+`production/v1/devices/+/commands`. It does not need to subscribe to device ACK
+topics. Add the backend ACK publish permission with the bootstrap administrator:
+
+```bash
+docker compose exec mqtt mosquitto_ctrl -h localhost -p 1883 -u admin dynsec addRoleACL afms-backend-v1 publishClientSend 'production/v1/devices/+/acks' allow
+```
+
+The device role publishes heartbeat and telemetry and subscribes to its own
+`commands` and `acks` topics. Device topic ACLs must remain scoped to each
+registered UID. The application validates each incoming UID against an active
+AFMS device mapped to an active PRW machine. Heartbeats update device presence.
+Telemetry is committed to `afms_telemetry_events` with a unique
+(device_id, event_id) key before the backend sends an application ACK. Duplicate
+QoS-1 deliveries receive a duplicate ACK and are not processed twice.
+
+When the product code, effective route/machine mapping, ideal cycle time and shift
+context resolve, cumulative AFMS counts update the matching AFMS-sourced
+`machine_shift_production` row. Completed loss selections are mapped to
+`machine_loss_events` when a PRW loss category can be identified. Unresolved
+mapping or validation cases remain in the telemetry ledger with a processing
+status and error; they are not silently discarded. The device retains queued
+telemetry until it receives the application ACK. Backend command publishing is
+guarded by the same active-device/machine mapping check.
+
+The data-plane client reconnects automatically. Keep `MQTT_ENABLED=false`
+until both broker identities and role ACLs have been verified. Migration
+`0027_afms_telemetry_events` must be reviewed and applied separately; this
+code change does not run the production migration.
 
 ## Persistence and backups
 

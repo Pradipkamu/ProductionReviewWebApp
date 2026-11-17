@@ -305,10 +305,12 @@ def _handle_message(client, userdata, message) -> None:
         if device is None:
             logger.warning("Rejected telemetry from unknown, disabled or unmapped device %s", uid)
             return
+        device.last_seen_at = datetime.utcnow()
         existing = db.scalar(select(AFMSTelemetryEvent).where(
             AFMSTelemetryEvent.device_id == device.id, AFMSTelemetryEvent.event_id == event_id))
         if existing is not None:
             duplicate = True
+            db.commit()
         else:
             duplicate = False
             raw_json = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
@@ -322,14 +324,22 @@ def _handle_message(client, userdata, message) -> None:
                 if event_type in {"STATUS", "PRODUCTION_PULSE", "REJECT_PULSE", "CYCLE_END",
                                   "SHIFT_CHANGED", "PART_CHANGED", "OPERATOR_CHANGED", "LOSS_SELECTED",
                                   "ALARM_CLEARED", "ALARM_ACTIVATED"} and payload.get("partCode"):
-                    status, error = _sync_production_snapshot(db, device, payload, occurred_at, event_id)
+                    try:
+                        status, error = _sync_production_snapshot(db, device, payload, occurred_at, event_id)
+                    except (ValueError, TypeError) as exc:
+                        status, error = "PENDING_VALIDATION", str(exc)[:500]
                     row.processing_status = status
                     row.processing_error = error
                 else:
                     row.processing_status = "RECEIVED"
-                loss_error = _sync_loss_event(db, device, payload, occurred_at)
+                try:
+                    loss_error = _sync_loss_event(db, device, payload, occurred_at)
+                except (ValueError, TypeError) as exc:
+                    loss_error = str(exc)[:500]
+                    row.processing_status = "PENDING_VALIDATION"
                 if loss_error:
-                    row.processing_status = "PENDING_MAPPING"
+                    if row.processing_status != "PENDING_VALIDATION":
+                        row.processing_status = "PENDING_MAPPING"
                     row.processing_error = loss_error
                 db.commit()
             except Exception:
