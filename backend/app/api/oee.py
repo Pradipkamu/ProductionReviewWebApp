@@ -141,20 +141,21 @@ def _entry_json(row: MachineShiftProduction, context: dict | None = None) -> dic
 
 
 def _oee_workbook_masters(db: Session) -> dict:
-    products = db.scalars(select(Product).where(Product.is_active.is_(True)).order_by(Product.code)).all()
-    machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.code)).all()
+    products = db.scalars(select(Product).where(Product.is_active.is_(True)).order_by(Product.name)).all()
+    machines = db.scalars(select(Machine).where(Machine.is_active.is_(True)).order_by(Machine.name)).all()
     people = db.scalars(select(Personnel).where(Personnel.is_active.is_(True)).order_by(Personnel.full_name)).all()
     losses = db.scalars(select(LossCategory).where(LossCategory.is_active.is_(True)).order_by(LossCategory.name)).all()
-    operations = db.scalars(select(Operation).where(Operation.is_active.is_(True)).order_by(Operation.name)).all()
     routes = db.execute(
         select(RouteOperation, RouteVersion, Product, Operation)
         .join(RouteVersion, RouteVersion.id == RouteOperation.route_version_id)
         .join(Product, Product.id == RouteVersion.product_id)
         .join(Operation, Operation.id == RouteOperation.operation_id)
-        .where(RouteOperation.is_enabled.is_(True), RouteVersion.is_active.is_(True))
+        .where(RouteOperation.is_enabled.is_(True), RouteVersion.is_active.is_(True),
+               Product.is_active.is_(True), Operation.is_active.is_(True))
     ).all()
+    maps = db.scalars(select(OperationMachineMap).where(OperationMachineMap.is_active.is_(True))).all()
     return {"products": products, "machines": machines, "people": people,
-            "losses": losses, "operations": operations, "routes": routes}
+            "losses": losses, "routes": routes, "maps": maps}
 
 
 @router.get("/bulk-template")
@@ -163,50 +164,72 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
     wb = Workbook()
     ws = wb.active
     ws.title = "OEE Entries"
-    headers = ["Entry Ref", "Production Date", "Product Code", "Operation", "Machine Number",
-               "Machine Name", "Shift", "Operator Name", "Shift Duration Min", "Planned Break Min",
+    headers = ["Entry Ref (Auto)", "Production Date", "Product Name", "Machine Name",
+               "Shift", "Operator Name", "Shift Duration Min", "Planned Break Min",
                "Good Qty", "Reject Qty", "Remarks"]
     ws.append(headers)
-    # Leave input rows empty: prefilled references/defaults would be mistaken
-    # for submitted records during validation. Server defaults are 440 / 0.
-    for _ in range(200):
-        ws.append([None] * len(headers))
+    for row in range(2, 202):
+        ws.append([row - 1, None, None, None, None, None, 440, 0, None, None, None])
+    ws.protection.sheet = True
+    ws.protection.selectLockedCells = False
+    ws.protection.selectUnlockedCells = True
+    # Entry references and standard defaults are locked; input cells are editable.
+    from openpyxl.styles import Protection
+    for row in range(2, 202):
+        for col in range(2, 12):
+            ws.cell(row, col).protection = Protection(locked=False)
     loss_ws = wb.create_sheet("Loss Details")
-    loss_headers = ["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"]
-    loss_ws.append(loss_headers)
+    loss_ws.append(["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"])
     for _ in range(400):
-        loss_ws.append([None] * len(loss_headers))
+        loss_ws.append([None, None, None, None])
     master = wb.create_sheet("Master Data")
     master.sheet_state = "hidden"
-    master.append(["Product Code", "Product Name", "Operation", "Machine Number", "Machine Name",
-                   "Operator Name", "Loss Type", "Shift"])
-    max_len = max(len(masters["products"]), len(masters["operations"]), len(masters["machines"]),
-                  len(masters["people"]), len(masters["losses"]), 3)
-    for i in range(max_len):
-        p = masters["products"][i] if i < len(masters["products"]) else None
-        o = masters["operations"][i] if i < len(masters["operations"]) else None
-        m = masters["machines"][i] if i < len(masters["machines"]) else None
-        person = masters["people"][i] if i < len(masters["people"]) else None
-        loss = masters["losses"][i] if i < len(masters["losses"]) else None
-        master.append([p.code if p else None, p.name if p else None,
-                       f"{o.code} — {o.name}" if o else None, m.code if m else None, m.name if m else None,
-                       person.full_name if person else None, loss.name if loss else None,
-                       ["A", "B", "C"][i] if i < 3 else None])
-    # Machine name is informational and follows the selected machine code.
-    for row in range(2, 202):
-        ws.cell(row, 6, f'=IFERROR(VLOOKUP(E{row},\'Master Data\'!$D:$E,2,FALSE),"")')
-    # Named ranges keep the dropdowns readable and easy to maintain.
+    master.append(["Product Name", "Machine Name", "Operator Name", "Loss Type", "Shift"])
+    # A product/machine pair is offered only when an active effective route and
+    # an active machine mapping exist. The importer still checks the selected date.
+    pairs = {}
+    for route, version, product, operation in masters["routes"]:
+        for mapping in masters["maps"]:
+            if mapping.route_operation_id == route.id:
+                machine = next((m for m in masters["machines"] if m.id == mapping.machine_id), None)
+                if machine:
+                    pairs.setdefault(product.id, {})[machine.id] = (product, machine)
+    for product_id in sorted(pairs, key=lambda pid: next(p.name.casefold() for p in masters["products"] if p.id == pid)):
+        product = next(p for p in masters["products"] if p.id == product_id)
+        master.append([product.name, None, None, None, None])
+        product_row = master.max_row
+        machine_rows = []
+        for machine_id, (p, machine) in sorted(pairs[product_id].items(), key=lambda item: item[1][1].name.casefold()):
+            master.append([None, machine.name, None, None, None])
+            machine_rows.append(master.max_row)
+        # Product-specific named range used by the dependent machine dropdown.
+        if machine_rows:
+            from openpyxl.workbook.defined_name import DefinedName
+            range_name = f"ProductMachines_{product_id}"
+            wb.defined_names.add(DefinedName(range_name,
+                attr_text=f"'Master Data'!$B${machine_rows[0]}:$B${machine_rows[-1]}"))
+    # Separate simple lists are stored in columns C-E.
+    for i, person in enumerate(masters["people"], start=2):
+        master.cell(i, 3, person.full_name)
+    for i, loss in enumerate(masters["losses"], start=2):
+        master.cell(i, 4, loss.name)
+    for i, shift in enumerate(["A", "B", "C"], start=2):
+        master.cell(i, 5, shift)
     from openpyxl.workbook.defined_name import DefinedName
-    columns = {"Products": (1, len(masters["products"])), "Operations": (3, len(masters["operations"])),
-               "Machines": (4, len(masters["machines"])), "Operators": (6, len(masters["people"])),
-               "LossTypes": (7, len(masters["losses"])), "Shifts": (8, 3)}
-    for name, (col, count) in columns.items():
-        if count:
-            letter = master.cell(1, col).column_letter
-            wb.defined_names.add(DefinedName(name, attr_text=f"'Master Data'!${letter}$2:${letter}${count+1}"))
-    for formula, target in [("=Products", "C2:C201"), ("=Operations", "D2:D201"),
-                            ("=Machines", "E2:E201"), ("=Operators", "H2:H201"),
-                            ("=Shifts", "G2:G201")]:
+    if masters["products"]:
+        wb.defined_names.add(DefinedName("ProductNames",
+            attr_text=f"'Master Data'!$A$2:$A${master.max_row}"))
+    if masters["people"]:
+        wb.defined_names.add(DefinedName("Operators", attr_text=f"'Master Data'!$C$2:$C${len(masters['people'])+1}"))
+    if masters["losses"]:
+        wb.defined_names.add(DefinedName("LossTypes", attr_text=f"'Master Data'!$D$2:$D${len(masters['losses'])+1}"))
+    wb.defined_names.add(DefinedName("Shifts", attr_text="'Master Data'!$E$2:$E$4"))
+    dv_products = DataValidation(type="list", formula1="=ProductNames", allow_blank=True)
+    ws.add_data_validation(dv_products); dv_products.add("C2:C201")
+    dv_machines = DataValidation(type="list",
+        formula1='=INDIRECT("ProductMachines_"&MATCH(C2,\'Master Data\'!$A$2:$A$2000,0))', allow_blank=True)
+    ws.add_data_validation(dv_machines); dv_machines.add("D2:D201")
+    for formula, target in [("=Shifts", "E2:E201"), ("=Operators", "F2:F201")]:
         dv = DataValidation(type="list", formula1=formula, allow_blank=True)
         ws.add_data_validation(dv); dv.add(target)
     dv_loss = DataValidation(type="list", formula1="=LossTypes", allow_blank=True)
@@ -224,11 +247,11 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
         for col in sheet.columns:
             letter = col[0].column_letter
             sheet.column_dimensions[letter].width = min(max(max(len(str(x.value or "")) for x in col) + 3, 14), 30)
+    ws.column_dimensions["A"].width = 18
     output = BytesIO()
     wb.save(output); output.seek(0)
     return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="OEE_Bulk_Upload_Template.xlsx"'})
-
 
 @router.post("/bulk-import/preview")
 async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = Depends(get_db),
@@ -254,28 +277,35 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
     for row_no, values in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if not any(v is not None for v in values):
             continue
-        ref, prod_date, product_code, operation_name, machine_code, _machine_name, shift_name, operator_name, shift_min, break_min, good, reject, remarks = (list(values) + [None] * 13)[:13]
+        ref, prod_date, product_name, machine_name, shift_name, operator_name, shift_min, break_min, good, reject, remarks = (list(values) + [None] * 11)[:11]
         key = str(ref or "").strip()
+        if not any(v is not None for v in values[1:]):
+            continue
         if not key:
             errors.append({"sheet":"OEE Entries","row":row_no,"error":"Entry Ref is required"}); continue
         try:
             if isinstance(prod_date, datetime): prod_date = prod_date.date()
             elif isinstance(prod_date, str): prod_date = date.fromisoformat(prod_date.strip())
             if not isinstance(prod_date, date): raise ValueError("Production Date is required")
-            product = products.get(str(product_code or "").strip().casefold())
-            operation = ops_by_name.get(str(operation_name or "").strip().casefold())
-            machine = machines.get(str(machine_code or "").strip().casefold())
+            product = next((x for x in masters["products"] if x.name.strip().casefold() == str(product_name or "").strip().casefold()), None)
+            machine = next((x for x in masters["machines"] if x.name.strip().casefold() == str(machine_name or "").strip().casefold()), None)
             person = people.get(str(operator_name or "").strip().casefold())
-            if not product: raise ValueError("Product Code is not in the active master")
-            if not operation: raise ValueError("Operation is not in the active master")
-            if not machine: raise ValueError("Machine Number is not in the active master")
+            if not product: raise ValueError("Product Name is not in the active master")
+            if not machine: raise ValueError("Machine Name is not in the active master")
             if not person: raise ValueError("Operator Name is not in active Personnel Master")
             shift_value = str(shift_name or "").strip().upper()
             if shift_value not in {"A","B","C"}: raise ValueError("Shift must be A, B or C")
-            route_rows = [r for r in masters["routes"] if r[2].id == product.id and r[3].id == operation.id
-                          and r[1].effective_from <= prod_date and (r[1].effective_to is None or r[1].effective_to >= prod_date)]
-            if not route_rows: raise ValueError("Operation is not effective for this product on this date")
-            route = route_rows[0][0]
+            route_rows = []
+            for candidate in masters["routes"]:
+                route, version, route_product, operation = candidate
+                if route_product.id != product.id or version.effective_from > prod_date or (version.effective_to and version.effective_to < prod_date):
+                    continue
+                mapped = any(m.route_operation_id == route.id and m.machine_id == machine.id and m.effective_from <= prod_date and (m.effective_to is None or m.effective_to >= prod_date) for m in masters["maps"])
+                if mapped:
+                    route_rows.append(route)
+            if len(route_rows) != 1:
+                raise ValueError("Product + Machine must resolve to exactly one active operation on the production date; check the machine mapping")
+            route = route_rows[0]
             ctx = _context(db, product.id, route.id, machine.id, prod_date)
             if machine.id not in ctx["allowed_machine_ids"]:
                 raise ValueError("Machine is not explicitly mapped to this product operation on this date")
