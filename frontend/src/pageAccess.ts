@@ -23,6 +23,7 @@ export const navItems:NavItem[] = [
   {key:'casting_quality',to:'/casting-quality',label:'Casting Quality'},
   {key:'customer_quality',to:'/customer-quality',label:'Customer Quality'},
   {key:'reports',to:'/reports',label:'Compliance Reports'},
+  {key:'oee_reports',to:'/oee-reports',label:'OEE Reports'},
   {key:'management_reports',to:'/management-reports',label:'Management Reports'},
   {key:'actions',to:'/actions',label:'Actions'},
   {key:'admin_action_review',to:'/admin-action-review',label:'User-wise Action Review'},
