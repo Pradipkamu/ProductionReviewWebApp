@@ -67,8 +67,18 @@ def test_advanced_reports_endpoints():
     assert len(j['operations']) == 2
     o=client.get(f'/api/reports/oee-trends?as_of=2026-09-29&machine_id={mid}',headers=h).json()
     assert o['summary']['oee'] > 0
+    assert len(o['plants']) == 1
+    assert o['plants'][0]['plant'] == 'Plant 1'
+    assert o['plants'][0]['oee'] > 0
     loss=client.get(f'/api/reports/loss-pareto?as_of=2026-09-29&machine_id={mid}',headers=h).json()
     assert loss['summary']['loss_minutes'] == 40.0
+    category_id=loss['pareto'][0]['loss_category_id']
+    category_filtered=client.get(f'/api/reports/loss-pareto?as_of=2026-09-29&machine_id={mid}&loss_category_id={category_id}&loss_component=AVAILABILITY',headers=h)
+    assert category_filtered.status_code == 200, category_filtered.text
+    assert category_filtered.json()['summary']['loss_minutes'] == 40.0
+    component_filtered=client.get(f'/api/reports/loss-pareto?as_of=2026-09-29&machine_id={mid}&loss_component=PERFORMANCE',headers=h)
+    assert component_filtered.status_code == 200, component_filtered.text
+    assert component_filtered.json()['summary']['loss_minutes'] == 0.0
 
     # Dedicated OEE report filters support explicit date ranges and shift scope.
     ranged=client.get(f'/api/reports/oee-trends?as_of=2026-09-29&from_date=2026-09-28&shift=A&machine_id={mid}',headers=h)
