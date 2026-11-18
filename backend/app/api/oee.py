@@ -29,6 +29,32 @@ from ..services.filtering import csv_ints, csv_strings
 router = APIRouter(prefix="/oee", tags=["oee"])
 
 
+MAX_OEE_BULK_ENTRIES = 1000
+MAX_OEE_BULK_LOSSES_PER_ENTRY = 30
+MAX_OEE_BULK_LOSS_ROWS = MAX_OEE_BULK_ENTRIES * MAX_OEE_BULK_LOSSES_PER_ENTRY
+
+
+def _oee_bulk_entry_count_error(entry_count: int) -> str | None:
+    if entry_count > MAX_OEE_BULK_ENTRIES:
+        return (f"Workbook contains {entry_count} validated entries; the maximum is "
+                f"{MAX_OEE_BULK_ENTRIES}. Split the workbook into smaller batches.")
+    return None
+
+
+def _validate_oee_bulk_commit_entries(items) -> None:
+    if not isinstance(items, list) or not items:
+        raise HTTPException(422, f"Import must contain between 1 and {MAX_OEE_BULK_ENTRIES} validated entries")
+    limit_error = _oee_bulk_entry_count_error(len(items))
+    if limit_error:
+        raise HTTPException(422, limit_error)
+
+
+def _validate_oee_bulk_loss_events(losses) -> None:
+    if len(losses or []) > MAX_OEE_BULK_LOSSES_PER_ENTRY:
+        raise HTTPException(422,
+            f"Each OEE entry may contain no more than {MAX_OEE_BULK_LOSSES_PER_ENTRY} loss events")
+
+
 class OEEActionCreate(BaseModel):
     owner_id: int | None = None
     due_at: UTCTimestamp | None = None
@@ -168,19 +194,19 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
                "Shift", "Operator Name", "Shift Duration Min", "Planned Break Min",
                "Good Qty", "Reject Qty", "Remarks"]
     ws.append(headers)
-    for row in range(2, 202):
+    for row in range(2, MAX_OEE_BULK_ENTRIES + 2):
         ws.append([row - 1, None, None, None, None, None, 440, 0, None, None, None])
     ws.protection.sheet = True
     ws.protection.selectLockedCells = False
     ws.protection.selectUnlockedCells = True
     # Entry references and standard defaults are locked; input cells are editable.
     from openpyxl.styles import Protection
-    for row in range(2, 202):
+    for row in range(2, MAX_OEE_BULK_ENTRIES + 2):
         for col in range(2, 12):
             ws.cell(row, col).protection = Protection(locked=False)
     loss_ws = wb.create_sheet("Loss Details")
     loss_ws.append(["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"])
-    for _ in range(400):
+    for _ in range(MAX_OEE_BULK_LOSS_ROWS):
         loss_ws.append([None, None, None, None])
     master = wb.create_sheet("Master Data")
     master.sheet_state = "hidden"
@@ -225,18 +251,18 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
         wb.defined_names.add(DefinedName("LossTypes", attr_text=f"'Master Data'!$D$2:$D${len(masters['losses'])+1}"))
     wb.defined_names.add(DefinedName("Shifts", attr_text="'Master Data'!$E$2:$E$4"))
     dv_products = DataValidation(type="list", formula1="=ProductNames", allow_blank=True)
-    ws.add_data_validation(dv_products); dv_products.add("C2:C201")
+    ws.add_data_validation(dv_products); dv_products.add(f"C2:C{MAX_OEE_BULK_ENTRIES + 1}")
     dv_machines = DataValidation(type="list",
         formula1='=INDIRECT("ProductMachines_"&INDEX(\'Master Data\'!$F$2:$F$2000,MATCH(C2,\'Master Data\'!$A$2:$A$2000,0)))', allow_blank=True)
-    ws.add_data_validation(dv_machines); dv_machines.add("D2:D201")
-    for formula, target in [("=Shifts", "E2:E201"), ("=Operators", "F2:F201")]:
+    ws.add_data_validation(dv_machines); dv_machines.add(f"D2:D{MAX_OEE_BULK_ENTRIES + 1}")
+    for formula, target in [("=Shifts", f"E2:E{MAX_OEE_BULK_ENTRIES + 1}"), ("=Operators", f"F2:F{MAX_OEE_BULK_ENTRIES + 1}")]:
         dv = DataValidation(type="list", formula1=formula, allow_blank=True)
         ws.add_data_validation(dv); dv.add(target)
     dv_loss = DataValidation(type="list", formula1="=LossTypes", allow_blank=True)
-    loss_ws.add_data_validation(dv_loss); dv_loss.add("B2:B401")
-    wb.defined_names.add(DefinedName("EntryRefs", attr_text="'OEE Entries'!$A$2:$A$201"))
+    loss_ws.add_data_validation(dv_loss); dv_loss.add(f"B2:B{MAX_OEE_BULK_LOSS_ROWS + 1}")
+    wb.defined_names.add(DefinedName("EntryRefs", attr_text=f"'OEE Entries'!$A$2:$A${MAX_OEE_BULK_ENTRIES + 1}"))
     dv_refs = DataValidation(type="list", formula1="=EntryRefs", allow_blank=True)
-    loss_ws.add_data_validation(dv_refs); dv_refs.add("A2:A401")
+    loss_ws.add_data_validation(dv_refs); dv_refs.add(f"A2:A{MAX_OEE_BULK_LOSS_ROWS + 1}")
     for sheet in (ws, loss_ws):
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
@@ -341,11 +367,16 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
             duration = Decimal(str(minutes))
             if duration <= 0: raise ValueError("Loss Minutes must be greater than zero")
             qty = (duration * Decimal("60") / entries[key]["cycle"]).quantize(Decimal("1"), rounding=ROUND_HALF_UP) if category.oee_component == OEEComponent.AVAILABILITY else Decimal("0")
+            if len(entries[key]["losses"]) >= MAX_OEE_BULK_LOSSES_PER_ENTRY:
+                raise ValueError(f"Each OEE entry may contain no more than {MAX_OEE_BULK_LOSSES_PER_ENTRY} loss events")
             entries[key]["losses"].append({"loss_category_id":category.id,"duration_min":duration,
                                            "qty_loss":qty,"remark":str(remark or ""),
                                            "component":category.oee_component.value})
         except Exception as exc:
             errors.append({"sheet":"Loss Details","row":row_no,"entry_ref":key,"error":str(exc)})
+    entry_limit_error = _oee_bulk_entry_count_error(len(entries))
+    if entry_limit_error:
+        errors.append({"sheet":"OEE Entries","row":None,"entry_ref":None,"error":entry_limit_error})
     preview = []
     seen_scopes = set()
     for item in entries.values():
@@ -389,14 +420,14 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
 def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_db),
                            user: User = Depends(get_current_user)):
     items = payload.get("entries") if isinstance(payload, dict) else None
-    if not isinstance(items, list) or not items or len(items) > 200:
-        raise HTTPException(422, "Import must contain between 1 and 200 validated entries")
+    _validate_oee_bulk_commit_entries(items)
     prepared = []
     seen = set()
     try:
         for item in items:
-            if not isinstance(item, dict) or len(item.get("losses") or []) > 30:
-                raise HTTPException(422, "Each OEE entry may contain no more than 30 loss events")
+            if not isinstance(item, dict):
+                raise HTTPException(422, "Each OEE entry must be an object")
+            _validate_oee_bulk_loss_events(item.get("losses"))
             entry_payload = MachineEntryCreate.model_validate(item.get("entry") or {})
             scope = (entry_payload.production_date, entry_payload.shift, entry_payload.product_id,
                      entry_payload.route_operation_id, entry_payload.machine_id)
