@@ -21,7 +21,7 @@ function formatValue(v:number, metric:Metric){ return metric==='sales' ? money(v
 
 export function PlanActualChart({rows, metric, height=260,onSelect,verticalLabels=false}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void,verticalLabels?:boolean}){
   if(!rows.length) return <div className="empty">No data for this period.</div>
-  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):showDateRange?76:58
+  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):58
   const W=Math.max(760, rows.length*(verticalLabels?96:64)), H=height+labelDepth-58, pad={l:58,r:18,t:18,b:labelDepth}
   const innerW=W-pad.l-pad.r, innerH=H-pad.t-pad.b
   const max=Math.max(1,...rows.flatMap(r=>[r.plan,r.actual]))
@@ -42,7 +42,7 @@ export function PlanActualChart({rows, metric, height=260,onSelect,verticalLabel
 
 export function PlanActualComplianceChart({rows,metric,height=280,onSelect,verticalLabels=false,percentLabel='Compliance %',targetPercent=100,showDateRange=false}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void,verticalLabels?:boolean,percentLabel?:string,targetPercent?:number,showDateRange?:boolean}){
   if(!rows.length) return <div className="empty">No data for this period.</div>
-  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):58
+  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):showDateRange?76:58
   const W=Math.max(820,rows.length*(verticalLabels?96:72)),H=height+labelDepth-58,pad={l:58,r:72,t:24,b:labelDepth}
   const innerW=W-pad.l-pad.r,innerH=H-pad.t-pad.b
   const qtyMax=Math.max(1,...rows.flatMap(r=>[Number(r.plan||0),Number(r.actual||0)]))
