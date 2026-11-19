@@ -105,18 +105,20 @@ def _validate_telemetry_payload(payload: dict, machine: Machine) -> tuple[dateti
         raise ValueError("unsupported telemetry schemaVersion")
     if not _valid_event_id(payload["eventId"]):
         raise ValueError("invalid telemetry eventId")
-    if payload["eventType"] not in _TELEMETRY_EVENT_TYPES:
-        raise ValueError("unsupported telemetry eventType")
-    if payload["status"] not in _TELEMETRY_STATUSES:
-        raise ValueError("invalid telemetry machine status")
-
     for field, limit in _TELEMETRY_STRING_LIMITS.items():
         value = payload.get(field)
         if not isinstance(value, str) or len(value) > limit:
             raise ValueError("invalid telemetry field: " + field)
 
-    if payload["machineId"] != machine.code or payload["machineName"] != machine.name:
-        raise ValueError("telemetry machine identity does not match the registered device mapping")
+    if payload["eventType"] not in _TELEMETRY_EVENT_TYPES:
+        raise ValueError("unsupported telemetry eventType")
+    if payload["status"] not in _TELEMETRY_STATUSES:
+        raise ValueError("invalid telemetry machine status")
+
+    # The registered machine code is the stable binding. The display name may
+    # legitimately lag a master-data rename until device configuration syncs.
+    if payload["machineId"] != machine.code:
+        raise ValueError("telemetry machineId does not match the registered device mapping")
 
     if type(payload["alarmActive"]) is not bool:
         raise ValueError("invalid telemetry field: alarmActive")

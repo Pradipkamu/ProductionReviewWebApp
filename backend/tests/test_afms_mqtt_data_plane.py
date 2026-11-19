@@ -179,6 +179,18 @@ def test_telemetry_machine_identity_must_match_registered_mapping():
     _assert_ack(client, "rejected", "invalid-payload")
 
 
+def test_non_string_event_type_is_rejected_with_invalid_payload_ack():
+    _device()
+    client = _AckClient()
+    payload = _telemetry(eventType=["STATUS"])
+
+    mqtt_service._handle_message(client, None, _Message("ESP32-MQTT-TEST", "telemetry", payload))
+
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count(AFMSTelemetryEvent.id))) == 0
+    _assert_ack(client, "rejected", "invalid-payload")
+
+
 def test_telemetry_from_disabled_device_is_not_saved_or_acknowledged():
     _device(active=False)
     client = _AckClient()
