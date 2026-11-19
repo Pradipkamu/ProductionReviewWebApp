@@ -1,6 +1,6 @@
 # AFMS MQTT broker (ProductionReviewWebApp)
 
-This is a separate Mosquitto broker running as a Docker Compose service on Pradipweb. It does not connect to or reuse the Oracle AFMS broker.
+This is a separate Mosquitto broker running as a Docker Compose service on the ProductionReviewWebApp host. It does not connect to or reuse the Oracle AFMS broker.
 
 ## Hostname and ports
 
