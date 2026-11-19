@@ -70,7 +70,7 @@ if ($created) {
 [IO.File]::WriteAllText($path, $text.TrimEnd() + "`n", (New-Object Text.UTF8Encoding($false)))
 Write-Host 'Environment initialized; existing non-placeholder settings preserved.'
 if ($created) {
-    Write-Host 'Fresh-install application/database credentials were generated in .env.'
+    Write-Host 'Fresh-install application/database/MQTT credentials were generated in .env.'
 } else {
     $dbUrl = Get-EnvValue 'DATABASE_URL'
     if ($dbUrl -match ':pms@db:5432/pms' -or $dbUrl -match 'CHANGE_THIS') {

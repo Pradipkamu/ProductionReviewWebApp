@@ -2,10 +2,10 @@
 set -Eeuo pipefail
 umask 077
 
-APP_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXPOSE=false
 
-case "\${1:-}" in
+case "${1:-}" in
   "") ;;
   --expose) EXPOSE=true ;;
   -h|--help)
@@ -81,14 +81,14 @@ PY
 }
 
 MQTT_ENABLED="$(read_env MQTT_ENABLED)"
-if [[ "\${MQTT_ENABLED,,}" == "true" ]]; then
+if [[ "${MQTT_ENABLED,,}" == "true" ]]; then
   echo "STOP: MQTT_ENABLED is true. Disable backend MQTT during first-time broker commissioning." >&2
   exit 1
 fi
 
 MQTT_DOMAIN="$(read_env MQTT_DOMAIN)"
 MQTT_PORT="$(read_env MQTT_PORT)"
-MQTT_PORT="\${MQTT_PORT:-8883}"
+MQTT_PORT="${MQTT_PORT:-8883}"
 MQTT_DYNSEC_PASSWORD="$(read_env MQTT_DYNSEC_PASSWORD)"
 MQTT_CONTROL_PASSWORD="$(read_env MQTT_CONTROL_PASSWORD)"
 MQTT_BACKEND_PASSWORD="$(read_env MQTT_BACKEND_PASSWORD)"
