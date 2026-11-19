@@ -192,6 +192,29 @@ class AFMSDevice(Base, TimestampMixin):
     __table_args__ = (Index("uq_afms_devices_active_machine", "machine_id", unique=True, postgresql_where=text("is_active = true"), sqlite_where=text("is_active = 1")),)
 
 
+class AFMSTelemetryEvent(Base):
+    """Immutable AFMS telemetry event ledger with per-device idempotency."""
+    __tablename__ = "afms_telemetry_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+        ForeignKey("afms_devices.id", ondelete="RESTRICT"), nullable=False
+    )
+    event_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    event_timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    payload_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint("device_id", "event_id", name="uq_afms_telemetry_device_event"),
+        Index("ix_afms_telemetry_device_received", "device_id", "received_at"),
+        Index("ix_afms_telemetry_type_received", "event_type", "received_at"),
+    )
+
+
 class MachineMasterHistory(Base, TimestampMixin):
     __tablename__ = "machine_master_history"
     id: Mapped[int] = mapped_column(primary_key=True)
