@@ -48,10 +48,16 @@ services:
   mqtt-provision:
     profiles: ["mqtt-setup"]
     build: ./backend
-    env_file: .env
     environment:
+      MQTT_ENABLED: ${MQTT_ENABLED:-false}
       MQTT_HOST: mqtt
       MQTT_INTERNAL_PORT: 1883
+      MQTT_TIMEOUT_SECONDS: ${MQTT_TIMEOUT_SECONDS:-8}
+      MQTT_DYNSEC_PASSWORD: ${MQTT_DYNSEC_PASSWORD:?Set MQTT_DYNSEC_PASSWORD in .env}
+      MQTT_CONTROL_USERNAME: ${MQTT_CONTROL_USERNAME:-prw-afms-control}
+      MQTT_CONTROL_PASSWORD: ${MQTT_CONTROL_PASSWORD:?Set MQTT_CONTROL_PASSWORD in .env}
+      MQTT_BACKEND_USERNAME: ${MQTT_BACKEND_USERNAME:-prw-afms-backend}
+      MQTT_BACKEND_PASSWORD: ${MQTT_BACKEND_PASSWORD:?Set MQTT_BACKEND_PASSWORD in .env}
     volumes:
       - ./mqtt/provision_dynsec.py:/app/provision_dynsec.py:ro
     entrypoint: ["python", "/app/provision_dynsec.py"]
