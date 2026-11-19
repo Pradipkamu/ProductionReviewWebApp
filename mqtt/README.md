@@ -76,7 +76,7 @@ The role ACLs are:
 | `afms-backend-v1` | publishClientSend | `production/v1/devices/+/commands` |
 | `afms-backend-v1` | publishClientSend | `production/v1/devices/+/acks` |
 
-The provisioner is idempotent: it adds missing approved ACLs, preserves existing credentials, and verifies role membership. It does not silently remove unexpected ACLs or re-enable disabled clients; it stops and requests manual review instead. Its temporary device identity is removed after the ACL round-trip check.
+The provisioner is idempotent: it adds missing approved ACLs, preserves existing credentials, sets wildcard subscriptions on only for the backend role, disables wildcard subscriptions for devices, and verifies role membership. It does not silently remove unexpected ACLs or re-enable disabled clients; it stops and requests manual review instead. Its temporary device identity is removed after the ACL round-trip check.
 
 To expose the TLS listener after provisioning, explicitly run:
 

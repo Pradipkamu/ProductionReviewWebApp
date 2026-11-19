@@ -38,3 +38,8 @@ def test_device_and_backend_roles_do_not_grant_wildcard_all_topics():
     for acl_set in provisioner.desired_acl_map().values():
         assert all(topic not in {"#", "+", "$SYS/#"} for _, topic in acl_set)
         assert all(topic.startswith("production/v1/devices/") for _, topic in acl_set)
+
+
+def test_only_backend_role_can_subscribe_with_wildcards():
+    assert provisioner.BACKEND_ROLE == "afms-backend-v1"
+    assert provisioner.DEVICE_ROLE == "afms-device-v1"

@@ -182,7 +182,12 @@ def get_role(api: DynsecAPI, role_name: str) -> dict | None:
     return _response_data(response, "role", "getRole")
 
 
-def ensure_role(api: DynsecAPI, role_name: str, description: str) -> dict:
+def ensure_role(
+    api: DynsecAPI,
+    role_name: str,
+    description: str,
+    allow_wildcard_subs: bool,
+) -> dict:
     role = get_role(api, role_name)
     if role is None:
         response = api.request({
@@ -190,17 +195,37 @@ def ensure_role(api: DynsecAPI, role_name: str, description: str) -> dict:
             "rolename": role_name,
             "textname": role_name,
             "textdescription": description,
+            "allowwildcardsubs": allow_wildcard_subs,
         })
         if response.get("error") and response.get("error") != "Role already exists":
             raise RuntimeError(f"Could not create role {role_name}: {response['error']}")
         role = get_role(api, role_name)
     if role is None:
         raise RuntimeError(f"Role {role_name} was not created")
+    if role.get("allowwildcardsubs") is not allow_wildcard_subs:
+        response = api.request({
+            "command": "modifyRole",
+            "rolename": role_name,
+            "allowwildcardsubs": allow_wildcard_subs,
+        })
+        if response.get("error"):
+            raise RuntimeError(
+                f"Could not set wildcard subscription policy for {role_name}: {response['error']}"
+            )
+        role = get_role(api, role_name)
+    if role is None or role.get("allowwildcardsubs") is not allow_wildcard_subs:
+        raise RuntimeError(f"Role {role_name} wildcard subscription policy did not verify")
     return role
 
 
 def ensure_role_acls(api: DynsecAPI, role_name: str, expected: frozenset[tuple[str, str]]):
-    role = ensure_role(api, role_name, f"ProductionReviewWebApp AFMS {role_name} permissions")
+    allow_wildcard_subs = role_name == BACKEND_ROLE
+    role = ensure_role(
+        api,
+        role_name,
+        f"ProductionReviewWebApp AFMS {role_name} permissions",
+        allow_wildcard_subs,
+    )
     acls = role.get("acls", [])
     actual_keys = {(item.get("acltype"), item.get("topic")) for item in acls}
     unexpected = actual_keys - set(expected)
