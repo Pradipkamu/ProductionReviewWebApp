@@ -45,6 +45,21 @@ services:
       - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
     restart: unless-stopped
 
+  mqtt-provision:
+    profiles: ["mqtt-setup"]
+    build: ./backend
+    env_file: .env
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_INTERNAL_PORT: 1883
+    volumes:
+      - ./mqtt/provision_dynsec.py:/app/provision_dynsec.py:ro
+    entrypoint: ["python", "/app/provision_dynsec.py"]
+    depends_on:
+      mqtt:
+        condition: service_started
+    restart: "no"
+
   mqtt:
     profiles: ["mqtt"]
     image: eclipse-mosquitto:2.1.2-alpine

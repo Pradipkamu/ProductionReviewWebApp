@@ -78,8 +78,18 @@ jobs:
           }
           Write-Host "PowerShell restore helper syntax is valid."
 
+  shell-script-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Linux installation and update helpers
+        run: |
+          bash -n provision_mqtt.sh
+          bash -n server_update.sh
+          bash -n start_linux.sh
+
   package:
-    needs: [backend, frontend, android, windows-script-check]
+    needs: [backend, frontend, android, windows-script-check, shell-script-check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

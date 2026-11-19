@@ -60,6 +60,11 @@ if ($created) {
     if (!$adminPassword -or $adminPassword -eq 'ChangeMe123!' -or $adminPassword -match '(?i)change') {
         Set-EnvValue 'ADMIN_PASSWORD' ('Init-' + (New-RandomHex 12) + '!9aA')
     }
+
+    # MQTT bootstrap/control/data-plane secrets are generated only for a new .env.
+    Set-EnvValue 'MQTT_DYNSEC_PASSWORD' (New-RandomHex 48)
+    Set-EnvValue 'MQTT_CONTROL_PASSWORD' (New-RandomHex 48)
+    Set-EnvValue 'MQTT_BACKEND_PASSWORD' (New-RandomHex 48)
 }
 
 [IO.File]::WriteAllText($path, $text.TrimEnd() + "`n", (New-Object Text.UTF8Encoding($false)))
