@@ -12,7 +12,7 @@ const emptyLoss={loss_category_id:'',duration_min:0,qty_loss:0,remark:''}
 export default function OEE(){
  const [allMachines,setAllMachines]=useState<any[]>([]),[machines,setMachines]=useState<any[]>([]),[mappingChecked,setMappingChecked]=useState(false),[products,setProducts]=useState<any[]>([]),[lossCategories,setLossCategories]=useState<any[]>([]),[routes,setRoutes]=useState<any[]>([])
  const [m,setM]=useState(''),[p,setP]=useState(''),[op,setOp]=useState(''),[d,setD]=useState(today()),[shift,setShift]=useState('A')
- const [sum,setSum]=useState<any>(null),[context,setContext]=useState<any>(null),[entryId,setEntryId]=useState<number|null>(null)
+ const [sum,setSum]=useState<any>(null),[context,setContext]=useState<any>(null),[entryId,setEntryId]=useState<number|null>(null),[afmsLive,setAfmsLive]=useState<any>(null),[afmsLiveBusy,setAfmsLiveBusy]=useState(false)
  const [operators,setOperators]=useState<any[]>([]),[operatorName,setOperatorName]=useState(''),[operatorId,setOperatorId]=useState<number|null>(null),[operatorBusy,setOperatorBusy]=useState(false)
  const [entry,setEntry]=useState<any>(emptyEntry),[losses,setLosses]=useState<any[]>([emptyLoss]),[reason,setReason]=useState(''),[msg,setMsg]=useState(''),[error,setError]=useState(''),[lossDialog,setLossDialog]=useState<number|null>(null),[lossCorrectionReason,setLossCorrectionReason]=useState(''),[savedSummary,setSavedSummary]=useState<any>(null)
  const [mgmt,setMgmt]=useState<any>(null),[fromDate,setFromDate]=useState(today().slice(0,8)+'01')
@@ -47,6 +47,18 @@ export default function OEE(){
  }
  async function refresh(){if(!m)return;try{const q=new URLSearchParams({machine_id:m,summary_date:d,shift});if(p)q.set('product_id',p);if(op)q.set('route_operation_id',op);setSum(await api(`/oee/machine-summary?${q}`))}catch(e:any){setError(e.message)}}
  useEffect(()=>{loadContext();refresh()},[m,p,op,d,shift])
+ useEffect(()=>{loadAfmsLive()},[m,d,shift])
+
+ async function loadAfmsLive(){
+  if(!m){setAfmsLive(null);return}
+  setAfmsLiveBusy(true)
+  try{
+   const q=new URLSearchParams({machine_id:m,production_date:d,shift})
+   setAfmsLive(await api(`/afms/oee/live?${q}`))
+  }catch(e:any){
+   setAfmsLive({status:'UNAVAILABLE',message:e.message||'Unable to read AFMS live collection.'})
+  }finally{setAfmsLiveBusy(false)}
+ }
  async function previewBulkImport(){
   if(!bulkFile){setError('Select the completed OEE Excel workbook first.');return}
   setBulkBusy(true);setBulkResult(null);setBulkPreview(null);setError('')
@@ -128,6 +140,25 @@ export default function OEE(){
   {p&&op&&m&&machines.length>0&&<section className="oee-live-hero oee-live-sticky" aria-live="polite"><div><small>LIVE ENTRY OEE</small><strong>{pct((()=>{const planned=Math.max(0,Number(entry.shift_duration_min||0)-Number(entry.planned_break_min||0));const loss=losses.reduce((n:number,x:any)=>n+(!x.saved&&lossCategories.find((z:any)=>String(z.id)===String(x.loss_category_id))?.component==='AVAILABILITY'?Number(x.duration_min||0):0),0);const run=Math.max(0,planned-loss);const total=Number(entry.good_count||0)+Number(entry.reject_count||0);return (planned?run/planned:0)*(run&&Number(entry.ideal_cycle_time_sec)>0?Math.min(1,Number(entry.ideal_cycle_time_sec)*total/60/run):0)*(total?Number(entry.good_count||0)/total:0)})())}</strong></div><div className="oee-live-metrics"><span>Availability <b>{pct((()=>{const p=Math.max(0,Number(entry.shift_duration_min||0)-Number(entry.planned_break_min||0));const l=losses.reduce((n:number,x:any)=>n+(!x.saved&&lossCategories.find((z:any)=>String(z.id)===String(x.loss_category_id))?.component==='AVAILABILITY'?Number(x.duration_min||0):0),0);return p?Math.max(0,p-l)/p:0})())}</b></span><span>Good / Reject <b>{num(entry.good_count)} / {num(entry.reject_count)}</b></span></div></section>}
   <section className="panel oee-scope"><div className="filters"><label>Product<MultiSelect singleSelect value={p?[p]:[]} onChange={v=>setP(v.at(-1)||'')} placeholder="Select Product" options={products.map(x=>({value:String(x.id),label:x.name}))}/></label>{machines.length>0&&<><label>Operation<MultiSelect singleSelect value={op?[op]:[]} onChange={v=>setOp(v.at(-1)||'')} placeholder="Select Operation" options={routes.map(x=>({value:String(x.route_operation_id),label:`${x.sequence_no}. ${x.operation}`}))}/></label><label>Mapped machine<MultiSelect singleSelect value={m?[m]:[]} onChange={v=>setM(v.at(-1)||'')} placeholder="Select Machine" options={machines.map(x=>({value:String(x.id),label:`${x.code} — ${x.name}`}))}/></label></>}</div>{mappingChecked&&machines.length===0&&<div className="warning-box" role="status">No mapped operation or machine exists for this product on the selected date. OEE entry is unavailable until an operation-to-machine mapping is configured.</div>}{machines.length>0&&<><p className="muted">{selectedProduct?.name||'Product'} → {selectedRoute?.operation||'Operation'} → {selectedMachine?.code||'Machine'} • Effective ideal cycle: <b>{context?.ideal_cycle_time_sec??'missing'} sec/part</b></p>{context?.warnings?.map((x:string)=><div className="warning-box" key={x}>{x}</div>)}</>}</section>
   {error&&<div className="error" role="alert">{error}</div>}{msg&&<div className="notice" role="status">{msg}</div>}
+
+  {m&&<section className="panel">
+   <div className="panel-title"><div><h2>AFMS automatic OEE collection</h2><p>Read-only live calculation from ESP32 shift telemetry. Existing manual OEE entries are not modified.</p></div><button type="button" className="secondary small" onClick={loadAfmsLive} disabled={afmsLiveBusy}>{afmsLiveBusy?'Refreshing…':'Refresh AFMS'}</button></div>
+   {afmsLiveBusy&&!afmsLive&&<div className="muted">Reading latest AFMS telemetry…</div>}
+   {afmsLive?.status==='READY'&&<>
+    <div className="kpi-grid">
+     <Kpi label="AFMS OEE" value={pct(afmsLive.oee?.oee_reported)}/>
+     <Kpi label="Availability" value={pct(afmsLive.oee?.availability)}/>
+     <Kpi label="Performance" value={pct(afmsLive.oee?.performance_raw)} tone={afmsLive.oee?.performance_master_warning?'warn':'neutral'}/>
+     <Kpi label="Quality" value={pct(afmsLive.oee?.quality)}/>
+     <Kpi label="Total / Good / Reject" value={`${num(afmsLive.total_count)} / ${num(afmsLive.good_count)} / ${num(afmsLive.reject_count)}`}/>
+     <Kpi label="Run time" value={`${num(afmsLive.run_seconds/60)} min`}/>
+    </div>
+    <p className="muted">Part: <b>{afmsLive.part_code} — {afmsLive.part_name}</b> · Operation: <b>{afmsLive.operation_name||'—'}</b> · Operator: <b>{afmsLive.operator_name||'Unassigned'}</b> · Ideal cycle from PRW master: <b>{afmsLive.ideal_cycle_time_sec} sec</b></p>
+    {(afmsLive.warnings||[]).map((w:string)=><div className="warning-box" key={w}>{w}</div>)}
+   </>}
+   {afmsLive&&afmsLive.status!=='READY'&&<div className="warning-box">{afmsLive.message||`AFMS collection status: ${afmsLive.status.replaceAll('_',' ')}`}</div>}
+   {afmsLive?.status==='READY'&&<p className="muted">Source: {afmsLive.device_uid} · Last event: {afmsLive.event_type} · {afmsLive.event_timestamp?new Date(afmsLive.event_timestamp+'Z').toLocaleString():''} · {afmsLive.is_live?'Live':'Historical / stale snapshot'} · Preview only; it is not yet posted to the official OEE shift register.</p>}
+  </section>}
 
   {s&&m&&machines.length>0&&<><div className="kpi-grid"><Kpi label="OEE" value={pct(s.oee_reported)} tone={s.oee_reported<.6?'bad':s.oee_reported<.85?'warn':'good'}/><Kpi label="Availability" value={pct(s.availability)}/><Kpi label="Performance" value={pct(s.performance_raw)} tone={s.performance_master_warning?'warn':'neutral'}/><Kpi label="Quality" value={pct(s.quality)}/><Kpi label="Availability loss classified" value={`${num(s.captured_loss_min)} min`}/><Kpi label="Downtime unclassified" value={`${num(s.unclassified_loss_min)} min`} tone={s.unclassified_loss_min>0?'bad':'good'}/></div>{s.overclassified_loss_min>0&&<div className="error">Availability loss events exceed entered downtime by {num(s.overclassified_loss_min)} minutes. Correct the entry or loss records.</div>}{s.shared_shift_time_conflict_count>0&&<div className="warning-box">Shared machine-shift time differs across product records in {s.shared_shift_time_conflict_count} shift group(s). The summary counts machine time once using the maximum recorded values; reconcile the product rows.</div>}</>}
   {p&&op&&m&&machines.length>0&&<section className="panel">
