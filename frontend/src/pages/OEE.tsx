@@ -154,6 +154,9 @@ export default function OEE(){
      <Kpi label="OEE run time" value={`${num(afmsLive.oee?.run_time_min)} min`}/>
     </div>
     <p className="muted">Part: <b>{afmsLive.part_code} — {afmsLive.part_name}</b> · Operation: <b>{afmsLive.operation_name||'—'}</b> · Operator: <b>{afmsLive.operator_name||'Unassigned'}</b> · Ideal cycle from PRW master: <b>{afmsLive.ideal_cycle_time_sec} sec</b></p>
+    {p&&afmsLive.product_id&&String(afmsLive.product_id)!==p&&<div className="warning-box">The ESP32 active part does not match the product selected above. This preview belongs to the ESP32 part shown here; verify the HMI part selection before using it for the selected OEE scope.</div>}
+    {op&&afmsLive.route_operation_id&&String(afmsLive.route_operation_id)!==op&&<div className="warning-box">The ESP32-mapped operation does not match the selected operation above. Verify the part-to-operation mapping before using this preview.</div>}
+    <p className="muted">Unclassified idle time: <b>{num(afmsLive.unclassified_idle_min)} min</b>. Idle is kept separate from measured breakdown downtime and is not silently classified as an availability loss.</p>
     {(afmsLive.warnings||[]).map((w:string)=><div className="warning-box" key={w}>{w}</div>)}
    </>}
    {afmsLive&&afmsLive.status!=='READY'&&<div className="warning-box">{afmsLive.message||`AFMS collection status: ${afmsLive.status.replaceAll('_',' ')}`}</div>}
