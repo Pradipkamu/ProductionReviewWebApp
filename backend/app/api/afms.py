@@ -271,10 +271,18 @@ def afms_live_oee(machine_id: int, production_date: date, shift: str,
 
     now_utc = datetime.utcnow()
     is_current_date = production_date == datetime.now(_IST).date()
-    age_seconds = max(0.0, (now_utc - event.received_at).total_seconds()) if event.received_at else None
-    is_live = is_current_date and age_seconds is not None and age_seconds <= 300
+    received_age_seconds = max(0.0, (now_utc - event.received_at).total_seconds()) if event.received_at else None
+    event_age_seconds = max(0.0, (now_utc - event.event_timestamp).total_seconds())
+    is_live = (
+        is_current_date
+        and received_age_seconds is not None
+        and received_age_seconds <= 300
+        and event_age_seconds <= 300
+    )
     if is_current_date and not is_live:
-        warnings.append("Latest AFMS snapshot is older than five minutes; values may be stale.")
+        warnings.append("Latest AFMS snapshot is older than five minutes or was replayed from an older offline event; values may be stale.")
+    if idle_seconds > 0:
+        warnings.append("Idle time is not yet classified against PRW loss categories. Review it before treating this preview as final shift OEE.")
 
     person = context["operator"]
     return {
