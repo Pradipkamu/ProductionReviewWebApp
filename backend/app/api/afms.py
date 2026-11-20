@@ -185,7 +185,7 @@ def afms_live_oee(machine_id: int, production_date: date, shift: str,
             AFMSTelemetryEvent.device_id == device.id,
             AFMSTelemetryEvent.event_timestamp >= start_utc,
             AFMSTelemetryEvent.event_timestamp < end_utc,
-        ).order_by(AFMSTelemetryEvent.event_timestamp.desc(), AFMSTelemetryEvent.id.desc()).limit(500)
+        ).order_by(AFMSTelemetryEvent.event_timestamp.desc(), AFMSTelemetryEvent.id.desc()).limit(10000)
     ).all()
 
     latest_any = None
