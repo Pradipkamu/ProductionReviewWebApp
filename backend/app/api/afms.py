@@ -253,12 +253,17 @@ def afms_live_oee(machine_id: int, production_date: date, shift: str,
         status = "STANDARD_CYCLE_TIME_MISSING"
     else:
         planned_min = max(0.0, float(duration_min - break_min))
-        run_min = min(planned_min, run_seconds / 60.0)
-        downtime_min = max(0.0, planned_min - run_min)
+        # Use the device's measured breakdown time as availability downtime.
+        # Idle time is retained separately and remains visible as an
+        # unclassified performance loss until an operator classifies it.
+        downtime_min = min(planned_min, downtime_seconds / 60.0)
         oee = calculate_oee(duration_min, break_min, downtime_min, total, good,
                             float(cycle.ideal_cycle_time_sec))
-        if run_seconds / 60.0 > planned_min:
-            warnings.append("Shift run time exceeds planned production time; it was capped for OEE calculation.")
+        if downtime_seconds / 60.0 > planned_min:
+            warnings.append("Measured breakdown time exceeds planned production time; it was capped for OEE calculation.")
+        tracked_state_seconds = run_seconds + idle_seconds + downtime_seconds
+        if abs(tracked_state_seconds - duration_min * 60) > 120:
+            warnings.append("AFMS shift run/idle/downtime counters do not reconcile to shift duration; verify shift start and session state.")
         device_cycle_ms = int(payload.get("standardCycleMs") or 0)
         master_cycle_ms = float(cycle.ideal_cycle_time_sec) * 1000.0
         if device_cycle_ms and abs(device_cycle_ms - master_cycle_ms) > 100:
@@ -267,7 +272,7 @@ def afms_live_oee(machine_id: int, production_date: date, shift: str,
     now_utc = datetime.utcnow()
     is_current_date = production_date == datetime.now(_IST).date()
     age_seconds = max(0.0, (now_utc - event.received_at).total_seconds()) if event.received_at else None
-    is_live = not is_current_date or (age_seconds is not None and age_seconds <= 300)
+    is_live = is_current_date and age_seconds is not None and age_seconds <= 300
     if is_current_date and not is_live:
         warnings.append("Latest AFMS snapshot is older than five minutes; values may be stale.")
 
@@ -290,6 +295,8 @@ def afms_live_oee(machine_id: int, production_date: date, shift: str,
         "total_count": total, "good_count": good, "reject_count": reject,
         "run_seconds": run_seconds, "idle_seconds": idle_seconds,
         "downtime_seconds": downtime_seconds,
+        "oee_downtime_min": min(max(0.0, float(duration_min - break_min)), downtime_seconds / 60.0),
+        "unclassified_idle_min": idle_seconds / 60.0,
         "ideal_cycle_time_sec": float(cycle.ideal_cycle_time_sec) if cycle else None,
         "observed_cycle_time_ms": int(payload.get("cycleTimeMs") or 0),
         "oee": oee, "warnings": warnings,
