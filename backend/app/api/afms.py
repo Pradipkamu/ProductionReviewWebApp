@@ -262,7 +262,7 @@ def afms_live_oee(machine_id: int, production_date: date, shift: str,
         if downtime_seconds / 60.0 > planned_min:
             warnings.append("Measured breakdown time exceeds planned production time; it was capped for OEE calculation.")
         tracked_state_seconds = run_seconds + idle_seconds + downtime_seconds
-        if abs(tracked_state_seconds - duration_min * 60) > 120:
+        if abs(tracked_state_seconds - planned_min * 60) > 120:
             warnings.append("AFMS shift run/idle/downtime counters do not reconcile to shift duration; verify shift start and session state.")
         device_cycle_ms = int(payload.get("standardCycleMs") or 0)
         master_cycle_ms = float(cycle.ideal_cycle_time_sec) * 1000.0
