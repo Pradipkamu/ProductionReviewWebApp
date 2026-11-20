@@ -151,13 +151,13 @@ export default function OEE(){
      <Kpi label="Performance" value={pct(afmsLive.oee?.performance_raw)} tone={afmsLive.oee?.performance_master_warning?'warn':'neutral'}/>
      <Kpi label="Quality" value={pct(afmsLive.oee?.quality)}/>
      <Kpi label="Total / Good / Reject" value={`${num(afmsLive.total_count)} / ${num(afmsLive.good_count)} / ${num(afmsLive.reject_count)}`}/>
-     <Kpi label="Run time" value={`${num(afmsLive.run_seconds/60)} min`}/>
+     <Kpi label="OEE run time" value={`${num(afmsLive.oee?.run_time_min)} min`}/>
     </div>
     <p className="muted">Part: <b>{afmsLive.part_code} — {afmsLive.part_name}</b> · Operation: <b>{afmsLive.operation_name||'—'}</b> · Operator: <b>{afmsLive.operator_name||'Unassigned'}</b> · Ideal cycle from PRW master: <b>{afmsLive.ideal_cycle_time_sec} sec</b></p>
     {(afmsLive.warnings||[]).map((w:string)=><div className="warning-box" key={w}>{w}</div>)}
    </>}
    {afmsLive&&afmsLive.status!=='READY'&&<div className="warning-box">{afmsLive.message||`AFMS collection status: ${afmsLive.status.replaceAll('_',' ')}`}</div>}
-   {afmsLive?.status==='READY'&&<p className="muted">Source: {afmsLive.device_uid} · Last event: {afmsLive.event_type} · {afmsLive.event_timestamp?new Date(afmsLive.event_timestamp+'Z').toLocaleString():''} · {afmsLive.is_live?'Live':'Historical / stale snapshot'} · Preview only; it is not yet posted to the official OEE shift register.</p>}
+   {afmsLive?.status==='READY'&&<p className="muted">Source: {afmsLive.device_uid} · Last event: {afmsLive.event_type} · {afmsLive.event_timestamp?new Date(afmsLive.event_timestamp+'Z').toLocaleString():''} · {afmsLive.is_live?'Live':(d===today()?'Stale':'Historical')} · Preview only; it is not yet posted to the official OEE shift register.</p>}
   </section>}
 
   {s&&m&&machines.length>0&&<><div className="kpi-grid"><Kpi label="OEE" value={pct(s.oee_reported)} tone={s.oee_reported<.6?'bad':s.oee_reported<.85?'warn':'good'}/><Kpi label="Availability" value={pct(s.availability)}/><Kpi label="Performance" value={pct(s.performance_raw)} tone={s.performance_master_warning?'warn':'neutral'}/><Kpi label="Quality" value={pct(s.quality)}/><Kpi label="Availability loss classified" value={`${num(s.captured_loss_min)} min`}/><Kpi label="Downtime unclassified" value={`${num(s.unclassified_loss_min)} min`} tone={s.unclassified_loss_min>0?'bad':'good'}/></div>{s.overclassified_loss_min>0&&<div className="error">Availability loss events exceed entered downtime by {num(s.overclassified_loss_min)} minutes. Correct the entry or loss records.</div>}{s.shared_shift_time_conflict_count>0&&<div className="warning-box">Shared machine-shift time differs across product records in {s.shared_shift_time_conflict_count} shift group(s). The summary counts machine time once using the maximum recorded values; reconcile the product rows.</div>}</>}
