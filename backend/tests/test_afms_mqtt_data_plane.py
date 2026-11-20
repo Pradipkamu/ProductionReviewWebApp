@@ -249,3 +249,56 @@ def test_command_publish_uses_device_specific_topic(monkeypatch):
 
     monkeypatch.setattr(mqtt_service, "_client", Client())
     mqtt_service.publish_device_command("ESP32-MQTT-TEST", {"command": "PING"})
+
+
+
+def test_shift_scoped_metrics_are_accepted_for_automatic_oee_collection():
+    _device()
+    payload = _telemetry(
+        eventType="PRODUCTION_PULSE",
+        shiftId=2,
+        productionCount=12,
+        rejectCount=2,
+        goodCount=10,
+        shiftProductionCount=12,
+        shiftRejectCount=2,
+        shiftGoodCount=10,
+        shiftRunSeconds=900,
+        shiftIdleSeconds=60,
+        shiftDowntimeSeconds=30,
+    )
+    client = _AckClient()
+
+    mqtt_service._handle_message(
+        client, None, _Message("ESP32-MQTT-TEST", "telemetry", payload)
+    )
+
+    with SessionLocal() as db:
+        row = db.scalar(select(AFMSTelemetryEvent).where(
+            AFMSTelemetryEvent.event_id == payload["eventId"]
+        ))
+        assert row is not None
+        stored = json.loads(row.payload_json)
+        assert stored["shiftProductionCount"] == 12
+        assert stored["shiftGoodCount"] == 10
+        assert stored["shiftRejectCount"] == 2
+        assert stored["shiftRunSeconds"] == 900
+    _assert_ack(client, "accepted", "stored")
+
+
+def test_incomplete_shift_scoped_metrics_are_rejected():
+    _device()
+    client = _AckClient()
+    payload = _telemetry(
+        shiftId=1,
+        shiftProductionCount=4,
+        shiftGoodCount=4,
+    )
+
+    mqtt_service._handle_message(
+        client, None, _Message("ESP32-MQTT-TEST", "telemetry", payload)
+    )
+
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count(AFMSTelemetryEvent.id))) == 0
+    _assert_ack(client, "rejected", "invalid-payload")
