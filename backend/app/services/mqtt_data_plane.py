@@ -93,7 +93,7 @@ def _validate_telemetry_payload(payload: dict, machine: Machine) -> tuple[dateti
         "qualityPermille", "oeePermille", "wifiRssi", "freeHeap",
         "firmwareVersion", "sequence",
     }
-    allowed = required | {"partNumber"}
+    allowed = required | set(_TELEMETRY_OPTIONAL_INTEGER_FIELDS) | {"partNumber"}
     missing = required.difference(payload)
     unexpected = set(payload).difference(allowed)
     if missing:
@@ -129,6 +129,19 @@ def _validate_telemetry_payload(payload: dict, machine: Machine) -> tuple[dateti
             raise ValueError("invalid telemetry integer field: " + field)
         if field != "wifiRssi" and not 0 <= value <= 4294967295:
             raise ValueError("telemetry integer out of range: " + field)
+
+    present_shift_metrics = [field for field in _TELEMETRY_OPTIONAL_INTEGER_FIELDS if field in payload]
+    if present_shift_metrics and len(present_shift_metrics) != len(_TELEMETRY_OPTIONAL_INTEGER_FIELDS):
+        raise ValueError("incomplete shift-scoped telemetry metrics")
+    for field in present_shift_metrics:
+        value = payload[field]
+        if type(value) is not int or not 0 <= value <= 4294967295:
+            raise ValueError("invalid telemetry integer field: " + field)
+    if present_shift_metrics:
+        if payload["shiftProductionCount"] != payload["shiftGoodCount"] + payload["shiftRejectCount"]:
+            raise ValueError("shiftGoodCount plus shiftRejectCount must equal shiftProductionCount")
+        if payload["shiftId"] == 0:
+            raise ValueError("shift-scoped telemetry requires an active shift")
 
     if "partNumber" in payload:
         value = payload["partNumber"]
