@@ -146,7 +146,7 @@ export default function OEE(){
    {afmsLiveBusy&&!afmsLive&&<div className="muted">Reading latest AFMS telemetry…</div>}
    {afmsLive?.status==='READY'&&<>
     <div className="kpi-grid">
-     <Kpi label="AFMS OEE" value={pct(afmsLive.oee?.oee_reported)}/>
+     <Kpi label="AFMS provisional OEE" value={pct(afmsLive.oee?.oee_reported)}/>
      <Kpi label="Availability" value={pct(afmsLive.oee?.availability)}/>
      <Kpi label="Performance" value={pct(afmsLive.oee?.performance_raw)} tone={afmsLive.oee?.performance_master_warning?'warn':'neutral'}/>
      <Kpi label="Quality" value={pct(afmsLive.oee?.quality)}/>
