@@ -12,6 +12,16 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
 class ChatFirebaseMessagingService : FirebaseMessagingService() {
+    override fun onNewToken(token: String) {
+        super.onNewToken(token)
+        Thread {
+            runCatching {
+                val sessionToken = SessionStore(applicationContext).read()
+                if (!sessionToken.isNullOrBlank()) ApiClient.registerDeviceToken(sessionToken, token)
+            }
+        }.start()
+    }
+
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
         val title = data["title"]?.takeIf { it.isNotBlank() }
