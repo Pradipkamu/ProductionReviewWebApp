@@ -23,13 +23,14 @@ def upgrade():
         sa.Column("last_seen_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint("token", name="uq_chat_device_tokens_token"),
     )
-    op.create_index("ix_chat_device_tokens_token", "chat_device_tokens", ["token"], unique=True)\n    op.create_index("ix_chat_device_tokens_user_id", "chat_device_tokens", ["user_id"])
+    op.create_index("ix_chat_device_tokens_token", "chat_device_tokens", ["token"], unique=True)
+    op.create_index("ix_chat_device_tokens_user_id", "chat_device_tokens", ["user_id"])
     op.create_index("ix_chat_device_tokens_is_active", "chat_device_tokens", ["is_active"])
 
 
 def downgrade():
+    op.drop_index("ix_chat_device_tokens_token", table_name="chat_device_tokens")
     op.drop_index("ix_chat_device_tokens_is_active", table_name="chat_device_tokens")
     op.drop_index("ix_chat_device_tokens_user_id", table_name="chat_device_tokens")
     op.drop_table("chat_device_tokens")
