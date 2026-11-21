@@ -9,7 +9,7 @@ from app.main import app
 from app.enums import OEEComponent, OperationType
 from app.models import (
     ActionContext, ActionWhyWhy, Customer, LossCategory, Machine, Operation,
-    OperationMachineMap, Product, RouteOperation, RouteVersion, StandardCycleTime,
+    OperationMachineMap, Personnel, Product, RouteOperation, RouteVersion, StandardCycleTime,
 )
 
 
@@ -18,7 +18,7 @@ def _headers(client: TestClient) -> dict[str, str]:
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
-def _seed_oee_scope() -> tuple[int, int, int, int, int]:
+def _seed_oee_scope() -> tuple[int, int, int, int, int, int, int]:
     today = date.today()
     with SessionLocal() as db:
         customer = Customer(code="OEE-C", name="OEE Customer")
@@ -37,11 +37,11 @@ def _seed_oee_scope() -> tuple[int, int, int, int, int]:
         availability = db.scalar(select(LossCategory).where(LossCategory.oee_component == OEEComponent.AVAILABILITY))
         quality = db.scalar(select(LossCategory).where(LossCategory.oee_component == OEEComponent.QUALITY))
         db.commit()
-        return product.id, route.id, machine.id, availability.id, quality.id, customer.id
+        return product.id, route.id, machine.id, availability.id, quality.id, customer.id, operator.id
 
 
 def test_controlled_oee_capture_reconciliation_and_actions():
-    product_id, route_id, machine_id, availability_loss_id, quality_loss_id, customer_id = _seed_oee_scope()
+    product_id, route_id, machine_id, availability_loss_id, quality_loss_id, customer_id, operator_id = _seed_oee_scope()
     client = TestClient(app); headers = _headers(client); day = date.today().isoformat()
     payload = {
         "production_date": day, "shift": "a", "product_id": product_id,
