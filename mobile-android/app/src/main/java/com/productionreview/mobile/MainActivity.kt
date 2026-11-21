@@ -597,7 +597,7 @@ class MainActivity : ComponentActivity() {
             var remark by remember { mutableStateOf("") }
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
-            var homeTab by remember { mutableStateOf("CHAT") }
+            var homeTab by remember { mutableStateOf("ACTIONS") }
             var chatConversations by remember { mutableStateOf(JSONArray()) }
             var chatMessages by remember { mutableStateOf(JSONArray()) }
             var chatEmployees by remember { mutableStateOf(JSONArray()) }
