@@ -960,6 +960,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
         metric = aggregate(items)
         status = "ON TARGET" if metric["oee_reported"] >= target_oee else "BELOW TARGET"
         machine_summary.append({"machine_id": mid, "machine": machines[mid].code if mid in machines else str(mid),
+                                "machine_name": machines[mid].name if mid in machines else str(mid),
                                 "entry_count": len(items), "status": status,
                                 "gap_to_target": max(0.0, target_oee - metric["oee_reported"]), **metric})
     machine_summary.sort(key=lambda x: x["oee_reported"])
