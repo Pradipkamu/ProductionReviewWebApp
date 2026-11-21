@@ -51,6 +51,18 @@ class UserSession(Base):
     user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
 
+class ChatDeviceToken(Base, TimestampMixin):
+    """An authenticated user's registered Firebase Cloud Messaging device token."""
+    __tablename__ = "chat_device_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token: Mapped[str] = mapped_column(String(512), unique=True, index=True, nullable=False)
+    platform: Mapped[str] = mapped_column(String(20), default="ANDROID", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    user: Mapped[User] = relationship()
+
+
 class SecurityEvent(Base):
     __tablename__ = "security_events"
     id: Mapped[int] = mapped_column(primary_key=True)
