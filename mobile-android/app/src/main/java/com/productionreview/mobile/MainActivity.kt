@@ -129,6 +129,8 @@ private fun resolvedOeeLossQuantity(
     return loss.qty.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
 }
 
+internal class ApiHttpException(val statusCode: Int, message: String) : IllegalStateException(message)
+
 internal object ApiClient {
     private fun describeApiError(body: String, code: Int): String {
         fun valueText(value: Any?): String = when (value) {
@@ -176,7 +178,7 @@ internal object ApiClient {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IllegalStateException(describeApiError(text, code))
+            if (code !in 200..299) throw ApiHttpException(code, describeApiError(text, code))
             return text
         } catch (e: SocketTimeoutException) {
             throw IllegalStateException("Connection timed out. Check your internet connection and try again.", e)
@@ -232,7 +234,7 @@ internal object ApiClient {
             if(code !in 200..299) {
                 val body=connection.errorStream?.bufferedReader()?.use{it.readText()}.orEmpty()
                 val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty()
-                throw IllegalStateException(detail.ifBlank{"Chat attachment download failed (HTTP $code)"})
+                throw ApiHttpException(code, detail.ifBlank{"Chat attachment download failed (HTTP $code)"})
             }
             val safeName=fileName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"),"_").ifBlank{"chat_file_$attachmentId"}
             val target=File(cacheDir,"chat_"+attachmentId+"_"+safeName)
@@ -263,7 +265,7 @@ internal object ApiClient {
             }
             val code = connection.responseCode
             val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IllegalStateException(describeApiError(body, code))
+            if (code !in 200..299) throw ApiHttpException(code, describeApiError(body, code))
             return JSONObject(body)
         } finally { connection.disconnect() }
     }
@@ -1123,11 +1125,43 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            var sessionExpiryHandling by remember { mutableStateOf(false) }
+
+            fun handleSessionExpired(error: Throwable): Boolean {
+                val unauthorized = generateSequence(error) { it.cause }
+                    .filterIsInstance<ApiHttpException>()
+                    .any { it.statusCode == 401 }
+                if (!unauthorized || token.isNullOrBlank() || sessionExpiryHandling) return false
+
+                // Stop the active authenticated UI immediately; the polling effect is
+                // keyed by token and will be cancelled as soon as token becomes null.
+                sessionExpiryHandling = true
+                token = null
+                account = null
+                homeTab = "ACTIONS"
+                selectedChatId = null
+                chatConversations = JSONArray()
+                chatMessages = JSONArray()
+                chatEmployees = JSONArray()
+                chatDraft = ""
+                chatSearch = ""
+                chatError = null
+                chatAttachmentUri = null
+                chatShowNew = false
+                chatLoading = false
+                message = "Your session has expired. Please sign in again."
+                scope.launch {
+                    withContext(Dispatchers.IO) { sessionStore.clear() }
+                    sessionExpiryHandling = false
+                }
+                return true
+            }
+
             fun refreshChatConversations(auth: String, showLoading: Boolean = true) {
                 if (showLoading) chatLoading = true
                 scope.launch {
                     try { chatConversations = withContext(Dispatchers.IO) { ApiClient.loadChatConversations(auth) } }
-                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                    catch (e: Exception) { if (!handleSessionExpired(e)) chatError = "Chat: ${e.message}" }
                     finally { if (showLoading) chatLoading = false }
                 }
             }
@@ -1145,7 +1179,7 @@ class MainActivity : ComponentActivity() {
                             ApiClient.loadChatConversations(auth)
                         }
                     } catch (e: Exception) {
-                        message = "Chat: ${e.message}"
+                        if (!handleSessionExpired(e)) chatError = "Chat: ${e.message}"
                     }
                 }
             }
@@ -1164,7 +1198,7 @@ class MainActivity : ComponentActivity() {
             fun searchChatEmployees(auth: String) {
                 scope.launch {
                     try { chatEmployees = withContext(Dispatchers.IO) { ApiClient.loadChatEmployees(chatSearch, auth) } }
-                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                    catch (e: Exception) { if (!handleSessionExpired(e)) chatError = "Chat: ${e.message}" }
                 }
             }
             val normalizedRole = account?.role?.uppercase().orEmpty()
@@ -1431,7 +1465,7 @@ class MainActivity : ComponentActivity() {
                                                         val sent=withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body.ifBlank{" "},auth)}
                                                         if(picked!=null)withContext(Dispatchers.IO){ApiClient.uploadChatAttachment(chatContext,id,sent.optInt("id"),picked,auth)}
                                                         chatDraft="";chatAttachmentUri=null;chatError=null;refreshChatMessages(auth,id);refreshChatConversations(auth)
-                                                    }catch(e:Exception){chatError="Message not sent: ${e.message ?: "Please try again."}";message=chatError ?: "Message not sent."}
+                                                    }catch(e:Exception){if(!handleSessionExpired(e)){chatError="Message not sent: ${e.message ?: "Please try again."}";message=chatError ?: "Message not sent."}}
                                                     finally{chatLoading=false}
                                                 }
                                             },enabled=!chatLoading&&(chatDraft.isNotBlank()||chatAttachmentUri!=null),modifier=Modifier.size(44.dp).clip(CircleShape).background(Teal)) { Text(if(chatLoading)"…" else "➤",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold) }
@@ -1537,6 +1571,7 @@ class MainActivity : ComponentActivity() {
                                                 try {
                                                     val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
+                                                    sessionExpiryHandling=false; chatError=null; chatConversations=JSONArray(); chatEmployees=JSONArray()
                                                     token=result.first; account=result.second; password=""; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatDraft=""; chatShowNew=false; refreshPendingActions(result.first); registerPushToken(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
                                                 } catch(e:Exception){
