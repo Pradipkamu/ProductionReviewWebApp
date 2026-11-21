@@ -269,10 +269,19 @@ def leave_group(conversation_id: int, db: Session = Depends(get_db), user: User 
 def messages(conversation_id: int, before_id: Optional[int] = None,
              limit: int = Query(default=50, ge=1, le=100), db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
-    participant = None if user.role == UserRole.ADMIN else _participant(db, conversation_id, user.id)
     conversation = db.get(ChatConversation, conversation_id)
     if not conversation or not conversation.is_active:
         raise HTTPException(404, "Conversation not found")
+    if user.role == UserRole.ADMIN:
+        # Administrators may open conversations without being members. If an
+        # admin does have a participant row, update only that admin's receipt.
+        participant = db.scalar(select(ChatParticipant).where(
+            ChatParticipant.conversation_id == conversation_id,
+            ChatParticipant.user_id == user.id,
+            ChatParticipant.is_active.is_(True),
+        ))
+    else:
+        participant = _participant(db, conversation_id, user.id)
     stmt = select(ChatMessage, User.full_name, User.username).join(User, User.id == ChatMessage.sender_id).where(
         ChatMessage.conversation_id == conversation_id, ChatMessage.deleted_at.is_(None))
     if before_id:
