@@ -2,6 +2,7 @@ plugins {
  id("com.android.application")
  id("org.jetbrains.kotlin.android")
  id("org.jetbrains.kotlin.plugin.compose")
+ id("com.google.gms.google-services")
 }
 android {
  namespace = "com.productionreview.mobile"
@@ -13,6 +14,8 @@ android {
 }
 dependencies {
  implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+ implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+ implementation("com.google.firebase:firebase-messaging")
  implementation("androidx.activity:activity-compose:1.9.3")
  implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
  implementation("androidx.core:core-ktx:1.13.1")
