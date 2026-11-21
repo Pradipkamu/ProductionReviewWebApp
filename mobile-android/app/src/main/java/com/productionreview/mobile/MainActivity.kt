@@ -129,7 +129,7 @@ private fun resolvedOeeLossQuantity(
     return loss.qty.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
 }
 
-private object ApiClient {
+internal object ApiClient {
     private fun describeApiError(body: String, code: Int): String {
         fun valueText(value: Any?): String = when (value) {
             is String -> value.trim()
@@ -197,6 +197,13 @@ private object ApiClient {
         val response = request("/auth/login", "POST", JSONObject().put("username", username).put("password", password))
         val token = response.getString("access_token")
         return token to currentAccount(token)
+    }
+    fun registerDeviceToken(authToken: String, fcmToken: String) {
+        request("/chat/device-tokens", "POST",
+            JSONObject().put("token", fcmToken).put("platform", "ANDROID"), authToken)
+    }
+    fun deactivateDeviceToken(authToken: String, fcmToken: String) {
+        request("/chat/device-tokens", "DELETE", JSONObject().put("token", fcmToken), authToken)
     }
     fun logout(token: String) { request("/auth/logout", "POST", token=token) }
     fun currentAccount(token: String): Account {
@@ -573,10 +580,19 @@ private fun StatusPill(label: String, color: Color) {
     }
 }
 class MainActivity : ComponentActivity() {
+    private val notificationConversationId = mutableStateOf<Int?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        notificationConversationId.value = intent.getIntExtra("conversation_id", -1).takeIf { it > 0 }
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sessionStore = SessionStore(this)
+        notificationConversationId.value = intent.getIntExtra("conversation_id", -1).takeIf { it > 0 }
         setContent {
             var username by remember { mutableStateOf("") }
             var password by remember { mutableStateOf("") }
@@ -1085,12 +1101,25 @@ class MainActivity : ComponentActivity() {
                     busy=true
                     try {
                         val current=withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
-                        token=saved; account=current; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatShowNew=false; refreshMasters(saved); refreshPendingActions(saved)
+                        token=saved; account=current; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatShowNew=false; refreshMasters(saved); refreshPendingActions(saved); registerPushToken(saved)
                         message="Connected to Production Review."
                     } catch(_:Exception) {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
                         message="Your saved session has expired. Please sign in again."
                     } finally { busy=false }
+                }
+            }
+
+            fun registerPushToken(auth: String) {
+                runCatching {
+                    com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                        .addOnSuccessListener { fcmToken ->
+                            if (fcmToken.isNotBlank()) scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    runCatching { ApiClient.registerDeviceToken(auth, fcmToken) }
+                                }
+                            }
+                        }
                 }
             }
 
@@ -1108,6 +1137,18 @@ class MainActivity : ComponentActivity() {
                     catch (e: Exception) { message = "Chat: ${e.message}" }
                 }
             }
+            LaunchedEffect(notificationConversationId.value, account) {
+                val conversationId = notificationConversationId.value
+                val auth = token
+                if (conversationId != null && account != null && !auth.isNullOrBlank()) {
+                    homeTab = "CHAT"
+                    selectedChatId = conversationId
+                    refreshChatConversations(auth, showLoading = false)
+                    refreshChatMessages(auth, conversationId)
+                    notificationConversationId.value = null
+                }
+            }
+
             fun searchChatEmployees(auth: String) {
                 scope.launch {
                     try { chatEmployees = withContext(Dispatchers.IO) { ApiClient.loadChatEmployees(chatSearch, auth) } }
@@ -1478,7 +1519,7 @@ class MainActivity : ComponentActivity() {
                                                 try {
                                                     val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
-                                                    token=result.first; account=result.second; password=""; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatDraft=""; chatShowNew=false; refreshPendingActions(result.first)
+                                                    token=result.first; account=result.second; password=""; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatDraft=""; chatShowNew=false; refreshPendingActions(result.first); registerPushToken(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
                                                 } catch(e:Exception){
                                                     message=e.message?.takeIf { it.isNotBlank() } ?: "Unable to sign in. Check your connection and try again."
@@ -2527,7 +2568,15 @@ class MainActivity : ComponentActivity() {
                             val old=token
                             scope.launch {
                                 busy=true
-                                try{if(old!=null)withContext(Dispatchers.IO){ApiClient.logout(old)}}catch(_:Exception){}
+                                try {
+                                    if (old != null) withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            val fcmToken = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.getResult()
+                                            ApiClient.deactivateDeviceToken(old, fcmToken)
+                                        }
+                                        ApiClient.logout(old)
+                                    }
+                                } catch(_:Exception){}
                                 withContext(Dispatchers.IO){sessionStore.clear()}
                                 token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;selectedChatId=null;chatConversations=JSONArray();chatMessages=JSONArray();chatDraft="";chatShowNew=false;homeTab="ACTIONS";message="Signed out.";busy=false
                             }
