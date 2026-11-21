@@ -353,17 +353,6 @@ private object ApiClient {
         return Pair(Choice(response.getInt("id"), response.optString("full_name")), response.optBoolean("duplicate_warning"))
     }
 
-    fun loadOeeReportMachines(token: String): List<Choice> {
-        val rows = array("/masters/machines", token)
-        return (0 until rows.length()).mapNotNull { i ->
-            val row = rows.getJSONObject(i)
-            if ((row.has("active") && !row.optBoolean("active")) || (row.has("is_active") && !row.optBoolean("is_active"))) null
-            else {
-                val id = row.optInt("id", 0)
-                if (id <= 0) null else Choice(id, row.optString("name") + " • " + row.optString("code"))
-            }
-        }
-    }
     fun loadOeeManagement(
         fromDate: String, toDate: String, token: String,
         productId: Int? = null, routeOperationId: Int? = null, machineId: Int? = null
@@ -697,8 +686,7 @@ class MainActivity : ComponentActivity() {
             var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
             var oeeReportTo by remember { mutableStateOf(LocalDate.now().toString()) }
-            var oeeReportMachines by remember { mutableStateOf<List<Choice>>(emptyList()) }
-            var oeeReportMachine by remember { mutableStateOf<Choice?>(null) }
+            var oeeReportProduct by remember { mutableStateOf<Choice?>(null) }
             var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -994,16 +982,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(homeTab, token) {
-                val auth = token
-                if (homeTab == "OEE_REPORTS" && auth != null && oeeReportMachines.isEmpty()) {
-                    try {
-                        oeeReportMachines = withContext(Dispatchers.IO) { ApiClient.loadOeeReportMachines(auth) }
-                    } catch (e: Exception) {
-                        oeeError = e.message ?: "Unable to load machine filter list."
-                    }
-                }
-            }
             LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id) {
                 val auth = token
                 if (homeTab == "OEE" && auth != null) {
@@ -2199,15 +2177,15 @@ class MainActivity : ComponentActivity() {
                                     SectionLabel("REPORT PERIOD", "Default: first day of this month through today")
                                     OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                                     OutlinedTextField(oeeReportTo,{oeeReportTo=it},label={Text("To date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-                                    ChoiceDropdown("Machine filter", listOf(Choice(-1, "All machines")) + oeeReportMachines, oeeReportMachine ?: Choice(-1, "All machines"), { selected -> oeeReportMachine = selected.takeIf { it.id > 0 }; oeeManagement = null })
-                                    Text("Part: ${oeeProduct?.label ?: "All parts"}  •  Process: ${oeeOperation?.label ?: "All processes"}",color=Muted,fontSize=11.sp)
+                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters.products, oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null })
+                                    Text("Process: ${oeeOperation?.label ?: "All processes"}",color=Muted,fontSize=11.sp)
                                     Button(onClick={
                                         val auth=token
                                         if(auth!=null) scope.launch {
                                             oeeLoading=true;oeeError=null
                                             try {
                                                 require(LocalDate.parse(oeeReportTo)>=LocalDate.parse(oeeManagementFrom)) { "To date must be on or after From date." }
-                                                oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeReportTo,auth,oeeProduct?.id,oeeOperation?.id,oeeReportMachine?.id)}
+                                                oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,oeeOperation?.id,null)}
                                             } catch(e:Exception){oeeError=e.message ?: "Unable to load OEE report."}
                                             finally{oeeLoading=false}
                                         }
