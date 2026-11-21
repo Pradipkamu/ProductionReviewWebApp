@@ -1095,6 +1095,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun registerPushToken(auth: String) {
+                runCatching {
+                    com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                        .addOnSuccessListener { fcmToken ->
+                            if (fcmToken.isNotBlank()) scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    runCatching { ApiClient.registerDeviceToken(auth, fcmToken) }
+                                }
+                            }
+                        }
+                }
+            }
+
             LaunchedEffect(Unit) {
                 val saved=withContext(Dispatchers.IO) { sessionStore.read() }
                 if (!saved.isNullOrBlank()) {
@@ -1107,19 +1120,6 @@ class MainActivity : ComponentActivity() {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
                         message="Your saved session has expired. Please sign in again."
                     } finally { busy=false }
-                }
-            }
-
-            fun registerPushToken(auth: String) {
-                runCatching {
-                    com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-                        .addOnSuccessListener { fcmToken ->
-                            if (fcmToken.isNotBlank()) scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    runCatching { ApiClient.registerDeviceToken(auth, fcmToken) }
-                                }
-                            }
-                        }
                 }
             }
 
@@ -2571,7 +2571,7 @@ class MainActivity : ComponentActivity() {
                                 try {
                                     if (old != null) withContext(Dispatchers.IO) {
                                         runCatching {
-                                            val fcmToken = com.google.firebase.messaging.FirebaseMessaging.getInstance().token.getResult()
+                                            val fcmToken = com.google.android.gms.tasks.Tasks.await(com.google.firebase.messaging.FirebaseMessaging.getInstance().token)
                                             ApiClient.deactivateDeviceToken(old, fcmToken)
                                         }
                                         ApiClient.logout(old)
