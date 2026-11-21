@@ -1,0 +1,32 @@
+{
+  "project_info": {
+    "project_number": "500595527393",
+    "project_id": "productionreviewapp",
+    "storage_bucket": "productionreviewapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:500595527393:android:65801486e39d33744e31a0",
+        "android_client_info": {
+          "package_name": "com.productionreview.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [{"current_key": "AIzaSyDH63g4brugX3ls4EfevRz6KZq7-UAlG7Q"}],
+      "services": {"appinvite_service": {"other_platform_oauth_client": []}}
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:500595527393:android:b9dde5327f3707e64e31a0",
+        "android_client_info": {
+          "package_name": "com.productionreview.mobile.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [{"current_key": "AIzaSyDH63g4brugX3ls4EfevRz6KZq7-UAlG7Q"}],
+      "services": {"appinvite_service": {"other_platform_oauth_client": []}}
+    }
+  ],
+  "configuration_version": "1"
+}
