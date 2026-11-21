@@ -1077,12 +1077,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            fun refreshChatConversations(auth: String) {
-                chatLoading = true
+            fun refreshChatConversations(auth: String, showLoading: Boolean = true) {
+                if (showLoading) chatLoading = true
                 scope.launch {
                     try { chatConversations = withContext(Dispatchers.IO) { ApiClient.loadChatConversations(auth) } }
                     catch (e: Exception) { message = "Chat: ${e.message}" }
-                    finally { chatLoading = false }
+                    finally { if (showLoading) chatLoading = false }
                 }
             }
             fun refreshChatMessages(auth: String, conversationId: Int) {
@@ -1172,8 +1172,10 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(homeTab, token, selectedChatId) {
                             val auth = token ?: return@LaunchedEffect
                             if (homeTab == "CHAT") {
+                                var firstLoad = true
                                 while (homeTab == "CHAT") {
-                                    refreshChatConversations(auth)
+                                    refreshChatConversations(auth, showLoading = firstLoad)
+                                    firstLoad = false
                                     selectedChatId?.let { refreshChatMessages(auth, it) }
                                     kotlinx.coroutines.delay(5000)
                                 }
