@@ -1133,25 +1133,26 @@ class MainActivity : ComponentActivity() {
                     .any { it.statusCode == 401 }
                 if (!unauthorized || token.isNullOrBlank() || sessionExpiryHandling) return false
 
-                // Stop the active authenticated UI immediately; the polling effect is
-                // keyed by token and will be cancelled as soon as token becomes null.
+                // Persist the sign-out before exposing the login screen so a rapid
+                // re-login cannot have its newly saved token cleared by this request.
                 sessionExpiryHandling = true
-                token = null
-                account = null
-                homeTab = "ACTIONS"
-                selectedChatId = null
-                chatConversations = JSONArray()
-                chatMessages = JSONArray()
-                chatEmployees = JSONArray()
-                chatDraft = ""
-                chatSearch = ""
-                chatError = null
-                chatAttachmentUri = null
-                chatShowNew = false
-                chatLoading = false
-                message = "Your session has expired. Please sign in again."
+                chatError = "Your session has expired. Returning to sign-in…"
                 scope.launch {
                     withContext(Dispatchers.IO) { sessionStore.clear() }
+                    token = null
+                    account = null
+                    homeTab = "ACTIONS"
+                    selectedChatId = null
+                    chatConversations = JSONArray()
+                    chatMessages = JSONArray()
+                    chatEmployees = JSONArray()
+                    chatDraft = ""
+                    chatSearch = ""
+                    chatError = null
+                    chatAttachmentUri = null
+                    chatShowNew = false
+                    chatLoading = false
+                    message = "Your session has expired. Please sign in again."
                     sessionExpiryHandling = false
                 }
                 return true
