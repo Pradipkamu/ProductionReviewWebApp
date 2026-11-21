@@ -312,8 +312,8 @@ private object ApiClient {
     fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
         request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
 
-    fun loadOeeRecentRecords(fromDate: String, toDate: String, shift: String, machineId: Int, productId: Int, routeOperationId: Int, token: String): JSONObject =
-        request("/oee/recent-records?from_date=$fromDate&to_date=$toDate&shift=$shift&machine_id=$machineId&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
+    fun loadOeeRecentRecords(fromDate: String, toDate: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
+        request("/oee/recent-records?from_date=$fromDate&to_date=$toDate&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
 
     fun saveOeeMachineEntry(payload: JSONObject, token: String): JSONObject =
         request("/oee/machine-entry", "POST", payload, token)
@@ -597,7 +597,7 @@ class MainActivity : ComponentActivity() {
             var remark by remember { mutableStateOf("") }
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
-            var homeTab by remember { mutableStateOf("ACTIONS") }
+            var homeTab by remember { mutableStateOf("CHAT") }
             var chatConversations by remember { mutableStateOf(JSONArray()) }
             var chatMessages by remember { mutableStateOf(JSONArray()) }
             var chatEmployees by remember { mutableStateOf(JSONArray()) }
@@ -891,19 +891,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate, oeeShift) {
+            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeDate) {
                 val auth = token
                 val productId = oeeProduct?.id
                 val operationId = oeeOperation?.id
-                val machineId = oeeMachine?.id
-                if (homeTab == "OEE" && auth != null && productId != null && operationId != null && machineId != null) {
+                if (homeTab == "OEE" && auth != null && productId != null && operationId != null) {
                     oeeRecentLoading = true
                     oeeRecentError = null
                     try {
                         val endDate = LocalDate.parse(oeeDate)
                         val startDate = endDate.minusDays(6)
                         val response = withContext(Dispatchers.IO) {
-                            ApiClient.loadOeeRecentRecords(startDate.toString(), endDate.toString(), oeeShift, machineId, productId, operationId, auth)
+                            ApiClient.loadOeeRecentRecords(startDate.toString(), endDate.toString(), productId, operationId, auth)
                         }
                         val rows = response.optJSONArray("records") ?: JSONArray()
                         oeeRecentRecords = (0 until rows.length()).map { rows.getJSONObject(it) }
@@ -1069,7 +1068,7 @@ class MainActivity : ComponentActivity() {
                     busy=true
                     try {
                         val current=withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
-                        token=saved; account=current; refreshMasters(saved); refreshPendingActions(saved)
+                        token=saved; account=current; homeTab="CHAT"; refreshMasters(saved); refreshPendingActions(saved)
                         message="Connected to Production Review."
                     } catch(_:Exception) {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
@@ -1459,7 +1458,7 @@ class MainActivity : ComponentActivity() {
                                                 try {
                                                     val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
-                                                    token=result.first; account=result.second; password=""; refreshPendingActions(result.first)
+                                                    token=result.first; account=result.second; password=""; homeTab="CHAT"; refreshPendingActions(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
                                                 } catch(e:Exception){
                                                     message=e.message?.takeIf { it.isNotBlank() } ?: "Unable to sign in. Check your connection and try again."
@@ -1820,7 +1819,7 @@ class MainActivity : ComponentActivity() {
                                         }
 
                                         Spacer(Modifier.height(8.dp))
-                                        SectionLabel("Last 7 days • Shift $oeeShift", "${oeeRecentRecords.size} record(s) from ${runCatching { LocalDate.parse(oeeDate).minusDays(6) }.getOrNull() ?: oeeDate} to $oeeDate")
+                                        SectionLabel("Last 7 days • All shifts", "${oeeRecentRecords.size} record(s) from ${runCatching { LocalDate.parse(oeeDate).minusDays(6) }.getOrNull() ?: oeeDate} to $oeeDate")
                                         when {
                                             oeeRecentLoading -> Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
                                                 CircularProgressIndicator(modifier=Modifier.size(18.dp),strokeWidth=2.dp)
@@ -1828,11 +1827,11 @@ class MainActivity : ComponentActivity() {
                                                 Text("Loading last 7 days…",color=Muted,fontSize=12.sp)
                                             }
                                             oeeRecentError != null -> Text(oeeRecentError!!,color=Danger,fontSize=12.sp)
-                                            oeeRecentRecords.isEmpty() -> EmptyState("No OEE records in the last 7 days", "No saved entries were found for Shift $oeeShift in the selected part, operation and machine.")
+                                            oeeRecentRecords.isEmpty() -> EmptyState("No OEE records in the last 7 days", "No saved entries were found across shifts for the selected part and operation.")
                                             else -> oeeRecentRecords.forEach { entry ->
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                                                        Text("${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("${entry.optString("production_date")} • Shift ${entry.optString("shift")} • ${entry.optString("machine").takeIf { it.isNotBlank() && it != "null" } ?: "Machine"}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                                                         OutlinedButton(onClick={editOeeEntry(entry.optString("production_date"), entry.optString("shift"), entry.optInt("id"))}, modifier=Modifier.fillMaxWidth(), enabled=!oeeLoading) { Text("EDIT THIS RECORD") }
