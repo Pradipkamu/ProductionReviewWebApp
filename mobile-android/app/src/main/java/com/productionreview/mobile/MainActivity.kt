@@ -1245,9 +1245,15 @@ class MainActivity : ComponentActivity() {
                             if (homeTab == "CHAT") {
                                 var firstLoad = true
                                 while (homeTab == "CHAT") {
-                                    refreshChatConversations(auth, showLoading = firstLoad)
+                                    val openConversationId = selectedChatId
+                                    if (openConversationId != null) {
+                                        // Loading messages records the read receipt, then refreshes
+                                        // summaries. Avoid racing an earlier conversation-list fetch.
+                                        refreshChatMessages(auth, openConversationId)
+                                    } else {
+                                        refreshChatConversations(auth, showLoading = firstLoad)
+                                    }
                                     firstLoad = false
-                                    selectedChatId?.let { refreshChatMessages(auth, it) }
                                     kotlinx.coroutines.delay(5000)
                                 }
                             }
