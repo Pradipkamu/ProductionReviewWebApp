@@ -684,6 +684,7 @@ class MainActivity : ComponentActivity() {
             var oeeCorrectionReason by remember { mutableStateOf("") }
             var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
+            var oeeReportTo by remember { mutableStateOf(LocalDate.now().toString()) }
             var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -1147,6 +1148,7 @@ class MainActivity : ComponentActivity() {
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE Reports",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE_REPORTS",icon={Icon(Icons.Filled.Assessment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE_REPORTS" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Chat",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="CHAT",icon={Text("✉",fontSize=19.sp,color=Teal)},onClick={drawerScope.launch { drawerState.close(); homeTab="CHAT"; token?.let{refreshChatConversations(it)}; chatSearch=""; chatEmployees=JSONArray() }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("History",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HISTORY",icon={Icon(Icons.Filled.History,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="HISTORY" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                 }
@@ -1166,7 +1168,7 @@ class MainActivity : ComponentActivity() {
                             if (account != null) IconButton(onClick={drawerScope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
                                 Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
                         LaunchedEffect(homeTab, token, selectedChatId) {
@@ -2166,6 +2168,57 @@ class MainActivity : ComponentActivity() {
                                                 val row=trend.getJSONObject(i)
                                                 Text("${row.optString("date")}  •  OEE ${"%.1f".format(row.optDouble("oee_reported")*100)}%  (A ${"%.1f".format(row.optDouble("availability")*100)} / P ${"%.1f".format(row.optDouble("performance_raw")*100)} / Q ${"%.1f".format(row.optDouble("quality")*100)})",color=Muted,fontSize=11.sp)
                                             }
+                                        }
+                                    }
+                                } else if(homeTab=="OEE_REPORTS") {
+                                    ScreenTitle("OEE Reports", "Current-month performance and loss analysis")
+                                    SectionLabel("REPORT PERIOD", "Default: first day of this month through today")
+                                    OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+                                    OutlinedTextField(oeeReportTo,{oeeReportTo=it},label={Text("To date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+                                    Text("Part: ${oeeProduct?.name ?: "All parts"}  •  Process: ${oeeOperation?.name ?: "All processes"}  •  Machine: ${oeeMachine?.name ?: "All machines"}",color=Muted,fontSize=11.sp)
+                                    Button(onClick={
+                                        val auth=token
+                                        if(auth!=null) scope.launch {
+                                            oeeLoading=true;oeeError=null
+                                            try {
+                                                require(LocalDate.parse(oeeReportTo)>=LocalDate.parse(oeeManagementFrom)) { "To date must be on or after From date." }
+                                                oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeReportTo,auth,oeeProduct?.id,oeeOperation?.id,oeeMachine?.id)}
+                                            } catch(e:Exception){oeeError=e.message ?: "Unable to load OEE report."}
+                                            finally{oeeLoading=false}
+                                        }
+                                    },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading) "LOADING REPORT…" else "LOAD OEE REPORT") }
+                                    oeeError?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                    oeeManagement?.let { report ->
+                                        val overall=report.optJSONObject("overall")
+                                        if(overall!=null) {
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    Text("OVERALL PERFORMANCE",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=12.sp)
+                                                    Text("OEE ${"%.1f".format(overall.optDouble("oee_reported")*100)}%  •  Availability ${"%.1f".format(overall.optDouble("availability")*100)}%  •  Performance ${"%.1f".format(overall.optDouble("performance_raw")*100)}%  •  Quality ${"%.1f".format(overall.optDouble("quality")*100)}%",color=Teal,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                                    Text("Shift records: ${report.optInt("entry_count")}  •  Loss events: ${report.optInt("loss_event_count")}  •  Machines below target: ${report.optInt("below_target_machine_count")}",color=Muted,fontSize=11.sp)
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Machine ranking")
+                                        val machineRows=report.optJSONArray("machines") ?: JSONArray()
+                                        if(machineRows.length()==0) Text("No machine records for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until minOf(machineRows.length(),20)) {
+                                            val row=machineRows.getJSONObject(i)
+                                            Text("${row.optString("machine")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                        SectionLabel("Loss category Pareto")
+                                        val pareto=report.optJSONArray("loss_pareto") ?: JSONArray()
+                                        if(pareto.length()==0) Text("No classified loss events for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until minOf(pareto.length(),20)) {
+                                            val row=pareto.getJSONObject(i)
+                                            Text("${row.optString("category")}  •  ${"%.1f".format(row.optDouble("minutes"))} min  •  ${row.optInt("events")} events",color=Navy,fontSize=13.sp)
+                                        }
+                                        SectionLabel("Daily OEE trend")
+                                        val trend=report.optJSONArray("trend") ?: JSONArray()
+                                        if(trend.length()==0) Text("No daily trend data for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until trend.length()) {
+                                            val row=trend.getJSONObject(i)
+                                            Text("${row.optString("date")}  •  OEE ${"%.1f".format(row.optDouble("oee_reported")*100)}%  (A ${"%.1f".format(row.optDouble("availability")*100)} / P ${"%.1f".format(row.optDouble("performance_raw")*100)} / Q ${"%.1f".format(row.optDouble("quality")*100)})",color=Muted,fontSize=11.sp)
                                         }
                                     }
                                 } else if(homeTab=="HISTORY") {
