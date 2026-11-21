@@ -33,7 +33,11 @@ _TELEMETRY_EVENT_TYPES = frozenset({
     "IDLE_STARTED", "IDLE_ENDED", "ALARM_ACTIVATED", "ALARM_CLEARED",
     "LOSS_SELECTED", "SHIFT_CHANGED", "OPERATOR_CHANGED", "PART_CHANGED",
 })
-_TELEMETRY_OPTIONAL_INTEGER_FIELDS = (\n    "shiftProductionCount", "shiftGoodCount", "shiftRejectCount",\n)\n\n_TELEMETRY_STATUSES = frozenset({
+_TELEMETRY_OPTIONAL_INTEGER_FIELDS = (
+    "shiftProductionCount", "shiftGoodCount", "shiftRejectCount",
+)
+
+_TELEMETRY_STATUSES = frozenset({
     "RUNNING", "IDLE", "BREAKDOWN", "STOPPED", "SETUP", "OFFLINE",
 })
 _TELEMETRY_INTEGER_FIELDS = (
