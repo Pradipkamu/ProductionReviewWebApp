@@ -1,6 +1,9 @@
 package com.productionreview.mobile
 
 import android.os.Bundle
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -9,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
@@ -612,6 +616,16 @@ class MainActivity : ComponentActivity() {
             var chatAttachmentUri by remember { mutableStateOf<Uri?>(null) }
             val chatContext = LocalContext.current
             val chatAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> chatAttachmentUri = uri }
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { }
+            LaunchedEffect(account) {
+                if (account != null && Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(chatContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
             var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
             var pendingActionGroups by remember { mutableStateOf<List<ActionOwnerGroup>>(emptyList()) }
             var selectedOwner by remember { mutableStateOf<ActionOwnerGroup?>(null) }
