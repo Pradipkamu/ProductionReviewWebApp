@@ -5,7 +5,7 @@ from typing import Optional
 import uuid
 
 import jwt
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
@@ -15,7 +15,7 @@ from ..auth import get_current_user
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..enums import UserRole
-from ..models import ChatAttachment, ChatConversation, ChatMessage, ChatParticipant, ChatReport, User, UserSession
+from ..models import ChatAttachment, ChatConversation, ChatDeviceToken, ChatMessage, ChatParticipant, ChatReport, User, UserSession
 from ..page_access import can_send_chat
 from ..services.file_security import UploadSecurityError, hash_file, safe_original_name, safe_path, save_limited_stream, validate_attachment_file
 
@@ -44,6 +44,15 @@ class GroupConversationCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     body: str = Field(min_length=1, max_length=10000)
+
+
+class DeviceTokenCreate(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+    platform: str = Field(default="ANDROID", pattern="^(ANDROID)$")
+
+
+class DeviceTokenDelete(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
 
 
 class GroupMemberAdd(BaseModel):
@@ -275,9 +284,43 @@ def messages(conversation_id: int, before_id: Optional[int] = None,
     return [_serialize_message(db, msg, full_name, username) for msg, full_name, username in reversed(rows)]
 
 
+@router.post("/device-tokens")
+def register_device_token(payload: DeviceTokenCreate, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    token = payload.token.strip()
+    if not token:
+        raise HTTPException(422, "Device token cannot be empty")
+    row = db.scalar(select(ChatDeviceToken).where(ChatDeviceToken.token == token))
+    now = datetime.utcnow()
+    if row and row.user_id != user.id:
+        raise HTTPException(409, "This device token is already registered to another account")
+    if row:
+        row.is_active = True
+        row.platform = payload.platform
+        row.last_seen_at = now
+    else:
+        db.add(ChatDeviceToken(user_id=user.id, token=token, platform=payload.platform,
+                               is_active=True, last_seen_at=now))
+    db.commit()
+    return {"status": "registered"}
+
+
+@router.delete("/device-tokens")
+def deactivate_device_token(payload: DeviceTokenDelete, db: Session = Depends(get_db),
+                             user: User = Depends(get_current_user)):
+    row = db.scalar(select(ChatDeviceToken).where(
+        ChatDeviceToken.token == payload.token.strip(),
+        ChatDeviceToken.user_id == user.id,
+    ))
+    if row and row.is_active:
+        row.is_active = False
+        db.commit()
+    return {"status": "deactivated"}
+
+
 @router.post("/conversations/{conversation_id}/messages")
-async def send_message(conversation_id: int, payload: MessageCreate, db: Session = Depends(get_db),
-                       user: User = Depends(get_current_user)):
+async def send_message(conversation_id: int, payload: MessageCreate, background_tasks: BackgroundTasks,
+                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if user.role != UserRole.ADMIN:
         _participant(db, conversation_id, user.id)
     require_chat_sender(db, user)
@@ -295,8 +338,13 @@ async def send_message(conversation_id: int, payload: MessageCreate, db: Session
     if own: own.last_read_at = now
     db.commit(); db.refresh(row)
     result = _serialize_message(db, row, user.full_name, user.username)
-    await hub.notify(_active_participant_ids(db, conversation_id),
+    recipient_ids = [uid for uid in _active_participant_ids(db, conversation_id) if uid != user.id]
+    await hub.notify(recipient_ids,
                      {"type": "new_message", "conversation_id": conversation_id, "message": result})
+    if recipient_ids:
+        from ..services.firebase_notifications import send_chat_push
+        background_tasks.add_task(send_chat_push, recipient_ids, conversation_id,
+                                  user.full_name or user.username)
     return result
 
 
