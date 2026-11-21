@@ -93,9 +93,9 @@ private val Success = Color(0xFF16836B)
 private val Warning = Color(0xFFE58A18)
 private val Danger = Color(0xFFB3261E)
 
-private data class Account(val username: String, val fullName: String, val role: String)
-private data class Choice(val id: Int, val label: String, val extra: String = "")
-private data class RouteChoice(val id: Int, val label: String)
+internal data class Account(val username: String, val fullName: String, val role: String)
+internal data class Choice(val id: Int, val label: String, val extra: String = "")
+internal data class RouteChoice(val id: Int, val label: String)
 private data class OeeLossDraft(
     val categoryId: Int? = null,
     val duration: String = "",
@@ -532,10 +532,10 @@ private fun userFriendlyOeeError(error: Exception, fallback: String): String {
     }
 }
 
-private data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
-private data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
-private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
-private data class RejectionTrendPoint(val date: LocalDate, val quantity: Float)
+internal data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
+internal data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
+internal data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
+internal data class RejectionTrendPoint(val date: LocalDate, val quantity: Float)
 
 @Composable
 private fun ScreenTitle(title: String, subtitle: String? = null) {
@@ -2232,7 +2232,7 @@ class MainActivity : ComponentActivity() {
                                     SectionLabel("REPORT PERIOD", "Default: first day of this month through today")
                                     OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                                     OutlinedTextField(oeeReportTo,{oeeReportTo=it},label={Text("To date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters.products, oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null })
+                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters?.products.orEmpty(), oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null })
                                     Text("Process: ${oeeOperation?.label ?: "All processes"}",color=Muted,fontSize=11.sp)
                                     Button(onClick={
                                         val auth=token
