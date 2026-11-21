@@ -1068,7 +1068,7 @@ class MainActivity : ComponentActivity() {
                     busy=true
                     try {
                         val current=withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
-                        token=saved; account=current; homeTab="CHAT"; refreshMasters(saved); refreshPendingActions(saved)
+                        token=saved; account=current; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatShowNew=false; refreshMasters(saved); refreshPendingActions(saved)
                         message="Connected to Production Review."
                     } catch(_:Exception) {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
@@ -1458,7 +1458,7 @@ class MainActivity : ComponentActivity() {
                                                 try {
                                                     val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
-                                                    token=result.first; account=result.second; password=""; homeTab="CHAT"; refreshPendingActions(result.first)
+                                                    token=result.first; account=result.second; password=""; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatDraft=""; chatShowNew=false; refreshPendingActions(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
                                                 } catch(e:Exception){
                                                     message=e.message?.takeIf { it.isNotBlank() } ?: "Unable to sign in. Check your connection and try again."
@@ -2444,7 +2444,7 @@ class MainActivity : ComponentActivity() {
                                 busy=true
                                 try{if(old!=null)withContext(Dispatchers.IO){ApiClient.logout(old)}}catch(_:Exception){}
                                 withContext(Dispatchers.IO){sessionStore.clear()}
-                                token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;homeTab="ACTIONS";message="Signed out.";busy=false
+                                token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;selectedChatId=null;chatConversations=JSONArray();chatMessages=JSONArray();chatDraft="";chatShowNew=false;homeTab="ACTIONS";message="Signed out.";busy=false
                             }
                         }){Text("LOG OUT",color=Color(0xFFB3261E))}},
                         dismissButton={TextButton(onClick={showLogoutConfirm=false}){Text("CANCEL")}}
