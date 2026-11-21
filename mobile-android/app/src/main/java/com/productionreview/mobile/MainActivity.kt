@@ -2274,7 +2274,7 @@ class MainActivity : ComponentActivity() {
                                         if(machineRows.length()==0) Text("No machine records for this period.",color=Muted,fontSize=12.sp)
                                         for(i in 0 until minOf(machineRows.length(),20)) {
                                             val row=machineRows.getJSONObject(i)
-                                            Text("${row.optString("machine")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                            Text("${row.optString("machine_name").ifBlank { row.optString("machine") }}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
                                         }
                                         SectionLabel("Shift comparison")
                                         val shiftRows=report.optJSONArray("shifts") ?: JSONArray()
