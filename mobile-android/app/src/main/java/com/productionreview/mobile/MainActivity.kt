@@ -72,7 +72,27 @@ import java.net.URL
 import java.io.IOException
 import java.time.LocalDate
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+private val ChatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val ChatDisplayZone: ZoneId = ZoneId.of("Asia/Kolkata")
+
+/**
+ * API chat timestamps are stored as UTC-naive datetimes and serialized without
+ * an offset. Parse those as UTC, then display them in Indian Standard Time.
+ * Also accept explicit Z/offset timestamps for compatibility with future APIs.
+ */
+private fun formatChatTime(value: String?): String {
+    if (value.isNullOrBlank() || value == "null") return ""
+    val zoned = runCatching { Instant.parse(value).atZone(ChatDisplayZone) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(value).toInstant().atZone(ChatDisplayZone) }.getOrNull()
+        ?: runCatching { LocalDateTime.parse(value).toInstant(ZoneOffset.UTC).atZone(ChatDisplayZone) }.getOrNull()
+    return zoned?.format(ChatTimeFormatter).orEmpty()
+}
 
 private fun extractChatActionId(messageBody: String): Int? {
     // Accept both relative and absolute action links, even when action_id is
@@ -1176,6 +1196,17 @@ class MainActivity : ComponentActivity() {
                             ApiClient.loadChatMessages(conversationId, auth)
                         }
                         chatMessages = loadedMessages
+                        // The messages request above commits the server-side read receipt.
+                        // Clear this conversation's badge immediately so the list cannot
+                        // keep showing an old unread count while the summary reloads.
+                        val locallyRead = JSONArray()
+                        for (index in 0 until chatConversations.length()) {
+                            val item = chatConversations.optJSONObject(index) ?: continue
+                            val copy = JSONObject(item.toString())
+                            if (copy.optInt("id") == conversationId) copy.put("unread_count", 0)
+                            locallyRead.put(copy)
+                        }
+                        chatConversations = locallyRead
                         chatConversations = withContext(Dispatchers.IO) {
                             ApiClient.loadChatConversations(auth)
                         }
@@ -1375,7 +1406,7 @@ class MainActivity : ComponentActivity() {
                                                                         Text(preview,color=Muted,fontSize=11.sp,maxLines=1)
                                                                     }
                                                                     Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                                                                        Text(last?.optString("created_at")?.take(16)?.takeLast(5).orEmpty(),color=Muted,fontSize=9.sp)
+                                                                        Text(formatChatTime(last?.optString("created_at")),color=Muted,fontSize=9.sp)
                                                                         if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Danger)
                                                                     }
                                                                 }
@@ -1392,7 +1423,11 @@ class MainActivity : ComponentActivity() {
                                     val chatTitle=activeConversation?.optString("title")?.takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}.filter{it.optString("username")!=account?.username}.joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
                                     Column(Modifier.fillMaxSize()) {
                                         Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=8.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically) {
-                                            TextButton(onClick={selectedChatId=null;chatMessages=JSONArray();chatAttachmentUri=null}) { Text("‹",fontSize=28.sp,color=Teal) }
+                                            TextButton(onClick={
+                                                val auth=token
+                                                selectedChatId=null;chatMessages=JSONArray();chatAttachmentUri=null
+                                                auth?.let { refreshChatConversations(it) }
+                                            }) { Text("‹",fontSize=28.sp,color=Teal) }
                                             Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(chatTitle.trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold) }
                                             Column(Modifier.weight(1f).padding(start=10.dp)) {
                                                 Text(chatTitle,color=Navy,fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)
@@ -1446,7 +1481,7 @@ class MainActivity : ComponentActivity() {
                                                                         }
                                                                     }) { Text("📎 "+fileItem.optString("file_name"),color=Teal,fontSize=11.sp) }
                                                                 }
-                                                                Text(msg.optString("created_at").take(16).takeLast(5),Modifier.align(Alignment.End),color=Muted,fontSize=9.sp)
+                                                                Text(formatChatTime(msg.optString("created_at")),Modifier.align(Alignment.End),color=Muted,fontSize=9.sp)
                                                             }
                                                         }
                                                     }
