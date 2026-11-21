@@ -1133,8 +1133,20 @@ class MainActivity : ComponentActivity() {
             }
             fun refreshChatMessages(auth: String, conversationId: Int) {
                 scope.launch {
-                    try { chatMessages = withContext(Dispatchers.IO) { ApiClient.loadChatMessages(conversationId, auth) } }
-                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                    try {
+                        // The messages endpoint records this user's read timestamp.
+                        // Fetch the conversation summaries only after that succeeds so
+                        // unread_count reflects the updated read receipt.
+                        val loadedMessages = withContext(Dispatchers.IO) {
+                            ApiClient.loadChatMessages(conversationId, auth)
+                        }
+                        chatMessages = loadedMessages
+                        chatConversations = withContext(Dispatchers.IO) {
+                            ApiClient.loadChatConversations(auth)
+                        }
+                    } catch (e: Exception) {
+                        message = "Chat: ${e.message}"
+                    }
                 }
             }
             LaunchedEffect(notificationConversationId.value, account) {
@@ -1323,7 +1335,7 @@ class MainActivity : ComponentActivity() {
                                                                     }
                                                                     Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                                         Text(last?.optString("created_at")?.take(16)?.takeLast(5).orEmpty(),color=Muted,fontSize=9.sp)
-                                                                        if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Teal)
+                                                                        if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Danger)
                                                                     }
                                                                 }
                                                             }
