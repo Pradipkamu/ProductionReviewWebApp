@@ -2175,7 +2175,7 @@ class MainActivity : ComponentActivity() {
                                     SectionLabel("REPORT PERIOD", "Default: first day of this month through today")
                                     OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                                     OutlinedTextField(oeeReportTo,{oeeReportTo=it},label={Text("To date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-                                    Text("Part: ${oeeProduct?.name ?: "All parts"}  •  Process: ${oeeOperation?.name ?: "All processes"}  •  Machine: ${oeeMachine?.name ?: "All machines"}",color=Muted,fontSize=11.sp)
+                                    Text("Part: ${oeeProduct?.label ?: "All parts"}  •  Process: ${oeeOperation?.label ?: "All processes"}  •  Machine: ${oeeMachine?.label ?: "All machines"}",color=Muted,fontSize=11.sp)
                                     Button(onClick={
                                         val auth=token
                                         if(auth!=null) scope.launch {
@@ -2205,6 +2205,19 @@ class MainActivity : ComponentActivity() {
                                         for(i in 0 until minOf(machineRows.length(),20)) {
                                             val row=machineRows.getJSONObject(i)
                                             Text("${row.optString("machine")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                        SectionLabel("Shift comparison")
+                                        val shiftRows=report.optJSONArray("shifts") ?: JSONArray()
+                                        if(shiftRows.length()==0) Text("No shift records for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until shiftRows.length()) {
+                                            val row=shiftRows.getJSONObject(i)
+                                            Text("Shift ${row.optString("shift")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}% OEE  •  ${row.optInt("entry_count")} entries",color=Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                        SectionLabel("Part-wise performance")
+                                        val productRows=report.optJSONArray("products") ?: JSONArray()
+                                        for(i in 0 until minOf(productRows.length(),20)) {
+                                            val row=productRows.getJSONObject(i)
+                                            Text("${row.optString("product")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}% OEE  •  ${row.optInt("entry_count")} entries",color=Navy,fontSize=13.sp)
                                         }
                                         SectionLabel("Loss category Pareto")
                                         val pareto=report.optJSONArray("loss_pareto") ?: JSONArray()
