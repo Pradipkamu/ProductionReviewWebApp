@@ -1310,7 +1310,7 @@ class FtaStatusHistory(Base):
     new_status: Mapped[str] = mapped_column(String(30), nullable=False)
     remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
 
 
 class FtaFindingHistory(Base):
