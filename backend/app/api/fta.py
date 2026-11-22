@@ -611,8 +611,8 @@ def update_finding(investigation_id: int, node_id: str, payload: FindingUpdate,
     """), {"investigation_id": investigation_id, "node_id": node_id}).mappings().first()
     if not finding:
         raise HTTPException(404, "Fault-tree node not found in this investigation")
-    if payload.is_root_cause and payload.investigation_status != "CONFIRMED":
-        raise HTTPException(422, "A root cause must have CONFIRMED investigation status")
+    if (payload.is_root_cause or payload.is_occurrence_cause or payload.is_escape_cause) and payload.investigation_status != "CONFIRMED":
+        raise HTTPException(422, "Root, occurrence and escape causes must have CONFIRMED investigation status")
     if payload.investigation_status == "CONFIRMED" and not (payload.verification_method or "").strip():
         raise HTTPException(422, "Enter the verification method before confirming a cause")
     if payload.investigation_status == "CONFIRMED":
