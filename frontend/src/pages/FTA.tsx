@@ -94,11 +94,11 @@ export default function FTA({me}:{me:any}){
     }catch(e:any){setError(e.message||'Unable to load FTA workspace.')}
     finally{setBusy(false)}
   }
-  async function loadDetail(id:number){
+  async function loadDetail(id:number,preserveNode=false){
     setError('')
     try{
       const result:any=await api(`/fta/investigations/${id}`)
-      setDetail(result);setSelectedId(id);setSelectedNode(result.template_snapshot?.tree?.id||'')
+      setDetail(result);setSelectedId(id);setSelectedNode(preserveNode&&selectedNode&&result.findings?.some((f:Finding)=>f.node_id===selectedNode)?selectedNode:(result.template_snapshot?.tree?.id||''))
       setSummary(result.summary||'');setOccurrenceSummary(result.occurrence_cause_summary||'');setEscapeSummary(result.escape_cause_summary||'')
     }catch(e:any){setError(e.message||'Unable to load investigation.')}
   }
@@ -132,14 +132,14 @@ export default function FTA({me}:{me:any}){
       await api(`/fta/investigations/${detail.id}/findings/${encodeURIComponent(selectedNode)}`,{
         method:'PUT',body:JSON.stringify(findingForm)
       })
-      await loadDetail(detail.id);setMessage('Investigation finding saved.')
+      await loadDetail(detail.id,true);setMessage('Investigation finding saved.')
     }catch(e:any){setError(e.message||'Unable to save finding.')}
     finally{setBusy(false)}
   }
   async function saveSummary(){
     if(!detail)return
     setBusy(true);setError('')
-    try{await api(`/fta/investigations/${detail.id}`,{method:'PATCH',body:JSON.stringify({summary,occurrence_cause_summary:occurrenceSummary,escape_cause_summary:escapeSummary})});await loadDetail(detail.id);setMessage('Investigation details saved.')}
+    try{await api(`/fta/investigations/${detail.id}`,{method:'PATCH',body:JSON.stringify({summary,occurrence_cause_summary:occurrenceSummary,escape_cause_summary:escapeSummary})});await loadDetail(detail.id,true);setMessage('Investigation details saved.')}
     catch(e:any){setError(e.message||'Unable to save investigation.')}finally{setBusy(false)}
   }
   const tree:FtaNode|undefined=detail?.template_snapshot?.tree
@@ -286,7 +286,7 @@ export default function FTA({me}:{me:any}){
               <strong>Evidence attachments</strong>
               <label>Photo, PDF or inspection document<input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.xlsx,.csv,.txt" onChange={e=>setEvidenceFile(e.target.files?.[0]||null)}/></label>
               <label>Caption<input value={evidenceCaption} onChange={e=>setEvidenceCaption(e.target.value)} placeholder="Measurement report, tool condition, setup photo…"/></label>
-              <button className="secondary" disabled={!canWrite||!evidenceFile||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);const form=new FormData();form.append('file',evidenceFile as File);form.append('finding_id',String(currentFinding.id));form.append('caption',evidenceCaption);await api('/fta/investigations/'+detail.id+'/evidence',{method:'POST',body:form});setEvidenceFile(null);setEvidenceCaption('');await loadDetail(detail.id);setMessage('Evidence uploaded securely.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Upload evidence</button>
+              <button className="secondary" disabled={!canWrite||!evidenceFile||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);const form=new FormData();form.append('file',evidenceFile as File);form.append('finding_id',String(currentFinding.id));form.append('caption',evidenceCaption);await api('/fta/investigations/'+detail.id+'/evidence',{method:'POST',body:form});setEvidenceFile(null);setEvidenceCaption('');await loadDetail(detail.id,true);setMessage('Evidence uploaded securely.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Upload evidence</button>
               {(detail.evidence||[]).filter((x:any)=>x.finding_id===currentFinding.id).map((x:any)=><div className="fta-evidence-item" key={x.id}><span>{x.file_name}{x.caption?' · '+x.caption:''}</span><button className="small secondary" onClick={()=>downloadApi('/fta/investigations/'+detail.id+'/evidence/'+x.id,x.file_name)}>Download</button></div>)}
             </div>
           </>:<p className="muted">Select a node in the fault tree.</p>}
@@ -294,9 +294,9 @@ export default function FTA({me}:{me:any}){
       </div>
       <div className="fta-review-controls">
         <label>Verification remarks<textarea rows={2} value={verificationRemarks} onChange={e=>setVerificationRemarks(e.target.value)} disabled={!canVerify||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
-        <button className="secondary" disabled={!canVerify||busy||detail.status!=='IN_PROGRESS'||!hasRequiredAction} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/verify',{method:'POST',body:JSON.stringify({remarks:verificationRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation verified. Complete linked actions before closure.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Verify investigation</button>
+        <button className="secondary" disabled={!canVerify||busy||detail.status!=='IN_PROGRESS'||!hasRequiredAction} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/verify',{method:'POST',body:JSON.stringify({remarks:verificationRemarks})});await loadDetail(detail.id,true);await load();setMessage('Investigation verified. Complete linked actions before closure.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Verify investigation</button>
         <label>Closure remarks<textarea rows={2} value={closureRemarks} onChange={e=>setClosureRemarks(e.target.value)} disabled={!canVerify||detail.status!=='VERIFIED_PENDING_ACTIONS'}/></label>
-        <button disabled={!canVerify||busy||detail.status!=='VERIFIED_PENDING_ACTIONS'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/close',{method:'POST',body:JSON.stringify({remarks:closureRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation closed.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Close investigation</button>
+        <button disabled={!canVerify||busy||detail.status!=='VERIFIED_PENDING_ACTIONS'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/close',{method:'POST',body:JSON.stringify({remarks:closureRemarks})});await loadDetail(detail.id,true);await load();setMessage('Investigation closed.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Close investigation</button>
       </div>
       <section className="fta-history">
         <h3>Investigation audit history</h3>
@@ -312,11 +312,11 @@ export default function FTA({me}:{me:any}){
           <label>Create new corrective / preventive action
             <textarea rows={2} value={newActionDescription} onChange={e=>setNewActionDescription(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/>
           </label>
-          <button className="secondary" disabled={!canWrite||!newActionDescription.trim()||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);const rejection=detail.template_snapshot?.rejection||{};const created:any=await api('/actions',{method:'POST',body:JSON.stringify({reference_date:String(rejection.rejection_date).slice(0,10),problem_category:'FTA',problem_description:'Fault Tree Analysis '+detail.investigation_no+': '+(detail.summary||'Machining defect root cause investigation'),action_description:newActionDescription,owner_id:me.id,contexts:[{context_date:String(rejection.rejection_date).slice(0,10),product_id:rejection.product_id||null,machine_id:detail.machine_id||null}]})});await api('/fta/investigations/'+detail.id+'/actions',{method:'POST',body:JSON.stringify({action_id:created.id,finding_id:currentFinding?.id||null,relationship_type:'CORRECTIVE'})});await loadDetail(detail.id);await load();setMessage('New action '+created.action_no+' created with its standard Why-Why plan and linked to FTA.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Create action with Why-Why plan</button>
+          <button className="secondary" disabled={!canWrite||!newActionDescription.trim()||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);const rejection=detail.template_snapshot?.rejection||{};const created:any=await api('/actions',{method:'POST',body:JSON.stringify({reference_date:String(rejection.rejection_date).slice(0,10),problem_category:'FTA',problem_description:'Fault Tree Analysis '+detail.investigation_no+': '+(detail.summary||'Machining defect root cause investigation'),action_description:newActionDescription,owner_id:me.id,contexts:[{context_date:String(rejection.rejection_date).slice(0,10),product_id:rejection.product_id||null,machine_id:detail.machine_id||null}]})});await api('/fta/investigations/'+detail.id+'/actions',{method:'POST',body:JSON.stringify({action_id:created.id,finding_id:currentFinding?.id||null,relationship_type:'CORRECTIVE'})});await loadDetail(detail.id,true);await load();setMessage('New action '+created.action_no+' created with its standard Why-Why plan and linked to FTA.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Create action with Why-Why plan</button>
           <div className="fta-action-link">
             <select value={actionId} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setActionId(e.target.value)}><option value="">Select existing action</option>{availableActions.map(a=><option key={a.id} value={a.id}>{a.action_no} · {a.status} · {a.action_description}</option>)}</select>
             <select value={actionRelationship} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setActionRelationship(e.target.value)}><option value="CORRECTIVE">Corrective</option><option value="PREVENTIVE">Preventive</option><option value="CONTAINMENT">Containment</option></select>
-            <button className="secondary" disabled={!canWrite||!actionId||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);await api(`/fta/investigations/${detail.id}/actions`,{method:'POST',body:JSON.stringify({action_id:Number(actionId),finding_id:currentFinding?.id||null,relationship_type:actionRelationship})});await loadDetail(detail.id);setActionId('');setMessage('Existing action linked.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Link action</button>
+            <button className="secondary" disabled={!canWrite||!actionId||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);await api(`/fta/investigations/${detail.id}/actions`,{method:'POST',body:JSON.stringify({action_id:Number(actionId),finding_id:currentFinding?.id||null,relationship_type:actionRelationship})});await loadDetail(detail.id,true);setActionId('');setMessage('Existing action linked.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Link action</button>
           </div>
           {(detail.actions||[]).length?detail.actions.map((a:any)=><p key={a.link_id}>{a.action_no} · {a.status} · {a.action_description}</p>):<p className="muted">No existing actions linked yet.</p>}</div>
       </div>
