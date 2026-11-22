@@ -1191,8 +1191,6 @@ class ChatReport(Base):
 
 
 class FtaOperation(Base, TimestampMixin):
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     __tablename__ = "fta_operations"
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
@@ -1201,8 +1199,6 @@ class FtaOperation(Base, TimestampMixin):
 
 
 class FtaDefectLibrary(Base, TimestampMixin):
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     __tablename__ = "fta_defect_library"
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
@@ -1213,8 +1209,6 @@ class FtaDefectLibrary(Base, TimestampMixin):
 
 
 class FtaTemplate(Base, TimestampMixin):
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     __tablename__ = "fta_templates"
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -1233,8 +1227,6 @@ class FtaTemplate(Base, TimestampMixin):
 
 
 class FtaInvestigation(Base, TimestampMixin):
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     __tablename__ = "fta_investigations"
     id: Mapped[int] = mapped_column(primary_key=True)
     investigation_no: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
@@ -1263,8 +1255,6 @@ class FtaInvestigation(Base, TimestampMixin):
 
 
 class FtaFinding(Base, TimestampMixin):
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     __tablename__ = "fta_findings"
     id: Mapped[int] = mapped_column(primary_key=True)
     investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False, index=True)
