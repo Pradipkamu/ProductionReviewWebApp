@@ -35,6 +35,7 @@ export default function FTA({me}:{me:any}){
   const [dashboard,setDashboard]=useState<any>({counts:{}})
   const [operationCode,setOperationCode]=useState('')
   const [defectCode,setDefectCode]=useState('')
+  const [selectedTemplateId,setSelectedTemplateId]=useState('')
   const [rejectionId,setRejectionId]=useState('')
   const [selectedId,setSelectedId]=useState<number|null>(null)
   const [detail,setDetail]=useState<any>(null)
@@ -72,6 +73,7 @@ export default function FTA({me}:{me:any}){
   const [message,setMessage]=useState('')
 
   const filteredTemplates=useMemo(()=>templates.filter(t=>t.status==='PUBLISHED'&&(!operationCode||t.operation_code===operationCode)&&(!defectCode||t.defect_code===defectCode)),[templates,operationCode,defectCode])
+  const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
   const currentFinding:Finding|undefined=detail?.findings?.find((f:Finding)=>f.node_id===selectedNode)
 
   async function load(){
@@ -112,7 +114,7 @@ export default function FTA({me}:{me:any}){
     setBusy(true);setError('');setMessage('')
     try{
       const result:any=await api('/fta/investigations',{method:'POST',body:JSON.stringify({
-        rejection_id:Number(rejectionId),template_id:Number(filteredTemplates[0].id),summary:summary||null
+        rejection_id:Number(rejectionId),template_id:Number(selectedTemplate.id),summary:summary||null
       })})
       await load();await loadDetail(result.id);setMessage(`Investigation ${result.investigation_no} created.`)
     }catch(e:any){setError(e.message||'Unable to create investigation.')}
@@ -176,8 +178,8 @@ export default function FTA({me}:{me:any}){
           </select>
         </label>
         <label>Matching published template
-          <select value={filteredTemplates[0]?.id||''} disabled>
-            {filteredTemplates.length?filteredTemplates.map(t=><option key={t.id} value={t.id}>{t.operation_name} – {t.defect_name} (v{t.version})</option>):<option value="">No matching template</option>}
+          <select value={selectedTemplate?String(selectedTemplate.id):''} disabled={!canWrite||!filteredTemplates.length} onChange={e=>setSelectedTemplateId(e.target.value)}>
+            {filteredTemplates.length?filteredTemplates.map(t=><option key={t.id} value={t.id}>{t.name} · v{t.version}</option>):<option value="">No matching template</option>}
           </select>
         </label>
       </div>
@@ -185,7 +187,7 @@ export default function FTA({me}:{me:any}){
         <textarea value={summary} onChange={e=>setSummary(e.target.value)} rows={2} placeholder="Describe the defect, location, inspection result or immediate concern."/>
       </label>
       <div className="button-row"><button onClick={createInvestigation} disabled={!canWrite||busy||!rejectionId||!operationCode||!defectCode||!filteredTemplates.length}>Create investigation</button><button className="secondary" onClick={load} disabled={busy}>Refresh</button></div>
-      <p className="muted small">Initial release selects the first matching published template. Template version and tree are snapshotted when the investigation is created.</p>
+      <p className="muted small">Select the appropriate published template. Its version and tree are snapshotted when the investigation is created.</p>
     </section>
 
 
