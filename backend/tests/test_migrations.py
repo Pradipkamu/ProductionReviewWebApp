@@ -83,6 +83,22 @@ def test_postgresql_migrations_when_service_available():
             assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))>initial
         with target.begin() as conn:
             config.attributes['connection']=conn;command.upgrade(config,'head')
+            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0029_machining_fta'
+            assert conn.scalar(text('SELECT count(*) FROM fta_operations')) == 15
+            assert conn.scalar(text('SELECT count(*) FROM fta_defect_library')) == 14
+            assert conn.scalar(text("SELECT count(*) FROM fta_templates WHERE status='PUBLISHED'")) == 210
+        # Exercise the FTA rollback on the disposable PostgreSQL database only,
+        # then prove that a clean re-upgrade restores the seeded catalogue.
+        with target.begin() as conn:
+            config.attributes['connection']=conn;command.downgrade(config,'0028_chat_device_tokens')
+            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0028_chat_device_tokens'
+            assert conn.scalar(text("SELECT to_regclass('public.fta_investigations') IS NULL")) is True
+        with target.begin() as conn:
+            config.attributes['connection']=conn;command.upgrade(config,'head')
+            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0029_machining_fta'
+            assert conn.scalar(text('SELECT count(*) FROM fta_operations')) == 15
+            assert conn.scalar(text('SELECT count(*) FROM fta_defect_library')) == 14
+            assert conn.scalar(text("SELECT count(*) FROM fta_templates WHERE status='PUBLISHED'")) == 210
     finally:
         target.dispose()
         with admin.connect() as conn:conn.exec_driver_sql('DROP DATABASE pms_migration_test WITH (FORCE)')
