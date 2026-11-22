@@ -131,3 +131,14 @@ def test_fta_action_link_requires_all_contexts_to_match_investigation_plant():
         _validate_action_plants("2020", {"2020", "2070"})
     with pytest.raises(HTTPException):
         _validate_action_plants(None, {"2020"})
+
+
+def test_fta_active_investigation_unique_index_excludes_closed_records():
+    from app.models import FtaInvestigation
+
+    index = next(
+        item for item in FtaInvestigation.__table__.indexes
+        if item.name == "uq_fta_open_rejection_template"
+    )
+    assert index.unique is True
+    assert "CLOSED" in str(index.dialect_options["sqlite"]["where"])
