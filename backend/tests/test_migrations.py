@@ -23,6 +23,9 @@ def test_new_database_and_legacy_adoption_preserve_rows(tmp_path):
         assert conn.scalar(text('SELECT password_hash FROM users WHERE id=1'))=='legacy-hash'
         assert conn.scalar(text('SELECT must_change_password FROM users WHERE id=1'))==1
         assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0029_machining_fta'
+        assert conn.scalar(text('SELECT count(*) FROM fta_operations')) == 15
+        assert conn.scalar(text('SELECT count(*) FROM fta_defect_library')) == 14
+        assert conn.scalar(text("SELECT count(*) FROM fta_templates WHERE status='PUBLISHED'")) == 210
         assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))==0
         conn.execute(text("""
             INSERT INTO product_value_addition_history
