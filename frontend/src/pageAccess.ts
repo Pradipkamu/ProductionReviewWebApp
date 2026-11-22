@@ -43,7 +43,7 @@ const legacyRestrictions:Record<string,string[]> = {
   import:['ADMIN','PLANNING','QUALITY','PRODUCTION'],
 }
 
-export function canViewPage(me:any,pageKey:string){
+export function canViewPage(me:any,pageKey:string): boolean {
   if(pageKey==='fta')return ['ADMIN','MANAGEMENT','QUALITY','PRODUCTION'].includes(me?.role)&&canViewPage(me,'quality')
   if(me?.role==='ADMIN'||pageKey==='account')return true
   if(Array.isArray(me?.page_access))return me.page_access.includes(pageKey)||(pageKey==='oee_reports'&&(me.page_access.includes('reports')||me.page_access.includes('management_reports')))
