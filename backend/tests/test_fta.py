@@ -176,3 +176,23 @@ def test_fta_tree_requires_children_for_intermediate_events():
     }
     with pytest.raises(HTTPException):
         _validate_tree(invalid)
+
+
+def test_fta_tree_rejects_nested_top_event_and_oversized_node_fields():
+    nested_top = {
+        "id": "top", "label": "Top event", "type": "TOP_EVENT", "gate": "OR",
+        "children": [{
+            "id": "nested-top", "label": "Nested top", "type": "TOP_EVENT", "gate": "OR",
+            "children": [_node("leaf")],
+        }],
+    }
+    oversized_label = {
+        "id": "top", "label": "Top event", "type": "TOP_EVENT", "gate": "OR",
+        "children": [{
+            "id": "leaf", "label": "x" * 241, "type": "BASIC_EVENT", "gate": None, "children": [],
+        }],
+    }
+    with pytest.raises(HTTPException):
+        _validate_tree(nested_top)
+    with pytest.raises(HTTPException):
+        _validate_tree(oversized_label)
