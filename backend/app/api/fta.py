@@ -109,6 +109,14 @@ def _validate_tree(tree: dict) -> list[dict]:
     return nodes
 
 
+def _validate_cause_classification(node_type: str, payload: "FindingUpdate") -> None:
+    is_cause = payload.is_root_cause or payload.is_occurrence_cause or payload.is_escape_cause
+    if is_cause and node_type not in {"BASIC_EVENT", "EXTERNAL_EVENT"}:
+        raise HTTPException(422, "Only basic or external event nodes can be classified as causes")
+    if is_cause and payload.investigation_status != "CONFIRMED":
+        raise HTTPException(422, "Root, occurrence and escape causes must have CONFIRMED investigation status")
+
+
 def _decorate_tree(node: dict, status_by_id: dict[str, str]) -> dict:
     children = [_decorate_tree(child, status_by_id) for child in (node.get("children") or [])]
     if children:
@@ -611,8 +619,7 @@ def update_finding(investigation_id: int, node_id: str, payload: FindingUpdate,
     """), {"investigation_id": investigation_id, "node_id": node_id}).mappings().first()
     if not finding:
         raise HTTPException(404, "Fault-tree node not found in this investigation")
-    if (payload.is_root_cause or payload.is_occurrence_cause or payload.is_escape_cause) and payload.investigation_status != "CONFIRMED":
-        raise HTTPException(422, "Root, occurrence and escape causes must have CONFIRMED investigation status")
+    _validate_cause_classification(finding["node_type"], payload)
     if payload.investigation_status == "CONFIRMED" and not (payload.verification_method or "").strip():
         raise HTTPException(422, "Enter the verification method before confirming a cause")
     if payload.investigation_status == "CONFIRMED":
