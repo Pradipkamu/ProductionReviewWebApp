@@ -26,7 +26,7 @@ READ_ROLES = {"ADMIN", "MANAGEMENT", "QUALITY", "PRODUCTION"}
 WRITE_ROLES = {"ADMIN", "QUALITY", "PRODUCTION"}
 TEMPLATE_ROLES = {"ADMIN", "QUALITY"}
 NODE_STATUSES = {"NOT_INVESTIGATED", "UNDER_INVESTIGATION", "SUSPECTED", "CONFIRMED", "RULED_OUT", "UNABLE_TO_DETERMINE"}
-INVESTIGATION_STATUSES = {"OPEN", "IN_PROGRESS", "PENDING_VERIFICATION", "CLOSED"}
+INVESTIGATION_STATUSES = {"OPEN", "IN_PROGRESS", "VERIFIED_PENDING_ACTIONS", "CLOSED"}
 MAX_FTA_EVIDENCE_BYTES = 20 * 1024 * 1024
 MAX_FTA_EVIDENCE_FILES = 40
 FTA_EVIDENCE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".xlsx", ".xls", ".csv", ".txt"}
@@ -850,15 +850,15 @@ def verify_investigation(investigation_id: int, payload: VerifyRequest,
         raise HTTPException(422, "Every confirmed cause must have a verification method")
     now = datetime.utcnow()
     db.execute(text("""
-        UPDATE fta_investigations SET status='PENDING_VERIFICATION', verified_by_id=:user_id,
+        UPDATE fta_investigations SET status='VERIFIED_PENDING_ACTIONS', verified_by_id=:user_id,
           verified_at=:now, updated_at=:now WHERE id=:id
     """), {"user_id": user.id, "now": now, "id": investigation_id})
     db.execute(text("""
         INSERT INTO fta_status_history (investigation_id, old_status, new_status, remarks, changed_by_id)
-        VALUES (:id, :old, 'PENDING_VERIFICATION', :remarks, :user_id)
+        VALUES (:id, :old, 'VERIFIED_PENDING_ACTIONS', :remarks, :user_id)
     """), {"id": investigation_id, "old": row["status"], "remarks": payload.remarks, "user_id": user.id})
     db.commit()
-    return {"success": True, "status": "PENDING_VERIFICATION"}
+    return {"success": True, "status": "VERIFIED_PENDING_ACTIONS"}
 
 
 @router.post("/investigations/{investigation_id}/close")
@@ -869,7 +869,7 @@ def close_investigation(investigation_id: int, payload: CloseRequest,
                      {"id": investigation_id}).mappings().first()
     if not row:
         raise HTTPException(404, "FTA investigation not found")
-    if row["status"] != "PENDING_VERIFICATION":
+    if row["status"] != "VERIFIED_PENDING_ACTIONS":
         raise HTTPException(409, "Investigation must be verified before closure")
     linked_total = db.execute(text("""
         SELECT COUNT(*) FROM fta_action_links WHERE investigation_id=:id
@@ -903,7 +903,7 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     counts = db.execute(text(f"""
         SELECT COUNT(*) AS total,
           SUM(CASE WHEN i.status IN ('OPEN','IN_PROGRESS') THEN 1 ELSE 0 END) AS open,
-          SUM(CASE WHEN i.status='PENDING_VERIFICATION' THEN 1 ELSE 0 END) AS pending_verification,
+          SUM(CASE WHEN i.status='VERIFIED_PENDING_ACTIONS' THEN 1 ELSE 0 END) AS verified_pending_actions,
           SUM(CASE WHEN i.status='CLOSED' THEN 1 ELSE 0 END) AS closed
         FROM fta_investigations i WHERE 1=1 {production_scope}
     """), params).mappings().one()
