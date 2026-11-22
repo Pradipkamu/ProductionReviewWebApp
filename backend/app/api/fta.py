@@ -29,7 +29,7 @@ NODE_STATUSES = {"NOT_INVESTIGATED", "UNDER_INVESTIGATION", "SUSPECTED", "CONFIR
 INVESTIGATION_STATUSES = {"OPEN", "IN_PROGRESS", "VERIFIED_PENDING_ACTIONS", "CLOSED"}
 MAX_FTA_EVIDENCE_BYTES = 20 * 1024 * 1024
 MAX_FTA_EVIDENCE_FILES = 40
-FTA_EVIDENCE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".xlsx", ".xls", ".csv", ".txt"}
+FTA_EVIDENCE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".xlsx", ".csv", ".txt"}
 
 
 def _role_name(user: User) -> str:
