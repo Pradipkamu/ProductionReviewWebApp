@@ -108,7 +108,7 @@ export default function FTA({me}:{me:any}){
       verification_result:currentFinding.verification_result||'',is_root_cause:!!currentFinding.is_root_cause,
       is_occurrence_cause:!!currentFinding.is_occurrence_cause,is_escape_cause:!!currentFinding.is_escape_cause
     })
-  },[selectedNode,detail?.id])
+  },[selectedNode,detail?.id,currentFinding?.updated_at])
 
   async function createInvestigation(){
     if(!rejectionId||!operationCode||!defectCode||!filteredTemplates.length){setError('Select a machining operation, defect, rejection and matching published template.');return}
