@@ -31,6 +31,8 @@ export default function FTA({me}:{me:any}){
   const [defects,setDefects]=useState<any[]>([])
   const [templates,setTemplates]=useState<any[]>([])
   const [rejections,setRejections]=useState<any[]>([])
+  const [machines,setMachines]=useState<any[]>([])
+  const [machineId,setMachineId]=useState('')
   const [investigations,setInvestigations]=useState<any[]>([])
   const [dashboard,setDashboard]=useState<any>({counts:{}})
   const [operationCode,setOperationCode]=useState('')
@@ -74,17 +76,19 @@ export default function FTA({me}:{me:any}){
 
   const filteredTemplates=useMemo(()=>templates.filter(t=>t.status==='PUBLISHED'&&(!operationCode||t.operation_code===operationCode)&&(!defectCode||t.defect_code===defectCode)),[templates,operationCode,defectCode])
   const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
+  const selectedRejection=rejections.find(r=>String(r.id)===rejectionId)
+  const plantMachines=machines.filter(m=>m.active!==false&&(!selectedRejection?.plant||m.plant===selectedRejection.plant))
   const currentFinding:Finding|undefined=detail?.findings?.find((f:Finding)=>f.node_id===selectedNode)
   const hasRequiredAction=(detail?.actions||[]).some((a:any)=>['CORRECTIVE','PREVENTIVE'].includes(a.relationship_type))
 
   async function load(){
     setBusy(true);setError('')
     try{
-      const [o,d,t,r,i,stats]=await Promise.all([
+      const [o,d,t,r,i,stats,m]=await Promise.all([
         api('/fta/operations'),api('/fta/defects'),api('/fta/templates'+(canManageTemplates?'?include_drafts=true':'')),api('/fta/rejections?limit=200'),
-        api('/fta/investigations'),api('/fta/dashboard')
+        api('/fta/investigations'),api('/fta/dashboard'),api('/masters/machines')
       ])
-      setOperations(o as any[]);setDefects(d as any[]);setTemplates(t as any[]);setRejections(r as any[])
+      setOperations(o as any[]);setDefects(d as any[]);setTemplates(t as any[]);setRejections(r as any[]);setMachines(m as any[])
       setInvestigations(i as any[]);setDashboard(stats)
       const actionRows:any[]=await api('/actions');setAvailableActions(actionRows.filter(a=>a.status!=='CLOSED'&&(me?.role!=='PRODUCTION'||a.owner_id===me?.id)))
     }catch(e:any){setError(e.message||'Unable to load FTA workspace.')}
@@ -115,7 +119,7 @@ export default function FTA({me}:{me:any}){
     setBusy(true);setError('');setMessage('')
     try{
       const result:any=await api('/fta/investigations',{method:'POST',body:JSON.stringify({
-        rejection_id:Number(rejectionId),template_id:Number(selectedTemplate.id),summary:summary||null
+        rejection_id:Number(rejectionId),template_id:Number(selectedTemplate.id),machine_id:machineId?Number(machineId):null,summary:summary||null
       })})
       await load();await loadDetail(result.id);setMessage(`Investigation ${result.investigation_no} created.`)
     }catch(e:any){setError(e.message||'Unable to create investigation.')}
@@ -174,8 +178,13 @@ export default function FTA({me}:{me:any}){
           </select>
         </label>
         <label>Quality rejection
-          <select value={rejectionId} onChange={e=>setRejectionId(e.target.value)}>
+          <select value={rejectionId} onChange={e=>{const value=e.target.value;setRejectionId(value);const selected=rejections.find(r=>String(r.id)===value);setMachineId(selected?.machine_id?String(selected.machine_id):'')}}>
             <option value="">Select rejection record</option>{rejections.map(r=><option key={r.id} value={r.id}>#{r.id} · {String(r.rejection_date).slice(0,10)} · {r.part_code} · {r.phenomenon} · Qty {r.reject_qty}</option>)}
+          </select>
+        </label>
+        <label>Machine (optional)
+          <select value={machineId} onChange={e=>setMachineId(e.target.value)} disabled={!canWrite||!rejectionId}>
+            <option value="">Use machine from rejection / no machine</option>{plantMachines.map(m=><option key={m.id} value={m.id}>{m.code} — {m.name}</option>)}
           </select>
         </label>
         <label>Matching published template
