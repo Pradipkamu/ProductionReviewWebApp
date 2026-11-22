@@ -863,24 +863,27 @@ def close_investigation(investigation_id: int, payload: CloseRequest,
 @router.get("/dashboard")
 def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _role(user, READ_ROLES)
-    counts = db.execute(text("""
+    production_scope = " AND (i.owner_id=:user_id OR i.created_by_id=:user_id)" if _role_name(user) == "PRODUCTION" else ""
+    params = {"user_id": user.id} if production_scope else {}
+    counts = db.execute(text(f"""
         SELECT COUNT(*) AS total,
-          SUM(CASE WHEN status IN ('OPEN','IN_PROGRESS') THEN 1 ELSE 0 END) AS open,
-          SUM(CASE WHEN status='PENDING_VERIFICATION' THEN 1 ELSE 0 END) AS pending_verification,
-          SUM(CASE WHEN status='CLOSED' THEN 1 ELSE 0 END) AS closed
-        FROM fta_investigations
-    """)).mappings().one()
-    defects = db.execute(text("""
+          SUM(CASE WHEN i.status IN ('OPEN','IN_PROGRESS') THEN 1 ELSE 0 END) AS open,
+          SUM(CASE WHEN i.status='PENDING_VERIFICATION' THEN 1 ELSE 0 END) AS pending_verification,
+          SUM(CASE WHEN i.status='CLOSED' THEN 1 ELSE 0 END) AS closed
+        FROM fta_investigations i WHERE 1=1 {production_scope}
+    """), params).mappings().one()
+    defects = db.execute(text(f"""
         SELECT d.name AS defect, COUNT(*) AS investigations
         FROM fta_investigations i JOIN fta_templates t ON t.id=i.template_id
         JOIN fta_defect_library d ON d.code=t.defect_code
+        WHERE 1=1 {production_scope}
         GROUP BY d.name ORDER BY investigations DESC, d.name LIMIT 5
-    """)).mappings().all()
-    causes = db.execute(text("""
+    """), params).mappings().all()
+    causes = db.execute(text(f"""
         SELECT f.node_label AS cause, COUNT(*) AS occurrences
         FROM fta_findings f JOIN fta_investigations i ON i.id=f.investigation_id
-        WHERE f.is_root_cause=true AND f.investigation_status='CONFIRMED'
+        WHERE f.is_root_cause=true AND f.investigation_status='CONFIRMED' {production_scope}
         GROUP BY f.node_label ORDER BY occurrences DESC, f.node_label LIMIT 5
-    """)).mappings().all()
+    """), params).mappings().all()
     return {"counts": dict(counts), "top_defects": [dict(x) for x in defects],
             "top_verified_causes": [dict(x) for x in causes]}
