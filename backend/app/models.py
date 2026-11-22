@@ -1287,7 +1287,7 @@ class FtaEvidence(Base):
     __tablename__ = "fta_evidence"
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     id: Mapped[int] = mapped_column(primary_key=True)
-    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False, index=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
     finding_id: Mapped[Optional[int]] = mapped_column(ForeignKey("fta_findings.id", ondelete="CASCADE"), nullable=True)
     file_name: Mapped[str] = mapped_column(String(260), nullable=False)
     stored_name: Mapped[str] = mapped_column(String(260), nullable=False)
@@ -1297,6 +1297,7 @@ class FtaEvidence(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (Index("ix_fta_evidence_investigation", "investigation_id"),)
 
 
 class FtaActionLink(Base):
@@ -1325,7 +1326,7 @@ class FtaStatusHistory(Base):
 class FtaFindingHistory(Base):
     __tablename__ = "fta_finding_history"
     id: Mapped[int] = mapped_column(primary_key=True)
-    finding_id: Mapped[int] = mapped_column(ForeignKey("fta_findings.id", ondelete="CASCADE"), nullable=False, index=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("fta_findings.id", ondelete="CASCADE"), nullable=False)
     old_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
     new_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
     changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
