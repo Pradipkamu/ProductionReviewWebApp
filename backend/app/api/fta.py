@@ -91,6 +91,10 @@ def _validate_tree(tree: dict) -> list[dict]:
         children = node.get("children") or []
         if not isinstance(children, list):
             raise HTTPException(422, "Fault-tree children must be a list")
+        if node_type in {"TOP_EVENT", "INTERMEDIATE_EVENT"} and not children:
+            raise HTTPException(422, "Top and intermediate events must contain child events")
+        if node_type in {"BASIC_EVENT", "EXTERNAL_EVENT", "UNDEVELOPED_EVENT"} and children:
+            raise HTTPException(422, "Basic, external and undeveloped events must be leaf nodes")
         gate = node.get("gate")
         if children and gate not in {"AND", "OR"}:
             raise HTTPException(422, "Every node with children must have an AND or OR gate")
