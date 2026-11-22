@@ -90,3 +90,31 @@ def test_fta_or_gate_remains_unknown_until_a_cause_is_confirmed_or_all_ruled_out
     }
     result = _decorate_tree(tree, {"a": "SUSPECTED", "b": "NOT_INVESTIGATED"})
     assert result["logic_state"] == "UNKNOWN"
+
+
+def test_fta_only_leaf_cause_nodes_can_be_classified_as_causes():
+    from app.api.fta import _validate_cause_classification, FindingUpdate
+
+    payload = FindingUpdate(
+        investigation_status="CONFIRMED",
+        verification_method="Micrometer measurement",
+        is_root_cause=True,
+    )
+    _validate_cause_classification("BASIC_EVENT", payload)
+    _validate_cause_classification("EXTERNAL_EVENT", payload)
+    with pytest.raises(HTTPException):
+        _validate_cause_classification("TOP_EVENT", payload)
+    with pytest.raises(HTTPException):
+        _validate_cause_classification("INTERMEDIATE_EVENT", payload)
+
+
+def test_fta_cause_classification_requires_confirmed_status():
+    from app.api.fta import _validate_cause_classification, FindingUpdate
+
+    payload = FindingUpdate(
+        investigation_status="SUSPECTED",
+        is_root_cause=True,
+    )
+    with pytest.raises(HTTPException):
+        _validate_cause_classification("BASIC_EVENT", payload)
+
