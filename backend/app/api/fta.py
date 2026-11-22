@@ -88,6 +88,12 @@ def _validate_tree(tree: dict) -> list[dict]:
         node_type = node.get("type")
         if node_type not in {"TOP_EVENT", "INTERMEDIATE_EVENT", "BASIC_EVENT", "EXTERNAL_EVENT", "UNDEVELOPED_EVENT"}:
             raise HTTPException(422, "Unsupported fault-tree node type")
+        if depth > 0 and node_type == "TOP_EVENT":
+            raise HTTPException(422, "A TOP_EVENT node can only be used as the tree root")
+        node_id = str(node.get("id") or "")
+        node_label = str(node.get("label") or "").strip()
+        if len(node_id) > 120 or len(node_label) > 240:
+            raise HTTPException(422, "Fault-tree node IDs are limited to 120 characters and labels to 240 characters")
         children = node.get("children") or []
         if not isinstance(children, list):
             raise HTTPException(422, "Fault-tree children must be a list")
@@ -101,8 +107,8 @@ def _validate_tree(tree: dict) -> list[dict]:
         if not children and gate not in {None, ""}:
             raise HTTPException(422, "A leaf event cannot have a logic gate")
         nodes.append({
-            "node_id": str(node.get("id") or ""),
-            "node_label": str(node.get("label") or "").strip(),
+            "node_id": node_id,
+            "node_label": node_label,
             "node_type": node_type,
         })
         for child in children:
