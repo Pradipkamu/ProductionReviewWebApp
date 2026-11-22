@@ -7,7 +7,7 @@ type Finding = {
   id:number, node_id:string, node_label:string, node_type:string, investigation_status:string,
   observation?:string|null, measured_value?:string|null, expected_value?:string|null,
   verification_method?:string|null, verification_result?:string|null,
-  is_root_cause:boolean, is_occurrence_cause:boolean, is_escape_cause:boolean
+  is_root_cause:boolean, is_occurrence_cause:boolean, is_escape_cause:boolean, updated_at?:string
 }
 
 function TreeNode({node,findings,selected,onSelect,depth=0}:{node:FtaNode,findings:Finding[],selected:string,onSelect:(id:string)=>void,depth?:number}){
