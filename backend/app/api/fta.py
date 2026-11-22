@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
@@ -547,19 +548,23 @@ def create_investigation(payload: InvestigationCreate, db: Session = Depends(get
         "tree": tree,
     }
     now = datetime.utcnow()
-    new_id = db.execute(text("""
-        INSERT INTO fta_investigations
-        (investigation_no, rejection_id, template_id, template_version, template_snapshot_json,
-         plant, machine_id, operation_code, summary, status, owner_id, created_by_id, created_at, updated_at)
-        VALUES ('PENDING', :rejection_id, :template_id, :version, :snapshot,
-                :plant, :machine_id, :operation_code, :summary, 'OPEN', :owner_id, :user_id, :now, :now)
-        RETURNING id
-    """), {
-        "rejection_id": payload.rejection_id, "template_id": payload.template_id,
-        "version": template["version"], "snapshot": json.dumps(snapshot, ensure_ascii=False, default=str),
-        "plant": rejection["plant"], "machine_id": machine_id, "operation_code": template["operation_code"],
-        "summary": payload.summary, "owner_id": payload.owner_id or user.id, "user_id": user.id, "now": now,
-    }).scalar_one()
+    try:
+        new_id = db.execute(text("""
+            INSERT INTO fta_investigations
+            (investigation_no, rejection_id, template_id, template_version, template_snapshot_json,
+             plant, machine_id, operation_code, summary, status, owner_id, created_by_id, created_at, updated_at)
+            VALUES ('PENDING', :rejection_id, :template_id, :version, :snapshot,
+                    :plant, :machine_id, :operation_code, :summary, 'OPEN', :owner_id, :user_id, :now, :now)
+            RETURNING id
+        """), {
+            "rejection_id": payload.rejection_id, "template_id": payload.template_id,
+            "version": template["version"], "snapshot": json.dumps(snapshot, ensure_ascii=False, default=str),
+            "plant": rejection["plant"], "machine_id": machine_id, "operation_code": template["operation_code"],
+            "summary": payload.summary, "owner_id": payload.owner_id or user.id, "user_id": user.id, "now": now,
+        }).scalar_one()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "An active investigation already exists for this rejection and template") from exc
     number = f"FTA-{now.year}-{new_id:05d}"
     db.execute(text("UPDATE fta_investigations SET investigation_no=:number WHERE id=:id"),
                {"number": number, "id": new_id})
