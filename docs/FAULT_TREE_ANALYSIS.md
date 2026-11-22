@@ -1,0 +1,75 @@
+# Fault Tree Analysis (FTA) – Machining Defects
+
+## Purpose
+
+FTA provides a structured, evidence-based investigation workflow for machining defects recorded in the existing Quality Rejection module. It does not modify rejection quantities, dispatch quantities, PPM, or the existing Quality Rejection records.
+
+## Initial master data
+
+Migration `0029_machining_fta` creates:
+
+- 15 machining operation types.
+- 14 machining defect types.
+- 210 published starter templates (one for each seeded operation/defect combination).
+- Versioned template records and investigation/finding/evidence/action/status-history tables.
+
+Starter fault trees are investigation prompts. Their causes are not considered proven until an investigator records objective evidence and confirms the relevant leaf event.
+
+## Investigation workflow
+
+1. Open **Quality & OEE → Fault Tree Analysis**.
+2. Select the machining operation, defect, source Quality Rejection, and matching published template.
+3. Create the investigation. The selected template version and tree are snapshotted so later template revisions do not rewrite historical investigations.
+4. Select each fault-tree node and record the observation, measured/expected values, verification method, and result.
+5. Attach evidence to the relevant finding. Supported evidence extensions are JPG/JPEG, PNG, WEBP, PDF, XLSX, XLS, CSV, and TXT. Each file is limited to 20 MB and each investigation to 40 evidence files.
+6. Mark a cause as confirmed only after evidence is attached and a verification method is entered. Only BASIC_EVENT and EXTERNAL_EVENT leaf nodes may be classified as root, occurrence, or escape causes.
+7. Link an existing corrective/preventive/containment action, or create a new action through the existing Action module. Product and machine context must match the investigation plant.
+8. Admin or Quality submits the investigation for verification. Admin or Quality can close it only after at least one linked action exists and all linked actions are closed.
+
+AND/OR gate states are derived from the status of child nodes. A gate state is an aid to reasoning; it is not a substitute for objective evidence or engineering approval.
+
+## Roles
+
+| Role | FTA access |
+|---|---|
+| Admin | Full access; maintain operations, defects and templates; verify and close |
+| Quality | Full investigation access; maintain operations, defects and templates; verify and close |
+| Production | Create and update investigations they own or created; attach evidence and link actions; cannot manage templates or verify/close |
+| Management | Read-only investigation, evidence and dashboard access |
+
+The FTA navigation item inherits the existing Quality page visibility rule. The backend also enforces FTA role and investigation ownership checks.
+
+## API surface
+
+- `GET /api/fta/operations`
+- `GET /api/fta/defects`
+- `GET /api/fta/rejections`
+- `GET/POST /api/fta/templates`
+- `PUT /api/fta/templates/{id}`
+- `POST /api/fta/templates/{id}/revisions`
+- `POST /api/fta/templates/{id}/publish`
+- `GET/POST /api/fta/investigations`
+- `GET/PATCH /api/fta/investigations/{id}`
+- `PUT /api/fta/investigations/{id}/findings/{node_id}`
+- `GET/POST /api/fta/investigations/{id}/evidence`
+- `GET /api/fta/investigations/{id}/evidence/{evidence_id}`
+- `POST /api/fta/investigations/{id}/actions`
+- `POST /api/fta/investigations/{id}/verify`
+- `POST /api/fta/investigations/{id}/close`
+- `GET /api/fta/dashboard`
+
+## Validation and release sequence
+
+1. Run backend tests, including `backend/tests/test_fta.py`, against the isolated CI test database.
+2. Run the frontend build and npm audit.
+3. Validate Alembic revision continuity from `0028_chat_device_tokens` to `0029_machining_fta`.
+4. On a disposable database, run `alembic upgrade head`, confirm 15 operations, 14 defects and 210 starter templates, then test investigation creation, evidence upload/download, action linkage, verification and closure.
+5. Test role behavior with Admin, Quality, Production and Management accounts.
+6. Take and verify a production backup before any approved deployment.
+7. Apply the migration and deploy only after explicit production approval.
+
+**Production safety:** This feature branch and its draft pull request do not authorize a production migration, backend deployment, merge, or production data change. Do not run `alembic upgrade head` on the production database until approval is given.
+
+## Rollback
+
+The migration downgrade drops the FTA tables and their data. Before any production rollback, export FTA investigations, findings, evidence metadata and linked-action records, and confirm the backup/restore plan. Do not downgrade a production database without explicit approval.
