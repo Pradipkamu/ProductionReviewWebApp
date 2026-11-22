@@ -635,6 +635,7 @@ class QualityRejectionAttachment(Base, TimestampMixin):
     mime_type: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    __table_args__ = (Index("ix_fta_evidence_investigation", "investigation_id"),)
     caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     __table_args__ = (
@@ -1230,7 +1231,7 @@ class FtaInvestigation(Base, TimestampMixin):
     __tablename__ = "fta_investigations"
     id: Mapped[int] = mapped_column(primary_key=True)
     investigation_no: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
-    rejection_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_daily.id", ondelete="RESTRICT"), nullable=False, index=True)
+    rejection_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_daily.id", ondelete="RESTRICT"), nullable=False)
     template_id: Mapped[int] = mapped_column(ForeignKey("fta_templates.id", ondelete="RESTRICT"), nullable=False)
     template_version: Mapped[int] = mapped_column(Integer, nullable=False)
     template_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1249,6 +1250,7 @@ class FtaInvestigation(Base, TimestampMixin):
     verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     __table_args__ = (
+        Index("ix_fta_investigations_rejection", "rejection_id"),
         Index(
             "uq_fta_open_rejection_template", "rejection_id", "template_id",
             unique=True,
@@ -1261,7 +1263,7 @@ class FtaInvestigation(Base, TimestampMixin):
 class FtaFinding(Base, TimestampMixin):
     __tablename__ = "fta_findings"
     id: Mapped[int] = mapped_column(primary_key=True)
-    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False, index=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
     node_id: Mapped[str] = mapped_column(String(120), nullable=False)
     node_label: Mapped[str] = mapped_column(String(240), nullable=False)
     node_type: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -1275,7 +1277,10 @@ class FtaFinding(Base, TimestampMixin):
     is_occurrence_cause: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_escape_cause: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     updated_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    __table_args__ = (UniqueConstraint("investigation_id", "node_id", name="uq_fta_finding_investigation_node"),)
+    __table_args__ = (
+        Index("ix_fta_findings_investigation", "investigation_id"),
+        UniqueConstraint("investigation_id", "node_id", name="uq_fta_finding_investigation_node"),
+    )
 
 
 class FtaEvidence(Base):
@@ -1325,3 +1330,4 @@ class FtaFindingHistory(Base):
     new_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
     changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    __table_args__ = (Index("ix_fta_finding_history_finding", "finding_id"),)
