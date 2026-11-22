@@ -516,6 +516,12 @@ def create_investigation(payload: InvestigationCreate, db: Session = Depends(get
     """), {"id": payload.template_id}).mappings().first()
     if not template:
         raise HTTPException(404, "Published FTA template not found")
+    latest_published_version = db.execute(text("""
+        SELECT MAX(version) FROM fta_templates
+        WHERE code=:code AND status='PUBLISHED'
+    """), {"code": template["code"]}).scalar_one()
+    if template["version"] != latest_published_version:
+        raise HTTPException(409, "This template revision is no longer current. Refresh and select the latest published revision.")
     rejection = db.execute(text("""
         SELECT q.id, COALESCE(q.plant,p.plant) AS plant, q.machine_id, q.product_id, q.phenomenon_id,
                q.rejection_date, q.shift, q.reject_qty, q.remark, p.code AS part_code,
