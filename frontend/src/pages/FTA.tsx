@@ -86,7 +86,7 @@ export default function FTA({me}:{me:any}){
       ])
       setOperations(o as any[]);setDefects(d as any[]);setTemplates(t as any[]);setRejections(r as any[])
       setInvestigations(i as any[]);setDashboard(stats)
-      const actionRows:any[]=await api('/actions');setAvailableActions(actionRows.filter(a=>a.status!=='CLOSED'))
+      const actionRows:any[]=await api('/actions');setAvailableActions(actionRows.filter(a=>a.status!=='CLOSED'&&(me?.role!=='PRODUCTION'||a.owner_id===me?.id)))
     }catch(e:any){setError(e.message||'Unable to load FTA workspace.')}
     finally{setBusy(false)}
   }
