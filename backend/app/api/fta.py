@@ -511,6 +511,8 @@ def create_investigation(payload: InvestigationCreate, db: Session = Depends(get
             raise HTTPException(422, "Selected machine is not active or does not exist")
         if rejection["plant"] and machine["plant"] and machine["plant"] != rejection["plant"]:
             raise HTTPException(422, "Selected machine belongs to a different plant than the rejection")
+    if _role_name(user) == "PRODUCTION" and payload.owner_id not in {None, user.id}:
+        raise HTTPException(403, "Production users can assign an investigation only to themselves")
     if payload.owner_id and not db.execute(text("SELECT id FROM users WHERE id=:id AND is_active=true"),
                                            {"id": payload.owner_id}).first():
         raise HTTPException(422, "Selected investigation owner is not active")
@@ -579,6 +581,8 @@ def update_investigation(investigation_id: int, payload: InvestigationUpdate,
     if row["status"] not in {"OPEN", "IN_PROGRESS"}:
         raise HTTPException(409, "Only open investigations can be edited")
     data = payload.model_dump(exclude_unset=True)
+    if _role_name(user) == "PRODUCTION" and "owner_id" in data and data["owner_id"] not in {None, user.id}:
+        raise HTTPException(403, "Production users cannot reassign investigation ownership")
     if "owner_id" in data and data["owner_id"] and not db.execute(
         text("SELECT id FROM users WHERE id=:id AND is_active=true"), {"id": data["owner_id"]}
     ).first():
