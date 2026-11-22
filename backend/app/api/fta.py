@@ -742,8 +742,10 @@ def upload_evidence(investigation_id: int, file: UploadFile = File(...),
         raise HTTPException(exc.status_code, exc.detail) from exc
     duplicate = db.execute(text("""
         SELECT id, finding_id, file_name, mime_type, size_bytes, caption, uploaded_by_id, created_at
-        FROM fta_evidence WHERE investigation_id=:id AND sha256=:sha
-    """), {"id": investigation_id, "sha": sha}).mappings().first()
+        FROM fta_evidence
+        WHERE investigation_id=:id AND sha256=:sha
+          AND ((finding_id IS NULL AND :finding_id IS NULL) OR finding_id=:finding_id)
+    """), {"id": investigation_id, "sha": sha, "finding_id": finding_id}).mappings().first()
     if duplicate:
         target.unlink(missing_ok=True)
         return dict(duplicate)
