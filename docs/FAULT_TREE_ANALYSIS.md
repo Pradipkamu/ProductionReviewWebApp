@@ -37,7 +37,7 @@ AND/OR gate states are derived from the status of child nodes. A gate state is a
 | Production | Create and update investigations they own or created; attach evidence and link actions; cannot manage templates or verify/close |
 | Management | Read-only investigation, evidence and dashboard access |
 
-The FTA navigation item inherits the existing Quality page visibility rule. The backend also enforces FTA role and investigation ownership checks.
+The FTA navigation item is available to Admin, Management, Quality and Production only when both FTA and Quality page visibility are enabled. The backend also enforces FTA role and investigation ownership checks.
 
 ## API surface
 
