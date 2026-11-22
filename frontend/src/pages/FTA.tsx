@@ -75,6 +75,7 @@ export default function FTA({me}:{me:any}){
   const filteredTemplates=useMemo(()=>templates.filter(t=>t.status==='PUBLISHED'&&(!operationCode||t.operation_code===operationCode)&&(!defectCode||t.defect_code===defectCode)),[templates,operationCode,defectCode])
   const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
   const currentFinding:Finding|undefined=detail?.findings?.find((f:Finding)=>f.node_id===selectedNode)
+  const hasRequiredAction=(detail?.actions||[]).some((a:any)=>['CORRECTIVE','PREVENTIVE'].includes(a.relationship_type))
 
   async function load(){
     setBusy(true);setError('')
@@ -284,7 +285,7 @@ export default function FTA({me}:{me:any}){
       </div>
       <div className="fta-review-controls">
         <label>Verification remarks<textarea rows={2} value={verificationRemarks} onChange={e=>setVerificationRemarks(e.target.value)} disabled={!canVerify||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
-        <button className="secondary" disabled={!canVerify||busy||detail.status!=='IN_PROGRESS'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/verify',{method:'POST',body:JSON.stringify({remarks:verificationRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation verified. Complete linked actions before closure.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Verify investigation</button>
+        <button className="secondary" disabled={!canVerify||busy||detail.status!=='IN_PROGRESS'||!hasRequiredAction} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/verify',{method:'POST',body:JSON.stringify({remarks:verificationRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation verified. Complete linked actions before closure.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Verify investigation</button>
         <label>Closure remarks<textarea rows={2} value={closureRemarks} onChange={e=>setClosureRemarks(e.target.value)} disabled={!canVerify||detail.status!=='VERIFIED_PENDING_ACTIONS'}/></label>
         <button disabled={!canVerify||busy||detail.status!=='VERIFIED_PENDING_ACTIONS'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/close',{method:'POST',body:JSON.stringify({remarks:closureRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation closed.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Close investigation</button>
       </div>
