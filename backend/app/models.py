@@ -1249,8 +1249,6 @@ class FtaInvestigation(Base, TimestampMixin):
     verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     __table_args__ = (
-        Index("ix_fta_investigations_status", "status"),
-        Index("ix_fta_investigations_plant", "plant"),
         Index(
             "uq_fta_open_rejection_template", "rejection_id", "template_id",
             unique=True,
