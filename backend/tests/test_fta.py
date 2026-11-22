@@ -142,3 +142,13 @@ def test_fta_active_investigation_unique_index_excludes_closed_records():
     )
     assert index.unique is True
     assert "CLOSED" in str(index.dialect_options["sqlite"]["where"])
+
+
+def test_fta_investigation_model_has_no_duplicate_index_names():
+    from app.models import FtaInvestigation
+
+    names = [index.name for index in FtaInvestigation.__table__.indexes]
+    assert len(names) == len(set(names))
+    assert "ix_fta_investigations_status" in names
+    assert "ix_fta_investigations_plant" in names
+    assert "uq_fta_open_rejection_template" in names
