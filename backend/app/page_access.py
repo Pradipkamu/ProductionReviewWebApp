@@ -26,6 +26,7 @@ PAGE_CATALOG = (
     {"key": "process", "label": "Process Monitor", "path": "/process"},
     {"key": "process_actuals", "label": "Process Actuals / Edit", "path": "/process-actuals"},
     {"key": "quality", "label": "Quality / Rejection", "path": "/quality"},
+    {"key": "fta", "label": "Fault Tree Analysis", "path": "/fta"},
     {"key": "casting_quality", "label": "Casting Quality", "path": "/casting-quality"},
     {"key": "customer_quality", "label": "Customer Quality", "path": "/customer-quality"},
     {"key": "reports", "label": "Compliance Reports", "path": "/reports"},
@@ -48,6 +49,7 @@ DEFAULT_ROLE_RESTRICTIONS = {
     "diagnostics": {UserRole.ADMIN, UserRole.MANAGEMENT},
     "governance": {UserRole.ADMIN, UserRole.MANAGEMENT},
     "import": {UserRole.ADMIN, UserRole.PLANNING, UserRole.QUALITY, UserRole.PRODUCTION},
+    "fta": {UserRole.MANAGEMENT, UserRole.QUALITY, UserRole.PRODUCTION},
 }
 
 
