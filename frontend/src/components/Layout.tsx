@@ -7,7 +7,7 @@ const groups=[
   {label:'Communication',keys:['chat']},
   {label:'Executive & Review',keys:['control_tower','dispatch_intelligence','capacity_intelligence','operations_intelligence','management_assistant','daily_review','daily_meeting','insights','actions','admin_action_review']},
   {label:'Planning & Production',keys:['mis','schedule','capacity','machine_master','product_master','process','process_actuals','vendor']},
-  {label:'Quality & OEE',keys:['quality','casting_quality','customer_quality','oee']},
+  {label:'Quality & OEE',keys:['quality','fta','casting_quality','customer_quality','oee']},
   {label:'Automation & HMI',keys:['afms']},
   {label:'Reports',keys:['reports','oee_reports','management_reports','analytics']},
   {label:'Administration',keys:['masters','import','diagnostics','governance','account']},

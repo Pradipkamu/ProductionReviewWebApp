@@ -21,6 +21,7 @@ export const navItems:NavItem[] = [
   {key:'process',to:'/process',label:'Process Monitor'},
   {key:'process_actuals',to:'/process-actuals',label:'Process Actuals / Edit'},
   {key:'quality',to:'/quality',label:'Quality / Rejection'},
+  {key:'fta',to:'/fta',label:'Fault Tree Analysis'},
   {key:'casting_quality',to:'/casting-quality',label:'Casting Quality'},
   {key:'customer_quality',to:'/customer-quality',label:'Customer Quality'},
   {key:'reports',to:'/reports',label:'Compliance Reports'},
@@ -43,6 +44,7 @@ const legacyRestrictions:Record<string,string[]> = {
 }
 
 export function canViewPage(me:any,pageKey:string){
+  if(pageKey==='fta')return ['ADMIN','MANAGEMENT','QUALITY','PRODUCTION'].includes(me?.role)&&canViewPage(me,'quality')
   if(me?.role==='ADMIN'||pageKey==='account')return true
   if(Array.isArray(me?.page_access))return me.page_access.includes(pageKey)||(pageKey==='oee_reports'&&(me.page_access.includes('reports')||me.page_access.includes('management_reports')))
   return !legacyRestrictions[pageKey]||legacyRestrictions[pageKey].includes(me?.role)

@@ -717,3 +717,53 @@ button.ghost{color:inherit}
   .chat-wa-composer{padding:8px}
   .chat-wa-conversation .chat-conversation-copy small{max-width:180px}
 }
+
+
+/* Fault Tree Analysis workspace */
+.fta-page .panel-title p{margin:5px 0 0;color:#718096;font-size:12px}
+.fta-create-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.fta-workspace-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.8fr);gap:18px;align-items:start}
+.fta-tree-panel,.fta-finding-panel{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px;background:#fbfcfe}
+.fta-tree-panel h3,.fta-finding-panel h3,.fta-bottom-grid h3{margin:0 0 8px;color:var(--navy);font-size:15px}
+.fta-tree-node{margin-top:9px}
+.fta-node-button{width:100%;display:flex;align-items:center;gap:9px;text-align:left;background:#fff;color:#20334e;border:1px solid #dbe3ed;border-left:4px solid #8b9bb0;padding:10px;border-radius:8px}
+.fta-node-button.selected{border-color:var(--blue);background:#edf4ff;box-shadow:0 0 0 2px #255ea81a}
+.fta-node-gate{flex:0 0 auto;border-radius:5px;padding:3px 6px;background:#e9eef5;color:#405572;font-size:9px;font-weight:800}
+.fta-node-button strong{font-size:12px;flex:1}
+.fta-node-status{font-size:9px;color:#718096;font-weight:700;white-space:nowrap}
+.fta-node-status.success{color:#16734c}.fta-node-status.warning{color:#a36b08}
+.fta-tree-children{border-left:1px dashed #cbd5e1;margin:5px 0 5px 13px;padding-left:5px}
+.fta-finding-panel label{margin-top:10px}
+.fta-check{display:flex;grid-template-columns:18px 1fr;align-items:center;gap:8px;text-transform:none;font-size:12px}
+.fta-check input{width:16px;height:16px}
+.fta-bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+.fta-bottom-grid>div{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px}
+.fta-action-link{display:grid;grid-template-columns:1fr 150px auto;gap:8px;margin:10px 0 14px}
+.status-pill{display:inline-block;padding:4px 8px;border-radius:99px;background:#edf1f6;color:#43546c;font-size:10px;font-weight:700}
+.success{background:#eaf7ef;color:#176b45;border:1px solid #cbe9d6;padding:10px 12px;border-radius:8px;margin:10px 0}
+@media(max-width:900px){.fta-workspace-grid{grid-template-columns:1fr}.fta-create-grid,.fta-bottom-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.fta-action-link{grid-template-columns:1fr}.fta-node-button{flex-wrap:wrap}.fta-node-status{margin-left:auto}.fta-page .panel{padding:13px}}
+
+
+.fta-evidence-box{margin-top:14px;padding:12px;border:1px dashed #b9c7d8;border-radius:9px;background:#fff}
+.fta-evidence-box>strong{display:block;color:var(--navy);font-size:13px;margin-bottom:8px}
+.fta-evidence-box label{margin-bottom:8px}
+.fta-evidence-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid #edf0f5;font-size:11px;color:#52627a}
+.fta-evidence-item span{min-width:0;overflow-wrap:anywhere}
+
+
+.fta-node-logic{margin-left:auto;border-radius:5px;padding:3px 6px;background:#eef2f7;color:#52627a;font-size:9px;font-weight:800;white-space:nowrap}
+.fta-review-controls{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;gap:10px;align-items:end;margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe}
+.fta-review-controls label{margin:0}
+@media(max-width:900px){.fta-review-controls{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.fta-review-controls{grid-template-columns:1fr}}
+
+
+.fta-history{border:1px solid var(--line);border-radius:10px;padding:14px;margin:16px 0;background:#fff}
+.fta-history h3{margin:0 0 8px;color:var(--navy);font-size:15px}
+.fta-history-row{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:4px 12px;padding:8px 0;border-top:1px solid #edf0f5;font-size:11px}
+.fta-history-row strong{color:#29405f}.fta-history-row span{color:#7a8799}.fta-history-row p{grid-column:1/-1;margin:0;color:#68768b}
+
+
+.fta-finding-history{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.fta-finding-history summary{cursor:pointer;color:var(--navy);font-size:12px;font-weight:700}
