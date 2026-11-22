@@ -152,3 +152,27 @@ def test_fta_investigation_model_has_no_duplicate_index_names():
     assert "ix_fta_investigations_status" in names
     assert "ix_fta_investigations_plant" in names
     assert "uq_fta_open_rejection_template" in names
+
+
+def test_fta_tree_rejects_children_on_leaf_event_nodes():
+    invalid = {
+        "id": "top", "label": "Top event", "type": "TOP_EVENT", "gate": "OR",
+        "children": [{
+            "id": "basic", "label": "Basic cause", "type": "BASIC_EVENT", "gate": "OR",
+            "children": [_node("nested")],
+        }],
+    }
+    with pytest.raises(HTTPException):
+        _validate_tree(invalid)
+
+
+def test_fta_tree_requires_children_for_intermediate_events():
+    invalid = {
+        "id": "top", "label": "Top event", "type": "TOP_EVENT", "gate": "OR",
+        "children": [{
+            "id": "intermediate", "label": "Intermediate event",
+            "type": "INTERMEDIATE_EVENT", "gate": None, "children": [],
+        }],
+    }
+    with pytest.raises(HTTPException):
+        _validate_tree(invalid)
