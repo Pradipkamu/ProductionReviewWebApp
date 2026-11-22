@@ -252,23 +252,23 @@ export default function FTA({me}:{me:any}){
           {currentFinding?<>
             <strong>{currentFinding.node_label}</strong>
             <label>Investigation status
-              <select value={findingForm.investigation_status||'NOT_INVESTIGATED'} onChange={e=>setFindingForm((v:any)=>({...v,investigation_status:e.target.value}))}>
+              <select value={findingForm.investigation_status||'NOT_INVESTIGATED'} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,investigation_status:e.target.value}))}>
                 {['NOT_INVESTIGATED','UNDER_INVESTIGATION','SUSPECTED','CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE'].map(x=><option key={x} value={x}>{x.replaceAll('_',' ')}</option>)}
               </select>
             </label>
-            <label>Observation / evidence reference<textarea rows={3} value={findingForm.observation||''} onChange={e=>setFindingForm((v:any)=>({...v,observation:e.target.value}))}/></label>
+            <label>Observation / evidence reference<textarea rows={3} value={findingForm.observation||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,observation:e.target.value}))}/></label>
             <div className="fta-create-grid">
-              <label>Measured value<input value={findingForm.measured_value||''} onChange={e=>setFindingForm((v:any)=>({...v,measured_value:e.target.value}))}/></label>
-              <label>Expected value<input value={findingForm.expected_value||''} onChange={e=>setFindingForm((v:any)=>({...v,expected_value:e.target.value}))}/></label>
+              <label>Measured value<input value={findingForm.measured_value||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,measured_value:e.target.value}))}/></label>
+              <label>Expected value<input value={findingForm.expected_value||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,expected_value:e.target.value}))}/></label>
             </div>
-            <label>Verification method<textarea rows={2} value={findingForm.verification_method||''} onChange={e=>setFindingForm((v:any)=>({...v,verification_method:e.target.value}))}/></label>
-            <label>Verification result<textarea rows={2} value={findingForm.verification_result||''} onChange={e=>setFindingForm((v:any)=>({...v,verification_result:e.target.value}))}/></label>
+            <label>Verification method<textarea rows={2} value={findingForm.verification_method||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,verification_method:e.target.value}))}/></label>
+            <label>Verification result<textarea rows={2} value={findingForm.verification_result||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,verification_result:e.target.value}))}/></label>
             <details className="fta-finding-history"><summary>Finding change history ({(detail.finding_history||[]).filter((h:any)=>h.finding_id===currentFinding.id).length})</summary>
               {(detail.finding_history||[]).filter((h:any)=>h.finding_id===currentFinding.id).map((h:any)=><div className="fta-history-row" key={h.id}><strong>{h.old?.investigation_status||'NEW'} → {h.new?.investigation_status}</strong><span>{String(h.created_at||'').replace('T',' ').slice(0,19)}</span><p>{h.new?.observation||'No observation recorded'}</p></div>)}
             </details>
-            <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_root_cause} onChange={e=>setFindingForm((v:any)=>({...v,is_root_cause:e.target.checked}))}/> Confirmed root cause</label>
-            <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_occurrence_cause} onChange={e=>setFindingForm((v:any)=>({...v,is_occurrence_cause:e.target.checked}))}/> Occurrence cause</label>
-            <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_escape_cause} onChange={e=>setFindingForm((v:any)=>({...v,is_escape_cause:e.target.checked}))}/> Escape / detection cause</label>
+            <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_root_cause} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,is_root_cause:e.target.checked}))}/> Confirmed root cause</label>
+            <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_occurrence_cause} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,is_occurrence_cause:e.target.checked}))}/> Occurrence cause</label>
+            <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_escape_cause} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,is_escape_cause:e.target.checked}))}/> Escape / detection cause</label>
             <button onClick={saveFinding} disabled={!canWrite||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)}>Save finding</button>
             <div className="fta-evidence-box">
               <strong>Evidence attachments</strong>
@@ -293,8 +293,8 @@ export default function FTA({me}:{me:any}){
       <div className="fta-bottom-grid">
         <div><h3>Investigation summary</h3>
           <label>Initial defect / investigation summary<textarea rows={2} value={summary} onChange={e=>setSummary(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
-          <label>Occurrence cause summary<textarea rows={2} value={occurrenceSummary} onChange={e=>setOccurrenceSummary(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
-          <label>Escape / detection cause summary<textarea rows={2} value={escapeSummary} onChange={e=>setEscapeSummary(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
+          <label>Occurrence cause summary<textarea rows={2} value={occurrenceSummary} onChange={e=>setOccurrenceSummary(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
+          <label>Escape / detection cause summary<textarea rows={2} value={escapeSummary} onChange={e=>setEscapeSummary(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
           <button className="secondary" onClick={saveSummary} disabled={!canWrite||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)}>Save investigation summaries</button></div>
         <div><h3>Link existing corrective action</h3>
           <label>Create new corrective / preventive action
