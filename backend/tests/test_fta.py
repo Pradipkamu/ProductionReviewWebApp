@@ -118,3 +118,16 @@ def test_fta_cause_classification_requires_confirmed_status():
     with pytest.raises(HTTPException):
         _validate_cause_classification("BASIC_EVENT", payload)
 
+
+
+def test_fta_action_link_requires_all_contexts_to_match_investigation_plant():
+    from app.api.fta import _validate_action_plants
+
+    _validate_action_plants("2020", {"2020"})
+    _validate_action_plants("2020", set())
+    with pytest.raises(HTTPException):
+        _validate_action_plants("2020", {"2070"})
+    with pytest.raises(HTTPException):
+        _validate_action_plants("2020", {"2020", "2070"})
+    with pytest.raises(HTTPException):
+        _validate_action_plants(None, {"2020"})
