@@ -291,7 +291,7 @@ export default function FTA({me}:{me:any}){
       <div className="fta-bottom-grid">
         <div><h3>Investigation summary</h3>
           <label>Initial defect / investigation summary<textarea rows={2} value={summary} onChange={e=>setSummary(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
-          <label>Occurrence cause summary<textarea rows={2} value={occurrenceSummary} onChange={e=>setOccurrenceSummary(e.target.value)} disabled={detail.status==='CLOSED'}/></label>
+          <label>Occurrence cause summary<textarea rows={2} value={occurrenceSummary} onChange={e=>setOccurrenceSummary(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
           <label>Escape / detection cause summary<textarea rows={2} value={escapeSummary} onChange={e=>setEscapeSummary(e.target.value)} disabled={detail.status==='CLOSED'}/></label>
           <button className="secondary" onClick={saveSummary} disabled={busy||!['OPEN','IN_PROGRESS'].includes(detail.status)}>Save investigation summaries</button></div>
         <div><h3>Link existing corrective action</h3>
