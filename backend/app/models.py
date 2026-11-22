@@ -635,7 +635,6 @@ class QualityRejectionAttachment(Base, TimestampMixin):
     mime_type: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
     size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    __table_args__ = (Index("ix_fta_evidence_investigation", "investigation_id"),)
     caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     __table_args__ = (
