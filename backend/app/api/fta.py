@@ -117,6 +117,13 @@ def _validate_cause_classification(node_type: str, payload: "FindingUpdate") -> 
         raise HTTPException(422, "Root, occurrence and escape causes must have CONFIRMED investigation status")
 
 
+def _validate_action_plants(investigation_plant: str | None, action_plants: set[str]) -> None:
+    plants = {str(plant).strip() for plant in action_plants if plant and str(plant).strip()}
+    expected = str(investigation_plant).strip() if investigation_plant else ""
+    if plants and (not expected or plants != {expected}):
+        raise HTTPException(422, "The action contains context from a different or unspecified plant than this FTA investigation")
+
+
 def _decorate_tree(node: dict, status_by_id: dict[str, str]) -> dict:
     children = [_decorate_tree(child, status_by_id) for child in (node.get("children") or [])]
     if children:
@@ -774,12 +781,18 @@ def link_action(investigation_id: int, payload: ActionLinkCreate,
     if _role_name(user) == "PRODUCTION" and action["owner_id"] != user.id:
         raise HTTPException(404, "Existing action not found")
     action_plants = set(db.scalars(text("""
-        SELECT DISTINCT p.plant FROM action_contexts ac
-        JOIN products p ON p.id=ac.product_id
-        WHERE ac.action_id=:action_id AND p.plant IS NOT NULL
+        SELECT plant FROM (
+            SELECT p.plant AS plant FROM action_contexts ac
+            JOIN products p ON p.id=ac.product_id
+            WHERE ac.action_id=:action_id
+            UNION
+            SELECT m.plant AS plant FROM action_contexts ac
+            JOIN machines m ON m.id=ac.machine_id
+            WHERE ac.action_id=:action_id
+        ) AS action_plant_scope
+        WHERE plant IS NOT NULL
     """), {"action_id": payload.action_id}).all())
-    if action_plants and investigation["plant"] and investigation["plant"] not in action_plants:
-        raise HTTPException(422, "The action belongs to a different plant than this FTA investigation")
+    _validate_action_plants(investigation["plant"], action_plants)
     if payload.finding_id and not db.execute(text("""
         SELECT id FROM fta_findings WHERE id=:id AND investigation_id=:investigation_id
     """), {"id": payload.finding_id, "investigation_id": investigation_id}).first():
