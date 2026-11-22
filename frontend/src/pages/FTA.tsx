@@ -147,7 +147,7 @@ export default function FTA({me}:{me:any}){
     <div className="kpi-grid">
       <Kpi label="Total investigations" value={counts.total||0}/>
       <Kpi label="Open / in progress" value={counts.open||0}/>
-      <Kpi label="Pending verification" value={counts.pending_verification||0}/>
+      <Kpi label="Verified / actions pending" value={counts.verified_pending_actions||0}/>
       <Kpi label="Closed" value={counts.closed||0}/>
     </div>
 
@@ -284,8 +284,8 @@ export default function FTA({me}:{me:any}){
       </div>
       <div className="fta-review-controls">
         <label>Verification remarks<textarea rows={2} value={verificationRemarks} onChange={e=>setVerificationRemarks(e.target.value)} disabled={!canVerify||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
-        <button className="secondary" disabled={!canVerify||busy||detail.status!=='IN_PROGRESS'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/verify',{method:'POST',body:JSON.stringify({remarks:verificationRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation submitted for verification.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Submit for verification</button>
-        <label>Closure remarks<textarea rows={2} value={closureRemarks} onChange={e=>setClosureRemarks(e.target.value)} disabled={!canVerify||detail.status!=='PENDING_VERIFICATION'}/></label>
+        <button className="secondary" disabled={!canVerify||busy||detail.status!=='IN_PROGRESS'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/verify',{method:'POST',body:JSON.stringify({remarks:verificationRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation verified. Complete linked actions before closure.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Verify investigation</button>
+        <label>Closure remarks<textarea rows={2} value={closureRemarks} onChange={e=>setClosureRemarks(e.target.value)} disabled={!canVerify||detail.status!=='VERIFIED_PENDING_ACTIONS'}/></label>
         <button disabled={!canVerify||busy||detail.status!=='PENDING_VERIFICATION'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/close',{method:'POST',body:JSON.stringify({remarks:closureRemarks})});await loadDetail(detail.id);await load();setMessage('Investigation closed.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Close investigation</button>
       </div>
       <section className="fta-history">
