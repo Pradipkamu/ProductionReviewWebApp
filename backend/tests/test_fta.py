@@ -203,3 +203,51 @@ def test_fta_evidence_extensions_are_supported_by_secure_upload_validator():
     from app.services.file_security import SAFE_ATTACHMENT_MIME
 
     assert FTA_EVIDENCE_EXTENSIONS <= set(SAFE_ATTACHMENT_MIME)
+
+
+def test_fta_role_matrix_keeps_management_read_only():
+    from types import SimpleNamespace
+    from app.api.fta import READ_ROLES, WRITE_ROLES, TEMPLATE_ROLES, _role
+
+    management = SimpleNamespace(role="MANAGEMENT")
+    _role(management, READ_ROLES)
+    with pytest.raises(HTTPException) as exc:
+        _role(management, WRITE_ROLES)
+    assert exc.value.status_code == 403
+    with pytest.raises(HTTPException):
+        _role(management, TEMPLATE_ROLES)
+
+
+def test_fta_production_user_cannot_read_another_users_investigation():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.api.fta import _assert_investigation_access, READ_ROLES
+
+    result = Mock()
+    result.mappings.return_value.first.return_value = {
+        "id": 7, "owner_id": 22, "created_by_id": 22, "status": "OPEN", "plant": "2020",
+    }
+    db = Mock()
+    db.execute.return_value = result
+    production_user = SimpleNamespace(id=11, role="PRODUCTION")
+
+    with pytest.raises(HTTPException) as exc:
+        _assert_investigation_access(db, 7, production_user, READ_ROLES)
+    assert exc.value.status_code == 404
+
+
+def test_fta_production_user_can_read_investigation_they_created_or_own():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from app.api.fta import _assert_investigation_access, READ_ROLES
+
+    result = Mock()
+    result.mappings.return_value.first.return_value = {
+        "id": 7, "owner_id": 11, "created_by_id": 22, "status": "OPEN", "plant": "2020",
+    }
+    db = Mock()
+    db.execute.return_value = result
+    production_user = SimpleNamespace(id=11, role="PRODUCTION")
+
+    row = _assert_investigation_access(db, 7, production_user, READ_ROLES)
+    assert row["id"] == 7
