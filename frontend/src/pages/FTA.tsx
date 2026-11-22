@@ -86,7 +86,7 @@ export default function FTA({me}:{me:any}){
     try{
       const [o,d,t,r,i,stats,m]=await Promise.all([
         api('/fta/operations'),api('/fta/defects'),api('/fta/templates'+(canManageTemplates?'?include_drafts=true':'')),api('/fta/rejections?limit=200'),
-        api('/fta/investigations'),api('/fta/dashboard'),api('/masters/machines')
+        api('/fta/investigations'),api('/fta/dashboard'),api('/masters/machines').catch(()=>[])
       ])
       setOperations(o as any[]);setDefects(d as any[]);setTemplates(t as any[]);setRejections(r as any[]);setMachines(m as any[])
       setInvestigations(i as any[]);setDashboard(stats)
