@@ -837,6 +837,12 @@ def verify_investigation(investigation_id: int, payload: VerifyRequest,
         raise HTTPException(404, "FTA investigation not found")
     if row["status"] != "IN_PROGRESS":
         raise HTTPException(409, "Only an in-progress investigation can be submitted for verification")
+    required_actions = db.execute(text("""
+        SELECT COUNT(*) FROM fta_action_links
+        WHERE investigation_id=:id AND relationship_type IN ('CORRECTIVE', 'PREVENTIVE')
+    """), {"id": investigation_id}).scalar_one()
+    if not required_actions:
+        raise HTTPException(422, "Link at least one corrective or preventive action before verification")
     confirmed = db.execute(text("""
         SELECT COUNT(*) FROM fta_findings
         WHERE investigation_id=:id AND investigation_status='CONFIRMED' AND is_root_cause=true
@@ -874,7 +880,8 @@ def close_investigation(investigation_id: int, payload: CloseRequest,
     if row["status"] != "VERIFIED_PENDING_ACTIONS":
         raise HTTPException(409, "Investigation must be verified before closure")
     linked_total = db.execute(text("""
-        SELECT COUNT(*) FROM fta_action_links WHERE investigation_id=:id
+        SELECT COUNT(*) FROM fta_action_links
+        WHERE investigation_id=:id AND relationship_type IN ('CORRECTIVE', 'PREVENTIVE')
     """), {"id": investigation_id}).scalar_one()
     if not linked_total:
         raise HTTPException(422, "Link at least one corrective or preventive action before closing the investigation")
