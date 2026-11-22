@@ -196,3 +196,10 @@ def test_fta_tree_rejects_nested_top_event_and_oversized_node_fields():
         _validate_tree(nested_top)
     with pytest.raises(HTTPException):
         _validate_tree(oversized_label)
+
+
+def test_fta_evidence_extensions_are_supported_by_secure_upload_validator():
+    from app.api.fta import FTA_EVIDENCE_EXTENSIONS
+    from app.services.file_security import SAFE_ATTACHMENT_MIME
+
+    assert FTA_EVIDENCE_EXTENSIONS <= set(SAFE_ATTACHMENT_MIME)
