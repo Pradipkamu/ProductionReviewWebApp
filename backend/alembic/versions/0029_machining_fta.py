@@ -139,6 +139,12 @@ def upgrade():
     op.create_index("ix_fta_investigations_rejection", "fta_investigations", ["rejection_id"])
     op.create_index("ix_fta_investigations_status", "fta_investigations", ["status"])
     op.create_index("ix_fta_investigations_plant", "fta_investigations", ["plant"])
+    op.create_index(
+        "uq_fta_open_rejection_template", "fta_investigations",
+        ["rejection_id", "template_id"], unique=True,
+        postgresql_where=sa.text("status <> 'CLOSED'"),
+        sqlite_where=sa.text("status <> 'CLOSED'"),
+    )
     op.create_table(
         "fta_findings",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -242,6 +248,7 @@ def downgrade():
     op.drop_table("fta_evidence")
     op.drop_index("ix_fta_findings_investigation", table_name="fta_findings")
     op.drop_table("fta_findings")
+    op.drop_index("uq_fta_open_rejection_template", table_name="fta_investigations")
     op.drop_index("ix_fta_investigations_plant", table_name="fta_investigations")
     op.drop_index("ix_fta_investigations_status", table_name="fta_investigations")
     op.drop_index("ix_fta_investigations_rejection", table_name="fta_investigations")
