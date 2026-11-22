@@ -292,11 +292,11 @@ export default function FTA({me}:{me:any}){
         <div><h3>Investigation summary</h3>
           <label>Initial defect / investigation summary<textarea rows={2} value={summary} onChange={e=>setSummary(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
           <label>Occurrence cause summary<textarea rows={2} value={occurrenceSummary} onChange={e=>setOccurrenceSummary(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
-          <label>Escape / detection cause summary<textarea rows={2} value={escapeSummary} onChange={e=>setEscapeSummary(e.target.value)} disabled={detail.status==='CLOSED'}/></label>
+          <label>Escape / detection cause summary<textarea rows={2} value={escapeSummary} onChange={e=>setEscapeSummary(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
           <button className="secondary" onClick={saveSummary} disabled={busy||!['OPEN','IN_PROGRESS'].includes(detail.status)}>Save investigation summaries</button></div>
         <div><h3>Link existing corrective action</h3>
           <label>Create new corrective / preventive action
-            <textarea rows={2} value={newActionDescription} onChange={e=>setNewActionDescription(e.target.value)} disabled={detail.status==='CLOSED'}/>
+            <textarea rows={2} value={newActionDescription} onChange={e=>setNewActionDescription(e.target.value)} disabled={!['OPEN','IN_PROGRESS'].includes(detail.status)}/>
           </label>
           <button className="secondary" disabled={!newActionDescription.trim()||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);const rejection=detail.template_snapshot?.rejection||{};const created:any=await api('/actions',{method:'POST',body:JSON.stringify({reference_date:String(rejection.rejection_date).slice(0,10),problem_category:'FTA',problem_description:'Fault Tree Analysis '+detail.investigation_no+': '+(detail.summary||'Machining defect root cause investigation'),action_description:newActionDescription,owner_id:me.id,contexts:[{context_date:String(rejection.rejection_date).slice(0,10),product_id:rejection.product_id||null,machine_id:detail.machine_id||null}]})});await api('/fta/investigations/'+detail.id+'/actions',{method:'POST',body:JSON.stringify({action_id:created.id,finding_id:currentFinding?.id||null,relationship_type:'CORRECTIVE'})});await loadDetail(detail.id);await load();setMessage('New action '+created.action_no+' created with its standard Why-Why plan and linked to FTA.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Create action with Why-Why plan</button>
           <div className="fta-action-link">
