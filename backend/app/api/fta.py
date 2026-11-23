@@ -197,6 +197,18 @@ def _investigation(row, db: Session) -> dict:
         WHERE l.investigation_id=:id ORDER BY l.id
     """), {"id": result["id"]}).mappings().all()
     result["actions"] = [dict(x) for x in actions]
+    discovered = db.execute(text("""
+        SELECT c.id, c.action_id, a.action_no, c.cause_description, c.evidence_reference,
+               c.status, c.reported_by_id, reporter.full_name AS reported_by_name,
+               c.reviewed_by_id, reviewer.full_name AS reviewed_by_name,
+               c.review_remarks, c.verification_method, c.created_at, c.reviewed_at
+        FROM fta_discovered_causes c
+        JOIN actions a ON a.id=c.action_id
+        LEFT JOIN users reporter ON reporter.id=c.reported_by_id
+        LEFT JOIN users reviewer ON reviewer.id=c.reviewed_by_id
+        WHERE c.investigation_id=:id ORDER BY c.created_at, c.id
+    """), {"id": result["id"]}).mappings().all()
+    result["discovered_causes"] = [dict(x) for x in discovered]
     return result
 
 
@@ -266,6 +278,17 @@ class ActionLinkCreate(BaseModel):
 class FtaActionCreate(BaseModel):
     action_description: str = Field(min_length=3, max_length=8000)
     finding_id: int | None = Field(default=None, gt=0)
+
+
+class DiscoveredCauseCreate(BaseModel):
+    cause_description: str = Field(min_length=5, max_length=4000)
+    evidence_reference: str | None = Field(default=None, max_length=2000)
+
+
+class DiscoveredCauseReview(BaseModel):
+    status: str = Field(pattern="^(ACCEPTED|CONFIRMED|RULED_OUT)$")
+    review_remarks: str = Field(min_length=5, max_length=4000)
+    verification_method: str | None = Field(default=None, max_length=2000)
 
 
 class VerifyRequest(BaseModel):
@@ -942,6 +965,71 @@ def create_fta_action(investigation_id: int, payload: FtaActionCreate,
             "action_type": action.action_type,
         },
     }
+
+
+@router.post("/actions/{action_id}/discovered-causes", status_code=201)
+def report_discovered_cause(action_id: int, payload: DiscoveredCauseCreate,
+                             db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _role(user, WRITE_ROLES)
+    linked = db.execute(text("""
+        SELECT l.investigation_id, i.status, i.investigation_no, a.owner_id
+        FROM fta_action_links l
+        JOIN fta_investigations i ON i.id=l.investigation_id
+        JOIN actions a ON a.id=l.action_id
+        WHERE l.action_id=:action_id
+        ORDER BY l.id LIMIT 1
+    """), {"action_id": action_id}).mappings().first()
+    if not linked:
+        raise HTTPException(404, "FTA-linked action not found")
+    if _role_name(user) == "PRODUCTION" and linked["owner_id"] != user.id:
+        raise HTTPException(404, "FTA-linked action not found")
+    if linked["status"] == "CLOSED":
+        raise HTTPException(409, "Cannot report a new cause against a closed FTA investigation")
+    cause = db.execute(text("""
+        INSERT INTO fta_discovered_causes
+          (investigation_id, action_id, cause_description, evidence_reference, status, reported_by_id)
+        VALUES (:investigation_id, :action_id, :description, :evidence, 'PROPOSED', :user_id)
+        RETURNING id, investigation_id, action_id, cause_description, evidence_reference, status, reported_by_id, created_at
+    """), {"investigation_id": linked["investigation_id"], "action_id": action_id,
+           "description": payload.cause_description.strip(),
+           "evidence": (payload.evidence_reference or "").strip() or None,
+           "user_id": user.id}).mappings().one()
+    db.add(ActionHistory(
+        action_id=action_id, changed_by_id=user.id,
+        comment=f"New cause reported to FTA {linked['investigation_no']}: {payload.cause_description.strip()}",
+    ))
+    db.commit()
+    return dict(cause)
+
+
+@router.post("/discovered-causes/{cause_id}/review")
+def review_discovered_cause(cause_id: int, payload: DiscoveredCauseReview,
+                            db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _role(user, TEMPLATE_ROLES)
+    cause = db.execute(text("""
+        SELECT c.*, i.status AS investigation_status
+        FROM fta_discovered_causes c
+        JOIN fta_investigations i ON i.id=c.investigation_id
+        WHERE c.id=:id
+    """), {"id": cause_id}).mappings().first()
+    if not cause:
+        raise HTTPException(404, "Discovered cause not found")
+    if cause["investigation_status"] == "CLOSED":
+        raise HTTPException(409, "Closed FTA investigations cannot be changed")
+    if cause["status"] != "PROPOSED":
+        raise HTTPException(409, "This discovered cause has already been reviewed")
+    if payload.status == "CONFIRMED" and not (payload.verification_method or "").strip():
+        raise HTTPException(422, "A verification method is required to confirm a discovered root cause")
+    db.execute(text("""
+        UPDATE fta_discovered_causes
+        SET status=:status, review_remarks=:remarks, verification_method=:method,
+            reviewed_by_id=:user_id, reviewed_at=:now, updated_at=:now
+        WHERE id=:id
+    """), {"status": payload.status, "remarks": payload.review_remarks.strip(),
+           "method": (payload.verification_method or "").strip() or None,
+           "user_id": user.id, "now": datetime.utcnow(), "id": cause_id})
+    db.commit()
+    return {"success": True, "status": payload.status}
 
 
 @router.post("/investigations/{investigation_id}/verify")
