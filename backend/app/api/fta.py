@@ -294,7 +294,7 @@ class FtaActionCreate(BaseModel):
 
 class DiscoveredCauseCreate(BaseModel):
     cause_description: str = Field(min_length=5, max_length=4000)
-    evidence_reference: str | None = Field(default=None, max_length=2000)
+    evidence_reference: str = Field(min_length=3, max_length=2000)
 
 
 class DiscoveredCauseReview(BaseModel):
@@ -1005,7 +1005,7 @@ def report_discovered_cause(action_id: int, payload: DiscoveredCauseCreate,
         RETURNING id, investigation_id, action_id, cause_description, evidence_reference, status, reported_by_id, created_at
     """), {"investigation_id": linked["investigation_id"], "action_id": action_id,
            "description": payload.cause_description.strip(),
-           "evidence": (payload.evidence_reference or "").strip() or None,
+           "evidence": payload.evidence_reference.strip(),
            "user_id": user.id}).mappings().one()
     db.add(ActionHistory(
         action_id=action_id, changed_by_id=user.id,
@@ -1033,6 +1033,8 @@ def review_discovered_cause(cause_id: int, payload: DiscoveredCauseReview,
         raise HTTPException(409, "This discovered cause has already been resolved")
     if payload.status == "CONFIRMED" and not (payload.verification_method or "").strip():
         raise HTTPException(422, "A verification method is required to confirm a discovered root cause")
+    if payload.status == "CONFIRMED" and not (cause["evidence_reference"] or "").strip():
+        raise HTTPException(422, "Evidence reference is required to confirm a discovered root cause")
     db.execute(text("""
         UPDATE fta_discovered_causes
         SET status=:status, review_remarks=:remarks, verification_method=:method,
