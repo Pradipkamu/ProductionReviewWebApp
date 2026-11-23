@@ -159,6 +159,16 @@ def _decorate_tree(node: dict, status_by_id: dict[str, str]) -> dict:
 def _investigation(row, db: Session) -> dict:
     result = dict(row)
     result["template_snapshot"] = _json(result.pop("template_snapshot_json", None), {})
+    source = db.execute(text("""
+        SELECT q.rejection_date, q.shift, q.reject_qty, p.code AS part_code,
+               p.name AS part_name, ph.name AS defect_name, m.name AS machine_name
+        FROM quality_rejection_daily q
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        LEFT JOIN machines m ON m.id=COALESCE((SELECT machine_id FROM fta_investigations WHERE id=:id),q.machine_id)
+        WHERE q.id=:rejection_id
+    """), {"id": result["id"], "rejection_id": result["rejection_id"]}).mappings().first()
+    result["source_rejection"] = dict(source) if source else {}
     findings = db.execute(text("""
         SELECT id, node_id, node_label, node_type, investigation_status, observation,
                measured_value, expected_value, verification_method, verification_result,
@@ -192,8 +202,10 @@ def _investigation(row, db: Session) -> dict:
     result["status_history"] = [dict(x) for x in history]
     actions = db.execute(text("""
         SELECT l.id AS link_id, l.relationship_type, a.id, a.action_no, a.problem_description,
-               a.action_description, a.status, a.owner_id, a.due_at, a.requires_whywhy, a.action_type
+               a.action_description, a.status, a.owner_id, u.full_name AS owner_name,
+               a.due_at, a.requires_whywhy, a.action_type
         FROM fta_action_links l JOIN actions a ON a.id=l.action_id
+        LEFT JOIN users u ON u.id=a.owner_id
         WHERE l.investigation_id=:id ORDER BY l.id
     """), {"id": result["id"]}).mappings().all()
     result["actions"] = [dict(x) for x in actions]
