@@ -1034,6 +1034,20 @@ def report_discovered_cause(action_id: int, payload: DiscoveredCauseCreate,
         action_id=action_id, changed_by_id=user.id,
         comment=f"New cause reported to FTA {linked['investigation_no']}: {payload.cause_description.strip()}",
     ))
+    if linked["status"] == "VERIFIED_PENDING_ACTIONS":
+        now = datetime.utcnow()
+        db.execute(text("""
+            UPDATE fta_investigations
+            SET status='IN_PROGRESS', verified_by_id=NULL, verified_at=NULL, updated_at=:now
+            WHERE id=:id
+        """), {"now": now, "id": linked["investigation_id"]})
+        db.execute(text("""
+            INSERT INTO fta_status_history
+              (investigation_id, old_status, new_status, remarks, changed_by_id)
+            VALUES (:id, 'VERIFIED_PENDING_ACTIONS', 'IN_PROGRESS',
+                    'Investigation reopened because a new cause was discovered during action implementation.',
+                    :user_id)
+        """), {"id": linked["investigation_id"], "user_id": user.id})
     db.commit()
     return dict(cause)
 
