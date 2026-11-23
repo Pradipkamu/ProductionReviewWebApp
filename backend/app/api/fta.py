@@ -513,13 +513,14 @@ def list_investigations(status: str | None = None, rejection_id: int | None = No
     _role(user, READ_ROLES)
     query = """
         SELECT i.id, i.investigation_no, i.rejection_id, i.template_id, i.operation_code,
-               i.plant, i.machine_id, i.status, i.owner_id, i.summary, i.created_at,
+               i.plant, i.machine_id, m.name AS machine_name, i.status, i.owner_id, i.summary, i.created_at,
                t.name AS template_name, d.name AS defect_name, p.code AS part_code, p.name AS part_name
         FROM fta_investigations i
         JOIN fta_templates t ON t.id=i.template_id
         JOIN fta_defect_library d ON d.code=t.defect_code
         JOIN quality_rejection_daily q ON q.id=i.rejection_id
-        JOIN products p ON p.id=q.product_id WHERE 1=1
+        JOIN products p ON p.id=q.product_id
+        LEFT JOIN machines m ON m.id=i.machine_id WHERE 1=1
     """
     params = {}
     if status:
