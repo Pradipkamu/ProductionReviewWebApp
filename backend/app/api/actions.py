@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, record_security_event
@@ -566,6 +566,13 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
         if field in data:
             setattr(a, field, data[field])
     if payload.status is not None:
+        if payload.status == ActionStatus.CLOSED and a.action_type == "FTA":
+            unresolved_causes = db.execute(
+                text("SELECT COUNT(*) FROM fta_discovered_causes WHERE action_id=:id AND status='PROPOSED'"),
+                {"id": action_id},
+            ).scalar_one()
+            if unresolved_causes:
+                raise HTTPException(409, "Quality must review newly discovered causes before this FTA action can be closed.")
         if payload.status == ActionStatus.CLOSED and a.requires_whywhy:
             plan = db.scalar(select(ActionWhyWhy).where(ActionWhyWhy.action_id == action_id))
             pdata = _serialize_plan(plan)
