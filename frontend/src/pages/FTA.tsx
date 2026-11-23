@@ -335,7 +335,7 @@ export default function FTA({me}:{me:any}){
             <button className="secondary" disabled={busy} onClick={async()=>{const method=window.prompt('Verification method required to confirm this root cause');if(!method||!method.trim())return;const remarks=window.prompt('Review remarks (required)');if(!remarks||remarks.trim().length<5)return;try{setBusy(true);await api('/fta/discovered-causes/'+cause.id+'/review',{method:'POST',body:JSON.stringify({status:'CONFIRMED',verification_method:method,review_remarks:remarks})});await loadDetail(detail.id,true);setMessage('Discovered cause confirmed and recorded in the FTA report.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Confirm as root cause</button>
             <button className="secondary" disabled={busy} onClick={async()=>{const remarks=window.prompt('Reason for ruling out this cause (required)');if(!remarks||remarks.trim().length<5)return;try{setBusy(true);await api('/fta/discovered-causes/'+cause.id+'/review',{method:'POST',body:JSON.stringify({status:'RULED_OUT',review_remarks:remarks})});await loadDetail(detail.id,true);setMessage('Discovered cause ruled out.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Rule out</button>
           </div>}
-        </article>)):<p className="muted">No additional causes have been reported during action implementation.</p>}
+        </article>):<p className="muted">No additional causes have been reported during action implementation.</p>}
       </section>
     </section>}
   </div>
