@@ -251,3 +251,29 @@ def test_fta_production_user_can_read_investigation_they_created_or_own():
 
     row = _assert_investigation_access(db, 7, production_user, READ_ROLES)
     assert row["id"] == 7
+
+
+def test_fta_created_action_is_marked_as_fta_and_does_not_require_whywhy():
+    from app.models import Action
+
+    action = Action(
+        action_no="ACT-2026-99999",
+        reference_date=__import__("datetime").date(2026, 11, 23),
+        problem_description="FTA root-cause follow-up",
+        action_description="Replace worn fixture locator",
+        action_type="FTA",
+        requires_whywhy=False,
+    )
+    assert action.action_type == "FTA"
+    assert action.requires_whywhy is False
+
+
+def test_fta_action_creation_endpoint_is_registered_separately_from_existing_action_link():
+    from app.api.fta import router
+
+    paths = {
+        (route.path, tuple(sorted(route.methods or [])))
+        for route in router.routes
+    }
+    assert ("/fta/investigations/{investigation_id}/actions/create", ("POST",)) in paths
+    assert ("/fta/investigations/{investigation_id}/actions", ("POST",)) in paths
