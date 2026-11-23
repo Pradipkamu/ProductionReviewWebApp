@@ -23,8 +23,8 @@ Starter fault trees are investigation prompts. Their causes are not considered p
 4. Select each fault-tree node and record the observation, measured/expected values, verification method, and result.
 5. Attach evidence to the relevant finding. Supported evidence extensions are JPG/JPEG, PNG, WEBP, PDF, XLSX, CSV, and TXT. Each file is limited to 20 MB and each investigation to 40 evidence files.
 6. Mark a cause as confirmed only after evidence is attached and a verification method is entered. Only BASIC_EVENT and EXTERNAL_EVENT leaf nodes may be classified as root, occurrence, or escape causes.
-7. Link an existing corrective/preventive/containment action, or create a new action through the existing Action module. Product and machine context must match the investigation plant.
-8. Admin or Quality verifies the investigation, moving it to **VERIFIED_PENDING_ACTIONS**. Admin or Quality can close it only after at least one linked action exists and all linked actions are closed.
+7. Create a corrective/preventive action directly from the FTA, or link an existing action. An action created from FTA is marked as an FTA action and does **not** create a second Why-Why plan; the fault tree and its confirmed findings are the root-cause record. The action record is used once for owner, due date, implementation updates, attachments and closure. Existing standalone actions retain the standard Why-Why closure requirement.
+8. Admin or Quality verifies the investigation, moving it to **VERIFIED_PENDING_ACTIONS**. Admin or Quality can close it only after at least one linked corrective/preventive action exists and all linked actions are closed. FTA-created actions can be closed through Action Management without filling a duplicate Why-Why form.
 
 AND/OR gate states are derived from the status of child nodes. A gate state is an aid to reasoning; it is not a substitute for objective evidence or engineering approval.
 
