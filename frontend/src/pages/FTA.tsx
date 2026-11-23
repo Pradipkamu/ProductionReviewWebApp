@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api, downloadApi } from '../api'
 import { PageHeader, Kpi } from '../components/UI'
 
@@ -103,6 +104,8 @@ export default function FTA({me}:{me:any}){
     }catch(e:any){setError(e.message||'Unable to load investigation.')}
   }
   useEffect(()=>{load()},[me?.role])
+  const [searchParams]=useSearchParams()
+  useEffect(()=>{const id=Number(searchParams.get('investigation_id')||0);if(id>0)loadDetail(id)},[searchParams])
   useEffect(()=>{
     if(!currentFinding){setFindingForm({});return}
     setFindingForm({
@@ -252,7 +255,7 @@ export default function FTA({me}:{me:any}){
     </section>
 
     {detail&&tree&&<section className="panel fta-workspace">
-      <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p></div><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div>
+      <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p></div><div className="button-row"><a className="button secondary" href={'/fta/report/'+detail.id}>FTA report</a><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div></div>
       <div className="fta-workspace-grid">
         <div className="fta-tree-panel">
           <h3>Fault tree</h3>
@@ -320,6 +323,20 @@ export default function FTA({me}:{me:any}){
           </div>
           {(detail.actions||[]).length?detail.actions.map((a:any)=><p key={a.link_id}>{a.action_no} · {a.status} · {a.action_description}</p>):<p className="muted">No existing actions linked yet.</p>}</div>
       </div>
+      <section className="panel">
+        <div className="panel-title"><div><h3>Causes Discovered During Action Implementation</h3><p>New reasons reported by action owners are automatically recorded here and reviewed by Quality.</p></div></div>
+        {(detail.discovered_causes||[]).length?(detail.discovered_causes||[]).map((cause:any)=><article className="fta-history-row" key={cause.id}>
+          <div className="panel-title"><strong>{cause.cause_description}</strong><Status value={cause.status}/></div>
+          <p>Reported from {cause.action_no} · {cause.reported_by_name||'Action owner'} · {String(cause.created_at||'').replace('T',' ').slice(0,19)}</p>
+          {cause.evidence_reference&&<p><b>Evidence:</b> {cause.evidence_reference}</p>}
+          {cause.review_remarks&&<p><b>Review:</b> {cause.review_remarks}{cause.verification_method?' · Method: '+cause.verification_method:''}</p>}
+          {cause.status==='PROPOSED'&&canVerify&&<div className="button-row">
+            <button className="secondary" disabled={busy} onClick={async()=>{const remarks=window.prompt('Review remarks (required)');if(!remarks||remarks.trim().length<5)return;try{setBusy(true);await api('/fta/discovered-causes/'+cause.id+'/review',{method:'POST',body:JSON.stringify({status:'ACCEPTED',review_remarks:remarks})});await loadDetail(detail.id,true);setMessage('Cause accepted for further investigation.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Accept for investigation</button>
+            <button className="secondary" disabled={busy} onClick={async()=>{const method=window.prompt('Verification method required to confirm this root cause');if(!method||!method.trim())return;const remarks=window.prompt('Review remarks (required)');if(!remarks||remarks.trim().length<5)return;try{setBusy(true);await api('/fta/discovered-causes/'+cause.id+'/review',{method:'POST',body:JSON.stringify({status:'CONFIRMED',verification_method:method,review_remarks:remarks})});await loadDetail(detail.id,true);setMessage('Discovered cause confirmed and recorded in the FTA report.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Confirm as root cause</button>
+            <button className="secondary" disabled={busy} onClick={async()=>{const remarks=window.prompt('Reason for ruling out this cause (required)');if(!remarks||remarks.trim().length<5)return;try{setBusy(true);await api('/fta/discovered-causes/'+cause.id+'/review',{method:'POST',body:JSON.stringify({status:'RULED_OUT',review_remarks:remarks})});await loadDetail(detail.id,true);setMessage('Discovered cause ruled out.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Rule out</button>
+          </div>}
+        </article>)):<p className="muted">No additional causes have been reported during action implementation.</p>}
+      </section>
     </section>}
   </div>
 }
