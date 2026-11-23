@@ -220,6 +220,16 @@ def _investigation(row, db: Session) -> dict:
         ORDER BY h.changed_at, h.id
     """), {"id": result["id"]}).mappings().all()
     result["action_history"] = [dict(x) for x in action_history]
+    action_evidence = db.execute(text("""
+        SELECT aa.id, aa.action_id, a.action_no, aa.file_name, aa.caption, aa.size_bytes,
+               aa.created_at, u.full_name AS uploaded_by_name
+        FROM action_attachments aa
+        JOIN fta_action_links l ON l.action_id=aa.action_id
+        JOIN actions a ON a.id=aa.action_id
+        LEFT JOIN users u ON u.id=aa.uploaded_by_id
+        WHERE l.investigation_id=:id ORDER BY aa.created_at, aa.id
+    """), {"id": result["id"]}).mappings().all()
+    result["action_evidence"] = [dict(x) for x in action_evidence]
     discovered = db.execute(text("""
         SELECT c.id, c.action_id, a.action_no, c.cause_description, c.evidence_reference,
                c.status, c.reported_by_id, reporter.full_name AS reported_by_name,
@@ -996,7 +1006,7 @@ def report_discovered_cause(action_id: int, payload: DiscoveredCauseCreate,
                              db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _role(user, WRITE_ROLES)
     linked = db.execute(text("""
-        SELECT l.investigation_id, i.status, i.investigation_no, a.owner_id
+        SELECT l.investigation_id, i.status, i.investigation_no, a.owner_id, a.status AS action_status
         FROM fta_action_links l
         JOIN fta_investigations i ON i.id=l.investigation_id
         JOIN actions a ON a.id=l.action_id
@@ -1009,6 +1019,8 @@ def report_discovered_cause(action_id: int, payload: DiscoveredCauseCreate,
         raise HTTPException(404, "FTA-linked action not found")
     if linked["status"] == "CLOSED":
         raise HTTPException(409, "Cannot report a new cause against a closed FTA investigation")
+    if linked["action_status"] == "CLOSED":
+        raise HTTPException(409, "Cannot report a new cause against a closed action")
     cause = db.execute(text("""
         INSERT INTO fta_discovered_causes
           (investigation_id, action_id, cause_description, evidence_reference, status, reported_by_id)
