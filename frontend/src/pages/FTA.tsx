@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, downloadApi } from '../api'
-import { PageHeader, Kpi } from '../components/UI'
+import { PageHeader, Kpi, Status } from '../components/UI'
 
 type FtaNode = { id:string, label:string, type:string, gate?:string|null, logic_state?:string, children?:FtaNode[] }
 type Finding = {
