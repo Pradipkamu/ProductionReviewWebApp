@@ -568,7 +568,7 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
     if payload.status is not None:
         if payload.status == ActionStatus.CLOSED and a.action_type == "FTA":
             unresolved_causes = db.execute(
-                text("SELECT COUNT(*) FROM fta_discovered_causes WHERE action_id=:id AND status='PROPOSED'"),
+                text("SELECT COUNT(*) FROM fta_discovered_causes WHERE action_id=:id AND status IN ('PROPOSED','ACCEPTED')"),
                 {"id": action_id},
             ).scalar_one()
             if unresolved_causes:
