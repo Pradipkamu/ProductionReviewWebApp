@@ -73,3 +73,14 @@ The FTA navigation item is available to Admin, Management, Quality and Productio
 ## Rollback
 
 The migration downgrade drops the FTA tables and their data. Before any production rollback, export FTA investigations, findings, evidence metadata and linked-action records, and confirm the backup/restore plan. Do not downgrade a production database without explicit approval.
+
+
+## Action implementation discoveries and investigation report
+
+FTA investigations are listed on Action Management so action owners and reviewers can navigate from an action workflow to the originating investigation. FTA actions remain exempt from the standalone Why-Why plan; their root-cause analysis stays in FTA.
+
+When an FTA action owner changes the action status, the UI asks whether a different cause was discovered during implementation. If yes, the owner must provide the cause description and an evidence reference. The system creates a `PROPOSED` cause under **Causes Discovered During Action Implementation** in the originating investigation and records an Action History entry. The owner can also use **Report new cause** from the Action list.
+
+ADMIN/QUALITY reviewers can accept a proposal for further investigation, confirm it as a root cause (verification method required), or rule it out with review remarks. Accepted proposals remain open for resolution. FTA investigation closure is blocked while any discovered cause remains `PROPOSED` or `ACCEPTED`; an FTA action cannot be closed while its discovered cause is awaiting review.
+
+A printable investigation report is available from Action Management and the FTA workspace at `/fta/report/{id}`. It includes the source rejection, complete snapshotted fault tree and findings, evidence register, confirmed root causes, linked corrective/preventive actions, action implementation history, newly discovered causes, and final verification/closure history. Use Print / Save PDF to export it.
