@@ -209,6 +209,17 @@ def _investigation(row, db: Session) -> dict:
         WHERE l.investigation_id=:id ORDER BY l.id
     """), {"id": result["id"]}).mappings().all()
     result["actions"] = [dict(x) for x in actions]
+    action_history = db.execute(text("""
+        SELECT h.id, h.action_id, a.action_no, h.changed_at, h.comment,
+               h.old_status, h.new_status, u.full_name AS changed_by_name
+        FROM action_history h
+        JOIN fta_action_links l ON l.action_id=h.action_id
+        JOIN actions a ON a.id=h.action_id
+        LEFT JOIN users u ON u.id=h.changed_by_id
+        WHERE l.investigation_id=:id
+        ORDER BY h.changed_at, h.id
+    """), {"id": result["id"]}).mappings().all()
+    result["action_history"] = [dict(x) for x in action_history]
     discovered = db.execute(text("""
         SELECT c.id, c.action_id, a.action_no, c.cause_description, c.evidence_reference,
                c.status, c.reported_by_id, reporter.full_name AS reported_by_name,
