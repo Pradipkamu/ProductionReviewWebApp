@@ -4,7 +4,7 @@ import json
 import re
 import uuid
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -18,7 +18,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..config import get_settings
 from ..services.file_security import UploadSecurityError, safe_original_name, safe_path, save_limited_stream, validate_attachment_file
-from ..models import User
+from ..models import Action, ActionContext, ActionHistory, User
 
 router = APIRouter(prefix="/fta", tags=["fault-tree-analysis"])
 
@@ -191,7 +191,7 @@ def _investigation(row, db: Session) -> dict:
     result["status_history"] = [dict(x) for x in history]
     actions = db.execute(text("""
         SELECT l.id AS link_id, l.relationship_type, a.id, a.action_no, a.problem_description,
-               a.action_description, a.status, a.owner_id, a.due_at
+               a.action_description, a.status, a.owner_id, a.due_at, a.requires_whywhy, a.action_type
         FROM fta_action_links l JOIN actions a ON a.id=l.action_id
         WHERE l.investigation_id=:id ORDER BY l.id
     """), {"id": result["id"]}).mappings().all()
@@ -260,6 +260,11 @@ class ActionLinkCreate(BaseModel):
     action_id: int = Field(gt=0)
     finding_id: int | None = Field(default=None, gt=0)
     relationship_type: str = Field(default="CORRECTIVE", pattern="^(CORRECTIVE|PREVENTIVE|CONTAINMENT)$")
+
+
+class FtaActionCreate(BaseModel):
+    action_description: str = Field(min_length=3, max_length=8000)
+    finding_id: int | None = Field(default=None, gt=0)
 
 
 class VerifyRequest(BaseModel):
@@ -831,6 +836,87 @@ def link_action(investigation_id: int, payload: ActionLinkCreate,
         db.rollback()
         raise HTTPException(409, "This action is already linked to the investigation")
     return {"success": True}
+
+
+@router.post("/investigations/{investigation_id}/actions/create", status_code=201)
+def create_fta_action(investigation_id: int, payload: FtaActionCreate,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Create an action owned by the FTA workflow; do not create a duplicate Why-Why plan."""
+    investigation = _assert_investigation_access(db, investigation_id, user, WRITE_ROLES)
+    if investigation["status"] not in {"OPEN", "IN_PROGRESS"}:
+        raise HTTPException(409, "Actions can only be created for an open investigation")
+
+    record = db.execute(text("""
+        SELECT investigation_no, rejection_id, template_snapshot_json, owner_id, machine_id, summary
+        FROM fta_investigations WHERE id=:id
+    """), {"id": investigation_id}).mappings().one()
+    snapshot = _json(record["template_snapshot_json"], {})
+    rejection = snapshot.get("rejection") or {}
+    raw_date = rejection.get("rejection_date")
+    try:
+        reference_date = date.fromisoformat(str(raw_date)[:10])
+    except (TypeError, ValueError):
+        raise HTTPException(422, "The source rejection does not contain a valid reference date")
+
+    if payload.finding_id and not db.execute(text("""
+        SELECT id FROM fta_findings WHERE id=:id AND investigation_id=:investigation_id
+    """), {"id": payload.finding_id, "investigation_id": investigation_id}).first():
+        raise HTTPException(422, "Selected finding does not belong to this investigation")
+
+    count = db.query(Action).count() + 1
+    action = Action(
+        action_no=f"ACT-{reference_date.year}-{count:05d}",
+        reference_date=reference_date,
+        problem_category="FTA",
+        problem_description=(
+            f"FTA {record['investigation_no']}: "
+            f"{record['summary'] or 'Machining defect root-cause investigation'}"
+        ),
+        action_description=payload.action_description.strip(),
+        owner_id=record["owner_id"] or user.id,
+        action_type="FTA",
+        requires_whywhy=False,
+    )
+    db.add(action)
+    db.flush()
+
+    product_id = rejection.get("product_id")
+    db.add(ActionContext(
+        action_id=action.id,
+        context_date=reference_date,
+        product_id=int(product_id) if product_id is not None else None,
+        machine_id=record["machine_id"],
+    ))
+    db.add(ActionHistory(
+        action_id=action.id,
+        changed_by_id=user.id,
+        new_status=action.status,
+        comment=(
+            f"Action created from FTA {record['investigation_no']}. "
+            "Root-cause analysis is recorded in the linked FTA; separate Why-Why is not required."
+        ),
+    ))
+    db.execute(text("""
+        INSERT INTO fta_action_links (investigation_id, finding_id, action_id, relationship_type, created_by_id)
+        VALUES (:investigation_id, :finding_id, :action_id, 'CORRECTIVE', :user_id)
+    """), {
+        "investigation_id": investigation_id,
+        "finding_id": payload.finding_id,
+        "action_id": action.id,
+        "user_id": user.id,
+    })
+    db.commit()
+    db.refresh(action)
+    return {
+        "success": True,
+        "action": {
+            "id": action.id,
+            "action_no": action.action_no,
+            "status": action.status.value,
+            "requires_whywhy": action.requires_whywhy,
+            "action_type": action.action_type,
+        },
+    }
 
 
 @router.post("/investigations/{investigation_id}/verify")
