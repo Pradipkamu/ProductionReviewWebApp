@@ -1029,8 +1029,8 @@ def review_discovered_cause(cause_id: int, payload: DiscoveredCauseReview,
         raise HTTPException(404, "Discovered cause not found")
     if cause["investigation_status"] == "CLOSED":
         raise HTTPException(409, "Closed FTA investigations cannot be changed")
-    if cause["status"] != "PROPOSED":
-        raise HTTPException(409, "This discovered cause has already been reviewed")
+    if cause["status"] not in {"PROPOSED", "ACCEPTED"}:
+        raise HTTPException(409, "This discovered cause has already been resolved")
     if payload.status == "CONFIRMED" and not (payload.verification_method or "").strip():
         raise HTTPException(422, "A verification method is required to confirm a discovered root cause")
     db.execute(text("""
@@ -1109,6 +1109,12 @@ def close_investigation(investigation_id: int, payload: CloseRequest,
     """), {"id": investigation_id}).scalar_one()
     if linked_open:
         raise HTTPException(422, "Complete linked corrective actions before closing the investigation")
+    unresolved_causes = db.execute(text("""
+        SELECT COUNT(*) FROM fta_discovered_causes
+        WHERE investigation_id=:id AND status IN ('PROPOSED','ACCEPTED')
+    """), {"id": investigation_id}).scalar_one()
+    if unresolved_causes:
+        raise HTTPException(409, "Resolve every cause discovered during action implementation before closing this investigation.")
     now = datetime.utcnow()
     db.execute(text("""
         UPDATE fta_investigations SET status='CLOSED', closure_remarks=:remarks,
