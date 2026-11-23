@@ -19,6 +19,7 @@ from ..db import get_db
 from ..config import get_settings
 from ..services.file_security import UploadSecurityError, safe_original_name, safe_path, save_limited_stream, validate_attachment_file
 from ..models import Action, ActionContext, ActionHistory, User
+from ..services.action_notifications import send_action_chat_notification
 
 router = APIRouter(prefix="/fta", tags=["fault-tree-analysis"])
 
@@ -907,6 +908,30 @@ def create_fta_action(investigation_id: int, payload: FtaActionCreate,
     })
     db.commit()
     db.refresh(action)
+
+    # Preserve the normal assignment notification for FTA-originated actions.
+    if action.owner_id:
+        try:
+            send_action_chat_notification(
+                db,
+                action,
+                action.owner_id,
+                kind="ACTION_ASSIGNED",
+                event_key=f"action:{action.id}:ASSIGNED:user:{action.owner_id}",
+                message=(
+                    "A corrective action from FTA has been assigned to you. "
+                    "Update implementation progress and evidence in Action Management. "
+                    "The root-cause analysis is recorded in the linked FTA; no separate Why-Why form is required."
+                ),
+            )
+            db.commit()
+        except Exception:
+            import logging
+            db.rollback()
+            logging.getLogger(__name__).exception(
+                "Unable to send FTA action assignment notification for action %s", action.id
+            )
+
     return {
         "success": True,
         "action": {
