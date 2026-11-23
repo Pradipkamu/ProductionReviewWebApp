@@ -23,6 +23,7 @@ from ..models import (
     Product, ProductValueAdditionHistory, ProcessFlowStage, ProcessFlowVersion,
     ReviewActionLink, ReviewPoint, ReviewSession, RouteOperation, RouteVersion,
     SalesPriceHistory, ScheduleRevision, User, Vendor, VendorMovement,
+    FtaActionLink, FtaInvestigation,
 )
 from ..enums import ActionStatus
 from ..services.oee import calculate_oee
@@ -1246,6 +1247,51 @@ def action_performance_report(
         category = a.problem_category or "Unclassified"
         cb = category_b[category]; cb["count"] += 1; cb["open"] += int(not is_closed); cb["closed"] += int(is_closed); cb["gap"] += abs(_value(a.gap_when_raised))
 
+    # FTA-linked actions are a subset of the overall Action Taken Summary.
+    # Resolve them through the explicit link table so legacy/standalone actions
+    # are not classified as FTA merely because of a text category.
+    fta_rows = []
+    if actions:
+        fta_rows = db.execute(
+            select(FtaActionLink, FtaInvestigation)
+            .join(FtaInvestigation, FtaInvestigation.id == FtaActionLink.investigation_id)
+            .where(FtaActionLink.action_id.in_([a.id for a in actions]))
+            .order_by(FtaInvestigation.investigation_no, FtaActionLink.id)
+        ).all()
+
+    fta_action_ids: set[int] = set()
+    fta_details_by_action: dict[int, dict] = {}
+    for link, investigation in fta_rows:
+        action = next((a for a in actions if a.id == link.action_id), None)
+        if action is None:
+            continue
+        fta_action_ids.add(action.id)
+        owner_user = users.get(action.owner_id)
+        fta_details_by_action.setdefault(action.id, {
+            "action_id": action.id,
+            "action_no": action.action_no,
+            "action_description": action.action_description,
+            "status": action.status.value if hasattr(action.status, "value") else str(action.status),
+            "owner": owner_user.full_name if owner_user and owner_user.full_name else (owner_user.username if owner_user else "Unassigned"),
+            "due_date": ist_date(action.due_at).isoformat() if action.due_at else None,
+            "investigation_no": investigation.investigation_no,
+            "investigation_id": investigation.id,
+            "investigation_status": investigation.status,
+            "relationship_type": link.relationship_type,
+        })
+
+    fta_actions = [a for a in actions if a.id in fta_action_ids]
+    fta_closed = sum(1 for a in fta_actions if a.status == ActionStatus.CLOSED)
+    fta_open = len(fta_actions) - fta_closed
+    fta_overdue = sum(
+        1 for a in fta_actions
+        if a.status != ActionStatus.CLOSED and a.due_at and ist_date(a.due_at) < as_of
+    )
+    fta_details = sorted(
+        fta_details_by_action.values(),
+        key=lambda x: (x["due_date"] or "9999-12-31", x["action_no"]),
+    )
+
     monthly = []
     for m in sorted(monthly_b):
         b = monthly_b[m]
@@ -1259,8 +1305,14 @@ def action_performance_report(
     categories.sort(key=lambda x: (-x["count"], x["name"]))
     return {
         "as_of": as_of.isoformat(),
-        "summary": {"raised": len(actions), "closed": closed, "open": open_count, "overdue": overdue, "on_time_closed": on_time, "closure_compliance": closed / len(actions) if actions else None},
+        "summary": {
+            "raised": len(actions), "closed": closed, "open": open_count, "overdue": overdue,
+            "on_time_closed": on_time, "closure_compliance": closed / len(actions) if actions else None,
+            "fta_raised": len(fta_actions), "fta_closed": fta_closed,
+            "fta_open": fta_open, "fta_overdue": fta_overdue,
+        },
         "monthly": monthly, "owners": owners, "categories": categories,
+        "fta_actions": fta_details,
     }
 
 
