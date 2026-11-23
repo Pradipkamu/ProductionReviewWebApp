@@ -767,3 +767,28 @@ button.ghost{color:inherit}
 
 .fta-finding-history{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
 .fta-finding-history summary{cursor:pointer;color:var(--navy);font-size:12px;font-weight:700}
+
+
+/* Printable Fault Tree Analysis investigation report */
+.fta-report-page { max-width: 1180px; margin: 0 auto; }
+.fta-report-cover { display:grid; grid-template-columns:2fr 1fr; gap:24px; padding:28px; margin:16px 0; border:1px solid var(--border); border-radius:14px; background:var(--surface); }
+.fta-report-cover h1 { margin:8px 0; font-size:30px; }
+.fta-report-cover > div:last-child { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; align-content:center; }
+.fta-report-section { margin:16px 0; break-inside:avoid; }
+.fta-report-section h2 { margin-top:0; }
+.fta-report-meta { display:flex; flex-wrap:wrap; gap:10px 22px; padding:12px 0; }
+.fta-report-tree-node { border-left:2px solid var(--border); padding:7px 0 7px 12px; margin-top:6px; }
+.fta-report-tree-heading { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.fta-report-tree-heading span { font-size:11px; color:var(--muted); text-transform:uppercase; }
+.fta-report-finding { margin:6px 0 4px 10px; padding:8px 12px; background:var(--surface-secondary); border-radius:8px; }
+.fta-report-finding p { margin:4px 0; }
+.fta-report-cause { border-bottom:1px solid var(--border); padding:10px 0; break-inside:avoid; }
+.fta-report-footer { padding:18px 0; color:var(--muted); font-size:12px; }
+@media print {
+  .fta-report-actions, .sidebar, nav, button, a.button { display:none !important; }
+  .fta-report-page { max-width:none; margin:0; }
+  .fta-report-section, .fta-report-cover { box-shadow:none !important; break-inside:avoid; }
+  .fta-report-section { page-break-inside:auto; }
+  .fta-report-tree-node, .fta-report-cause { break-inside:avoid; }
+  body { background:#fff !important; color:#111 !important; }
+}
