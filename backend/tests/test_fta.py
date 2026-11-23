@@ -277,3 +277,41 @@ def test_fta_action_creation_endpoint_is_registered_separately_from_existing_act
     }
     assert ("/fta/investigations/{investigation_id}/actions/create", ("POST",)) in paths
     assert ("/fta/investigations/{investigation_id}/actions", ("POST",)) in paths
+
+
+def test_action_implementation_discovered_cause_requires_evidence_reference():
+    from pydantic import ValidationError
+    from app.api.fta import DiscoveredCauseCreate
+
+    with pytest.raises(ValidationError):
+        DiscoveredCauseCreate(cause_description="Different fixture alignment")
+    payload = DiscoveredCauseCreate(
+        cause_description="Different fixture alignment",
+        evidence_reference="Trial report TR-2026-11",
+    )
+    assert payload.evidence_reference == "Trial report TR-2026-11"
+
+
+def test_discovered_cause_review_requires_quality_decision_and_remarks():
+    from pydantic import ValidationError
+    from app.api.fta import DiscoveredCauseReview
+
+    with pytest.raises(ValidationError):
+        DiscoveredCauseReview(status="PENDING", review_remarks="Not a valid decision")
+    payload = DiscoveredCauseReview(
+        status="CONFIRMED",
+        review_remarks="Confirmed after repeat trial.",
+        verification_method="Three-piece dimensional validation",
+    )
+    assert payload.status == "CONFIRMED"
+
+
+def test_discovered_cause_endpoints_are_registered():
+    from app.api.fta import router
+
+    paths = {
+        (route.path, tuple(sorted(route.methods or [])))
+        for route in router.routes
+    }
+    assert ("/fta/actions/{action_id}/discovered-causes", ("POST",)) in paths
+    assert ("/fta/discovered-causes/{cause_id}/review", ("POST",)) in paths
