@@ -889,6 +889,7 @@ export default function DailyMeeting() {
  <nav className="quality-view-nav" aria-label="Daily Meeting workspace">{views.map(v=><a key={v.key} href={v.key==='workspace'?'/daily-meeting':`/daily-meeting?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav>
 
 
+    {view==='workspace'&&<>
     {ownerRequests.length > 0 && <section className="panel">
       <div className="panel-title"><div><h2>Requests to join your meeting</h2><p>Approve a colleague’s request to join your active MOM. Their screen will open the shared discussion automatically.</p></div><button className="secondary small" onClick={refreshOwnerRequests}>Refresh</button></div>
       {ownerRequests.map((item: any) => <div className="data-note" key={item.id}>
@@ -1129,7 +1130,9 @@ export default function DailyMeeting() {
       </table></div>
     </section>}
 
-    <section className="panel">
+        </>}
+    {view==='history'&&<>
+<section className="panel">
       <div className="panel-title">
         <div><h2>Meeting History</h2><p>Open a closed meeting without losing the selected historical session, reopen it to add points, or download its MOM.</p></div>
         <label>Search MOM / date<input value={meetingSearch} onChange={e => setMeetingSearch(e.target.value)} placeholder="MOM number or date" /></label>
@@ -1170,6 +1173,7 @@ export default function DailyMeeting() {
           </table></div> : <p className="muted">No currently overdue actions were found for this meeting. Refresh Meeting History if the count has changed.</p>}
         </section>
       </div>}
-    </section>
+    </section>    </>}
+
   </>
 }
