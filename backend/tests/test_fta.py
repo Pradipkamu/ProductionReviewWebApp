@@ -361,3 +361,28 @@ def test_fta_related_investigation_requires_positive_template_id():
     assert payload.template_id == 7
     with pytest.raises(ValidationError):
         RelatedInvestigationCreate(template_id=0)
+
+
+
+def test_fta_recurrence_request_schemas_require_reasons_and_quality_decision():
+    from pydantic import ValidationError
+    from app.api.fta import RecurrenceCreate, RecurrenceReview
+
+    with pytest.raises(ValidationError):
+        RecurrenceCreate(rejection_id=0, recurrence_reason="short")
+    with pytest.raises(ValidationError):
+        RecurrenceCreate(rejection_id=9, recurrence_reason="no")
+    created = RecurrenceCreate(
+        rejection_id=9,
+        recurrence_reason="Repeated thread damage observed during final inspection",
+        containment_action="Segregate current lot",
+        new_evidence="Inspection photo set 9",
+    )
+    assert created.rejection_id == 9
+    with pytest.raises(ValidationError):
+        RecurrenceReview(classification="PENDING_REVIEW", review_remarks="Waiting")
+    reviewed = RecurrenceReview(
+        classification="SAME_ROOT_CAUSE",
+        review_remarks="Confirmed against the previous FTA evidence and action history.",
+    )
+    assert reviewed.classification == "SAME_ROOT_CAUSE"
