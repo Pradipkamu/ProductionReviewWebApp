@@ -532,6 +532,9 @@ export default function FTA({me}:{me:any}){
         </label>
         <label>Template name<input value={templateName} onChange={e=>setTemplateName(e.target.value)} placeholder="Machining defect fault tree"/></label>
       </div>
+      <div className="button-row" style={{marginTop:12,marginBottom:12,justifyContent:'flex-start'}}>
+        <button className="secondary" disabled={!baseTemplateId||busy} onClick={async()=>{try{setBusy(true);const t:any=await api('/fta/templates/'+baseTemplateId);setTemplateName(t.name);setTemplateTree(t.tree);setTemplateDraftId(t.status==='DRAFT'?t.id:null)}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Load selected tree</button>
+      </div>
       <div className="panel" style={{marginTop:12}}>
         <div className="panel-title"><div><h3>Visual fault-tree designer</h3><p>Build the cause hierarchy using event cards. No JSON editing is required.</p></div><span className="status-pill">Step 3 · Design</span><button type="button" className="secondary small" onClick={()=>setTemplateTree({id:'top_event',label:'Top event',type:'TOP_EVENT',gate:'OR',children:[{id:'cause_1',label:'Main cause',type:'INTERMEDIATE_EVENT',gate:'OR',children:[{id:'cause_1_1',label:'Basic cause',type:'BASIC_EVENT'}]}]})}>Reset tree</button></div>
         <TemplateNodeEditor node={templateTree} root onChange={setTemplateTree}/>
@@ -539,7 +542,6 @@ export default function FTA({me}:{me:any}){
         <p className="muted small">Maximum 8 levels and 300 nodes. Top and intermediate events need child causes. Basic, external and undeveloped events are leaf nodes. Each node receives a unique ID automatically.</p>
       </div>
       <div className="button-row">
-        <button className="secondary" disabled={!baseTemplateId||busy} onClick={async()=>{try{setBusy(true);const t:any=await api('/fta/templates/'+baseTemplateId);setTemplateName(t.name);setTemplateTree(t.tree);setTemplateDraftId(t.status==='DRAFT'?t.id:null)}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Load selected tree</button>
         <button disabled={!baseTemplateId||!templateTree||busy} onClick={async()=>{try{const tree=templateTree;setBusy(true);let result:any;if(templateDraftId){result=await api('/fta/templates/'+templateDraftId,{method:'PUT',body:JSON.stringify({name:templateName,tree})})}else{result=await api('/fta/templates/'+baseTemplateId+'/revisions',{method:'POST',body:JSON.stringify({name:templateName||undefined,tree})});setTemplateDraftId(result.id)}await load();setMessage('Draft template saved. Review and publish it when ready.')}catch(e:any){setError(e instanceof SyntaxError?'Fault tree JSON is invalid.':e.message)}finally{setBusy(false)}}}>Save draft revision</button>
         <button className="secondary" disabled={!templateDraftId||busy} onClick={async()=>{try{setBusy(true);await api('/fta/templates/'+templateDraftId+'/publish',{method:'POST'});setTemplateDraftId(null);await load();setMessage('Template revision published. New investigations will use the published version.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Publish draft</button>
       </div>
