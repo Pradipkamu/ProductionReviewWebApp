@@ -459,31 +459,53 @@ export default function FTA({me}:{me:any}){
         <label>New template defect<select value={newTemplateDefect} onChange={e=>setNewTemplateDefect(e.target.value)}><option value="">Select defect</option>{defects.map(d=><option key={d.code} value={d.code}>{d.category} – {d.name}</option>)}</select></label>
       </div>
       <button className="secondary" disabled={!newTemplateCode||!newTemplateName||!newTemplateOperation||!newTemplateDefect||!templateTree||busy} onClick={async()=>{try{const tree=templateTree;setBusy(true);const created:any=await api('/fta/templates',{method:'POST',body:JSON.stringify({code:newTemplateCode,name:newTemplateName,operation_code:newTemplateOperation,defect_code:newTemplateDefect,tree})});setTemplateDraftId(created.id);setBaseTemplateId(String(created.id));await load();setMessage('New FTA template created as draft. Review and publish it when ready.')}catch(e:any){setError(e instanceof SyntaxError?'Visual fault-tree builder is invalid.':e.message)}finally{setBusy(false)}}}>Create new template draft</button>
-      <details className="fta-event-help panel" style={{marginTop:14,marginBottom:14}}>
-        <summary style={{cursor:'pointer',fontWeight:700}}>FTA event types – meaning and machining examples (Help)</summary>
-        <p className="muted small">Use this guide while building the fault tree. Choose the event type based on what the node represents, not simply how serious the cause is.</p>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Event type</th><th>Meaning</th><th>Machining example</th><th>How to use it</th></tr></thead>
-            <tbody>
-              <tr><td><b>TOP EVENT</b></td><td>The failure or defect being analysed.</td><td>Incorrect thread pitch found during inspection.</td><td>Use one top event as the starting point of the tree.</td></tr>
-              <tr><td><b>INTERMEDIATE EVENT</b></td><td>A contributing event that can be broken into more specific causes.</td><td>Incorrect tool geometry; incorrect machine setting; wrong program or offset.</td><td>Add child causes and select an AND / OR gate.</td></tr>
-              <tr><td><b>BASIC EVENT</b></td><td>A specific cause at the end of the current analysis branch.</td><td>Worn threading insert; incorrect offset value; wrong insert pitch selected.</td><td>Use when the cause is specific enough to investigate and record evidence against.</td></tr>
-              <tr><td><b>EXTERNAL EVENT</b></td><td>An event that originates outside the system boundary being analysed.</td><td>Factory power supply interruption; central compressed-air supply failure; incorrect drawing revision received from an external source.</td><td>Use for an outside influence. State the system boundary clearly.</td></tr>
-              <tr><td><b>UNDEVELOPED EVENT</b></td><td>An event deliberately not broken down further in this tree.</td><td>Servo drive internal failure when electrical/electronic analysis is outside the current investigation scope.</td><td>Use when details are unavailable or outside scope. Record why it was not developed in the investigation.</td></tr>
-            </tbody>
-          </table>
+      <details className="fta-event-help" style={{margin:'18px 0',border:'1px solid var(--border, #d8dee8)',borderRadius:12,background:'var(--panel, #fff)',overflow:'hidden'}}>
+        <summary style={{listStyle:'none',cursor:'pointer',padding:'16px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,background:'var(--panel-soft, #f5f8fc)'}}>
+          <span style={{display:'flex',alignItems:'center',gap:12}}>
+            <span style={{width:38,height:38,display:'grid',placeItems:'center',borderRadius:10,background:'#e8efff',color:'#2457a7',fontSize:19,fontWeight:800}}>i</span>
+            <span><strong style={{display:'block',fontSize:15}}>FTA Event Type Reference</strong><small className="muted">Definitions, machining examples and guidance for building a fault tree</small></span>
+          </span>
+          <span className="muted small">Open guide ▾</span>
+        </summary>
+        <div style={{padding:18}}>
+          <div style={{display:'flex',flexWrap:'wrap',gap:7,marginBottom:16}}>
+            <span className="status-pill">5 event types</span><span className="status-pill">Machining examples</span><span className="status-pill">AND / OR logic</span>
+          </div>
+          <p className="muted small" style={{marginTop:0}}>Select an event type based on the role it plays in the failure sequence. The examples below are illustrative; a suspected cause must still be verified with evidence.</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,260px),1fr))',gap:12}}>
+            {[
+              {type:'TOP EVENT',color:'#7c3aed',tag:'Failure under analysis',meaning:'The unwanted failure or defect that the investigation is trying to explain.',example:'Incorrect thread pitch detected during final inspection.',use:'Start the tree with one clearly described top event.'},
+              {type:'INTERMEDIATE EVENT',color:'#2563eb',tag:'Cause group',meaning:'A contributing event that can be broken down into more specific events.',example:'Tooling issue; machine setting issue; incorrect program or offset.',use:'Add child events and choose an AND or OR gate to describe their relationship.'},
+              {type:'BASIC EVENT',color:'#059669',tag:'Specific cause',meaning:'A specific cause at the end of a branch in the current fault tree.',example:'Worn threading insert; wrong insert pitch; incorrect offset value.',use:'Use when the cause is specific enough to investigate and record evidence against.'},
+              {type:'EXTERNAL EVENT',color:'#d97706',tag:'Outside system boundary',meaning:'An event originating outside the system being analysed, but capable of contributing to its failure.',example:'Factory power interruption; central compressed-air failure; incorrect drawing revision received from outside the production process.',use:'Use for an outside influence. Define the system boundary clearly.'},
+              {type:'UNDEVELOPED EVENT',color:'#64748b',tag:'Not expanded in this analysis',meaning:'An event intentionally not broken down further in the current tree.',example:'Servo drive internal failure when detailed electrical analysis is outside the investigation scope.',use:'Use when details are unavailable or outside scope. Record why it was not developed; it may be expanded in a later controlled revision.'}
+            ].map(item=><div key={item.type} style={{border:'1px solid var(--border, #d8dee8)',borderTop:'3px solid '+item.color,borderRadius:10,padding:14,background:'var(--panel, #fff)',display:'flex',flexDirection:'column',gap:8}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}><strong style={{fontSize:13,letterSpacing:'.02em'}}>{item.type}</strong><span style={{fontSize:10,fontWeight:700,color:item.color,background:item.color+'14',padding:'4px 7px',borderRadius:20}}>{item.tag}</span></div>
+              <div><small className="muted" style={{fontWeight:700}}>MEANING</small><div style={{fontSize:13,lineHeight:1.5,marginTop:3}}>{item.meaning}</div></div>
+              <div style={{padding:'9px 10px',borderRadius:7,background:'var(--panel-soft, #f5f8fc)'}}><small className="muted" style={{fontWeight:700}}>MACHINING EXAMPLE</small><div style={{fontSize:13,lineHeight:1.5,marginTop:3}}>{item.example}</div></div>
+              <div><small className="muted" style={{fontWeight:700}}>WHEN TO USE</small><div style={{fontSize:13,lineHeight:1.5,marginTop:3}}>{item.use}</div></div>
+            </div>)}
+          </div>
+          <div style={{marginTop:20}}>
+            <div style={{marginBottom:10}}><h4 style={{margin:'0 0 3px'}}>Worked example · Incorrect thread pitch</h4><p className="muted small" style={{margin:0}}>Illustrative structure showing how different event types can appear in one analysis.</p></div>
+            <div style={{border:'1px solid var(--border, #d8dee8)',borderRadius:10,padding:14,background:'var(--panel-soft, #f8fafc)',display:'grid',gap:9}}>
+              <div style={{maxWidth:520,width:'100%',margin:'0 auto',padding:'11px 14px',borderRadius:8,borderLeft:'4px solid #7c3aed',background:'var(--panel, #fff)',boxShadow:'0 1px 3px #0000000a'}}><small style={{color:'#7c3aed',fontWeight:800}}>TOP EVENT</small><div style={{fontWeight:700,fontSize:14}}>Incorrect thread pitch detected</div></div>
+              <div style={{textAlign:'center',fontSize:12,fontWeight:700,color:'var(--muted, #64748b)'}}>↓ OR · any one contributing path may lead to the top event</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,190px),1fr))',gap:9}}>
+                <div style={{padding:11,borderRadius:8,borderLeft:'4px solid #2563eb',background:'var(--panel, #fff)'}}><small style={{color:'#2563eb',fontWeight:800}}>INTERMEDIATE EVENT</small><div style={{fontWeight:700,fontSize:13}}>Tooling / setting / program issue</div><div style={{fontSize:12,marginTop:5}}>OR gate → worn insert, wrong insert pitch, incorrect offset</div></div>
+                <div style={{padding:11,borderRadius:8,borderLeft:'4px solid #d97706',background:'var(--panel, #fff)'}}><small style={{color:'#d97706',fontWeight:800}}>EXTERNAL EVENT</small><div style={{fontWeight:700,fontSize:13}}>Incorrect drawing revision supplied</div><div style={{fontSize:12,marginTop:5}}>Originates outside the production process being analysed</div></div>
+                <div style={{padding:11,borderRadius:8,borderLeft:'4px solid #64748b',background:'var(--panel, #fff)'}}><small style={{color:'#64748b',fontWeight:800}}>UNDEVELOPED EVENT</small><div style={{fontWeight:700,fontSize:13}}>CNC controller internal fault</div><div style={{fontSize:12,marginTop:5}}>Refer to specialist analysis; not expanded in this tree</div></div>
+              </div>
+              <div style={{padding:'9px 11px',borderRadius:8,background:'#05966912',borderLeft:'4px solid #059669',fontSize:12}}><b style={{color:'#059669'}}>BASIC EVENT examples:</b> Worn threading insert · Incorrect pitch insert selected · Wrong offset entered</div>
+            </div>
+            <p className="muted small" style={{margin:'8px 0 0'}}>The example does not assert that any listed cause is responsible. Investigate and confirm causes using actual measurements, records and evidence.</p>
+          </div>
+          <div style={{marginTop:16,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,220px),1fr))',gap:10}}>
+            <div style={{padding:12,border:'1px solid var(--border, #d8dee8)',borderRadius:8}}><strong style={{fontSize:13}}>OR gate</strong><p className="muted small" style={{margin:'5px 0 0'}}>Any one of the child events is sufficient to cause the parent event.</p></div>
+            <div style={{padding:12,border:'1px solid var(--border, #d8dee8)',borderRadius:8}}><strong style={{fontSize:13}}>AND gate</strong><p className="muted small" style={{margin:'5px 0 0'}}>All listed child events must occur together to cause the parent event.</p></div>
+          </div>
+          <p className="muted small" style={{margin:'14px 0 0'}}>Tip: Use Basic Events for specific investigable causes. Use Undeveloped Events only when you intentionally stop the analysis at that point and document the reason.</p>
         </div>
-        <h4 style={{marginBottom:6}}>Example – Incorrect thread pitch</h4>
-        <div style={{display:'grid',gap:8}}>
-          <div style={{borderLeft:'4px solid #7c3aed',padding:'7px 10px',background:'var(--panel-soft, #f5f8fc)'}}><b>TOP EVENT:</b> Incorrect thread pitch detected</div>
-          <div style={{marginLeft:14,borderLeft:'3px solid #2563eb',padding:'7px 10px'}}><b>INTERMEDIATE EVENT (OR):</b> Tooling issue / Machine setting issue / Program issue</div>
-          <div style={{marginLeft:28,borderLeft:'3px solid #059669',padding:'7px 10px'}}><b>BASIC EVENT:</b> Worn insert / Incorrect pitch insert / Wrong offset entered</div>
-          <div style={{marginLeft:14,borderLeft:'3px solid #d97706',padding:'7px 10px'}}><b>EXTERNAL EVENT:</b> Incorrect drawing revision supplied to production</div>
-          <div style={{marginLeft:14,borderLeft:'3px solid #64748b',padding:'7px 10px'}}><b>UNDEVELOPED EVENT:</b> CNC controller internal fault (refer to specialist analysis)</div>
-        </div>
-        <p className="muted small">Note: This is an illustrative example, not a pre-approved root cause. Investigate each suspected cause and confirm it with evidence. External and undeveloped events are leaf nodes in this builder. An undeveloped event can be expanded later through a controlled template revision if more detail becomes available.</p>
-        <p className="muted small"><b>Logic gates:</b> OR means any one child event can lead to its parent event. AND means all listed child events must occur together for the parent event.</p>
       </details>
       <div className="fta-create-grid">
         <label>Base template
