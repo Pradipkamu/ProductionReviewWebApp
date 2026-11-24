@@ -36,17 +36,24 @@ function TemplateNodeEditor({node,onChange,onRemove,onRemoveDisabled=false,depth
         <span style={{display:'flex',alignItems:'center',gap:8}}><i style={{width:9,height:9,borderRadius:3,background:nodeConnectorColor(node.type)}}/><strong style={{fontSize:12,letterSpacing:'.04em'}}>{root?'ROOT EVENT':eventLabel}</strong>{isBranch&&<span className="status-pill">{node.gate||'OR'} GATE</span>}</span>
         {!root&&<button type="button" className="secondary small" onClick={onRemove} disabled={onRemoveDisabled}>Remove event</button>}
       </div>
-      <div style={{padding:13,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,260px),1fr))',gap:12,alignItems:'end'}}>
-        <label style={{gridColumn:'1 / -1'}}>Event / cause description<input value={node.label} maxLength={240} onChange={e=>onChange({...node,label:e.target.value})} placeholder="Describe the event clearly"/></label>
-        <label>Event type<select value={node.type} disabled={root} onChange={e=>changeType(e.target.value)}>
-          {root&&<option value="TOP_EVENT">TOP EVENT</option>}
-          <option value="INTERMEDIATE_EVENT">INTERMEDIATE EVENT</option>
-          <option value="BASIC_EVENT">BASIC EVENT</option>
-          <option value="EXTERNAL_EVENT">EXTERNAL EVENT</option>
-          <option value="UNDEVELOPED_EVENT">UNDEVELOPED EVENT</option>
-        </select></label>
-        {isBranch&&<label>Logic relationship<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
-        <label>Requirement / specification <span className="muted small" style={{whiteSpace:'nowrap'}}>(optional)</span><textarea rows={2} maxLength={1200} value={node.requirement||''} onChange={e=>onChange({...node,requirement:e.target.value})} placeholder="Expected condition, drawing tolerance, process parameter or standard…"/></label>
+      <div style={{padding:13,display:'grid',gridTemplateColumns:'minmax(0, 2fr) minmax(0, 3fr)',gap:14,alignItems:'stretch'}}>
+        <div style={{minWidth:0,display:'flex',flexDirection:'column',justifyContent:'flex-start'}}>
+          <label>Event / cause description<input value={node.label} maxLength={240} onChange={e=>onChange({...node,label:e.target.value})} placeholder="Describe the event clearly"/></label>
+          <div className="muted small" style={{marginTop:7}}>Keep the event name short and specific.</div>
+        </div>
+        <div style={{minWidth:0,display:'grid',gridTemplateColumns:'minmax(150px, 0.8fr) minmax(0, 1.6fr)',gap:12,alignItems:'start'}}>
+          <div style={{display:'grid',gap:10,alignContent:'start'}}>
+            <label>Event type<select value={node.type} disabled={root} onChange={e=>changeType(e.target.value)}>
+              {root&&<option value="TOP_EVENT">TOP EVENT</option>}
+              <option value="INTERMEDIATE_EVENT">INTERMEDIATE EVENT</option>
+              <option value="BASIC_EVENT">BASIC EVENT</option>
+              <option value="EXTERNAL_EVENT">EXTERNAL EVENT</option>
+              <option value="UNDEVELOPED_EVENT">UNDEVELOPED EVENT</option>
+            </select></label>
+            {isBranch&&<label>Logic relationship<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
+          </div>
+          <label>Requirement / specification <span className="muted small" style={{whiteSpace:'nowrap'}}>(optional)</span><textarea rows={3} maxLength={1200} value={node.requirement||''} onChange={e=>onChange({...node,requirement:e.target.value})} placeholder="Expected condition, drawing tolerance, process parameter or standard…"/></label>
+        </div>
       </div>
     </div>
     {isBranch&&<div className="fta-template-children" style={{marginLeft:12,paddingLeft:12,borderLeft:'1px dashed var(--border, #cbd5e1)',marginTop:10}}>
