@@ -1458,6 +1458,7 @@ def rejection_actions_by_day(from_date: date, to_date: date, plant: str | None =
     operation_ids = ids(operation_id)
     machine_ids = ids(machine_id)
     shifts = [part.strip() for part in (shift or "").split(",") if part.strip()]
+    plants = [part.strip() for part in (plant or "").split(",") if part.strip()]
 
     query = """
         SELECT DISTINCT a.id, a.action_no, a.problem_description, a.action_description,
@@ -1480,9 +1481,9 @@ def rejection_actions_by_day(from_date: date, to_date: date, plant: str | None =
         WHERE q.rejection_date BETWEEN :from_date AND :to_date
     """
     params: dict[str, Any] = {"from_date": from_date, "to_date": to_date}
-    if plant:
-        query += " AND COALESCE(q.plant, p.plant)=:plant"
-        params["plant"] = plant
+    if plants:
+        query += " AND COALESCE(q.plant, p.plant) = ANY(:plants)"
+        params["plants"] = plants
     if product_ids:
         query += " AND q.product_id = ANY(:product_ids)"
         params["product_ids"] = product_ids
