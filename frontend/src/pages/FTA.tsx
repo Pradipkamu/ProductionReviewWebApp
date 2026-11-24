@@ -58,6 +58,7 @@ export default function FTA({me}:{me:any}){
   const [recurrenceContainment,setRecurrenceContainment]=useState('')
   const [recurrenceEvidence,setRecurrenceEvidence]=useState('')
   const [relatedTemplateId,setRelatedTemplateId]=useState<Record<number,string>>({})
+  const [upgradeTemplateId,setUpgradeTemplateId]=useState('')
   const [actionId,setActionId]=useState('')
   const [actionRelationship,setActionRelationship]=useState('CORRECTIVE')
   const [newActionDescription,setNewActionDescription]=useState('Implement corrective action for confirmed FTA root cause')
@@ -204,6 +205,24 @@ export default function FTA({me}:{me:any}){
       })})
       await load();await loadDetail(result.id);setSearchParams({view:'register',investigation_id:String(result.id)});setMessage(`Investigation ${result.investigation_no} created. You can now continue the FTA analysis.`)
     }catch(e:any){setError(e.message||'Unable to create investigation.')}
+    finally{setBusy(false)}
+  }
+  async function upgradeTemplateVersion(){
+    if(!detail||!upgradeTemplateId)return
+    const target=templates.find((t:any)=>String(t.id)===upgradeTemplateId)
+    if(!target)return
+    const reason=window.prompt(`Upgrade ${detail.template_snapshot?.template_code||''} from V${detail.template_version||detail.template_snapshot?.template_version||'?'} to V${target.version}. Enter the reason (required):`)
+    if(!reason||reason.trim().length<5)return
+    setBusy(true);setError('');setMessage('')
+    try{
+      await api(`/fta/investigations/${detail.id}/template-version`,{
+        method:'POST',body:JSON.stringify({template_id:Number(upgradeTemplateId),reason:reason.trim()})
+      })
+      setUpgradeTemplateId('')
+      await loadDetail(detail.id,true)
+      await load()
+      setMessage(`FTA template upgraded to version ${target.version}. Existing findings and the previous template snapshot are retained in the audit history.`)
+    }catch(e:any){setError(e.message||'Unable to upgrade FTA template version.')}
     finally{setBusy(false)}
   }
   async function saveFinding(){
@@ -412,6 +431,17 @@ export default function FTA({me}:{me:any}){
 
     {view==='register'&&detail&&tree&&<section className="panel fta-workspace">
       <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p>{detail.template_snapshot?.related_to_investigation_id&&<p className="muted small">Related to original FTA <a href={`/fta?view=register&investigation_id=${detail.template_snapshot.related_to_investigation_id}`}>{detail.template_snapshot.related_to_investigation_no||('#'+detail.template_snapshot.related_to_investigation_id)}</a></p>}</div><div className="button-row"><a className="button secondary" href={'/fta/report/'+detail.id}>FTA report</a><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div></div>
+      {['OPEN','IN_PROGRESS'].includes(detail.status)&&!confirmedRootCause&&<div className="fta-template-upgrade panel">
+        <div className="panel-title"><div><h3>FTA template version</h3><p>Only a newer published version of this same template can be applied. Root-cause-confirmed, verified and closed investigations cannot be upgraded.</p></div><strong>Current: V{detail.template_version||detail.template_snapshot?.template_version||'—'}</strong></div>
+        <div className="button-row">
+          <select value={upgradeTemplateId} onChange={e=>setUpgradeTemplateId(e.target.value)} disabled={busy}>
+            <option value="">Select newer published version</option>
+            {templates.filter((t:any)=>t.status==='PUBLISHED'&&t.code===detail.template_snapshot?.template_code&&Number(t.version)>Number(detail.template_version||detail.template_snapshot?.template_version||0)).map((t:any)=><option key={t.id} value={t.id}>{t.name} · V{t.version}</option>)}
+          </select>
+          <button type="button" className="secondary" disabled={!upgradeTemplateId||busy} onClick={upgradeTemplateVersion}>Upgrade template version</button>
+        </div>
+        {!templates.some((t:any)=>t.status==='PUBLISHED'&&t.code===detail.template_snapshot?.template_code&&Number(t.version)>Number(detail.template_version||detail.template_snapshot?.template_version||0))&&<p className="muted small">No newer published version is currently available.</p>}
+      </div>}
       <div className="fta-workspace-grid">
         <div className="fta-tree-panel" id="fta-section-fault-tree">
           <h3>Fault tree</h3>
