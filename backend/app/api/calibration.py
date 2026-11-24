@@ -912,7 +912,7 @@ def issue_or_transfer_instrument(instrument_id: int, data: InstrumentLocationTra
     """), {"id": instrument_id}).mappings().first()
     if not instrument:
         raise HTTPException(404, "Instrument not found")
-    if instrument["status"] in GAUGE_BLOCKED_STATUSES:
+    if data.transaction_type != "RETURN" and instrument["status"] in GAUGE_BLOCKED_STATUSES:
         raise HTTPException(409, "Gauge is blocked from issue/transfer while status is " + instrument["status"])
     destination = db.execute(text("""
         SELECT id,name,plant_name,department FROM calibration_locations
