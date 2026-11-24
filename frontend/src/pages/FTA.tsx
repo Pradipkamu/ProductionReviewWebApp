@@ -344,7 +344,9 @@ export default function FTA({me}:{me:any}){
             const targets=['fta-section-investigation','fta-section-fault-tree','fta-section-root-cause','fta-section-actions','fta-section-action-review','fta-section-closure']
             return <article className={`fta-process-step ${step.state}`} key={step.title}>
               <div className="fta-process-marker">{step.state==='completed'?'✓':index+1}</div>
-              <div className="fta-process-copy"><div className="fta-process-heading"><a className="fta-process-link" href={`#${targets[index]}`}>{step.title}</a><span className={`fta-process-status ${step.state}`}>{step.state==='completed'?'Completed':step.state==='in-progress'?'In progress':'Pending'}</span></div><p>{step.description}</p><a className="fta-process-update-link" href={`#${targets[index]}`}>Go to section to update →</a></div>
+              <div className="fta-process-copy"><div className="fta-process-heading"><a className="fta-process-link" href={index===4&&requiredActions[0]?(`/actions?view=register&action_id=${requiredActions[0].id}`):`#${targets[index]}`}>{step.title}</a><span className={`fta-process-status ${step.state}`}>{step.state==='completed'?'Completed':step.state==='in-progress'?'In progress':'Pending'}</span></div><p>{step.description}</p>
+                {index===4&&requiredActions.length>0?<div className="fta-process-action-links">{requiredActions.map((action:any)=><a className="fta-process-update-link" key={action.id} href={`/actions?view=register&action_id=${action.id}`}>Update {action.action_no} action plan →</a>)}</div>:<a className="fta-process-update-link" href={`#${targets[index]}`}>{index===4?'Review discovered causes →':'Go to section to update →'}</a>}
+              </div>
             </article>
           })}
         </div>
