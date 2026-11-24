@@ -651,13 +651,21 @@ def create_investigation(payload: InvestigationCreate, db: Session = Depends(get
     if payload.owner_id and not db.execute(text("SELECT id FROM users WHERE id=:id AND is_active=true"),
                                            {"id": payload.owner_id}).first():
         raise HTTPException(422, "Selected investigation owner is not active")
+    # One Quality Rejection can be the primary trigger for only one FTA.
+    # Later rejection rows are added to the original investigation as recurrence
+    # records; changing template/version must not create a second primary FTA.
     existing = db.execute(text("""
-        SELECT id, investigation_no FROM fta_investigations
-        WHERE rejection_id=:rejection_id AND template_id=:template_id AND status <> 'CLOSED'
+        SELECT id, investigation_no, status FROM fta_investigations
+        WHERE rejection_id=:rejection_id
         ORDER BY id DESC LIMIT 1
-    """), {"rejection_id": payload.rejection_id, "template_id": payload.template_id}).mappings().first()
+    """), {"rejection_id": payload.rejection_id}).mappings().first()
     if existing:
-        raise HTTPException(409, detail=f"An open investigation already exists: {existing['investigation_no']}")
+        raise HTTPException(
+            409,
+            detail=f"Quality Rejection #{payload.rejection_id} is already linked to "
+                   f"{existing['investigation_no']}. Add a later rejection from the "
+                   "original FTA's Recurrence Management section instead."
+        )
     tree = _json(template["tree_json"], {})
     snapshot = {
         "template_id": template["id"], "template_code": template["code"],
@@ -1638,9 +1646,18 @@ def create_recurrence(investigation_id: int, payload: dict,
         original["product_id"], original["phenomenon_id"]
     ):
         raise HTTPException(422, "A recurrence must match the original part and shared phenomenon")
-    classification = str(payload.get("classification") or "PENDING_REVIEW").upper()
-    if classification not in {"PENDING_REVIEW", "SAME_ROOT_CAUSE", "DIFFERENT_ROOT_CAUSE", "UNRELATED"}:
-        raise HTTPException(422, "Invalid recurrence classification")
+    # Initial linkage is always pending. Quality owns the final classification.
+    classification = "PENDING_REVIEW"
+    already_primary = db.execute(text("""
+        SELECT 1 FROM fta_investigations WHERE rejection_id=:rejection_id
+    """), {"rejection_id": rejection_id}).first()
+    if already_primary:
+        raise HTTPException(409, "This rejection already has a primary FTA investigation; it cannot be linked again as a recurrence")
+    already_recurrence = db.execute(text("""
+        SELECT 1 FROM fta_recurrences WHERE rejection_id=:rejection_id
+    """), {"rejection_id": rejection_id}).first()
+    if already_recurrence:
+        raise HTTPException(409, "This rejection is already linked to an FTA recurrence")
     previous = db.execute(text("""
         SELECT string_agg(DISTINCT a.status, ', ') AS action_status
         FROM fta_action_links l JOIN actions a ON a.id=l.action_id
