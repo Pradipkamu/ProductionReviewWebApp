@@ -52,7 +52,7 @@ function TemplateNodeEditor({node,onChange,onRemove,onRemoveDisabled=false,depth
             </select></label>
             {isBranch&&<label>Logic relationship<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
           </div>
-          <label>Requirement / specification <span className="muted small" style={{whiteSpace:'nowrap'}}>(optional)</span><textarea rows={3} maxLength={1200} value={node.requirement||''} onChange={e=>onChange({...node,requirement:e.target.value})} placeholder="Expected condition, drawing tolerance, process parameter or standard…"/></label>
+          <label><span style={{display:'flex',alignItems:'baseline',gap:6,flexWrap:'nowrap'}}>Requirement / Specification <span className="muted small" style={{whiteSpace:'nowrap'}}>(Optional)</span></span><textarea rows={3} maxLength={1200} value={node.requirement||''} onChange={e=>onChange({...node,requirement:e.target.value})} placeholder="Expected condition, drawing tolerance, process parameter or standard…"/></label>
         </div>
       </div>
     </div>
