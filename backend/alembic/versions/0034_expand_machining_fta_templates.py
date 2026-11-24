@@ -360,6 +360,12 @@ def upgrade():
             operation_code_for_causes = operation_code
 
         for defect_code, defect_name in defect_names.items():
+            # Only expand the 14 seeded defect types covered by this reviewed
+            # catalogue. Leave later user-created defect types unchanged.
+            if defect_code not in DEFECT_CAUSES:
+                skipped += 1
+                continue
+
             prefixes = operation_prefixes.get(operation_code, (operation_code,))
             source = None
             for prefix in prefixes:
