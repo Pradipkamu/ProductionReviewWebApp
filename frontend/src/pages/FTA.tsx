@@ -272,16 +272,17 @@ export default function FTA({me}:{me:any}){
     }catch(e:any){setError(e.message||'Unable to create investigation.')}
     finally{setBusy(false)}
   }
-  async function upgradeTemplateVersion(){
-    if(!detail||!upgradeTemplateId)return
-    const target=templates.find((t:any)=>String(t.id)===upgradeTemplateId)
+  async function upgradeTemplateVersion(targetId?:string){
+    const selectedTargetId=targetId||upgradeTemplateId
+    if(!detail||!selectedTargetId)return
+    const target=templates.find((t:any)=>String(t.id)===selectedTargetId)
     if(!target)return
     const reason=window.prompt(`Upgrade ${detail.template_snapshot?.template_code||''} from V${detail.template_version||detail.template_snapshot?.template_version||'?'} to V${target.version}. Enter the reason (required):`)
     if(!reason||reason.trim().length<5)return
     setBusy(true);setError('');setMessage('')
     try{
       await api(`/fta/investigations/${detail.id}/template-version`,{
-        method:'POST',body:JSON.stringify({template_id:Number(upgradeTemplateId),reason:reason.trim()})
+        method:'POST',body:JSON.stringify({template_id:Number(selectedTargetId),reason:reason.trim()})
       })
       setUpgradeTemplateId('')
       await loadDetail(detail.id,true)
@@ -556,20 +557,17 @@ export default function FTA({me}:{me:any}){
 
     {view==='register'&&detail&&tree&&<section className="panel fta-workspace">
       <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p>{detail.template_snapshot?.related_to_investigation_id&&<p className="muted small">Related to original FTA <a href={`/fta?view=register&investigation_id=${detail.template_snapshot.related_to_investigation_id}`}>{detail.template_snapshot.related_to_investigation_no||('#'+detail.template_snapshot.related_to_investigation_id)}</a></p>}</div><div className="button-row"><a className="button secondary" href={'/fta/report/'+detail.id}>FTA report</a><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div></div>
-      {['OPEN','IN_PROGRESS'].includes(detail.status)&&!confirmedRootCause&&<div className="fta-template-upgrade panel">
-        <div className="panel-title"><div><h3>FTA template version</h3><p>Only a newer published version of this same template can be applied. Root-cause-confirmed, verified and closed investigations cannot be upgraded.</p></div><strong>Current: V{detail.template_version||detail.template_snapshot?.template_version||'—'}</strong></div>
-        <div className="button-row">
-          <select value={upgradeTemplateId} onChange={e=>setUpgradeTemplateId(e.target.value)} disabled={busy}>
-            <option value="">Select newer published version</option>
-            {templates.filter((t:any)=>t.status==='PUBLISHED'&&t.code===detail.template_snapshot?.template_code&&Number(t.version)>Number(detail.template_version||detail.template_snapshot?.template_version||0)).map((t:any)=><option key={t.id} value={t.id}>{t.name} · V{t.version}</option>)}
-          </select>
-          <button type="button" className="secondary" disabled={!upgradeTemplateId||busy} onClick={upgradeTemplateVersion}>Upgrade template version</button>
-        </div>
-        {!templates.some((t:any)=>t.status==='PUBLISHED'&&t.code===detail.template_snapshot?.template_code&&Number(t.version)>Number(detail.template_version||detail.template_snapshot?.template_version||0))&&<p className="muted small">No newer published version is currently available.</p>}
-      </div>}
       <div className="fta-workspace-grid">
         <div className="fta-tree-panel" id="fta-section-fault-tree">
-          <h3>Fault tree</h3>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap',marginBottom:8}}>
+            <h3 style={{margin:0}}>Fault tree</h3>
+            {['OPEN','IN_PROGRESS'].includes(detail.status)&&!confirmedRootCause&&(()=>{
+              const currentVersion=Number(detail.template_version||detail.template_snapshot?.template_version||0)
+              const newer=templates.filter((t:any)=>t.status==='PUBLISHED'&&t.code===detail.template_snapshot?.template_code&&Number(t.version)>currentVersion).sort((a:any,b:any)=>Number(b.version)-Number(a.version))
+              const latest=newer[0]
+              return latest?<button type="button" className="secondary small" disabled={busy} onClick={()=>upgradeTemplateVersion(String(latest.id))}>Revise Template to New Version · V{latest.version}</button>:null
+            })()}
+          </div>
           <p className="muted small">Select a cause node to record evidence and investigation status. Gate labels describe logical relationships; they do not prove causality.</p>
           <TreeNode node={tree} findings={detail.findings||[]} selected={selectedNode} onSelect={setSelectedNode}/>
         </div>
