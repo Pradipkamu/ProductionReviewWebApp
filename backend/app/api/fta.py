@@ -1462,6 +1462,8 @@ def rejection_actions_by_day(from_date: date, to_date: date, plant: str | None =
     query = """
         SELECT DISTINCT a.id, a.action_no, a.problem_description, a.action_description,
                a.status, a.due_at, a.action_type, a.owner_id, u.full_name AS owner_name,
+               CASE WHEN a.status <> 'CLOSED' AND a.due_at IS NOT NULL AND a.due_at::date < CURRENT_DATE
+                    THEN CURRENT_DATE - a.due_at::date ELSE 0 END AS overdue_days,
                i.id AS investigation_id, i.investigation_no, i.operation_code,
                q.id AS rejection_id, q.rejection_date AS date, q.shift,
                COALESCE(q.plant, p.plant) AS plant, q.product_id, q.phenomenon_id,
@@ -1488,7 +1490,7 @@ def rejection_actions_by_day(from_date: date, to_date: date, plant: str | None =
         query += " AND q.phenomenon_id = ANY(:phenomenon_ids)"
         params["phenomenon_ids"] = phenomenon_ids
     if operation_ids:
-        query += " AND i.operation_code = ANY(:operation_ids)"
+        query += " AND (q.detection_route_operation_id = ANY(:operation_ids) OR q.responsible_route_operation_id = ANY(:operation_ids))"
         params["operation_ids"] = operation_ids
     if machine_ids:
         query += " AND COALESCE(i.machine_id, q.machine_id) = ANY(:machine_ids)"
