@@ -110,7 +110,7 @@ export default function FTA({me}:{me:any}){
     setError('')
     try{
       const result:any=await api(`/fta/investigations/${id}`)
-      result.recurrences=await api(`/fta/investigations/${id}/recurrences`).catch(()=>[])
+      if(!Array.isArray(result.recurrences))result.recurrences=await api(`/fta/investigations/${id}/recurrences`).catch(()=>[])
       setDetail(result);setSelectedId(id);setSelectedNode(preserveNode&&selectedNode&&result.findings?.some((f:Finding)=>f.node_id===selectedNode)?selectedNode:(result.template_snapshot?.tree?.id||''))
       setSummary(result.summary||'');setOccurrenceSummary(result.occurrence_cause_summary||'');setEscapeSummary(result.escape_cause_summary||'')
     }catch(e:any){setError(e.message||'Unable to load investigation.')}
