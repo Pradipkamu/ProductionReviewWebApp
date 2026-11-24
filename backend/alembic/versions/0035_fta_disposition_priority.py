@@ -1,13 +1,13 @@
 """Add not-applicable disposition and finding priority to FTA findings.
 
-Revision ID: 0035_fta_disposition_priority
-Revises: 0034_expand_machining_fta_templates
+Revision ID: 0035_fta_disp_priority
+Revises: 0034_fta_templates_v2
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0035_fta_disposition_priority"
-down_revision = "0034_expand_machining_fta_templates"
+revision = "0035_fta_disp_priority"
+down_revision = "0034_fta_templates_v2"
 branch_labels = None
 depends_on = None
 
