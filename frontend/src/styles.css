@@ -779,6 +779,13 @@ button.ghost{color:inherit}
 .fta-process-status.in-progress{color:#b45309}
 .fta-process-status.pending{color:#64748b}
 .fta-process-copy p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
+
+.fta-process-link{color:var(--navy);font-size:13px;font-weight:800;text-decoration:none}
+.fta-process-link:hover{text-decoration:underline;color:var(--primary,#245ca6)}
+.fta-process-update-link{display:inline-block;margin-top:7px;color:var(--primary,#245ca6);font-size:11px;font-weight:700;text-decoration:none}
+.fta-process-update-link:hover{text-decoration:underline}
+#fta-section-investigation,#fta-section-fault-tree,#fta-section-root-cause,#fta-section-actions,#fta-section-action-review,#fta-section-closure{scroll-margin-top:90px}
+
 @media(max-width:700px){.fta-process-list{grid-template-columns:1fr}.fta-process-flow{padding:12px}.fta-process-flow .panel-title{flex-direction:column}}
 
 .fta-history{border:1px solid var(--line);border-radius:10px;padding:14px;margin:16px 0;background:#fff}
