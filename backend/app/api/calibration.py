@@ -1118,3 +1118,200 @@ def calibration_history_card(instrument_id: int, db: Session = Depends(get_db), 
       WHERE e.instrument_id=:id ORDER BY e.calibration_date DESC,e.id DESC
     """), {"id": instrument_id}).mappings().all()]
     return {"instrument": dict(instrument), "scope": scope, "events": events}
+
+
+# ---------------------------------------------------------------------------
+# Inspection measurement capture. Gauge state is revalidated by the API at
+# submission time; client-side filtering is never treated as authorization.
+# ---------------------------------------------------------------------------
+from decimal import Decimal
+from pydantic import Field
+
+
+class InspectionCharacteristicIn(BaseModel):
+    product_id: int
+    operation_id: int | None = None
+    characteristic_code: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=2, max_length=180)
+    nominal_value: Decimal
+    lower_tolerance: Decimal
+    upper_tolerance: Decimal
+    unit: str = Field(min_length=1, max_length=40)
+    sample_size: int = Field(default=1, ge=1, le=100)
+    control_plan_reference: str | None = None
+    special_characteristic: str | None = None
+
+
+class InspectionMeasurementIn(BaseModel):
+    inspection_date: date
+    product_id: int
+    operation_id: int | None = None
+    characteristic_id: int
+    instrument_id: int
+    lot_reference: str | None = Field(default=None, max_length=120)
+    machine_reference: str | None = Field(default=None, max_length=120)
+    shift: str | None = Field(default=None, max_length=40)
+    operator_name: str | None = Field(default=None, max_length=120)
+    measured_values: list[Decimal] = Field(min_length=1, max_length=100)
+    remarks: str | None = None
+
+
+@router.post("/inspection/characteristics")
+def create_inspection_characteristic(data: InspectionCharacteristicIn,
+                                     db: Session = Depends(get_db),
+                                     user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    if not (data.lower_tolerance <= data.nominal_value <= data.upper_tolerance):
+        raise HTTPException(422, "Nominal value must be between lower and upper tolerance")
+    product = db.execute(text("SELECT id FROM products WHERE id=:id AND is_active=true"),
+                         {"id": data.product_id}).first()
+    if not product:
+        raise HTTPException(422, "Select an active product")
+    if data.operation_id is not None:
+        operation = db.execute(text("SELECT id FROM operations WHERE id=:id AND is_active=true"),
+                               {"id": data.operation_id}).first()
+        if not operation:
+            raise HTTPException(422, "Select an active operation")
+    try:
+        result = db.execute(text("""INSERT INTO inspection_characteristics
+          (product_id,operation_id,characteristic_code,name,nominal_value,lower_tolerance,
+           upper_tolerance,unit,sample_size,control_plan_reference,special_characteristic,created_by)
+          VALUES (:product_id,:operation_id,:code,:name,:nominal,:lower_tol,:upper_tol,
+                  :unit,:sample_size,:cp,:special,:user_id) RETURNING id"""),
+          {"product_id": data.product_id, "operation_id": data.operation_id,
+           "code": data.characteristic_code.strip(), "name": data.name.strip(),
+           "nominal": data.nominal_value, "lower_tol": data.lower_tolerance,
+           "upper_tol": data.upper_tolerance, "unit": data.unit.strip(),
+           "sample_size": data.sample_size, "cp": data.control_plan_reference,
+           "special": data.special_characteristic, "user_id": user.id}).scalar_one()
+        db.commit()
+        return {"id": result, "status": "ACTIVE"}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "This characteristic code already exists for the selected product and operation")
+
+
+@router.get("/inspection/characteristics")
+def list_inspection_characteristics(product_id: int | None = None,
+                                    operation_id: int | None = None,
+                                    db: Session = Depends(get_db),
+                                    user=Depends(get_current_user)):
+    q = """SELECT c.*,p.code AS product_code,p.name AS product_name,o.code AS operation_code,
+                  o.name AS operation_name
+             FROM inspection_characteristics c
+             JOIN products p ON p.id=c.product_id
+             LEFT JOIN operations o ON o.id=c.operation_id
+            WHERE c.is_active=true"""
+    params = {}
+    if product_id is not None:
+        q += " AND c.product_id=:product_id"; params["product_id"] = product_id
+    if operation_id is not None:
+        q += " AND (c.operation_id=:operation_id OR c.operation_id IS NULL)"; params["operation_id"] = operation_id
+    q += " ORDER BY p.name,o.name,c.name"
+    return [dict(row) for row in db.execute(text(q), params).mappings().all()]
+
+
+@router.post("/inspection/measurements")
+def create_inspection_measurement(data: InspectionMeasurementIn,
+                                  db: Session = Depends(get_db),
+                                  user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY", "PRODUCTION"})
+    characteristic = db.execute(text("""SELECT * FROM inspection_characteristics
+        WHERE id=:id AND product_id=:product_id AND is_active=true"""),
+        {"id": data.characteristic_id, "product_id": data.product_id}).mappings().first()
+    if not characteristic:
+        raise HTTPException(422, "Characteristic is inactive or does not belong to the selected product")
+    if characteristic["operation_id"] is not None and characteristic["operation_id"] != data.operation_id:
+        raise HTTPException(422, "Characteristic is not defined for the selected operation")
+    if len(data.measured_values) != int(characteristic["sample_size"]):
+        raise HTTPException(422, f"Enter exactly {characteristic['sample_size']} sample measurement(s)")
+    gauge = db.execute(text("""SELECT id,instrument_code,name,equipment_type,serial_number,status,
+            next_due_date,calibration_interval_days,current_location_id
+        FROM calibration_instruments WHERE id=:id AND is_active=true FOR UPDATE"""),
+        {"id": data.instrument_id}).mappings().first()
+    if not gauge:
+        raise HTTPException(422, "Selected gauge is not active or does not exist")
+    today = date.today()
+    due = gauge["next_due_date"]
+    status = str(gauge["status"] or "").upper()
+    if status not in {"ACTIVE", "CALIBRATED"} or due is None or due < today:
+        raise HTTPException(409, f"Gauge cannot be used: status={status or 'UNKNOWN'}, due_date={due}")
+    values = []
+    passed = True
+    lower = Decimal(str(characteristic["lower_tolerance"]))
+    upper = Decimal(str(characteristic["upper_tolerance"]))
+    for index, measured in enumerate(data.measured_values, start=1):
+        within = lower <= measured <= upper
+        passed = passed and within
+        values.append((index, measured, within))
+    gauge_snapshot = {
+        "instrument_id": gauge["id"], "instrument_code": gauge["instrument_code"],
+        "name": gauge["name"], "equipment_type": gauge["equipment_type"],
+        "serial_number": gauge["serial_number"], "status_at_measurement": status,
+        "calibration_due_date": str(due), "location_id": gauge["current_location_id"],
+    }
+    characteristic_snapshot = {
+        "characteristic_id": characteristic["id"], "code": characteristic["characteristic_code"],
+        "name": characteristic["name"], "nominal": str(characteristic["nominal_value"]),
+        "lower_tolerance": str(lower), "upper_tolerance": str(upper),
+        "unit": characteristic["unit"],
+    }
+    try:
+        measurement_id = db.execute(text("""INSERT INTO inspection_measurements
+          (inspection_date,product_id,operation_id,characteristic_id,instrument_id,lot_reference,
+           machine_reference,shift,operator_name,gauge_snapshot_json,characteristic_snapshot_json,
+           result,remarks,recorded_by)
+          VALUES (:inspection_date,:product_id,:operation_id,:characteristic_id,:instrument_id,
+           :lot_reference,:machine_reference,:shift,:operator_name,:gauge_snapshot,:characteristic_snapshot,
+           :result,:remarks,:recorded_by) RETURNING id"""),
+          {"inspection_date": data.inspection_date, "product_id": data.product_id,
+           "operation_id": data.operation_id, "characteristic_id": data.characteristic_id,
+           "instrument_id": data.instrument_id, "lot_reference": data.lot_reference,
+           "machine_reference": data.machine_reference, "shift": data.shift,
+           "operator_name": data.operator_name, "gauge_snapshot": json.dumps(gauge_snapshot),
+           "characteristic_snapshot": json.dumps(characteristic_snapshot),
+           "result": "PASS" if passed else "FAIL", "remarks": data.remarks,
+           "recorded_by": user.id}).scalar_one()
+        for sample_no, measured, within in values:
+            db.execute(text("""INSERT INTO inspection_measurement_values
+              (measurement_id,sample_no,measured_value,is_within_tolerance)
+              VALUES (:measurement_id,:sample_no,:value,:within)"""),
+              {"measurement_id": measurement_id, "sample_no": sample_no,
+               "value": measured, "within": within})
+        db.commit()
+        return {"id": measurement_id, "result": "PASS" if passed else "FAIL",
+                "sample_count": len(values), "out_of_tolerance_count": sum(1 for _,_,ok in values if not ok),
+                "gauge_snapshot": gauge_snapshot}
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.get("/inspection/measurements")
+def list_inspection_measurements(from_date: date | None = None, to_date: date | None = None,
+                                 product_id: int | None = None, lot_reference: str | None = None,
+                                 db: Session = Depends(get_db),
+                                 user=Depends(get_current_user)):
+    q = """SELECT m.*,p.code AS product_code,p.name AS product_name,
+                  c.characteristic_code,c.name AS characteristic_name
+             FROM inspection_measurements m
+             JOIN products p ON p.id=m.product_id
+             JOIN inspection_characteristics c ON c.id=m.characteristic_id
+            WHERE 1=1"""
+    params = {}
+    if from_date is not None: q += " AND m.inspection_date>=:from_date"; params["from_date"] = from_date
+    if to_date is not None: q += " AND m.inspection_date<=:to_date"; params["to_date"] = to_date
+    if product_id is not None: q += " AND m.product_id=:product_id"; params["product_id"] = product_id
+    if lot_reference: q += " AND m.lot_reference=:lot_reference"; params["lot_reference"] = lot_reference
+    q += " ORDER BY m.inspection_date DESC,m.id DESC LIMIT 500"
+    rows = db.execute(text(q), params).mappings().all()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["gauge_snapshot"] = json.loads(item.pop("gauge_snapshot_json"))
+        item["characteristic_snapshot"] = json.loads(item.pop("characteristic_snapshot_json"))
+        item["samples"] = [dict(v) for v in db.execute(text("""SELECT sample_no,measured_value,is_within_tolerance
+            FROM inspection_measurement_values WHERE measurement_id=:id ORDER BY sample_no"""),
+            {"id": item["id"]}).mappings().all()]
+        result.append(item)
+    return result
