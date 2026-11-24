@@ -4,6 +4,47 @@ import { api, downloadApi } from '../api'
 import { PageHeader, Kpi, Status } from '../components/UI'
 
 type FtaNode = { id:string, label:string, type:string, gate?:string|null, logic_state?:string, children?:FtaNode[] }
+function newTemplateNode(type='BASIC_EVENT'):FtaNode{
+  return {id:`node_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,label:'New cause',type,gate:type==='INTERMEDIATE_EVENT'?'OR':undefined,children:type==='INTERMEDIATE_EVENT'?[newTemplateNode('BASIC_EVENT')]:undefined}
+}
+
+function TemplateNodeEditor({node,onChange,onRemove,depth=0,root=false}:{node:FtaNode,onChange:(node:FtaNode)=>void,onRemove?:()=>void,depth?:number,root?:boolean}){
+  const isBranch=node.type==='TOP_EVENT'||node.type==='INTERMEDIATE_EVENT'
+  const children=node.children||[]
+  function changeType(type:string){
+    const branch=type==='TOP_EVENT'||type==='INTERMEDIATE_EVENT'
+    onChange({...node,type,gate:branch?(node.gate||'OR'):undefined,children:branch?(children.length?children:[newTemplateNode('BASIC_EVENT')]):undefined})
+  }
+  function updateChild(index:number,child:FtaNode){
+    onChange({...node,children:children.map((item,i)=>i===index?child:item)})
+  }
+  function addChild(){
+    if(children.length>=20)return
+    onChange({...node,gate:node.gate||'OR',children:[...children,newTemplateNode('BASIC_EVENT')]})
+  }
+  function removeChild(index:number){
+    onChange({...node,children:children.filter((_,i)=>i!==index)})
+  }
+  return <div className="fta-template-node-editor" style={{marginLeft:depth?18:0,borderLeft:depth?'2px solid var(--border, #d8dee8)':'none',paddingLeft:depth?12:0,marginTop:10}}>
+    <div className="fta-create-grid">
+      <label>Cause / event name<input value={node.label} maxLength={240} onChange={e=>onChange({...node,label:e.target.value})} placeholder="Describe the event"/></label>
+      <label>Node type<select value={node.type} disabled={root} onChange={e=>changeType(e.target.value)}>
+        {root&&<option value="TOP_EVENT">TOP EVENT</option>}
+        <option value="INTERMEDIATE_EVENT">INTERMEDIATE EVENT</option>
+        <option value="BASIC_EVENT">BASIC EVENT</option>
+        <option value="EXTERNAL_EVENT">EXTERNAL EVENT</option>
+        <option value="UNDEVELOPED_EVENT">UNDEVELOPED EVENT</option>
+      </select></label>
+      {isBranch&&<label>Logic gate<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
+      {!root&&<div className="template-node-remove"><button type="button" className="secondary small" onClick={onRemove}>Remove cause</button></div>}
+    </div>
+    {isBranch&&<div className="fta-template-children">
+      {children.map((child,index)=><TemplateNodeEditor key={child.id} node={child} depth={depth+1} onChange={updated=>updateChild(index,updated)} onRemove={()=>removeChild(index)}/>)}
+      <button type="button" className="secondary small" disabled={children.length>=20} onClick={addChild}>+ Add child cause</button>
+    </div>}
+  </div>
+}
+
 type Finding = {
   id:number, node_id:string, node_label:string, node_type:string, investigation_status:string,
   observation?:string|null, measured_value?:string|null, expected_value?:string|null,
@@ -77,7 +118,7 @@ export default function FTA({me}:{me:any}){
   const [evidenceCaption,setEvidenceCaption]=useState('')
   const [baseTemplateId,setBaseTemplateId]=useState('')
   const [templateName,setTemplateName]=useState('')
-  const [templateTreeText,setTemplateTreeText]=useState('')
+  const [templateTree,setTemplateTree]=useState<FtaNode>(()=>({id:'top_event',label:'Top event',type:'TOP_EVENT',gate:'OR',children:[{id:'cause_1',label:'Main cause',type:'INTERMEDIATE_EVENT',gate:'OR',children:[{id:'cause_1_1',label:'Basic cause',type:'BASIC_EVENT'}]}]}))
   const [templateDraftId,setTemplateDraftId]=useState<number|null>(null)
   const [newOperationCode,setNewOperationCode]=useState('')
   const [newOperationName,setNewOperationName]=useState('')
@@ -411,7 +452,7 @@ export default function FTA({me}:{me:any}){
         <label>New template operation<select value={newTemplateOperation} onChange={e=>setNewTemplateOperation(e.target.value)}><option value="">Select operation</option>{operations.map(o=><option key={o.code} value={o.code}>{o.name}</option>)}</select></label>
         <label>New template defect<select value={newTemplateDefect} onChange={e=>setNewTemplateDefect(e.target.value)}><option value="">Select defect</option>{defects.map(d=><option key={d.code} value={d.code}>{d.category} – {d.name}</option>)}</select></label>
       </div>
-      <button className="secondary" disabled={!newTemplateCode||!newTemplateName||!newTemplateOperation||!newTemplateDefect||!templateTreeText||busy} onClick={async()=>{try{const tree=JSON.parse(templateTreeText);setBusy(true);const created:any=await api('/fta/templates',{method:'POST',body:JSON.stringify({code:newTemplateCode,name:newTemplateName,operation_code:newTemplateOperation,defect_code:newTemplateDefect,tree})});setTemplateDraftId(created.id);setBaseTemplateId(String(created.id));await load();setMessage('New FTA template created as draft. Review and publish it when ready.')}catch(e:any){setError(e instanceof SyntaxError?'Fault tree JSON is invalid.':e.message)}finally{setBusy(false)}}}>Create new template draft</button>
+      <button className="secondary" disabled={!newTemplateCode||!newTemplateName||!newTemplateOperation||!newTemplateDefect||!templateTree||busy} onClick={async()=>{try{const tree=templateTree;setBusy(true);const created:any=await api('/fta/templates',{method:'POST',body:JSON.stringify({code:newTemplateCode,name:newTemplateName,operation_code:newTemplateOperation,defect_code:newTemplateDefect,tree})});setTemplateDraftId(created.id);setBaseTemplateId(String(created.id));await load();setMessage('New FTA template created as draft. Review and publish it when ready.')}catch(e:any){setError(e instanceof SyntaxError?'Visual fault-tree builder is invalid.':e.message)}finally{setBusy(false)}}}>Create new template draft</button>
       <div className="fta-create-grid">
         <label>Base template
           <select value={baseTemplateId} onChange={e=>{setBaseTemplateId(e.target.value);setTemplateDraftId(null)}}>
@@ -421,12 +462,14 @@ export default function FTA({me}:{me:any}){
         </label>
         <label>Template name<input value={templateName} onChange={e=>setTemplateName(e.target.value)} placeholder="Machining defect fault tree"/></label>
       </div>
-      <label>Fault tree JSON
-        <textarea rows={8} value={templateTreeText} onChange={e=>setTemplateTreeText(e.target.value)} placeholder='Load a template first. Edit node labels, types, gates and children using JSON.'/>
-      </label>
+      <div className="panel" style={{marginTop:12}}>
+        <div className="panel-title"><div><h3>Visual fault-tree builder</h3><p>Build the cause tree using fields and buttons. JSON is generated and validated automatically.</p></div><button type="button" className="secondary small" onClick={()=>setTemplateTree({id:'top_event',label:'Top event',type:'TOP_EVENT',gate:'OR',children:[{id:'cause_1',label:'Main cause',type:'INTERMEDIATE_EVENT',gate:'OR',children:[{id:'cause_1_1',label:'Basic cause',type:'BASIC_EVENT'}]}]})}>Reset tree</button></div>
+        <TemplateNodeEditor node={templateTree} root onChange={setTemplateTree}/>
+        <p className="muted small">Maximum 8 levels and 300 nodes. Top and intermediate events need child causes. Basic, external and undeveloped events are leaf nodes. Each node receives a unique ID automatically.</p>
+      </div>
       <div className="button-row">
-        <button className="secondary" disabled={!baseTemplateId||busy} onClick={async()=>{try{setBusy(true);const t:any=await api('/fta/templates/'+baseTemplateId);setTemplateName(t.name);setTemplateTreeText(JSON.stringify(t.tree,null,2));setTemplateDraftId(t.status==='DRAFT'?t.id:null)}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Load selected tree</button>
-        <button disabled={!baseTemplateId||!templateTreeText||busy} onClick={async()=>{try{const tree=JSON.parse(templateTreeText);setBusy(true);let result:any;if(templateDraftId){result=await api('/fta/templates/'+templateDraftId,{method:'PUT',body:JSON.stringify({name:templateName,tree})})}else{result=await api('/fta/templates/'+baseTemplateId+'/revisions',{method:'POST',body:JSON.stringify({name:templateName||undefined,tree})});setTemplateDraftId(result.id)}await load();setMessage('Draft template saved. Review and publish it when ready.')}catch(e:any){setError(e instanceof SyntaxError?'Fault tree JSON is invalid.':e.message)}finally{setBusy(false)}}}>Save draft revision</button>
+        <button className="secondary" disabled={!baseTemplateId||busy} onClick={async()=>{try{setBusy(true);const t:any=await api('/fta/templates/'+baseTemplateId);setTemplateName(t.name);setTemplateTree(t.tree);setTemplateDraftId(t.status==='DRAFT'?t.id:null)}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Load selected tree</button>
+        <button disabled={!baseTemplateId||!templateTree||busy} onClick={async()=>{try{const tree=templateTree;setBusy(true);let result:any;if(templateDraftId){result=await api('/fta/templates/'+templateDraftId,{method:'PUT',body:JSON.stringify({name:templateName,tree})})}else{result=await api('/fta/templates/'+baseTemplateId+'/revisions',{method:'POST',body:JSON.stringify({name:templateName||undefined,tree})});setTemplateDraftId(result.id)}await load();setMessage('Draft template saved. Review and publish it when ready.')}catch(e:any){setError(e instanceof SyntaxError?'Fault tree JSON is invalid.':e.message)}finally{setBusy(false)}}}>Save draft revision</button>
         <button className="secondary" disabled={!templateDraftId||busy} onClick={async()=>{try{setBusy(true);await api('/fta/templates/'+templateDraftId+'/publish',{method:'POST'});setTemplateDraftId(null);await load();setMessage('Template revision published. New investigations will use the published version.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Publish draft</button>
       </div>
       <p className="muted small">Node types: TOP_EVENT, INTERMEDIATE_EVENT, BASIC_EVENT, EXTERNAL_EVENT, UNDEVELOPED_EVENT. Nodes with children require an AND or OR gate. Each node ID must be unique.</p>
