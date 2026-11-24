@@ -1550,8 +1550,8 @@ def verify_investigation(investigation_id: int, payload: VerifyRequest,
     if leaf_ids:
         dispositions = db.execute(text("""
             SELECT node_id, investigation_status FROM fta_findings
-            WHERE investigation_id=:id AND node_id = ANY(:node_ids)
-        """), {"id": investigation_id, "node_ids": leaf_ids}).mappings().all()
+            WHERE investigation_id=:id
+        """), {"id": investigation_id}).mappings().all()
         status_by_node = {str(x["node_id"]): x["investigation_status"] for x in dispositions}
         unresolved = [node_id for node_id in leaf_ids
                       if status_by_node.get(node_id) not in {"CONFIRMED", "RULED_OUT", "UNABLE_TO_DETERMINE", "NOT_APPLICABLE"}]
