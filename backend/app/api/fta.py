@@ -658,13 +658,6 @@ def create_investigation(payload: InvestigationCreate, db: Session = Depends(get
     """), {"id": payload.rejection_id}).mappings().first()
     if not rejection:
         raise HTTPException(404, "Machining-compatible Quality Rejection record not found")
-    phenomenon_match = db.execute(text("""
-        SELECT 1 FROM fta_phenomenon_code_map
-        WHERE legacy_defect_code=:defect_code AND phenomenon_id=:phenomenon_id
-    """), {"defect_code": template["defect_code"],
-           "phenomenon_id": rejection["phenomenon_id"]}).first()
-    if not phenomenon_match:
-        raise HTTPException(422, "Selected FTA template does not match the Quality Rejection phenomenon")
     machine_id = payload.machine_id or rejection["machine_id"]
     if machine_id:
         machine = db.execute(text("SELECT id, plant FROM machines WHERE id=:id AND is_active=true"),
