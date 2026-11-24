@@ -189,7 +189,7 @@ def record_calibration(instrument_id: int, data: CalibrationEventIn,
           VALUES (:iid,:typ,:dt,:due,:cert,:lab,:acc,:scope,:trace,:res,:found,:left,:unc,:uri,:remarks,:uid,NULL)
           RETURNING id"""), dict(iid=instrument_id, typ=data.event_type, dt=data.calibration_date,
           due=due, cert=data.certificate_number, lab=data.laboratory_name, acc=data.laboratory_accreditation,
-          trace=data.traceability_reference, res=data.result, found=data.as_found, left=data.as_left,
+          scope=data.laboratory_scope_reference, trace=data.traceability_reference, res=data.result, found=data.as_found, left=data.as_left,
           unc=data.uncertainty, uri=data.certificate_uri, remarks=data.remarks, uid=user.id))
         eid = result.scalar_one()
         # A PASS is not released for production use until an independent reviewer approves it.
