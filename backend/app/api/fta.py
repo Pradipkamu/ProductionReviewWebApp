@@ -1680,11 +1680,32 @@ def recurrence_suggestions(investigation_id: int, db: Session = Depends(get_db),
           AND NOT EXISTS (
               SELECT 1 FROM fta_recurrences fr WHERE fr.rejection_id=q.id
           )
+          -- A recurrence belongs to the most recent prior FTA for this same
+          -- part and defect, not to every older investigation in its history.
+          AND NOT EXISTS (
+              SELECT 1
+              FROM fta_investigations newer_i
+              JOIN quality_rejection_daily newer_q ON newer_q.id=newer_i.rejection_id
+              WHERE newer_q.product_id=:original_product_id
+                AND newer_q.phenomenon_id=:phenomenon_id
+                AND newer_i.id<>:original_investigation_id
+                AND (
+                    newer_q.rejection_date > :original_date
+                    OR (newer_q.rejection_date=:original_date
+                        AND newer_q.id>:original_rejection_id)
+                )
+                AND (
+                    newer_q.rejection_date < q.rejection_date
+                    OR (newer_q.rejection_date=q.rejection_date AND newer_q.id<q.id)
+                )
+          )
         ORDER BY q.rejection_date DESC, q.id DESC
         LIMIT 100
     """), {"phenomenon_id": original["phenomenon_id"],
            "original_date": original["rejection_date"],
-           "original_rejection_id": original["rejection_id"]}).mappings().all()
+           "original_rejection_id": original["rejection_id"],
+           "original_product_id": original["product_id"],
+           "original_investigation_id": investigation_id}).mappings().all()
 
     suggestions = []
     for item in later:
