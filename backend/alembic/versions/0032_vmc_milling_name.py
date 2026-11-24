@@ -1,7 +1,8 @@
-"""Rename FTA operation CNC Milling to VMC Milling.
+"""Rename the production FTA milling operation to VMC Milling.
 
-Preserves the operation code and primary key so existing FTA templates and
-investigations remain associated with the same operation.
+Preserves the operation primary key so existing FTA templates and
+investigations remain associated with the same operation. This migration is
+intended for the production database only; do not apply it to the test database.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -17,7 +18,8 @@ def upgrade():
     bind.execute(
         sa.text("""
             UPDATE fta_operations
-            SET name = 'VMC Milling'
+            SET code = 'VMC_MILL',
+                name = 'VMC Milling'
             WHERE code = 'CNC_MILL'
               AND name = 'CNC Milling'
         """)
@@ -29,8 +31,9 @@ def downgrade():
     bind.execute(
         sa.text("""
             UPDATE fta_operations
-            SET name = 'CNC Milling'
-            WHERE code = 'CNC_MILL'
+            SET code = 'CNC_MILL',
+                name = 'CNC Milling'
+            WHERE code = 'VMC_MILL'
               AND name = 'VMC Milling'
         """)
     )
