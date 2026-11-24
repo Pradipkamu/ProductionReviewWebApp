@@ -1,13 +1,13 @@
 """Add controlled gauge locations and issue/return history.
 
 Revision ID: 0040_calibration_location_issue
-Revises: 0039_calibration_instrument_scope
+Revises: 0039_calib_instr_scope
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0040_calibration_location_issue"
-down_revision = "0039_calibration_instrument_scope"
+down_revision = "0039_calib_instr_scope"
 branch_labels = None
 depends_on = None
 
