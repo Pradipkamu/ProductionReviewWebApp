@@ -50,6 +50,8 @@ export default function FTA({me}:{me:any}){
   const [escapeSummary,setEscapeSummary]=useState('')
   const [availableActions,setAvailableActions]=useState<any[]>([])
   const [recurrenceCandidates,setRecurrenceCandidates]=useState<any[]>([])
+  const [defectHistory,setDefectHistory]=useState<any>(null)
+  const [defectHistoryLoading,setDefectHistoryLoading]=useState(false)
   const [recurrenceRejectionId,setRecurrenceRejectionId]=useState('')
   const [recurrenceReason,setRecurrenceReason]=useState('')
   const [recurrenceContainment,setRecurrenceContainment]=useState('')
@@ -118,6 +120,22 @@ export default function FTA({me}:{me:any}){
   const [searchParams,setSearchParams]=useSearchParams()
   const view=searchParams.get('view')||'dashboard'
   const views=[{key:'dashboard',label:'Dashboard'},{key:'start',label:'Start Investigation'},{key:'register',label:'Investigation Register'},{key:'templates',label:'Template Master'}]
+  useEffect(()=>{
+    let active=true
+    if(!defectCode){
+      setDefectHistory(null)
+      setDefectHistoryLoading(false)
+      return ()=>{active=false}
+    }
+    setDefectHistoryLoading(true)
+    const suffix=rejectionId?('?rejection_id='+encodeURIComponent(rejectionId)):''
+    api('/fta/defect-history/'+encodeURIComponent(defectCode)+suffix)
+      .then((result:any)=>{if(active)setDefectHistory(result)})
+      .catch(()=>{if(active)setDefectHistory(null)})
+      .finally(()=>{if(active)setDefectHistoryLoading(false)})
+    return ()=>{active=false}
+  },[defectCode,rejectionId])
+
   useEffect(()=>{
     const id=Number(searchParams.get('investigation_id')||0)
     const recurrenceId=searchParams.get('recurrence_rejection_id')||''
@@ -254,6 +272,42 @@ export default function FTA({me}:{me:any}){
           </select>
         </label>
       </div>
+      {defectCode&&<section className="fta-defect-history">
+        <div className="panel-title">
+          <div><h3>Automatic previous FTA detection</h3><p>History is matched by the selected shared Quality defect. Select a previous FTA to inspect the linkage and register this rejection as a recurrence.</p></div>
+          {defectHistoryLoading&&<span className="muted small">Checking history…</span>}
+        </div>
+        {defectHistory&&!defectHistoryLoading&&<>
+          <div className="fta-defect-history-summary">
+            <div><span>Selected Quality defect</span><strong>{defectHistory.phenomenon_name||defectCode}</strong></div>
+            <div><span>Last previous FTA date</span><strong>{defectHistory.last_fta_date?String(defectHistory.last_fta_date).slice(0,10):'No previous FTA'}</strong><small>{defectHistory.last_investigation_no||'No linked investigation found'}</small></div>
+            <div><span>Previous investigations</span><strong>{defectHistory.total_previous_investigations||0}</strong></div>
+          </div>
+          {defectHistory.matches?.length>0?<>
+            <div className="fta-defect-history-notice">
+              <strong>Previous FTA found for this Quality defect</strong>
+              <span>{rejectionId?'Showing FTAs dated before the selected Quality Rejection.':'Showing the latest recorded FTAs for this defect.'} Review the records before deciding whether this is a recurrence.</span>
+            </div>
+            <div className="table-wrap fta-defect-history-table">
+              <table><thead><tr><th>FTA Date</th><th>FTA No.</th><th>Part</th><th>Operation / Machine</th><th>FTA Status</th><th>Linked Actions</th><th>Relationship</th><th></th></tr></thead>
+                <tbody>{defectHistory.matches.map((item:any)=><tr key={item.investigation_id}>
+                  <td>{String(item.fta_date||'').slice(0,10)}</td>
+                  <td><b>{item.investigation_no}</b></td>
+                  <td>{item.part_code}<div className="muted small">{item.part_name}</div></td>
+                  <td>{item.operation_code}<div className="muted small">{item.machine_name||'Machine not recorded'}</div></td>
+                  <td><Status value={item.status}/></td>
+                  <td>{item.linked_action_status||'No linked action'}</td>
+                  <td>{item.same_part?<span className="fta-match-tag same">Same part</span>:<span className="fta-match-tag">Same defect</span>}</td>
+                  <td><div className="button-row">
+                    <a className="button secondary small" href={`/fta?view=register&investigation_id=${item.investigation_id}`}>Open FTA</a>
+                    {rejectionId&&<button type="button" className="small" onClick={()=>setSearchParams({view:'register',investigation_id:String(item.investigation_id),recurrence_rejection_id:String(rejectionId)})}>Link as recurrence</button>}
+                  </div></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </>:<p className="muted small">No earlier FTA has been recorded for this Quality defect.</p>}
+        </>}
+      </section>}
       <label>Investigation objective / initial observation
         <textarea value={summary} onChange={e=>setSummary(e.target.value)} rows={2} placeholder="Describe the defect, location, inspection result or immediate concern."/>
       </label>
