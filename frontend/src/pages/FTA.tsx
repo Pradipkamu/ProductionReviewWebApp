@@ -121,7 +121,7 @@ export default function FTA({me}:{me:any}){
   useEffect(()=>{
     const id=Number(searchParams.get('investigation_id')||0)
     const recurrenceId=searchParams.get('recurrence_rejection_id')||''
-    if(recurrenceId){setRecurrenceRejectionId(recurrenceId);setRecurrenceClassification('PENDING_REVIEW')}
+    if(recurrenceId){setRecurrenceRejectionId(recurrenceId);setRecurrenceReason('Possible recurrence identified from the rejection register. Confirm the relationship and add investigation details.')}
     if(id>0)loadDetail(id)
   },[searchParams])
   useEffect(()=>{
