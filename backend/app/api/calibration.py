@@ -397,7 +397,7 @@ def calibration_due_schedule(days: int = 30, db: Session = Depends(get_db), user
     if days < 0 or days > 365:
         raise HTTPException(422, "Schedule horizon must be between 0 and 365 days")
     today = date.today()
-    return [dict(x) for x in db.execute(text("""SELECT id,instrument_code,name,equipment_type,location,
+    return [dict(x) for x in db.execute(text("""SELECT id,instrument_code,name,equipment_type,location,home_plant,
         next_due_date,status,criticality,owner_department
         FROM calibration_instruments WHERE is_active=true
           AND (next_due_date IS NULL OR next_due_date <= :horizon)
