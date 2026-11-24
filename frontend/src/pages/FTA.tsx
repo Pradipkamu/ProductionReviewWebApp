@@ -32,6 +32,7 @@ export default function FTA({me}:{me:any}){
   const [defects,setDefects]=useState<any[]>([])
   const [templates,setTemplates]=useState<any[]>([])
   const [rejections,setRejections]=useState<any[]>([])
+  const [rejectionSearch,setRejectionSearch]=useState('')
   const [machines,setMachines]=useState<any[]>([])
   const [machineId,setMachineId]=useState('')
   const [investigations,setInvestigations]=useState<any[]>([])
@@ -77,6 +78,8 @@ export default function FTA({me}:{me:any}){
 
   const filteredTemplates=useMemo(()=>templates.filter(t=>t.status==='PUBLISHED'&&(!operationCode||t.operation_code===operationCode)&&(!defectCode||t.defect_code===defectCode)),[templates,operationCode,defectCode])
   const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
+  const normalizedRejectionSearch=rejectionSearch.trim().toLowerCase()
+  const filteredRejections=useMemo(()=>rejections.filter(r=>!normalizedRejectionSearch||[r.id,r.rejection_no,r.rejection_date,r.part_code,r.part_name,r.phenomenon,r.defect_name,r.machine_code].some(v=>String(v??'').toLowerCase().includes(normalizedRejectionSearch))),[rejections,normalizedRejectionSearch])
   const selectedRejection=rejections.find(r=>String(r.id)===rejectionId)
   const plantMachines=machines.filter(m=>m.active!==false&&(!selectedRejection?.plant||m.plant===selectedRejection.plant))
   const currentFinding:Finding|undefined=detail?.findings?.find((f:Finding)=>f.node_id===selectedNode)
@@ -180,9 +183,10 @@ export default function FTA({me}:{me:any}){
             <option value="">Select defect</option>{defects.map(d=><option key={d.code} value={d.code}>{d.category} – {d.name}</option>)}
           </select>
         </label>
+        <label>Search rejection records<input type="search" value={rejectionSearch} onChange={e=>setRejectionSearch(e.target.value)} placeholder="Search by rejection ID, part, date or phenomenon" aria-label="Search rejection records"/></label>
         <label>Quality rejection
           <select value={rejectionId} onChange={e=>{const value=e.target.value;setRejectionId(value);const selected=rejections.find(r=>String(r.id)===value);setMachineId(selected?.machine_id?String(selected.machine_id):'')}}>
-            <option value="">Select rejection record</option>{rejections.map(r=><option key={r.id} value={r.id}>#{r.id} · {String(r.rejection_date).slice(0,10)} · {r.part_code} · {r.phenomenon} · Qty {r.reject_qty}</option>)}
+            <option value="">{filteredRejections.length?'Select rejection record':'No matching rejection records'}</option>{filteredRejections.map(r=><option key={r.id} value={r.id}>#{r.id} · {String(r.rejection_date).slice(0,10)} · {r.part_code} · {r.phenomenon} · Qty {r.reject_qty}</option>)}
           </select>
         </label>
         <label>Machine (optional)
