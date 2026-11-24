@@ -1774,6 +1774,7 @@ def create_related_investigation(recurrence_id: int, payload: RelatedInvestigati
         JOIN fta_investigations oi ON oi.id=r.original_investigation_id
         LEFT JOIN quality_rejection_daily oq ON oq.id=oi.rejection_id
         WHERE r.id=:id
+        FOR UPDATE OF r
     """), {"id": recurrence_id}).mappings().first()
     if not rec:
         raise HTTPException(404, "FTA recurrence record not found")
@@ -1863,9 +1864,13 @@ def create_related_investigation(recurrence_id: int, payload: RelatedInvestigati
               (investigation_id,old_status,new_status,remarks,changed_by_id)
             VALUES (:id,NULL,'OPEN',:remarks,:user_id)
         """), {"id": new_id, "remarks": f"Separate investigation for different root cause; related to recurrence {recurrence_id} and original FTA {rec['original_investigation_id']}.", "user_id": user.id})
-        db.execute(text("""
-            UPDATE fta_recurrences SET related_investigation_id=:new_id WHERE id=:id
+        linked = db.execute(text("""
+            UPDATE fta_recurrences SET related_investigation_id=:new_id
+            WHERE id=:id AND related_investigation_id IS NULL
         """), {"new_id": new_id, "id": recurrence_id})
+        if linked.rowcount != 1:
+            db.rollback()
+            raise HTTPException(409, "A related investigation was linked concurrently; refresh the FTA")
         db.commit()
         return {"id": new_id, "investigation_no": number,
                 "original_investigation_id": rec["original_investigation_id"],
