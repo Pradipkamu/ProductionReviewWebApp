@@ -3,7 +3,9 @@ import { useSearchParams } from 'react-router-dom'
 import { api, downloadApi } from '../api'
 import { PageHeader, Kpi, Status } from '../components/UI'
 
-type FtaNode = { id:string, label:string, type:string, gate?:string|null, logic_state?:string, children?:FtaNode[] }
+type FtaNode = { id:string, label:string, type:string, gate?:string|null, logic_state?:string, requirement?:string|null, children?:FtaNode[] }
+function nodeConnectorColor(type:string){return ({TOP_EVENT:'#7c3aed',INTERMEDIATE_EVENT:'#2563eb',BASIC_EVENT:'#059669',EXTERNAL_EVENT:'#d97706',UNDEVELOPED_EVENT:'#64748b'} as Record<string,string>)[type]||'#94a3b8'}
+function findTemplateNode(node:FtaNode|undefined,id:string):FtaNode|undefined{if(!node)return undefined;if(node.id===id)return node;for(const child of node.children||[]){const found=findTemplateNode(child,id);if(found)return found}return undefined}
 function newTemplateNode(type='BASIC_EVENT'):FtaNode{
   return {id:`node_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,label:'New cause',type,gate:type==='INTERMEDIATE_EVENT'?'OR':undefined,children:type==='INTERMEDIATE_EVENT'?[newTemplateNode('BASIC_EVENT')]:undefined}
 }
@@ -27,7 +29,7 @@ function TemplateNodeEditor({node,onChange,onRemove,onRemoveDisabled=false,depth
   function removeChild(index:number){
     onChange({...node,children:children.filter((_,i)=>i!==index)})
   }
-  return <div className="fta-template-node-editor" style={{marginLeft:depth?18:0,borderLeft:depth?'2px solid var(--border, #d8dee8)':'none',paddingLeft:depth?12:0,marginTop:10}}>
+  return <div className="fta-template-node-editor" style={{marginLeft:depth?18:0,borderLeft:depth?`3px solid ${nodeConnectorColor(node.type)}`:'none',paddingLeft:depth?12:0,marginTop:10}}>
     <div className="fta-create-grid">
       <label>Cause / event name<input value={node.label} maxLength={240} onChange={e=>onChange({...node,label:e.target.value})} placeholder="Describe the event"/></label>
       <label>Node type<select value={node.type} disabled={root} onChange={e=>changeType(e.target.value)}>
@@ -38,6 +40,7 @@ function TemplateNodeEditor({node,onChange,onRemove,onRemoveDisabled=false,depth
         <option value="UNDEVELOPED_EVENT">UNDEVELOPED EVENT</option>
       </select></label>
       {isBranch&&<label>Logic gate<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
+      <label>Requirement / specification (optional)<textarea rows={2} maxLength={1200} value={node.requirement||''} onChange={e=>onChange({...node,requirement:e.target.value})} placeholder="Expected condition, drawing tolerance, process parameter or standard…"/></label>
       {!root&&<div className="template-node-remove"><button type="button" className="secondary small" onClick={onRemove} disabled={onRemoveDisabled}>Remove cause</button></div>}
     </div>
     {isBranch&&<div className="fta-template-children">
@@ -206,7 +209,7 @@ export default function FTA({me}:{me:any}){
     setFindingForm({
       investigation_status:currentFinding.investigation_status||'NOT_INVESTIGATED',
       observation:currentFinding.observation||'',measured_value:currentFinding.measured_value||'',
-      expected_value:currentFinding.expected_value||'',verification_method:currentFinding.verification_method||'',
+      expected_value:currentFinding.expected_value||findTemplateNode(detail?.template_snapshot?.tree,selectedNode)?.requirement||'',verification_method:currentFinding.verification_method||'',
       verification_result:currentFinding.verification_result||'',is_root_cause:!!currentFinding.is_root_cause,
       is_occurrence_cause:!!currentFinding.is_occurrence_cause,is_escape_cause:!!currentFinding.is_escape_cause
     })
@@ -467,6 +470,7 @@ export default function FTA({me}:{me:any}){
       <div className="panel" style={{marginTop:12}}>
         <div className="panel-title"><div><h3>Visual fault-tree builder</h3><p>Build the cause tree using fields and buttons. JSON is generated and validated automatically.</p></div><button type="button" className="secondary small" onClick={()=>setTemplateTree({id:'top_event',label:'Top event',type:'TOP_EVENT',gate:'OR',children:[{id:'cause_1',label:'Main cause',type:'INTERMEDIATE_EVENT',gate:'OR',children:[{id:'cause_1_1',label:'Basic cause',type:'BASIC_EVENT'}]}]})}>Reset tree</button></div>
         <TemplateNodeEditor node={templateTree} root onChange={setTemplateTree}/>
+        <div className="fta-node-colour-legend" style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:10,fontSize:12}}>{[['TOP_EVENT','Top event'],['INTERMEDIATE_EVENT','Intermediate'],['BASIC_EVENT','Basic cause'],['EXTERNAL_EVENT','External'],['UNDEVELOPED_EVENT','Undeveloped']].map(([type,label])=><span key={type} style={{display:'inline-flex',alignItems:'center',gap:5}}><i style={{display:'inline-block',width:18,height:4,borderRadius:4,background:nodeConnectorColor(type)}}/>{label}</span>)}</div>
         <p className="muted small">Maximum 8 levels and 300 nodes. Top and intermediate events need child causes. Basic, external and undeveloped events are leaf nodes. Each node receives a unique ID automatically.</p>
       </div>
       <div className="button-row">
