@@ -232,6 +232,17 @@ def approve_calibration_event(event_id: int, data: ApprovalIn,
         raise HTTPException(409, "Only the latest calibration event can release this instrument")
     if ev["result"] != "PASS" or ev["event_type"] not in ("CALIBRATION", "VERIFICATION"):
         raise HTTPException(409, "Only a passing calibration or verification can be released")
+    prior_bad = db.execute(text("""SELECT id FROM calibration_events
+        WHERE instrument_id=:iid AND id<>:eid AND result IN ('FAIL','CONDITIONAL')
+        ORDER BY calibration_date DESC,id DESC LIMIT 1"""),
+        {"iid": ev["instrument_id"], "eid": event_id}).scalar()
+    if prior_bad:
+        assessed = db.execute(text("SELECT 1 FROM calibration_impact_assessments WHERE event_id=:eid LIMIT 1"),
+                              {"eid": prior_bad}).scalar()
+        unresolved = db.execute(text("""SELECT 1 FROM calibration_impact_assessments
+            WHERE event_id=:eid AND disposition='PENDING' LIMIT 1"""), {"eid": prior_bad}).scalar()
+        if not assessed or unresolved:
+            raise HTTPException(409, "Complete the previous out-of-tolerance product impact assessment before release")
     due = ev["due_date"]
     status = "CALIBRATED" if due and due >= date.today() else "OVERDUE"
     db.execute(text("UPDATE calibration_events SET approved_by=:uid,approval_reason=:reason,approved_at=now() WHERE id=:id"),
@@ -257,8 +268,12 @@ def assess_impact(event_id: int, data: ImpactIn,
         raise HTTPException(422, "Invalid product impact disposition")
     if data.shipped_to_customer and (not data.customer_notified or not data.customer_notification_reference):
         raise HTTPException(422, "For shipped suspect product, record customer notification and its reference")
-    if data.disposition == "NO_IMPACT" and not data.assessment.strip():
-        raise HTTPException(422, "Document the evidence supporting no impact")
+    if data.disposition == "NO_IMPACT" and len(data.assessment.strip()) < 10:
+        raise HTTPException(422, "Document objective evidence supporting the no-impact conclusion")
+    if data.disposition == "ACCEPT_JUSTIFIED" and len(data.assessment.strip()) < 20:
+        raise HTTPException(422, "Document the technical justification and approval basis for acceptance")
+    if data.shipped_to_customer and data.disposition in ("PENDING", "REINSPECT", "REJECT") and not data.customer_notified:
+        raise HTTPException(422, "Customer notification is required for shipped suspect product requiring action")
     result = db.execute(text("""INSERT INTO calibration_impact_assessments
       (event_id,period_from,period_to,affected_product_ids,affected_lot_references,affected_quantity,
        assessment,disposition,action_id,assessed_by,shipped_to_customer,customer_notified,customer_notification_reference)
@@ -316,3 +331,46 @@ def audit_history(instrument_id: int, db: Session = Depends(get_db), user=Depend
     return [dict(x) for x in db.execute(text("""SELECT * FROM calibration_audit_log
       WHERE instrument_id=:id ORDER BY changed_at DESC,id DESC"""),
       {"id": instrument_id}).mappings().all()]
+
+@router.get("/approvals/pending")
+def pending_calibration_approvals(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    return [dict(x) for x in db.execute(text("""SELECT e.*,i.instrument_code,i.name AS instrument_name,
+        i.status AS instrument_status FROM calibration_events e
+        JOIN calibration_instruments i ON i.id=e.instrument_id
+        WHERE e.result='PASS' AND e.event_type IN ('CALIBRATION','VERIFICATION')
+          AND e.approved_by IS NULL
+        ORDER BY e.calibration_date,e.id""")).mappings().all()]
+
+
+@router.post("/instruments/{instrument_id}/retire")
+def retire_instrument(instrument_id: int, reason: str,
+                      db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    if len(reason.strip()) < 5:
+        raise HTTPException(422, "Retirement reason must be at least 5 characters")
+    inst = db.execute(text("SELECT * FROM calibration_instruments WHERE id=:id FOR UPDATE"),
+                      {"id": instrument_id}).mappings().first()
+    if not inst:
+        raise HTTPException(404, "Instrument not found")
+    if inst["status"] == "RETIRED":
+        raise HTTPException(409, "Instrument is already retired")
+    db.execute(text("UPDATE calibration_instruments SET status='RETIRED',is_active=false,updated_at=now() WHERE id=:id"),
+               {"id": instrument_id})
+    _audit(db, instrument_id, "INSTRUMENT_RETIRED", dict(inst), {"status":"RETIRED","is_active":False},
+           reason, user.id)
+    db.commit()
+    return {"id": instrument_id, "status": "RETIRED"}
+
+
+@router.get("/compliance-summary")
+def calibration_compliance_summary(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    today = date.today()
+    row = db.execute(text("""SELECT
+        count(*) FILTER (WHERE is_active) AS active_total,
+        count(*) FILTER (WHERE is_active AND next_due_date < :today AND status NOT IN ('RETIRED','FAILED','QUARANTINED')) AS overdue,
+        count(*) FILTER (WHERE is_active AND status='PENDING_APPROVAL') AS pending_approval,
+        count(*) FILTER (WHERE is_active AND status IN ('FAILED','QUARANTINED')) AS blocked,
+        count(*) FILTER (WHERE is_active AND next_due_date IS NULL) AS never_calibrated
+        FROM calibration_instruments"""), {"today": today}).mappings().one()
+    return dict(row)
