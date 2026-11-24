@@ -854,3 +854,26 @@ button.ghost{color:inherit}
 
 /* Dedicated Quality / Rejection workspace views */
 .quality-view-nav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--line)}.quality-view-nav a{display:inline-flex;align-items:center;padding:8px 13px;border:1px solid var(--line);border-radius:8px;color:inherit;text-decoration:none;font-size:13px;font-weight:650;background:#fff}.quality-view-nav a:hover{border-color:var(--orange);background:#ed7d310d}.quality-view-nav a.active{background:var(--navy);border-color:var(--navy);color:#fff}
+
+/* Interactive, zoomable FTA mind-map browser view */
+.fta-mindmap-web-view .fta-report-cover,
+.fta-mindmap-web-view .fta-report-section:not(.fta-mindmap-section),
+.fta-mindmap-web-view .fta-report-footer { display:none !important; }
+.fta-mindmap-web-view .fta-report-page { max-width:none; }
+.fta-mindmap-web-view .fta-report-actions .page-header { align-items:center; }
+.fta-mindmap-web-view .fta-mindmap-section { padding:18px; }
+.fta-mindmap-web-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+.fta-mindmap-web-toolbar h2 { margin:0 0 4px; }
+.fta-mindmap-web-toolbar small { color:#718096; }
+.fta-mindmap-zoom { display:flex; align-items:center; gap:8px; }
+.fta-mindmap-zoom b { min-width:48px; text-align:center; color:#29405f; font-size:12px; }
+.fta-mindmap-canvas { width:100%; min-height:65vh; max-height:calc(100vh - 260px); overflow:auto; padding:24px; border:1px solid #dbe3ee; border-radius:10px; background-color:#f8fafd; background-image:radial-gradient(#cbd5e1 0.8px,transparent 0.8px); background-size:18px 18px; }
+.fta-mindmap-scaled { min-width:max-content; width:max-content; min-height:100%; transform:scale(var(--fta-map-zoom)); transform-origin:top left; padding:18px 28px 40px; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-node { border:0; margin:0; padding:8px 0; text-align:center; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-heading { display:flex; flex-direction:column; align-items:center; gap:5px; min-width:220px; max-width:320px; min-height:72px; margin:0 auto; padding:14px 18px; border:1px solid #9aafc8; border-radius:12px; background:#fff; color:#203754; text-align:center; box-shadow:0 3px 10px #18324d12; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-node:first-child > .fta-report-tree-heading { background:#eaf1fb; border:2px solid #315f98; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-children { display:flex; flex-wrap:nowrap; justify-content:center; align-items:flex-start; gap:16px; margin:14px 0 0; padding:18px 8px 0; border-top:2px solid #9aabc0; position:relative; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node { flex:0 0 250px; max-width:320px; min-width:220px; padding:0 6px; border:0; margin:0; position:relative; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node:before { content:""; position:absolute; top:-19px; left:50%; height:19px; border-left:2px solid #9aabc0; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-finding { margin:9px auto 0; max-width:300px; padding:10px 12px; text-align:left; border:1px solid #d7e0eb; background:#fff; font-size:12px; }
+@media(max-width:700px){.fta-mindmap-web-toolbar{align-items:flex-start;flex-direction:column}.fta-mindmap-canvas{max-height:calc(100vh - 300px);padding:12px}}
