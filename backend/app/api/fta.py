@@ -1549,7 +1549,18 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
         WHERE f.is_root_cause=true AND f.investigation_status='CONFIRMED' {production_scope}
         GROUP BY f.node_label ORDER BY occurrences DESC, f.node_label LIMIT 5
     """), params).mappings().all()
-    return {"counts": dict(counts), "top_defects": [dict(x) for x in defects],
+    recurrence_counts = db.execute(text(f"""
+        SELECT COUNT(*) AS total,
+          COALESCE(SUM(CASE WHEN r.classification='PENDING_REVIEW' THEN 1 ELSE 0 END),0) AS pending_review,
+          COALESCE(SUM(CASE WHEN r.classification='SAME_ROOT_CAUSE' THEN 1 ELSE 0 END),0) AS same_root_cause,
+          COALESCE(SUM(CASE WHEN r.classification='DIFFERENT_ROOT_CAUSE' THEN 1 ELSE 0 END),0) AS different_root_cause,
+          COALESCE(SUM(CASE WHEN r.classification='UNRELATED' THEN 1 ELSE 0 END),0) AS unrelated
+        FROM fta_recurrences r
+        JOIN fta_investigations i ON i.id=r.original_investigation_id
+        WHERE 1=1 {production_scope}
+    """), params).mappings().one()
+    return {"counts": dict(counts), "recurrence_counts": dict(recurrence_counts),
+            "top_defects": [dict(x) for x in defects],
             "top_verified_causes": [dict(x) for x in causes]}
 
 
