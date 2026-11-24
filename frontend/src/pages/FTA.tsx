@@ -83,16 +83,21 @@ function historyRemark(value:any){
 }
 
 function TreeNode({node,findings,selected,onSelect,depth=0}:{node:FtaNode,findings:Finding[],selected:string,onSelect:(id:string)=>void,depth?:number}){
+  const [expanded,setExpanded]=useState(depth<2)
   const finding=findings.find(x=>x.node_id===node.id)
   const status=finding?.investigation_status||'NOT_INVESTIGATED'
   const tone=status==='CONFIRMED'?'success':status==='SUSPECTED'?'warning':status==='RULED_OUT'||status==='NOT_APPLICABLE'?'muted':''
-  return <div className="fta-tree-node" style={{marginLeft:depth?18:0}}>
-    <button type="button" className={`fta-node-button ${selected===node.id?'selected':''}`} onClick={()=>onSelect(node.id)}>
-      <span className="fta-node-gate">{node.gate||node.type.replaceAll('_',' ')}</span>
-      <strong>{node.label}</strong>
-      <span className={`fta-node-status ${tone}`}>{status.replaceAll('_',' ')}</span><span className="fta-node-logic">{node.logic_state||'UNKNOWN'}</span>
-    </button>
-    {!!node.children?.length&&<div className="fta-tree-children">
+  const statusColor=status==='CONFIRMED'?'#16a34a':status==='SUSPECTED'?'#d97706':status==='RULED_OUT'||status==='NOT_APPLICABLE'?'#64748b':'#94a3b8'
+  return <div className="fta-tree-node" style={{marginLeft:depth?18:0,borderLeft:`3px solid ${statusColor}`,paddingLeft:8}}>
+    <div style={{display:'flex',alignItems:'stretch',gap:6}}>
+      {!!node.children?.length&&<button type="button" className="secondary small" aria-label={expanded?'Collapse cause group':'Expand cause group'} onClick={()=>setExpanded(v=>!v)}>{expanded?'−':'+'}</button>}
+      <button type="button" className={`fta-node-button ${selected===node.id?'selected':''}`} style={{flex:1,minWidth:0}} onClick={()=>onSelect(node.id)}>
+        <span className="fta-node-gate">{node.gate||node.type.replaceAll('_',' ')}</span>
+        <strong>{node.label}</strong>
+        <span className={`fta-node-status ${tone}`}>{status.replaceAll('_',' ')}</span><span className="fta-node-logic">{node.logic_state||'UNKNOWN'}</span>
+      </button>
+    </div>
+    {!!node.children?.length&&expanded&&<div className="fta-tree-children">
       {node.children.map(child=><TreeNode key={child.id} node={child} findings={findings} selected={selected} onSelect={onSelect} depth={depth+1}/>)}
     </div>}
   </div>
