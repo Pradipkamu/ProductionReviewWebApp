@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, timedelta
 from io import BytesIO
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from pathlib import Path
 import uuid
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from ..config import get_settings
 from ..services.file_security import UploadSecurityError, safe_original_name, safe_path, save_limited_stream, validate_attachment_file
 
@@ -278,6 +278,36 @@ def _parse_gauge_workbook(raw):
         parsed.append({"row": row_number, "data": clean, "errors": row_errors, "warnings": warnings})
     workbook.close()
     return parsed, mapping, errors
+
+@router.get("/instruments/import/template")
+def gauge_import_template(user=Depends(get_current_user)):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Gauge Register"
+    headers = [
+        "Gauge ID", "Gauge Name", "Equipment Type", "Manufacturer", "Model", "Serial Number",
+        "Range", "Resolution", "Accuracy", "Location", "Plant", "Department", "Owner Type",
+        "Control Plan Reference", "Special Characteristic", "Calibration Interval Days",
+        "Last Calibration Date", "Next Due Date", "Status", "Criticality", "Remarks"
+    ]
+    sheet.append(headers)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:{chr(64 + len(headers))}1"
+    instructions = workbook.create_sheet("Instructions")
+    instructions.append(["Field", "Guidance"])
+    instructions.append(["Required", "Gauge ID, Gauge Name, Equipment Type"])
+    instructions.append(["Date format", "Use Excel dates or DD-MM-YYYY"])
+    instructions.append(["Equipment Type", "Use the exact equipment type values displayed in Calibration Management"])
+    instructions.append(["Status", "PENDING, IN_CALIBRATION, PENDING_APPROVAL, CALIBRATED, OVERDUE, FAILED, QUARANTINED, RETIRED"])
+    instructions.append(["Criticality", "NORMAL, IMPORTANT, CRITICAL"])
+    instructions.append(["Owner Type", "INTERNAL, CUSTOMER, SUPPLIER, EMPLOYEE"])
+    instructions.append(["Important", "Import adds new gauges only. Existing Gauge IDs are never overwritten."])
+    instructions.append(["History", "This template imports the current register only. Historical calibration events and certificates must be imported separately."])
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    return StreamingResponse(stream, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Gauge_Register_Import_Template.xlsx"'})
 
 @router.post("/instruments/import")
 async def import_instruments_excel(file: UploadFile = File(...), commit: bool = False,
