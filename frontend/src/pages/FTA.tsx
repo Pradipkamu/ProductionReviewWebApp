@@ -8,7 +8,9 @@ function newTemplateNode(type='BASIC_EVENT'):FtaNode{
   return {id:`node_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`,label:'New cause',type,gate:type==='INTERMEDIATE_EVENT'?'OR':undefined,children:type==='INTERMEDIATE_EVENT'?[newTemplateNode('BASIC_EVENT')]:undefined}
 }
 
-function TemplateNodeEditor({node,onChange,onRemove,depth=0,root=false}:{node:FtaNode,onChange:(node:FtaNode)=>void,onRemove?:()=>void,depth?:number,root?:boolean}){
+function countTemplateNodes(node:FtaNode):number{return 1+(node.children||[]).reduce((sum,child)=>sum+countTemplateNodes(child),0)}
+
+function TemplateNodeEditor({node,onChange,onRemove,onRemoveDisabled=false,depth=0,root=false}:{node:FtaNode,onChange:(node:FtaNode)=>void,onRemove?:()=>void,onRemoveDisabled?:boolean,depth?:number,root?:boolean}){
   const isBranch=node.type==='TOP_EVENT'||node.type==='INTERMEDIATE_EVENT'
   const children=node.children||[]
   function changeType(type:string){
@@ -19,7 +21,7 @@ function TemplateNodeEditor({node,onChange,onRemove,depth=0,root=false}:{node:Ft
     onChange({...node,children:children.map((item,i)=>i===index?child:item)})
   }
   function addChild(){
-    if(children.length>=20)return
+    if(children.length>=20||depth>=7)return
     onChange({...node,gate:node.gate||'OR',children:[...children,newTemplateNode('BASIC_EVENT')]})
   }
   function removeChild(index:number){
@@ -36,11 +38,11 @@ function TemplateNodeEditor({node,onChange,onRemove,depth=0,root=false}:{node:Ft
         <option value="UNDEVELOPED_EVENT">UNDEVELOPED EVENT</option>
       </select></label>
       {isBranch&&<label>Logic gate<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
-      {!root&&<div className="template-node-remove"><button type="button" className="secondary small" onClick={onRemove}>Remove cause</button></div>}
+      {!root&&<div className="template-node-remove"><button type="button" className="secondary small" onClick={onRemove} disabled={onRemoveDisabled}>Remove cause</button></div>}
     </div>
     {isBranch&&<div className="fta-template-children">
-      {children.map((child,index)=><TemplateNodeEditor key={child.id} node={child} depth={depth+1} onChange={updated=>updateChild(index,updated)} onRemove={()=>removeChild(index)}/>)}
-      <button type="button" className="secondary small" disabled={children.length>=20} onClick={addChild}>+ Add child cause</button>
+      {children.map((child,index)=><TemplateNodeEditor key={child.id} node={child} depth={depth+1} onChange={updated=>updateChild(index,updated)} onRemove={()=>removeChild(index)} onRemoveDisabled={isBranch&&children.length<=1}/>)}
+      <button type="button" className="secondary small" disabled={children.length>=20||depth>=7||countTemplateNodes(node)>=300} onClick={addChild}>+ Add child cause</button>
     </div>}
   </div>
 }
