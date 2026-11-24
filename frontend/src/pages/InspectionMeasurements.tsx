@@ -14,7 +14,7 @@ export default function InspectionMeasurements(){
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('')
  const eligibleGauges=useMemo(()=>gauges.filter(g=>!blocked.has(String(g.status||'').toUpperCase())&&g.next_due_date&&String(g.next_due_date)>=today()),[gauges])
  const selectedCharacteristic=characteristics.find(c=>String(c.id)===String(entry.characteristic_id))
- const productOperations=operations.filter(o=>!entry.product_id||String(o.product_id)===String(entry.product_id))
+ const productOperations=operations
  async function loadMasters(){
   const [p,o,g,c]=await Promise.all([api('/masters/products'),api('/masters/operations'),api('/calibration/instruments'),api('/calibration/inspection/characteristics')])
   setProducts(p);setOperations(o);setGauges(g);setCharacteristics(c)
@@ -53,7 +53,7 @@ export default function InspectionMeasurements(){
   <section className="panel"><h2>Inspection Characteristic Master</h2><p>Define nominal size and permitted limits for each product and operation. Lower and upper tolerance are absolute measurement limits.</p>
    <div className="machine-field-grid">
     <label>Product<select value={master.product_id} onChange={e=>setMaster({...master,product_id:e.target.value})}><option value="">Select product</option>{products.map(p=><option key={p.id} value={p.id}>{p.code} — {p.name}</option>)}</select></label>
-    <label>Operation<select value={master.operation_id} onChange={e=>setMaster({...master,operation_id:e.target.value})}><option value="">All / not operation-specific</option>{operations.filter(o=>!master.product_id||String(o.product_id)===String(master.product_id)).map(o=><option key={o.id} value={o.id}>{o.code||o.operation_code} — {o.name||o.operation_name}</option>)}</select></label>
+    <label>Operation<select value={master.operation_id} onChange={e=>setMaster({...master,operation_id:e.target.value})}><option value="">All / not operation-specific</option>{operations.map(o=><option key={o.id} value={o.id}>{o.code||o.operation_code} — {o.name||o.operation_name}</option>)}</select></label>
     <label>Characteristic Code<input value={master.characteristic_code} onChange={e=>setMaster({...master,characteristic_code:e.target.value})} placeholder="e.g. OD-01"/></label>
     <label>Characteristic Name<input value={master.name} onChange={e=>setMaster({...master,name:e.target.value})} placeholder="e.g. Outer diameter"/></label>
     <label>Nominal Value<input type="number" step="any" value={master.nominal_value} onChange={e=>setMaster({...master,nominal_value:e.target.value})}/></label>
