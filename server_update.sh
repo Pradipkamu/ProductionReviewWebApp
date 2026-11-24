@@ -169,7 +169,8 @@ create_files_backup() {
   local -a paths=()
 
   archive="$CODE_BACKUP_DIR/files_before_update_$STAMP.tar.gz"
-  for p in .env docker-compose.yml database/imports database/attachments database/backups mqtt/config mqtt/certs; do
+  [[ -f "$APP_DIR/.env" ]] || stop "Production .env file is missing; configuration backup is mandatory"
+  for p .env docker-compose.yml database/imports database/attachments database/backups mqtt/config mqtt/certs; do
     [[ -e "$APP_DIR/$p" ]] && paths+=("$p")
   done
   ((${#paths[@]} > 0)) || stop "No application data/configuration paths found for file backup"
@@ -181,7 +182,7 @@ create_files_backup() {
     stop "Application data/configuration archive verification failed"
   chmod 600 "$archive"
   say "VERIFIED FILES/CONFIG BACKUP: $archive"
-  printf 'FILES_BACKUP=%q\\n' "$archive" >> "$STATE_FILE"
+  printf 'FILES_BACKUP=%q\n' "$archive" >> "$STATE_FILE"
 }
 
 create_backups() {
@@ -376,6 +377,7 @@ Deployment safeguards:
   - Alembic migrations are NOT run by deploy; use migration-check then migrate --confirm.
   - Database restore is NOT run automatically.
   - .env, Compose config, uploads, attachments, app backups, MQTT config and certificates are archived when present.
+  - MQTT named-volume contents are not modified by this helper and are not included in the file archive.
   - Database rollback after a migration requires a separately planned restore.
 EOF
 }
