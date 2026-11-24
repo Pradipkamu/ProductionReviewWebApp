@@ -551,7 +551,7 @@ def list_templates(operation_code: str | None = None, defect_code: str | None = 
     if defect_code:
         query += " AND t.defect_code=:defect_code"
         params["defect_code"] = defect_code
-    query += " ORDER BY o.name, d.category, d.name, t.version DESC"
+    query += " ORDER BY o.name, d.fta_category, d.name, t.version DESC"
     rows = db.execute(text(query), params).mappings().all()
     return [dict(x) for x in rows]
 
