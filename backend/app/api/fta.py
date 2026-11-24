@@ -363,7 +363,8 @@ def list_rejections(limit: int = 100, db: Session = Depends(get_db), user: User 
     _role(user, READ_ROLES)
     limit = max(1, min(limit, 300))
     rows = db.execute(text("""
-        SELECT q.id, q.rejection_date, q.shift, COALESCE(q.plant,p.plant) AS plant, q.machine_id,
+        SELECT q.id, q.product_id, q.phenomenon_id, q.rejection_date, q.shift,
+               COALESCE(q.plant,p.plant) AS plant, q.machine_id,
                q.reject_qty, q.remark, p.code AS part_code, p.name AS part_name,
                ph.name AS phenomenon, m.name AS machine
         FROM quality_rejection_daily q
