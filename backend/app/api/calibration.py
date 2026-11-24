@@ -82,7 +82,14 @@ def list_instruments(status: str | None = None, due_only: bool = False, db: Sess
         q += " AND next_due_date <= :today"; params["today"] = date.today()
     q += " ORDER BY next_due_date NULLS FIRST, instrument_code"
     rows = db.execute(text(q), params).mappings().all()
-    return [dict(x) for x in rows]
+    today = date.today()
+    result = []
+    for row in rows:
+        item = dict(row)
+        if item.get('next_due_date') and item['next_due_date'] < today and item['status'] == 'CALIBRATED':
+            item['status'] = 'OVERDUE'
+        result.append(item)
+    return result
 
 @router.post("/instruments")
 def create_instrument(data: InstrumentIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -118,13 +125,13 @@ def record_calibration(instrument_id: int, data: CalibrationEventIn, db: Session
       (instrument_id,event_type,calibration_date,due_date,certificate_number,laboratory_name,
        laboratory_accreditation,traceability_reference,result,as_found,as_left,uncertainty,certificate_uri,
        remarks,performed_by,approved_by)
-      VALUES (:iid,:typ,:dt,:due,:cert,:lab,:acc,:trace,:res,:found,:left,:unc,:uri,:remarks,:uid,:uid)
+      VALUES (:iid,:typ,:dt,:due,:cert,:lab,:acc,:trace,:res,:found,:left,:unc,:uri,:remarks,:uid,NULL)
       RETURNING id"""),dict(iid=instrument_id,typ=data.event_type,dt=data.calibration_date,due=due,
       cert=data.certificate_number,lab=data.laboratory_name,acc=data.laboratory_accreditation,
       trace=data.traceability_reference,res=data.result,found=data.as_found,left=data.as_left,
       unc=data.uncertainty,uri=data.certificate_uri,remarks=data.remarks,uid=user.id))
     eid=result.scalar_one()
-    new_status = "CALIBRATED" if data.result == "PASS" else ("FAILED" if data.result == "FAIL" else "QUARANTINED")
+    new_status = "CALIBRATED" if data.result == "PASS" and due >= date.today() else ("OVERDUE" if data.result == "PASS" else ("FAILED" if data.result == "FAIL" else "QUARANTINED"))
     db.execute(text("""UPDATE calibration_instruments SET last_calibration_date=:dt,next_due_date=:due,
       status=:status,updated_at=now() WHERE id=:id"""),dict(dt=data.calibration_date,due=due,status=new_status,id=instrument_id))
     _audit(db,instrument_id,"CALIBRATION_RECORDED",dict(inst),data.model_dump(mode="json"),"Calibration event recorded",user.id,eid)
