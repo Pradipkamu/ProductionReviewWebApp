@@ -4,7 +4,7 @@ import json
 import re
 import uuid
 from pathlib import Path
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from typing import Any
 
@@ -2028,8 +2028,10 @@ def defect_history(defect_code: str, rejection_id: int | None = None,
 
     params = {
         "phenomenon_id": mapping["phenomenon_id"],
-        "target_date": target["rejection_date"] if target else None,
-        "target_rejection_id": target["id"] if target else None,
+        "target_fta_cutoff": (
+            datetime.combine(target["rejection_date"] + timedelta(days=1), datetime.min.time())
+            if target else None
+        ),
         "target_product_id": target["product_id"] if target else None,
         "user_id": user.id,
     }
@@ -2040,7 +2042,7 @@ def defect_history(defect_code: str, rejection_id: int | None = None,
     rows = db.execute(text(f"""
         SELECT i.id AS investigation_id, i.investigation_no, i.status,
                i.operation_code, i.plant, i.machine_id, m.name AS machine_name,
-               i.rejection_id, q.rejection_date AS fta_date, q.shift,
+               i.rejection_id, i.created_at AS fta_date, q.rejection_date AS rejection_date, q.shift,
                p.code AS part_code, p.name AS part_name, q.reject_qty,
                CASE WHEN :target_product_id IS NOT NULL AND q.product_id=:target_product_id
                     THEN true ELSE false END AS same_part,
@@ -2069,12 +2071,9 @@ def defect_history(defect_code: str, rejection_id: int | None = None,
         JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
         LEFT JOIN machines m ON m.id=COALESCE(i.machine_id,q.machine_id)
         WHERE fm.phenomenon_id=:phenomenon_id
-          AND (:target_date IS NULL
-               OR q.rejection_date < :target_date
-               OR (q.rejection_date=:target_date
-                   AND (:target_rejection_id IS NULL OR q.id < :target_rejection_id)))
+          AND (:target_fta_cutoff IS NULL OR i.created_at < :target_fta_cutoff)
           {production_scope}
-        ORDER BY q.rejection_date DESC, i.id DESC
+        ORDER BY i.created_at DESC, i.id DESC
         LIMIT 50
     """), params).mappings().all()
     matches = [dict(row) for row in rows]
