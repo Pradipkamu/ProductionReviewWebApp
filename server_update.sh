@@ -176,10 +176,20 @@ create_files_backup() {
   ((${#paths[@]} > 0)) || stop "No application data/configuration paths found for file backup"
 
   say "Creating protected application-data/configuration archive..."
-  tar -czf "$archive" -C "$APP_DIR" "${paths[@]}" ||
+  command -v sudo >/dev/null || stop "sudo is required to archive protected production files"
+
+  if ! sudo tar -czf "$archive" -C "$APP_DIR" "${paths[@]}"; then
+    sudo rm -f "$archive" || true
     stop "Application data/configuration backup failed"
-  tar -tzf "$archive" >/dev/null ||
+  fi
+
+  if ! sudo tar -tzf "$archive" >/dev/null; then
+    sudo rm -f "$archive" || true
     stop "Application data/configuration archive verification failed"
+  fi
+
+  sudo chown "$(id -u):$(id -g)" "$archive" ||
+    stop "Could not assign backup archive ownership to current user"
   chmod 600 "$archive"
   say "VERIFIED FILES/CONFIG BACKUP: $archive"
   printf 'FILES_BACKUP=%q\n' "$archive" >> "$STATE_FILE"
