@@ -1534,3 +1534,177 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     """), params).mappings().all()
     return {"counts": dict(counts), "top_defects": [dict(x) for x in defects],
             "top_verified_causes": [dict(x) for x in causes]}
+
+
+
+# ---------------------------------------------------------------------------
+# FTA recurrence management. Recurrences are separate rejection events linked
+# to the original investigation; original findings/actions are never replaced.
+# ---------------------------------------------------------------------------
+
+@router.get("/recurrence-candidates/{rejection_id}")
+def recurrence_candidates(rejection_id: int, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    _role(user, READ_ROLES)
+    rejection = db.execute(text("""
+        SELECT id, product_id, phenomenon_id, machine_id, rejection_date
+        FROM quality_rejection_daily WHERE id=:id
+    """), {"id": rejection_id}).mappings().first()
+    if not rejection:
+        raise HTTPException(404, "Quality Rejection record not found")
+    rows = db.execute(text("""
+        SELECT i.id AS investigation_id, i.investigation_no, i.status,
+               i.rejection_id AS original_rejection_id, oq.rejection_date AS original_rejection_date,
+               p.code AS part_code, p.name AS part_name, ph.name AS phenomenon,
+               COALESCE(i.machine_id, oq.machine_id) AS machine_id,
+               om.name AS machine_name,
+               COALESCE((SELECT string_agg(DISTINCT a.status, ', ')
+                         FROM fta_action_links al JOIN actions a ON a.id=al.action_id
+                         WHERE al.investigation_id=i.id), 'NO LINKED ACTION') AS previous_action_status,
+               (SELECT string_agg(DISTINCT f.verification_result, '; ')
+                FROM fta_findings f
+                WHERE f.investigation_id=i.id AND f.is_root_cause=true
+                  AND f.investigation_status='CONFIRMED'
+                  AND NULLIF(f.verification_result,'') IS NOT NULL) AS previous_verification_result
+        FROM fta_investigations i
+        JOIN quality_rejection_daily oq ON oq.id=i.rejection_id
+        JOIN products p ON p.id=oq.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=oq.phenomenon_id
+        LEFT JOIN machines om ON om.id=COALESCE(i.machine_id,oq.machine_id)
+        WHERE oq.product_id=:product_id
+          AND oq.phenomenon_id=:phenomenon_id
+          AND i.rejection_id<>:rejection_id
+        ORDER BY oq.rejection_date DESC, i.id DESC
+        LIMIT 50
+    """), {"product_id": rejection["product_id"], "phenomenon_id": rejection["phenomenon_id"],
+           "rejection_id": rejection_id}).mappings().all()
+    visible = []
+    for row in rows:
+        if _role_name(user) != "PRODUCTION" or db.execute(text("""
+            SELECT 1 FROM fta_investigations
+            WHERE id=:id AND (owner_id=:uid OR created_by_id=:uid)
+        """), {"id": row["investigation_id"], "uid": user.id}).first():
+            visible.append(dict(row))
+    return visible
+
+
+@router.get("/investigations/{investigation_id}/recurrences")
+def list_recurrences(investigation_id: int, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    _assert_investigation_access(db, investigation_id, user)
+    rows = db.execute(text("""
+        SELECT r.id, r.original_investigation_id, r.rejection_id, r.classification,
+               r.same_root_cause, r.recurrence_reason, r.containment_action, r.new_evidence,
+               r.previous_action_status, r.previous_verification_result, r.review_remarks,
+               r.reviewed_by_id, r.reviewed_at, r.created_by_id, r.created_at,
+               q.rejection_date, q.reject_qty, p.code AS part_code, p.name AS part_name,
+               ph.name AS phenomenon, m.name AS machine_name
+        FROM fta_recurrences r
+        JOIN quality_rejection_daily q ON q.id=r.rejection_id
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        LEFT JOIN machines m ON m.id=q.machine_id
+        WHERE r.original_investigation_id=:id
+        ORDER BY q.rejection_date DESC, r.id DESC
+    """), {"id": investigation_id}).mappings().all()
+    return [dict(row) for row in rows]
+
+
+@router.post("/investigations/{investigation_id}/recurrences", status_code=201)
+def create_recurrence(investigation_id: int, payload: dict,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _assert_investigation_access(db, investigation_id, user, WRITE_ROLES)
+    try:
+        rejection_id = int(payload.get("rejection_id") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(422, "A valid new Quality Rejection ID is required")
+    reason = str(payload.get("recurrence_reason") or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(422, "Explain why this rejection may be a recurrence")
+    original = db.execute(text("""
+        SELECT i.id, i.rejection_id, oq.product_id, oq.phenomenon_id
+        FROM fta_investigations i
+        JOIN quality_rejection_daily oq ON oq.id=i.rejection_id
+        WHERE i.id=:id
+    """), {"id": investigation_id}).mappings().first()
+    new_rejection = db.execute(text("""
+        SELECT id, product_id, phenomenon_id FROM quality_rejection_daily WHERE id=:id
+    """), {"id": rejection_id}).mappings().first()
+    if not new_rejection:
+        raise HTTPException(404, "New Quality Rejection record not found")
+    if rejection_id == original["rejection_id"]:
+        raise HTTPException(422, "The original rejection cannot be linked as its own recurrence")
+    if (new_rejection["product_id"], new_rejection["phenomenon_id"]) != (
+        original["product_id"], original["phenomenon_id"]
+    ):
+        raise HTTPException(422, "A recurrence must match the original part and shared phenomenon")
+    classification = str(payload.get("classification") or "PENDING_REVIEW").upper()
+    if classification not in {"PENDING_REVIEW", "SAME_ROOT_CAUSE", "DIFFERENT_ROOT_CAUSE", "UNRELATED"}:
+        raise HTTPException(422, "Invalid recurrence classification")
+    previous = db.execute(text("""
+        SELECT string_agg(DISTINCT a.status, ', ') AS action_status
+        FROM fta_action_links l JOIN actions a ON a.id=l.action_id
+        WHERE l.investigation_id=:id
+    """), {"id": investigation_id}).mappings().one()
+    verification = db.execute(text("""
+        SELECT string_agg(DISTINCT verification_result, '; ')
+        FROM fta_findings
+        WHERE investigation_id=:id AND is_root_cause=true
+          AND investigation_status='CONFIRMED'
+          AND NULLIF(verification_result,'') IS NOT NULL
+    """), {"id": investigation_id}).scalar()
+    try:
+        row = db.execute(text("""
+            INSERT INTO fta_recurrences
+              (original_investigation_id,rejection_id,classification,same_root_cause,
+               recurrence_reason,containment_action,new_evidence,previous_action_status,
+               previous_verification_result,created_by_id)
+            VALUES (:investigation_id,:rejection_id,:classification,:same_root_cause,
+                    :reason,:containment,:evidence,:action_status,:verification,:user_id)
+            RETURNING id
+        """), {
+            "investigation_id": investigation_id, "rejection_id": rejection_id,
+            "classification": classification,
+            "same_root_cause": True if classification == "SAME_ROOT_CAUSE" else (
+                False if classification == "DIFFERENT_ROOT_CAUSE" else None),
+            "reason": reason, "containment": str(payload.get("containment_action") or "").strip() or None,
+            "evidence": str(payload.get("new_evidence") or "").strip() or None,
+            "action_status": previous["action_status"], "verification": verification,
+            "user_id": user.id,
+        }).mappings().one()
+        db.commit()
+        return {"id": row["id"], "original_investigation_id": investigation_id,
+                "rejection_id": rejection_id, "classification": classification}
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "This Quality Rejection is already linked to an FTA recurrence") from exc
+
+
+@router.patch("/recurrences/{recurrence_id}/review")
+def review_recurrence(recurrence_id: int, payload: dict,
+                      db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _role(user, TEMPLATE_ROLES)
+    row = db.execute(text("""
+        SELECT id, original_investigation_id FROM fta_recurrences WHERE id=:id
+    """), {"id": recurrence_id}).mappings().first()
+    if not row:
+        raise HTTPException(404, "FTA recurrence record not found")
+    classification = str(payload.get("classification") or "").upper()
+    if classification not in {"SAME_ROOT_CAUSE", "DIFFERENT_ROOT_CAUSE", "UNRELATED"}:
+        raise HTTPException(422, "Select same root cause, different root cause or unrelated")
+    remarks = str(payload.get("review_remarks") or "").strip()
+    if len(remarks) < 5:
+        raise HTTPException(422, "Review remarks are required")
+    db.execute(text("""
+        UPDATE fta_recurrences
+        SET classification=:classification,
+            same_root_cause=:same_root_cause,
+            review_remarks=:remarks,
+            reviewed_by_id=:user_id,
+            reviewed_at=now()
+        WHERE id=:id
+    """), {"classification": classification,
+           "same_root_cause": classification == "SAME_ROOT_CAUSE",
+           "remarks": remarks, "user_id": user.id, "id": recurrence_id})
+    db.commit()
+    return {"success": True, "id": recurrence_id, "classification": classification}
