@@ -1433,6 +1433,76 @@ def close_investigation(investigation_id: int, payload: CloseRequest,
     return {"success": True, "status": "CLOSED"}
 
 
+
+@router.get("/rejection-actions")
+def rejection_actions_by_day(from_date: date, to_date: date, plant: str | None = None,
+                             product_id: str | None = None, phenomenon_id: str | None = None,
+                             operation_id: str | None = None, machine_id: str | None = None,
+                             shift: str | None = None, db: Session = Depends(get_db),
+                             user: User = Depends(get_current_user)):
+    """Return FTA-linked corrective/preventive actions scoped to Quality dashboard filters."""
+    _role(user, READ_ROLES)
+    if to_date < from_date:
+        raise HTTPException(422, "End date must be on or after start date")
+
+    def ids(value: str | None) -> list[int]:
+        if not value:
+            return []
+        try:
+            return [int(part.strip()) for part in value.split(",") if part.strip()]
+        except ValueError:
+            raise HTTPException(422, "Invalid numeric filter")
+
+    product_ids = ids(product_id)
+    phenomenon_ids = ids(phenomenon_id)
+    operation_ids = ids(operation_id)
+    machine_ids = ids(machine_id)
+    shifts = [part.strip() for part in (shift or "").split(",") if part.strip()]
+
+    query = """
+        SELECT DISTINCT a.id, a.action_no, a.problem_description, a.action_description,
+               a.status, a.due_at, a.action_type, a.owner_id, u.full_name AS owner_name,
+               i.id AS investigation_id, i.investigation_no, i.operation_code,
+               q.id AS rejection_id, q.rejection_date AS date, q.shift,
+               COALESCE(q.plant, p.plant) AS plant, q.product_id, q.phenomenon_id,
+               p.code AS part_code, p.name AS part_name, ph.name AS phenomenon,
+               COALESCE(i.machine_id, q.machine_id) AS machine_id, m.name AS machine_name
+        FROM fta_action_links l
+        JOIN fta_investigations i ON i.id=l.investigation_id
+        JOIN actions a ON a.id=l.action_id
+        JOIN quality_rejection_daily q ON q.id=i.rejection_id
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        LEFT JOIN machines m ON m.id=COALESCE(i.machine_id, q.machine_id)
+        LEFT JOIN users u ON u.id=a.owner_id
+        WHERE q.rejection_date BETWEEN :from_date AND :to_date
+    """
+    params: dict[str, Any] = {"from_date": from_date, "to_date": to_date}
+    if plant:
+        query += " AND COALESCE(q.plant, p.plant)=:plant"
+        params["plant"] = plant
+    if product_ids:
+        query += " AND q.product_id = ANY(:product_ids)"
+        params["product_ids"] = product_ids
+    if phenomenon_ids:
+        query += " AND q.phenomenon_id = ANY(:phenomenon_ids)"
+        params["phenomenon_ids"] = phenomenon_ids
+    if operation_ids:
+        query += " AND i.operation_code = ANY(:operation_ids)"
+        params["operation_ids"] = operation_ids
+    if machine_ids:
+        query += " AND COALESCE(i.machine_id, q.machine_id) = ANY(:machine_ids)"
+        params["machine_ids"] = machine_ids
+    if shifts:
+        query += " AND q.shift = ANY(:shifts)"
+        params["shifts"] = shifts
+    if _role_name(user) == "PRODUCTION":
+        query += " AND (i.owner_id=:user_id OR i.created_by_id=:user_id)"
+        params["user_id"] = user.id
+    query += " ORDER BY q.rejection_date, a.id"
+    return [dict(row) for row in db.execute(text(query), params).mappings().all()]
+
+
 @router.get("/dashboard")
 def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _role(user, READ_ROLES)
