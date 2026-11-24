@@ -1,0 +1,36 @@
+import { useEffect, useState } from 'react'
+import { api } from '../api'
+
+export default function CalibrationControls({ selected, refresh }: { selected:any, refresh:()=>void }) {
+ const [pending,setPending]=useState<any[]>([]),[events,setEvents]=useState<any[]>([]),[msa,setMsa]=useState<any[]>([])
+ const [reason,setReason]=useState(''),[assessment,setAssessment]=useState(''),[disposition,setDisposition]=useState('PENDING')
+ const [periodFrom,setPeriodFrom]=useState(new Date().toISOString().slice(0,10)),[periodTo,setPeriodTo]=useState(new Date().toISOString().slice(0,10))
+ const [shipped,setShipped]=useState(false),[notified,setNotified]=useState(false),[notificationRef,setNotificationRef]=useState('')
+ const [study,setStudy]=useState<any>({study_type:'GAGE_RR',measurement_system:'',characteristic:'',control_plan_reference:'',study_date:new Date().toISOString().slice(0,10),method_reference:'AIAG MSA',acceptance_criteria:'',result_summary:'',result:'CONDITIONAL',customer_approval_reference:'',instrument_ids:[],remarks:''})
+ const [error,setError]=useState('')
+ async function load(){try{setPending(await api('/calibration/approvals/pending'));setMsa(await api('/calibration/msa'));if(selected)setEvents(await api('/calibration/instruments/'+selected.id+'/events'))}catch(e:any){setError(e.message)}}
+ useEffect(()=>{load()},[selected?.id])
+ async function approve(id:number){try{await api('/calibration/events/'+id+'/approve',{method:'POST',body:JSON.stringify({reason})});setReason('');await load();refresh()}catch(e:any){setError(e.message)}}
+ async function impact(id:number){try{await api('/calibration/events/'+id+'/impact',{method:'POST',body:JSON.stringify({period_from:periodFrom,period_to:periodTo,affected_product_ids:[],affected_lot_references:[],affected_quantity:0,assessment,disposition,shipped_to_customer:shipped,customer_notified:notified,customer_notification_reference:notificationRef||null})});setAssessment('');await load()}catch(e:any){setError(e.message)}}
+ async function saveMsa(){try{await api('/calibration/msa',{method:'POST',body:JSON.stringify(study)});setStudy({...study,measurement_system:'',characteristic:'',acceptance_criteria:'',result_summary:''});await load()}catch(e:any){setError(e.message)}}
+ return <section className="panel">
+  <h2>Calibration release & compliance controls</h2>{error&&<div className="error">{error}</div>}
+  <h3>Pending independent approvals</h3>
+  {pending.length===0?<p>No calibration approvals pending.</p>:pending.map(x=><div className="panel" key={x.id}><strong>{x.instrument_code} — {x.instrument_name}</strong><p>{x.event_type} · {x.calibration_date} · Certificate: {x.certificate_number||'Not recorded'}</p><label>Approval reason<input value={reason} onChange={e=>setReason(e.target.value)} placeholder="Review evidence and release rationale"/></label><button disabled={reason.trim().length<5} onClick={()=>approve(x.id)}>Approve & release</button></div>)}
+  {selected&&<><h3>Out-of-tolerance impact assessment — {selected.instrument_code}</h3>
+   {events.filter(x=>['FAIL','CONDITIONAL'].includes(x.result)).map(x=><div key={x.id} className="panel"><strong>Event #{x.id} · {x.result} · {x.calibration_date}</strong>
+    <div className="machine-field-grid"><label>Period from<input type="date" value={periodFrom} onChange={e=>setPeriodFrom(e.target.value)}/></label><label>Period to<input type="date" value={periodTo} onChange={e=>setPeriodTo(e.target.value)}/></label><label>Disposition<select value={disposition} onChange={e=>setDisposition(e.target.value)}>{['PENDING','REINSPECT','ACCEPT_JUSTIFIED','REJECT','NO_IMPACT'].map(v=><option key={v}>{v}</option>)}</select></label></div>
+    <label>Assessment / objective evidence<textarea value={assessment} onChange={e=>setAssessment(e.target.value)}/></label>
+    <label><input type="checkbox" checked={shipped} onChange={e=>setShipped(e.target.checked)}/> Suspect product already shipped to customer</label>
+    <label><input type="checkbox" checked={notified} onChange={e=>setNotified(e.target.checked)}/> Customer notified</label>
+    <label>Customer notification reference<input value={notificationRef} onChange={e=>setNotificationRef(e.target.value)}/></label>
+    <button disabled={assessment.trim().length<5} onClick={()=>impact(x.id)}>Save impact assessment</button>
+   </div>)}
+   <h3>Calibration event history</h3><div className="table-wrap"><table><thead><tr><th>Date</th><th>Event</th><th>Result</th><th>Certificate</th><th>Performed by</th><th>Approved by</th></tr></thead><tbody>{events.map(x=><tr key={x.id}><td>{x.calibration_date}</td><td>{x.event_type}</td><td>{x.result}</td><td>{x.certificate_number||'—'}</td><td>{x.performed_by??'—'}</td><td>{x.approved_by??'Pending'}</td></tr>)}</tbody></table></div>
+  </>}
+  <h3>Measurement System Analysis (MSA)</h3>
+  <div className="machine-field-grid"><label>Study type<select value={study.study_type} onChange={e=>setStudy({...study,study_type:e.target.value})}>{['GAGE_RR','BIAS','LINEARITY','STABILITY','OTHER'].map(x=><option key={x}>{x}</option>)}</select></label><label>Measurement system<input value={study.measurement_system} onChange={e=>setStudy({...study,measurement_system:e.target.value})}/></label><label>Characteristic<input value={study.characteristic} onChange={e=>setStudy({...study,characteristic:e.target.value})}/></label><label>Control Plan reference<input value={study.control_plan_reference} onChange={e=>setStudy({...study,control_plan_reference:e.target.value})}/></label><label>Study date<input type="date" value={study.study_date} onChange={e=>setStudy({...study,study_date:e.target.value})}/></label><label>Method reference<input value={study.method_reference} onChange={e=>setStudy({...study,method_reference:e.target.value})}/></label><label>Acceptance criteria<input value={study.acceptance_criteria} onChange={e=>setStudy({...study,acceptance_criteria:e.target.value})}/></label><label>Result<select value={study.result} onChange={e=>setStudy({...study,result:e.target.value})}>{['ACCEPTABLE','UNACCEPTABLE','CONDITIONAL','CUSTOMER_APPROVED_ALTERNATIVE'].map(x=><option key={x}>{x}</option>)}</select></label><label>Customer approval reference<input value={study.customer_approval_reference} onChange={e=>setStudy({...study,customer_approval_reference:e.target.value})}/></label></div>
+  <label>Study result summary<textarea value={study.result_summary} onChange={e=>setStudy({...study,result_summary:e.target.value})}/></label><button onClick={saveMsa} disabled={!study.measurement_system||!study.characteristic||!study.acceptance_criteria||!study.result_summary||(study.result==='CUSTOMER_APPROVED_ALTERNATIVE'&&!study.customer_approval_reference)}>Save MSA study</button>
+  <div className="table-wrap"><table><thead><tr><th>Date</th><th>Study</th><th>System</th><th>Characteristic</th><th>Result</th><th>Control Plan</th></tr></thead><tbody>{msa.map(x=><tr key={x.id}><td>{x.study_date}</td><td>{x.study_type}</td><td>{x.measurement_system}</td><td>{x.characteristic}</td><td>{x.result}</td><td>{x.control_plan_reference||'—'}</td></tr>)}</tbody></table></div>
+ </section>
+}
