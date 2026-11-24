@@ -1649,7 +1649,7 @@ def recurrence_suggestions(investigation_id: int, db: Session = Depends(get_db),
     """Automatically find later Quality rejection events for the same defect."""
     _assert_investigation_access(db, investigation_id, user)
     original = db.execute(text("""
-        SELECT i.id, i.investigation_no, i.operation_code,
+        SELECT i.id, i.investigation_no, i.operation_code, i.created_at AS fta_created_at,
                q.id AS rejection_id, q.rejection_date, q.product_id, q.phenomenon_id,
                COALESCE(q.plant,p.plant) AS plant, q.machine_id,
                p.code AS part_code, ph.name AS phenomenon_name,
@@ -1709,6 +1709,10 @@ def recurrence_suggestions(investigation_id: int, db: Session = Depends(get_db),
 
     suggestions = []
     for item in later:
+        # A rejection recorded before the original investigation was opened
+        # is historical context, not a recurrence after that FTA.
+        if original["fta_created_at"] and item["rejection_date"] < original["fta_created_at"].date():
+            continue
         row = dict(item)
         row["same_part"] = row["part_code"] == original["part_code"]
         row["same_plant"] = bool(row["plant"] and original["plant"] and row["plant"] == original["plant"])
@@ -1725,6 +1729,7 @@ def recurrence_suggestions(investigation_id: int, db: Session = Depends(get_db),
         "original_investigation_no": original["investigation_no"],
         "original_rejection_id": original["rejection_id"],
         "original_rejection_date": original["rejection_date"],
+        "original_fta_date": original["fta_created_at"],
         "phenomenon_id": original["phenomenon_id"],
         "phenomenon_name": original["phenomenon_name"],
         "last_matching_rejection_date": suggestions[0]["rejection_date"] if suggestions else None,
