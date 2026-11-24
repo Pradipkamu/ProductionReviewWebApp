@@ -66,7 +66,7 @@ def upgrade():
         )).mappings().all()
     }
     for defect in defects:
-        normalized = re.sub(r"\\s+", " ", (defect["name"] or "").strip().lower())
+        normalized = re.sub(r"\s+", " ", (defect["name"] or "").strip().lower())
         phenomenon_id = canonical.get(normalized)
         if phenomenon_id is None:
             result = bind.execute(sa.text("""
@@ -103,20 +103,17 @@ def upgrade():
             VALUES (:code, :phenomenon_id)
         """), {"code": defect["code"], "phenomenon_id": phenomenon_id})
 
-    # Fail the migration rather than silently leaving an FTA code unmapped.
-    op.execute(sa.text("""
-        DO $$
-        BEGIN
-            IF EXISTS (
-                SELECT 1 FROM fta_defect_library d
-                LEFT JOIN fta_phenomenon_code_map m
-                  ON m.legacy_defect_code = d.code
-                WHERE m.legacy_defect_code IS NULL
-            ) THEN
-                RAISE EXCEPTION 'FTA shared-phenomena migration left one or more defect codes unmapped';
-            END IF;
-        END $$;
-    """))
+    missing = bind.execute(sa.text("""
+        SELECT COUNT(*)
+        FROM fta_defect_library d
+        LEFT JOIN fta_phenomenon_code_map m
+          ON m.legacy_defect_code = d.code
+        WHERE m.legacy_defect_code IS NULL
+    """)).scalar_one()
+    if missing:
+        raise RuntimeError(
+            "FTA shared-phenomena migration left one or more defect codes unmapped"
+        )
 
 
 def downgrade():
