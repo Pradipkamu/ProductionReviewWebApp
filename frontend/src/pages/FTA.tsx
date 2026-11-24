@@ -29,23 +29,30 @@ function TemplateNodeEditor({node,onChange,onRemove,onRemoveDisabled=false,depth
   function removeChild(index:number){
     onChange({...node,children:children.filter((_,i)=>i!==index)})
   }
-  return <div className="fta-template-node-editor" style={{marginLeft:depth?18:0,borderLeft:depth?`3px solid ${nodeConnectorColor(node.type)}`:'none',paddingLeft:depth?12:0,marginTop:10}}>
-    <div className="fta-create-grid">
-      <label>Cause / event name<input value={node.label} maxLength={240} onChange={e=>onChange({...node,label:e.target.value})} placeholder="Describe the event"/></label>
-      <label>Node type<select value={node.type} disabled={root} onChange={e=>changeType(e.target.value)}>
-        {root&&<option value="TOP_EVENT">TOP EVENT</option>}
-        <option value="INTERMEDIATE_EVENT">INTERMEDIATE EVENT</option>
-        <option value="BASIC_EVENT">BASIC EVENT</option>
-        <option value="EXTERNAL_EVENT">EXTERNAL EVENT</option>
-        <option value="UNDEVELOPED_EVENT">UNDEVELOPED EVENT</option>
-      </select></label>
-      {isBranch&&<label>Logic gate<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
-      <label>Requirement / specification (optional)<textarea rows={2} maxLength={1200} value={node.requirement||''} onChange={e=>onChange({...node,requirement:e.target.value})} placeholder="Expected condition, drawing tolerance, process parameter or standard…"/></label>
-      {!root&&<div className="template-node-remove"><button type="button" className="secondary small" onClick={onRemove} disabled={onRemoveDisabled}>Remove cause</button></div>}
+  const eventLabel=node.type.replaceAll('_',' ')
+  return <div className="fta-template-node-editor" style={{marginLeft:depth?18:0,borderLeft:depth?`3px solid ${nodeConnectorColor(node.type)}`:'none',paddingLeft:depth?14:0,marginTop:12}}>
+    <div style={{border:'1px solid var(--border, #d8dee8)',borderRadius:10,overflow:'hidden',background:'var(--panel, #fff)'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,flexWrap:'wrap',padding:'9px 12px',background:'var(--panel-soft, #f5f8fc)',borderBottom:'1px solid var(--border, #d8dee8)'}}>
+        <span style={{display:'flex',alignItems:'center',gap:8}}><i style={{width:9,height:9,borderRadius:3,background:nodeConnectorColor(node.type)}}/><strong style={{fontSize:12,letterSpacing:'.04em'}}>{root?'ROOT EVENT':eventLabel}</strong>{isBranch&&<span className="status-pill">{node.gate||'OR'} GATE</span>}</span>
+        {!root&&<button type="button" className="secondary small" onClick={onRemove} disabled={onRemoveDisabled}>Remove event</button>}
+      </div>
+      <div style={{padding:13,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,220px),1fr))',gap:12,alignItems:'start'}}>
+        <label style={{gridColumn:'1 / -1'}}>Event / cause description<input value={node.label} maxLength={240} onChange={e=>onChange({...node,label:e.target.value})} placeholder="Describe the event clearly"/></label>
+        <label>Event type<select value={node.type} disabled={root} onChange={e=>changeType(e.target.value)}>
+          {root&&<option value="TOP_EVENT">TOP EVENT</option>}
+          <option value="INTERMEDIATE_EVENT">INTERMEDIATE EVENT</option>
+          <option value="BASIC_EVENT">BASIC EVENT</option>
+          <option value="EXTERNAL_EVENT">EXTERNAL EVENT</option>
+          <option value="UNDEVELOPED_EVENT">UNDEVELOPED EVENT</option>
+        </select></label>
+        {isBranch&&<label>Logic relationship<select value={node.gate||'OR'} onChange={e=>onChange({...node,gate:e.target.value})}><option value="OR">OR — any child can cause it</option><option value="AND">AND — all children required</option></select></label>}
+        <label style={{gridColumn:'1 / -1'}}>Requirement / specification <span className="muted small">(optional)</span><textarea rows={2} maxLength={1200} value={node.requirement||''} onChange={e=>onChange({...node,requirement:e.target.value})} placeholder="Expected condition, drawing tolerance, process parameter or standard…"/></label>
+      </div>
     </div>
-    {isBranch&&<div className="fta-template-children">
+    {isBranch&&<div className="fta-template-children" style={{marginLeft:12,paddingLeft:12,borderLeft:'1px dashed var(--border, #cbd5e1)',marginTop:10}}>
+      <div className="muted small" style={{fontWeight:700,marginBottom:5}}>CHILD EVENTS · {children.length}</div>
       {children.map((child,index)=><TemplateNodeEditor key={child.id} node={child} depth={depth+1} onChange={updated=>updateChild(index,updated)} onRemove={()=>removeChild(index)} onRemoveDisabled={isBranch&&children.length<=1}/>)}
-      <button type="button" className="secondary small" disabled={children.length>=20||depth>=7||countTemplateNodes(node)>=300} onClick={addChild}>+ Add child cause</button>
+      <button type="button" className="secondary small" disabled={children.length>=20||depth>=7||countTemplateNodes(node)>=300} onClick={addChild}>＋ Add child event</button>
     </div>}
   </div>
 }
