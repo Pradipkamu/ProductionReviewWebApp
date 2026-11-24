@@ -34,12 +34,18 @@ def upgrade():
 
     # Move template and investigation operation references with the master.
     # These columns are stored codes, not foreign keys to fta_operations.
-    bind.execute(sa.text("""
-        UPDATE fta_templates
-        SET operation_code = 'VMC_MILL',
-            name = regexp_replace(name, '^CNC Milling', 'VMC Milling')
-        WHERE operation_code = 'CNC_MILL'
-    """))
+    templates = bind.execute(sa.text("""
+        SELECT id, name FROM fta_templates WHERE operation_code = 'CNC_MILL'
+    """)).mappings().all()
+    for template in templates:
+        name = template["name"] or ""
+        if name.startswith("CNC Milling"):
+            name = "VMC Milling" + name[len("CNC Milling"):]
+        bind.execute(sa.text("""
+            UPDATE fta_templates
+            SET operation_code='VMC_MILL', name=:name
+            WHERE id=:id
+        """), {"name": name, "id": template["id"]})
     bind.execute(sa.text("""
         UPDATE fta_investigations
         SET operation_code = 'VMC_MILL'
@@ -49,7 +55,7 @@ def upgrade():
         UPDATE fta_operations
         SET code = 'VMC_MILL',
             name = 'VMC Milling',
-            updated_at = now()
+            updated_at = CURRENT_TIMESTAMP
         WHERE code = 'CNC_MILL'
     """))
 
@@ -73,12 +79,18 @@ def downgrade():
             "Resolve the duplicate operation before downgrading this migration."
         )
 
-    bind.execute(sa.text("""
-        UPDATE fta_templates
-        SET operation_code = 'CNC_MILL',
-            name = regexp_replace(name, '^VMC Milling', 'CNC Milling')
-        WHERE operation_code = 'VMC_MILL'
-    """))
+    templates = bind.execute(sa.text("""
+        SELECT id, name FROM fta_templates WHERE operation_code = 'VMC_MILL'
+    """)).mappings().all()
+    for template in templates:
+        name = template["name"] or ""
+        if name.startswith("VMC Milling"):
+            name = "CNC Milling" + name[len("VMC Milling"):]
+        bind.execute(sa.text("""
+            UPDATE fta_templates
+            SET operation_code='CNC_MILL', name=:name
+            WHERE id=:id
+        """), {"name": name, "id": template["id"]})
     bind.execute(sa.text("""
         UPDATE fta_investigations
         SET operation_code = 'CNC_MILL'
