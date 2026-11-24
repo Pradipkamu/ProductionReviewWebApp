@@ -153,6 +153,32 @@ export default function FTA({me}:{me:any}){
   }
   const tree:FtaNode|undefined=detail?.template_snapshot?.tree
   const counts=dashboard.counts||{}
+  const findings:any[]=detail?.findings||[]
+  const linkedActions:any[]=detail?.actions||[]
+  const requiredActions=linkedActions.filter((a:any)=>['CORRECTIVE','PREVENTIVE'].includes(a.relationship_type))
+  const confirmedRootCause=findings.some((f:any)=>f.investigation_status==='CONFIRMED'&&f.is_root_cause)
+  const treeNodes=(node:any):any[]=>node?[node,...(node.children||[]).flatMap((child:any)=>treeNodes(child))]:[]
+  const allTreeNodes=treeNodes(tree)
+  const completedTreeNodes=allTreeNodes.filter((node:any)=>findings.some((f:any)=>f.node_id===node.id&&['CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE'].includes(f.investigation_status))).length
+  const treeStarted=findings.length>0
+  const treeComplete=allTreeNodes.length>0&&completedTreeNodes===allTreeNodes.length
+  const actionsComplete=requiredActions.length>0&&requiredActions.every((a:any)=>a.status==='CLOSED')
+  const unresolvedDiscovered=(detail?.discovered_causes||[]).some((x:any)=>['PROPOSED','ACCEPTED'].includes(x.status))
+  const closed=detail?.status==='CLOSED'
+  const flowSteps=[
+    {title:'Investigation creation',description:'Quality Rejection linked and investigation details created.',done:!!detail?.source_rejection,started:!!detail?.id},
+    {title:'Fault Tree Analysis',description:`Cause nodes evaluated: ${completedTreeNodes} of ${allTreeNodes.length}.`,done:treeComplete,started:treeStarted},
+    {title:'Root cause confirmation',description:'At least one root cause is confirmed in the findings.',done:confirmedRootCause,started:findings.some((f:any)=>f.investigation_status==='CONFIRMED')},
+    {title:'Corrective / preventive actions',description:requiredActions.length?`${requiredActions.length} corrective / preventive action(s) linked.`:'No corrective or preventive action linked yet.',done:requiredActions.length>0,started:requiredActions.length>0},
+    {title:'Action implementation & review',description:requiredActions.length?`${requiredActions.filter((a:any)=>a.status==='CLOSED').length} of ${requiredActions.length} linked actions closed${unresolvedDiscovered?' · discovered causes still need review':''}.`:'Waiting for linked actions.',done:actionsComplete&&!unresolvedDiscovered,started:requiredActions.some((a:any)=>a.status==='IN_PROGRESS'||a.status==='CLOSED')||!!(detail?.discovered_causes||[]).length},
+    {title:'Investigation closure',description:closed?'Investigation closed and recorded in audit history.':detail?.status==='VERIFIED_PENDING_ACTIONS'?'Verified; awaiting action completion and final closure.':'Final closure is pending.',done:closed,started:detail?.status==='VERIFIED_PENDING_ACTIONS'}
+  ]
+  let flowHasPending=false
+  const flowRows=flowSteps.map((step:any)=>{
+    const state=step.done?'completed':!flowHasPending&&step.started?'in-progress':!flowHasPending&&!step.started?'pending':(flowHasPending?'pending':'in-progress')
+    if(!step.done)flowHasPending=true
+    return {...step,state}
+  })
 
   return <div className="page fta-page">
     <PageHeader title="Fault Tree Analysis" subtitle="Machining defect investigation, verified root causes and corrective-action linkage."/>
@@ -311,6 +337,15 @@ export default function FTA({me}:{me:any}){
         <label>Closure remarks<textarea rows={2} value={closureRemarks} onChange={e=>setClosureRemarks(e.target.value)} disabled={!canVerify||detail.status!=='VERIFIED_PENDING_ACTIONS'}/></label>
         <button disabled={!canVerify||busy||detail.status!=='VERIFIED_PENDING_ACTIONS'} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/close',{method:'POST',body:JSON.stringify({remarks:closureRemarks})});await loadDetail(detail.id,true);await load();setMessage('Investigation closed.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Close investigation</button>
       </div>
+      <section className="fta-process-flow">
+        <div className="panel-title"><div><h3>Investigation process flow</h3><p>Live completion status based on saved findings, linked actions and closure records.</p></div><strong>{flowRows.filter((x:any)=>x.state==='completed').length} / {flowRows.length} completed</strong></div>
+        <div className="fta-process-list">
+          {flowRows.map((step:any,index:number)=><article className={`fta-process-step ${step.state}`} key={step.title}>
+            <div className="fta-process-marker">{step.state==='completed'?'✓':index+1}</div>
+            <div className="fta-process-copy"><div className="fta-process-heading"><strong>{step.title}</strong><span className={`fta-process-status ${step.state}`}>{step.state==='completed'?'Completed':step.state==='in-progress'?'In progress':'Pending'}</span></div><p>{step.description}</p></div>
+          </article>)}
+        </div>
+      </section>
       <section className="fta-history">
         <h3>Investigation audit history</h3>
         {(detail.status_history||[]).map((h:any)=><div className="fta-history-row" key={h.id}><strong>{h.old_status||'NEW'} → {h.new_status}</strong><span>{String(h.created_at||'').replace('T',' ').slice(0,19)}</span><p>{h.remarks||'—'}</p></div>)}
