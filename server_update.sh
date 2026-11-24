@@ -272,6 +272,75 @@ migration_preflight() {
   say "No migration was applied. Review it before running: bash server_update.sh migrate --confirm"
 }
 
+install_daily_backup() {
+  local service_file timer_file run_user run_group
+  command -v systemctl >/dev/null || stop "systemd is required for daily backups"
+  command -v flock >/dev/null || stop "flock is required for safe backup locking"
+  command -v sudo >/dev/null || stop "sudo is required to install the systemd timer"
+
+  run_user="$(id -un)"
+  run_group="$(id -gn)"
+  service_file="/etc/systemd/system/productionreview-daily-backup.service"
+  timer_file="/etc/systemd/system/productionreview-daily-backup.timer"
+
+  say "Installing daily backup service for user $run_user..."
+  sudo tee "$service_file" >/dev/null <<EOF
+[Unit]
+Description=ProductionReviewWebApp verified daily backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=$run_user
+Group=$run_group
+WorkingDirectory=$APP_DIR
+Environment=HOME=$HOME
+UMask=0077
+ExecStart=/usr/bin/flock -n /run/lock/productionreview-daily-backup.lock /bin/bash $APP_DIR/server_update.sh backup
+EOF
+
+  sudo tee "$timer_file" >/dev/null <<'EOF'
+[Unit]
+Description=Run ProductionReviewWebApp backup daily at 02:00 Asia/Kolkata
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=5m
+Unit=productionreview-daily-backup.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  sudo chmod 644 "$service_file" "$timer_file"
+  sudo systemd-analyze verify "$service_file" "$timer_file" ||
+    stop "systemd unit validation failed; timer was not enabled"
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now productionreview-daily-backup.timer
+  say "Daily backup timer installed and enabled for 02:00 Asia/Kolkata."
+  say "No backup files were deleted; retention remains manual."
+  systemctl list-timers productionreview-daily-backup.timer --no-pager | tee -a "$LOG"
+}
+
+daily_backup_status() {
+  command -v systemctl >/dev/null || stop "systemd is required"
+  systemctl status productionreview-daily-backup.timer --no-pager || true
+  systemctl list-timers productionreview-daily-backup.timer --no-pager || true
+  say "Recent daily backup service logs:"
+  journalctl -u productionreview-daily-backup.service -n 60 --no-pager 2>&1 | tee -a "$LOG" || true
+}
+
+uninstall_daily_backup() {
+  command -v systemctl >/dev/null || stop "systemd is required"
+  command -v sudo >/dev/null || stop "sudo is required"
+  sudo systemctl disable --now productionreview-daily-backup.timer || true
+  sudo rm -f /etc/systemd/system/productionreview-daily-backup.timer /etc/systemd/system/productionreview-daily-backup.service
+  sudo systemctl daemon-reload
+  say "Daily backup timer and service removed. Existing backup files were preserved."
+}
+
 apply_migrations() {
   local confirm="${1:-}"
   [[ "$confirm" == "--confirm" ]] || stop "Use migrate --confirm to apply migrations"
@@ -385,6 +454,9 @@ usage() {
 Usage:
   bash server_update.sh check
   bash server_update.sh backup
+  bash server_update.sh daily-backup-install
+  bash server_update.sh daily-backup-status
+  bash server_update.sh daily-backup-uninstall
   bash server_update.sh verify-backup <dump-path>
   bash server_update.sh verify
   bash server_update.sh migration-check
@@ -418,8 +490,23 @@ main() {
       ;;
 
     backup)
+      # Keep scheduled/manual backup metadata separate from deployment rollback state.
+      STATE_FILE="$BACKUP_ROOT/last_backup.env"
       status
       create_backups
+      ;;
+
+    daily-backup-install)
+      status
+      install_daily_backup
+      ;;
+
+    daily-backup-status)
+      daily_backup_status
+      ;;
+
+    daily-backup-uninstall)
+      uninstall_daily_backup
       ;;
 
     verify-backup)
