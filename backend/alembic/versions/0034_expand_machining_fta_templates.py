@@ -1,6 +1,6 @@
 """Create expanded, operation- and defect-specific V2 machining FTA templates.
 
-Revision ID: 0034_expand_machining_fta_templates
+Revision ID: 0034_fta_templates_v2
 Revises: 0033_fta_recurrence_management
 
 V1 templates and investigation snapshots are preserved. For untouched seeded
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 import json
 import re
 
-revision = "0034_expand_machining_fta_templates"
+revision = "0034_fta_templates_v2"
 down_revision = "0033_fta_recurrence_management"
 branch_labels = None
 depends_on = None
