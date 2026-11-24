@@ -22,7 +22,7 @@ def test_new_database_and_legacy_adoption_preserve_rows(tmp_path):
         assert conn.scalar(text('SELECT name FROM products WHERE id=1'))=='Original Part'
         assert conn.scalar(text('SELECT password_hash FROM users WHERE id=1'))=='legacy-hash'
         assert conn.scalar(text('SELECT must_change_password FROM users WHERE id=1'))==1
-        assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0031_shared_fta_phenomena'
+        assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0033_fta_recurrence_management'
         assert conn.scalar(text('SELECT count(*) FROM fta_operations')) == 15
         assert conn.scalar(text('SELECT count(*) FROM fta_defect_library')) == 14
         assert conn.scalar(text("SELECT count(*) FROM fta_templates WHERE status='PUBLISHED'")) == 210
@@ -83,19 +83,20 @@ def test_postgresql_migrations_when_service_available():
             assert conn.scalar(text('SELECT revision FROM business_data_revision WHERE id=1'))>initial
         with target.begin() as conn:
             config.attributes['connection']=conn;command.upgrade(config,'head')
-            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0031_shared_fta_phenomena'
+            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0033_fta_recurrence_management'
             assert conn.scalar(text('SELECT count(*) FROM fta_operations')) == 15
             assert conn.scalar(text('SELECT count(*) FROM fta_defect_library')) == 14
             assert conn.scalar(text("SELECT count(*) FROM fta_templates WHERE status='PUBLISHED'")) == 210
         # Exercise the FTA rollback on the disposable PostgreSQL database only,
         # then prove that a clean re-upgrade restores the seeded catalogue.
         with target.begin() as conn:
-            config.attributes['connection']=conn;command.downgrade(config,'0028_chat_device_tokens')
-            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0028_chat_device_tokens'
-            assert conn.scalar(text("SELECT to_regclass('public.fta_investigations') IS NULL")) is True
+            config.attributes['connection']=conn;command.downgrade(config,'0031_shared_fta_phenomena')
+            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0031_shared_fta_phenomena'
+            assert conn.scalar(text("SELECT to_regclass('public.fta_recurrences') IS NULL")) is True
+            assert conn.scalar(text("SELECT to_regclass('public.fta_investigations') IS NOT NULL")) is True
         with target.begin() as conn:
             config.attributes['connection']=conn;command.upgrade(config,'head')
-            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0031_shared_fta_phenomena'
+            assert conn.scalar(text('SELECT version_num FROM alembic_version'))=='0033_fta_recurrence_management'
             assert conn.scalar(text('SELECT count(*) FROM fta_operations')) == 15
             assert conn.scalar(text('SELECT count(*) FROM fta_defect_library')) == 14
             assert conn.scalar(text("SELECT count(*) FROM fta_templates WHERE status='PUBLISHED'")) == 210
