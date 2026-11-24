@@ -1673,17 +1673,24 @@ def list_recurrences(investigation_id: int, db: Session = Depends(get_db),
     return [dict(row) for row in rows]
 
 
+class RecurrenceCreate(BaseModel):
+    rejection_id: int = Field(gt=0)
+    recurrence_reason: str = Field(min_length=5, max_length=8000)
+    containment_action: str | None = Field(default=None, max_length=4000)
+    new_evidence: str | None = Field(default=None, max_length=8000)
+
+
+class RecurrenceReview(BaseModel):
+    classification: str = Field(pattern="^(SAME_ROOT_CAUSE|DIFFERENT_ROOT_CAUSE|UNRELATED)$")
+    review_remarks: str = Field(min_length=5, max_length=4000)
+
+
 @router.post("/investigations/{investigation_id}/recurrences", status_code=201)
-def create_recurrence(investigation_id: int, payload: dict,
+def create_recurrence(investigation_id: int, payload: RecurrenceCreate,
                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _assert_investigation_access(db, investigation_id, user, WRITE_ROLES)
-    try:
-        rejection_id = int(payload.get("rejection_id") or 0)
-    except (TypeError, ValueError):
-        raise HTTPException(422, "A valid new Quality Rejection ID is required")
-    reason = str(payload.get("recurrence_reason") or "").strip()
-    if len(reason) < 5:
-        raise HTTPException(422, "Explain why this rejection may be a recurrence")
+    rejection_id = payload.rejection_id
+    reason = payload.recurrence_reason.strip()
     original = db.execute(text("""
         SELECT i.id, i.rejection_id, oq.product_id, oq.phenomenon_id
         FROM fta_investigations i
@@ -1739,8 +1746,8 @@ def create_recurrence(investigation_id: int, payload: dict,
             "classification": classification,
             "same_root_cause": True if classification == "SAME_ROOT_CAUSE" else (
                 False if classification == "DIFFERENT_ROOT_CAUSE" else None),
-            "reason": reason, "containment": str(payload.get("containment_action") or "").strip() or None,
-            "evidence": str(payload.get("new_evidence") or "").strip() or None,
+            "reason": reason, "containment": (payload.containment_action or "").strip() or None,
+            "evidence": (payload.new_evidence or "").strip() or None,
             "action_status": previous["action_status"], "verification": verification,
             "user_id": user.id,
         }).mappings().one()
@@ -1753,7 +1760,7 @@ def create_recurrence(investigation_id: int, payload: dict,
 
 
 @router.patch("/recurrences/{recurrence_id}/review")
-def review_recurrence(recurrence_id: int, payload: dict,
+def review_recurrence(recurrence_id: int, payload: RecurrenceReview,
                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _role(user, TEMPLATE_ROLES)
     row = db.execute(text("""
@@ -1761,12 +1768,8 @@ def review_recurrence(recurrence_id: int, payload: dict,
     """), {"id": recurrence_id}).mappings().first()
     if not row:
         raise HTTPException(404, "FTA recurrence record not found")
-    classification = str(payload.get("classification") or "").upper()
-    if classification not in {"SAME_ROOT_CAUSE", "DIFFERENT_ROOT_CAUSE", "UNRELATED"}:
-        raise HTTPException(422, "Select same root cause, different root cause or unrelated")
-    remarks = str(payload.get("review_remarks") or "").strip()
-    if len(remarks) < 5:
-        raise HTTPException(422, "Review remarks are required")
+    classification = payload.classification
+    remarks = payload.review_remarks.strip()
     db.execute(text("""
         UPDATE fta_recurrences
         SET classification=:classification,
