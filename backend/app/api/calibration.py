@@ -464,7 +464,7 @@ def list_instruments(status: str | None = None, due_only: bool = False,
     result = []
     for row in rows:
         item = dict(row)
-        if item.get("next_due_date") and item["next_due_date"] < today and item["status"] == "CALIBRATED":
+        if item.get("next_due_date") and item["next_due_date"] < today and item["status"] in {"CALIBRATED", "ACTIVE"}:
             item["status"] = "OVERDUE"
         result.append(item)
     return result
