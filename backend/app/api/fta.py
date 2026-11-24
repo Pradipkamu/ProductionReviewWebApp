@@ -1528,12 +1528,35 @@ def review_discovered_cause(cause_id: int, payload: DiscoveredCauseReview,
 def verify_investigation(investigation_id: int, payload: VerifyRequest,
                          db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _role(user, {"ADMIN", "QUALITY"})
-    row = db.execute(text("SELECT status FROM fta_investigations WHERE id=:id"),
+    row = db.execute(text("SELECT status, template_snapshot_json FROM fta_investigations WHERE id=:id"),
                      {"id": investigation_id}).mappings().first()
     if not row:
         raise HTTPException(404, "FTA investigation not found")
     if row["status"] != "IN_PROGRESS":
         raise HTTPException(409, "Only an in-progress investigation can be submitted for verification")
+    snapshot = _json(row.get("template_snapshot_json"), {})
+    tree = snapshot.get("tree") if isinstance(snapshot, dict) else None
+    leaf_ids: list[str] = []
+    def collect_leaves(node: dict | None) -> None:
+        if not isinstance(node, dict):
+            return
+        children = node.get("children") or []
+        if children:
+            for child in children:
+                collect_leaves(child)
+        elif node.get("type") in {"BASIC_EVENT", "EXTERNAL_EVENT", "UNDEVELOPED_EVENT"}:
+            leaf_ids.append(str(node.get("id") or ""))
+    collect_leaves(tree)
+    if leaf_ids:
+        dispositions = db.execute(text("""
+            SELECT node_id, investigation_status FROM fta_findings
+            WHERE investigation_id=:id AND node_id = ANY(:node_ids)
+        """), {"id": investigation_id, "node_ids": leaf_ids}).mappings().all()
+        status_by_node = {str(x["node_id"]): x["investigation_status"] for x in dispositions}
+        unresolved = [node_id for node_id in leaf_ids
+                      if status_by_node.get(node_id) not in {"CONFIRMED", "RULED_OUT", "UNABLE_TO_DETERMINE", "NOT_APPLICABLE"}]
+        if unresolved:
+            raise HTTPException(422, f"Disposition required for {len(unresolved)} basic / external / undeveloped event(s) before verification")
     required_actions = db.execute(text("""
         SELECT COUNT(*) FROM fta_action_links
         WHERE investigation_id=:id AND relationship_type IN ('CORRECTIVE', 'PREVENTIVE')
