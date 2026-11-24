@@ -21,6 +21,7 @@ export const navItems:NavItem[] = [
   {key:'process',to:'/process',label:'Process Monitor'},
   {key:'process_actuals',to:'/process-actuals',label:'Process Actuals / Edit'},
   {key:'quality',to:'/quality',label:'Quality / Rejection'},
+  {key:'quality',to:'/calibration',label:'Calibration Management'},
   {key:'fta',to:'/fta',label:'Fault Tree Analysis'},
   {key:'casting_quality',to:'/casting-quality',label:'Casting Quality'},
   {key:'customer_quality',to:'/customer-quality',label:'Customer Quality'},
