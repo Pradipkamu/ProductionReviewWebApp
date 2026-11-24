@@ -175,6 +175,26 @@ export default function FTA({me}:{me:any}){
     finally{setBusy(false)}
   }
 
+  async function linkSelectedRejectionToPreviousFta(candidate:any){
+    if(!selectedRejection||!rejectionId||!candidate?.same_part)return
+    const detectedReason=`Automatically detected recurrence: Quality defect "${defectHistory?.phenomenon_name||selectedRejection.phenomenon||defectCode}" was rejected again on ${String(selectedRejection.rejection_date||'').slice(0,10)} for part ${selectedRejection.part_code}. This is linked to the latest prior FTA ${candidate.investigation_no} dated ${String(candidate.fta_date||'').slice(0,10)} and is awaiting Quality review.`
+    setBusy(true);setError('');setMessage('')
+    try{
+      await api('/fta/investigations/'+candidate.investigation_id+'/recurrences',{method:'POST',body:JSON.stringify({
+        rejection_id:Number(rejectionId),
+        recurrence_reason:detectedReason,
+        containment_action:null,
+        new_evidence:selectedRejection.remark||null
+      })})
+      setRejectionId('');setRejectionSearch('');setMachineId('')
+      setRecurrenceCandidates([])
+      await load()
+      setSearchParams({view:'register',investigation_id:String(candidate.investigation_id)})
+      setMessage(`Quality Rejection #${selectedRejection.id} was automatically linked to ${candidate.investigation_no} as a recurrence pending Quality review.`)
+    }catch(e:any){setError(e.message||'Unable to link the detected recurrence.')}
+    finally{setBusy(false)}
+  }
+
   async function createInvestigation(){
     if(!rejectionId||!operationCode||!defectCode||!filteredTemplates.length){setError('Select a machining operation, defect, rejection and matching published template.');return}
     setBusy(true);setError('');setMessage('')
@@ -322,7 +342,7 @@ export default function FTA({me}:{me:any}){
                   <td>{item.same_part?<span className="fta-match-tag same">Same part</span>:<span className="fta-match-tag">Same defect</span>}</td>
                   <td><div className="button-row">
                     <a className="button secondary small" href={`/fta?view=register&investigation_id=${item.investigation_id}`}>Open FTA</a>
-                    {rejectionId&&item.same_part&&item.investigation_id===defectHistory.matches.find((match:any)=>match.same_part)?.investigation_id&&<button type="button" className="small" onClick={()=>setSearchParams({view:'register',investigation_id:String(item.investigation_id),recurrence_rejection_id:String(rejectionId)})}>Link to latest FTA</button>}
+                    {rejectionId&&item.same_part&&item.investigation_id===defectHistory.matches.find((match:any)=>match.same_part)?.investigation_id&&<button type="button" className="small" disabled={!canWrite||busy} onClick={()=>linkSelectedRejectionToPreviousFta(item)}>Register detected recurrence</button>}
                     {rejectionId&&item.same_part&&item.investigation_id!==defectHistory.matches.find((match:any)=>match.same_part)?.investigation_id&&<span className="muted small">Earlier FTA — use latest matching FTA</span>}
                     {rejectionId&&!item.same_part&&<span className="muted small">Different part — history only</span>}
                   </div></td>
