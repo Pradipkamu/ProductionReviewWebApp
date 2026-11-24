@@ -101,6 +101,26 @@ class MSAStudyIn(BaseModel):
     remarks: str | None = None
 
 
+
+
+class CalibrationLocationIn(BaseModel):
+    location_code: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=2, max_length=120)
+    plant_name: str = Field(min_length=2, max_length=120)
+    department: str = Field(min_length=2, max_length=100)
+    area: str | None = None
+    description: str | None = None
+
+
+class InstrumentLocationTransactionIn(BaseModel):
+    location_id: int
+    transaction_type: str = "ISSUE"
+    custodian_name: str | None = None
+    issued_to: str | None = None
+    purpose: str | None = None
+    reason: str = Field(min_length=5)
+
+
 def _audit(db, instrument_id, action, before, after, reason, user_id, event_id=None):
     db.execute(text("""INSERT INTO calibration_audit_log
       (instrument_id,event_id,action,before_json,after_json,reason,changed_by)
@@ -540,6 +560,112 @@ class InstrumentScopeIn(BaseModel):
     route_operation_ids: list[int] = Field(default_factory=list)
     machine_ids: list[int] = Field(default_factory=list)
     reason: str = Field(min_length=5)
+
+
+
+@router.get("/locations")
+def list_calibration_locations(plant: str | None = None, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    q = "SELECT * FROM calibration_locations WHERE is_active=true"
+    params = {}
+    if plant:
+        q += " AND plant_name=:plant"
+        params["plant"] = plant
+    q += " ORDER BY plant_name,department,name"
+    return [dict(x) for x in db.execute(text(q), params).mappings().all()]
+
+
+@router.post("/locations")
+def create_calibration_location(data: CalibrationLocationIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    try:
+        row = db.execute(text("""
+            INSERT INTO calibration_locations
+              (location_code,name,plant_name,department,area,description,created_by)
+            VALUES (:code,:name,:plant,:department,:area,:description,:uid)
+            RETURNING id
+        """), {"code": data.location_code.strip(), "name": data.name.strip(),
+               "plant": data.plant_name.strip(), "department": data.department.strip(),
+               "area": data.area, "description": data.description, "uid": user.id})
+        location_id = row.scalar_one()
+        db.commit()
+        return {"id": location_id, "status": "ACTIVE"}
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Location code already exists") from exc
+
+
+@router.post("/instruments/{instrument_id}/location")
+def issue_or_transfer_instrument(instrument_id: int, data: InstrumentLocationTransactionIn,
+                                 db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY", "PRODUCTION"})
+    if data.transaction_type not in {"ISSUE", "TRANSFER", "RETURN"}:
+        raise HTTPException(422, "Invalid location transaction type")
+    instrument = db.execute(text("""
+        SELECT id,instrument_code,current_location_id,custodian_name,status
+        FROM calibration_instruments WHERE id=:id AND is_active=true FOR UPDATE
+    """), {"id": instrument_id}).mappings().first()
+    if not instrument:
+        raise HTTPException(404, "Instrument not found")
+    destination = db.execute(text("""
+        SELECT id,name,plant_name,department FROM calibration_locations
+        WHERE id=:id AND is_active=true
+    """), {"id": data.location_id}).mappings().first()
+    if not destination:
+        raise HTTPException(422, "Select an active issue location")
+    current_id = instrument["current_location_id"]
+    if data.transaction_type == "ISSUE" and current_id is not None:
+        raise HTTPException(409, "Instrument is already issued. Use Transfer or Return.")
+    if data.transaction_type in {"TRANSFER", "RETURN"} and current_id is None:
+        raise HTTPException(409, "Instrument has not been issued yet. Use Issue.")
+    if current_id == data.location_id:
+        raise HTTPException(409, "Instrument is already assigned to this location")
+    if data.transaction_type == "RETURN" and data.issued_to:
+        raise HTTPException(422, "Return transaction cannot specify a new issued-to person")
+    old = None
+    if current_id:
+        old = db.execute(text("SELECT name,plant_name,department FROM calibration_locations WHERE id=:id"),
+                         {"id": current_id}).mappings().first()
+    db.execute(text("""
+        INSERT INTO calibration_location_transactions
+          (instrument_id,from_location_id,to_location_id,transaction_type,custodian_name,
+           issued_to,purpose,reason,recorded_by)
+        VALUES (:iid,:from_id,:to_id,:type,:custodian,:issued_to,:purpose,:reason,:uid)
+    """), {"iid": instrument_id, "from_id": current_id, "to_id": data.location_id,
+           "type": data.transaction_type, "custodian": data.custodian_name,
+           "issued_to": data.issued_to, "purpose": data.purpose,
+           "reason": data.reason, "uid": user.id})
+    db.execute(text("""
+        UPDATE calibration_instruments
+        SET current_location_id=:location_id,custodian_name=:custodian,
+            location=:location_text,updated_at=now()
+        WHERE id=:id
+    """), {"location_id": data.location_id, "custodian": data.custodian_name,
+           "location_text": " / ".join([destination["plant_name"], destination["department"], destination["name"]]),
+           "id": instrument_id})
+    after = {"location_id": data.location_id, "location": dict(destination),
+             "custodian_name": data.custodian_name, "issued_to": data.issued_to,
+             "purpose": data.purpose, "transaction_type": data.transaction_type}
+    _audit(db, instrument_id, "INSTRUMENT_LOCATION_" + data.transaction_type,
+           {"location_id": current_id, "location": dict(old) if old else None},
+           after, data.reason, user.id)
+    db.commit()
+    return after
+
+
+@router.get("/instruments/{instrument_id}/location-history")
+def instrument_location_history(instrument_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    if not db.execute(text("SELECT 1 FROM calibration_instruments WHERE id=:id"), {"id": instrument_id}).first():
+        raise HTTPException(404, "Instrument not found")
+    return [dict(x) for x in db.execute(text("""
+        SELECT t.id,t.transaction_type,t.transaction_date,t.custodian_name,t.issued_to,t.purpose,t.reason,
+               f.name AS from_location,f.plant_name AS from_plant,f.department AS from_department,
+               d.name AS to_location,d.plant_name AS to_plant,d.department AS to_department
+        FROM calibration_location_transactions t
+        LEFT JOIN calibration_locations f ON f.id=t.from_location_id
+        JOIN calibration_locations d ON d.id=t.to_location_id
+        WHERE t.instrument_id=:id ORDER BY t.transaction_date DESC,t.id DESC
+    """), {"id": instrument_id}).mappings().all()]
+
 
 
 @router.get("/scope-options")
