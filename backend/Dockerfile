@@ -3,7 +3,11 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-impress fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install \
+    --no-cache-dir \
+    --default-timeout=300 \
+    --retries=10 \
+    -r requirements.txt
 COPY app ./app
 COPY templates ./templates
 COPY alembic.ini ./
