@@ -246,6 +246,23 @@ def _investigation(row, db: Session) -> dict:
         WHERE c.investigation_id=:id ORDER BY c.created_at, c.id
     """), {"id": result["id"]}).mappings().all()
     result["discovered_causes"] = [dict(x) for x in discovered]
+    recurrences = db.execute(text("""
+        SELECT r.id, r.rejection_id, r.classification, r.recurrence_reason,
+               r.containment_action, r.new_evidence, r.previous_action_status,
+               r.previous_verification_result, r.review_remarks, r.reviewed_at,
+               r.created_at, r.related_investigation_id,
+               ri.investigation_no AS related_investigation_no,
+               q.rejection_date, q.reject_qty, p.code AS part_code,
+               ph.name AS phenomenon
+        FROM fta_recurrences r
+        JOIN quality_rejection_daily q ON q.id=r.rejection_id
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        LEFT JOIN fta_investigations ri ON ri.id=r.related_investigation_id
+        WHERE r.original_investigation_id=:id
+        ORDER BY q.rejection_date DESC, r.id DESC
+    """), {"id": result["id"]}).mappings().all()
+    result["recurrences"] = [dict(x) for x in recurrences]
     return result
 
 
@@ -935,6 +952,15 @@ def _fta_excel_workbook(data: dict) -> bytes:
         [(x.get("cause_description"), x.get("action_no"), x.get("status"), x.get("evidence_reference"),
           x.get("verification_method"), x.get("review_remarks"), x.get("reported_by_name"), x.get("reviewed_by_name"))
          for x in data.get("discovered_causes", [])])
+    add_table_sheet("Recurrences",
+        ["Rejection ID", "Date", "Part", "Phenomenon", "Rejected Qty", "Classification",
+         "Recurrence Reason", "Containment", "New Evidence", "Previous Action Status",
+         "Previous Verification", "Quality Review", "Related FTA"],
+        [(x.get("rejection_id"), x.get("rejection_date"), x.get("part_code"), x.get("phenomenon"),
+          x.get("reject_qty"), x.get("classification"), x.get("recurrence_reason"),
+          x.get("containment_action"), x.get("new_evidence"), x.get("previous_action_status"),
+          x.get("previous_verification_result"), x.get("review_remarks"), x.get("related_investigation_no"))
+         for x in data.get("recurrences", [])])
     output = BytesIO()
     wb.save(output)
     return output.getvalue()
