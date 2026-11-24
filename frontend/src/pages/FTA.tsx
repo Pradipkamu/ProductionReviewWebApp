@@ -437,21 +437,27 @@ export default function FTA({me}:{me:any}){
     </section>}
 
 
-    {view==='templates'&&canManageTemplates&&<section className="panel">
-      <div className="panel-title"><div><h2>FTA Template Master</h2><p>Published templates are immutable. Create a revision, review its tree and publish it for new investigations.</p></div></div>
+    {view==='templates'&&canManageTemplates&&<section className="fta-template-master">
+      <div className="panel-title" style={{padding:'18px 20px',border:'1px solid var(--border, #d8dee8)',borderRadius:12,background:'var(--panel-soft, #f5f8fc)',marginBottom:16}}>
+        <div><div className="muted small" style={{fontWeight:800,letterSpacing:'.08em'}}>FAULT TREE ANALYSIS · CONFIGURATION</div><h2 style={{margin:'5px 0'}}>FTA Template Studio</h2><p style={{margin:0}}>Create, structure and publish reusable fault-tree templates for machining investigations.</p></div><span className="status-pill">{templates.filter((t:any)=>t.status==='PUBLISHED').length} published templates</span>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,180px),1fr))',gap:10,marginBottom:16}}>
+        {[['01','Define masters','Set up machining operations and defect types.'],['02','Build the template','Describe events, relationships and specifications.'],['03','Review & publish','Save a draft, validate the tree and publish a version.']].map(([n,title,desc])=><div key={n} style={{border:'1px solid var(--border, #d8dee8)',borderRadius:9,padding:12,background:'var(--panel, #fff)',display:'flex',gap:10}}><strong style={{fontSize:18,color:'#2563eb'}}>{n}</strong><div><b style={{fontSize:13}}>{title}</b><p className="muted small" style={{margin:'3px 0 0'}}>{desc}</p></div></div>)}
+      </div>
       <div className="fta-bottom-grid">
-        <div><h3>Add machining operation</h3>
+        <div className="panel"><div className="panel-title"><div><h3>Machining operations</h3><p>Maintain the process operations used by FTA templates.</p></div></div>
           <label>Operation code<input value={newOperationCode} onChange={e=>setNewOperationCode(e.target.value.toUpperCase())} placeholder="LASER_TURN"/></label>
           <label>Operation name<input value={newOperationName} onChange={e=>setNewOperationName(e.target.value)} placeholder="Laser turning"/></label>
           <button className="secondary" disabled={!newOperationCode.trim()||!newOperationName.trim()||busy} onClick={async()=>{try{setBusy(true);await api('/fta/operations',{method:'POST',body:JSON.stringify({code:newOperationCode,name:newOperationName})});setNewOperationCode('');setNewOperationName('');await load();setMessage('Machining operation added.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Add operation</button>
         </div>
-        <div><h3>Add defect type</h3>
+        <div className="panel"><div className="panel-title"><div><h3>Defect types</h3><p>Maintain the defect classifications available to templates.</p></div></div>
           <label>Defect code<input value={newDefectCode} onChange={e=>setNewDefectCode(e.target.value.toUpperCase())} placeholder="THREAD-PITCH"/></label>
           <label>Category<input value={newDefectCategory} onChange={e=>setNewDefectCategory(e.target.value)} /></label>
           <label>Defect name<input value={newDefectName} onChange={e=>setNewDefectName(e.target.value)} placeholder="Incorrect thread pitch"/></label>
           <button className="secondary" disabled={!newDefectCode.trim()||!newDefectName.trim()||busy} onClick={async()=>{try{setBusy(true);await api('/fta/defects',{method:'POST',body:JSON.stringify({code:newDefectCode,category:newDefectCategory,name:newDefectName})});setNewDefectCode('');setNewDefectName('');await load();setMessage('Defect type added.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Add defect</button>
         </div>
       </div>
+      <div className="panel" style={{marginBottom:16}}><div className="panel-title"><div><h3>New template</h3><p>Define the identity and scope of this fault-tree template.</p></div><span className="status-pill">Step 1 · Details</span></div>
       <div className="fta-create-grid">
         <label>New template code<input value={newTemplateCode} onChange={e=>setNewTemplateCode(e.target.value.toUpperCase())} placeholder="LASER_TURN-THREAD-PITCH"/></label>
         <label>New template name<input value={newTemplateName} onChange={e=>setNewTemplateName(e.target.value)} placeholder="Laser turning – incorrect thread pitch"/></label>
@@ -459,6 +465,7 @@ export default function FTA({me}:{me:any}){
         <label>New template defect<select value={newTemplateDefect} onChange={e=>setNewTemplateDefect(e.target.value)}><option value="">Select defect</option>{defects.map(d=><option key={d.code} value={d.code}>{d.category} – {d.name}</option>)}</select></label>
       </div>
       <button className="secondary" disabled={!newTemplateCode||!newTemplateName||!newTemplateOperation||!newTemplateDefect||!templateTree||busy} onClick={async()=>{try{const tree=templateTree;setBusy(true);const created:any=await api('/fta/templates',{method:'POST',body:JSON.stringify({code:newTemplateCode,name:newTemplateName,operation_code:newTemplateOperation,defect_code:newTemplateDefect,tree})});setTemplateDraftId(created.id);setBaseTemplateId(String(created.id));await load();setMessage('New FTA template created as draft. Review and publish it when ready.')}catch(e:any){setError(e instanceof SyntaxError?'Visual fault-tree builder is invalid.':e.message)}finally{setBusy(false)}}}>Create new template draft</button>
+      </div>
       <details className="fta-event-help" style={{margin:'18px 0',border:'1px solid var(--border, #d8dee8)',borderRadius:12,background:'var(--panel, #fff)',overflow:'hidden'}}>
         <summary style={{listStyle:'none',cursor:'pointer',padding:'16px 18px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,background:'var(--panel-soft, #f5f8fc)'}}>
           <span style={{display:'flex',alignItems:'center',gap:12}}>
@@ -507,6 +514,7 @@ export default function FTA({me}:{me:any}){
           <p className="muted small" style={{margin:'14px 0 0'}}>Tip: Use Basic Events for specific investigable causes. Use Undeveloped Events only when you intentionally stop the analysis at that point and document the reason.</p>
         </div>
       </details>
+      <div className="panel" style={{marginBottom:14}}><div className="panel-title"><div><h3>Revise an existing template</h3><p>Select a published template to load its tree and create the next controlled version.</p></div><span className="status-pill">Step 2 · Revision</span></div>
       <div className="fta-create-grid">
         <label>Base template
           <select value={baseTemplateId} onChange={e=>{setBaseTemplateId(e.target.value);setTemplateDraftId(null)}}>
@@ -517,7 +525,7 @@ export default function FTA({me}:{me:any}){
         <label>Template name<input value={templateName} onChange={e=>setTemplateName(e.target.value)} placeholder="Machining defect fault tree"/></label>
       </div>
       <div className="panel" style={{marginTop:12}}>
-        <div className="panel-title"><div><h3>Visual fault-tree builder</h3><p>Build the cause tree using fields and buttons. JSON is generated and validated automatically.</p></div><button type="button" className="secondary small" onClick={()=>setTemplateTree({id:'top_event',label:'Top event',type:'TOP_EVENT',gate:'OR',children:[{id:'cause_1',label:'Main cause',type:'INTERMEDIATE_EVENT',gate:'OR',children:[{id:'cause_1_1',label:'Basic cause',type:'BASIC_EVENT'}]}]})}>Reset tree</button></div>
+        <div className="panel-title"><div><h3>Visual fault-tree designer</h3><p>Build the cause hierarchy using event cards. No JSON editing is required.</p></div><span className="status-pill">Step 3 · Design</span><button type="button" className="secondary small" onClick={()=>setTemplateTree({id:'top_event',label:'Top event',type:'TOP_EVENT',gate:'OR',children:[{id:'cause_1',label:'Main cause',type:'INTERMEDIATE_EVENT',gate:'OR',children:[{id:'cause_1_1',label:'Basic cause',type:'BASIC_EVENT'}]}]})}>Reset tree</button></div>
         <TemplateNodeEditor node={templateTree} root onChange={setTemplateTree}/>
         <div className="fta-node-colour-legend" style={{display:'flex',flexWrap:'wrap',gap:12,marginTop:10,fontSize:12}}>{[['TOP_EVENT','Top event'],['INTERMEDIATE_EVENT','Intermediate'],['BASIC_EVENT','Basic cause'],['EXTERNAL_EVENT','External'],['UNDEVELOPED_EVENT','Undeveloped']].map(([type,label])=><span key={type} style={{display:'inline-flex',alignItems:'center',gap:5}}><i style={{display:'inline-block',width:18,height:4,borderRadius:4,background:nodeConnectorColor(type)}}/>{label}</span>)}</div>
         <p className="muted small">Maximum 8 levels and 300 nodes. Top and intermediate events need child causes. Basic, external and undeveloped events are leaf nodes. Each node receives a unique ID automatically.</p>
@@ -528,6 +536,7 @@ export default function FTA({me}:{me:any}){
         <button className="secondary" disabled={!templateDraftId||busy} onClick={async()=>{try{setBusy(true);await api('/fta/templates/'+templateDraftId+'/publish',{method:'POST'});setTemplateDraftId(null);await load();setMessage('Template revision published. New investigations will use the published version.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Publish draft</button>
       </div>
       <p className="muted small">Node types: TOP_EVENT, INTERMEDIATE_EVENT, BASIC_EVENT, EXTERNAL_EVENT, UNDEVELOPED_EVENT. Nodes with children require an AND or OR gate. Each node ID must be unique.</p>
+      </div>
     </section>}
 
     {view==='register'&&<section className="panel">
