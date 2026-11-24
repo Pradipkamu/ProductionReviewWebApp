@@ -94,7 +94,7 @@ export default function Quality(){
   const [operationId,setOperationId]=useState<string[]>([]); const [machineId,setMachineId]=useState<string[]>([]); const [shift,setShift]=useState<string[]>([])
   const [products,setProducts]=useState<any[]>([]); const [filters,setFilters]=useState<any>({plants:[]}); const [phenomena,setPhenomena]=useState<any[]>([])
   const [operations,setOperations]=useState<any[]>([]); const [machines,setMachines]=useState<any[]>([])
-  const [summary,setSummary]=useState<any>({}); const [rows,setRows]=useState<any[]>([]); const [trend,setTrend]=useState<any[]>([])
+  const [summary,setSummary]=useState<any>({}); const [rows,setRows]=useState<any[]>([]); const [trend,setTrend]=useState<any[]>([]); const [ftaActions,setFtaActions]=useState<any[]>([])
   const [monthlyTrend,setMonthlyTrend]=useState<any[]>([]); const [historyRows,setHistoryRows]=useState<any[]>([]); const [historyRange,setHistoryRange]=useState<any>({min_month:null,max_month:null,records:0})
   const [partPareto,setPartPareto]=useState<any[]>([]); const [phenPareto,setPhenPareto]=useState<any[]>([]); const [busy,setBusy]=useState(false); const [err,setErr]=useState('')
   const [newPhen,setNewPhen]=useState(''); const [rejectionType,setRejectionType]=useState<string>(''); const [selectedActionDay,setSelectedActionDay]=useState<string>('')
@@ -116,6 +116,7 @@ export default function Quality(){
   }
   useEffect(()=>{loadMasters().catch(e=>setErr(e.message))},[])
   useEffect(()=>{load()},[qs])
+  useEffect(()=>{let active=true;api(`/fta/rejection-actions?${qs}`).then((data:any)=>{if(active)setFtaActions(Array.isArray(data)?data:[])}).catch((e:any)=>{if(active)setErr(e.message||'Unable to load FTA actions')});return()=>{active=false}},[qs])
   useEffect(()=>{
     if(!manual.product_id){setManualOps([]);return}
     let active=true
@@ -233,8 +234,27 @@ export default function Quality(){
     }
     return grouped
   },[rows])
-  const rejectionActionDays=trend.map((day:any)=>({...day,action_count:rejectionActionsByDay.get(String(day.date).slice(0,10))?.size||0}))
+  const ftaActionsByDay=useMemo(()=>{
+    const grouped=new Map<string,Map<number,any>>()
+    for(const action of ftaActions||[]){
+      const day=String(action.date||'').slice(0,10)
+      if(!day)continue
+      if(!grouped.has(day))grouped.set(day,new Map())
+      grouped.get(day)!.set(Number(action.id),{...action,source_type:'FTA'})
+    }
+    return grouped
+  },[ftaActions])
+  const rejectionActionDays=trend.map((day:any)=>{
+    const key=String(day.date).slice(0,10)
+    const combined=new Set<number>([
+      ...[...(rejectionActionsByDay.get(key)?.keys()||[])],
+      ...[...(ftaActionsByDay.get(key)?.keys()||[])],
+    ])
+    return {...day,action_count:combined.size,rejection_action_count:rejectionActionsByDay.get(key)?.size||0,fta_action_count:ftaActionsByDay.get(key)?.size||0}
+  })
   const selectedRejectionActions=selectedActionDay?[...(rejectionActionsByDay.get(selectedActionDay)?.values()||[])]:[]
+  const selectedFtaActions=selectedActionDay?[...(ftaActionsByDay.get(selectedActionDay)?.values()||[])]:[]
+  const selectedActionsCombined=[...selectedRejectionActions.map((a:any)=>({...a,source_type:'Rejection'})),...selectedFtaActions]
   const dailyPpmRows=trend.filter((x:any)=>x.ppm!=null).map((x:any)=>({...x,value:Number(x.ppm)}))
   const dailyPpmPending=trend.filter((x:any)=>x.ppm==null&&Number(x.reject_qty||0)>0).length
   return <>
@@ -266,12 +286,12 @@ export default function Quality(){
     <section className="panel ppm-trend-panel"><div className="panel-title"><h2>Monthly PPM Trend</h2><span>Daily net of approved salvage • historical reported totals</span></div><ValueTrendChart onSelect={drill} rows={monthlyPpmRows} keyName="value" label="PPM"/>{monthlyTrend.length>0&&<div className="table-wrap ppm-quantity-matrix" aria-label="Monthly rejection and dispatch quantities"><table><thead><tr><th>Quantity</th>{monthlyTrend.map((r:any)=><th key={String(r.month)}>{r.label||String(r.month).slice(0,7)}</th>)}</tr></thead><tbody><tr className="ppm-rejection-row"><th>Rejection Qty</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{num(r.reject_qty||0)}</td>)}</tr><tr><th>PPM Production</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{Number(r.denominator_qty||0)>0?num(r.denominator_qty):Number(r.reject_qty||0)>0?'Pending':'0'}</td>)}</tr></tbody></table></div>}{monthlyPpmPending>0&&<p className="muted">{monthlyPpmPending} month{monthlyPpmPending===1?'':'s'} not plotted because the required PPM production denominator is still pending.</p>}<p className="muted">PPM denominator: Plant 2070 = Siddharth Machining + Silver Production; all other plants = Disp_Done.</p></section>
     <section className="panel"><div className="panel-title"><h2>Daily Rejection Qty Trend</h2><span>Net rejection after approved salvage • independent of PPM production</span></div>{dailyRejectionRows.length>0?<ValueTrendChart onSelect={drill} rows={dailyRejectionRows} keyName="value" label="Reject Qty"/>:<p className="muted">No daily rejection data is available for the selected date range and filters.</p>}</section>
     <section className="panel">
-      <div className="panel-title"><div><h2>Rejection Actions Raised by Day</h2><p>Only actions linked to rejection records. Counts follow all selected Quality / Rejection filters.</p></div></div>
-      <div className="daily-action-scroll">{rejectionActionDays.map((day:any)=>{const count=Number(day.action_count||0);const key=String(day.date).slice(0,10);return <button type="button" className={`daily-action-cell ${count>0?'has-actions':''}`} key={key} disabled={!count} onClick={()=>setSelectedActionDay(selectedActionDay===key?'':key)} title={`${day.label}: ${count} rejection action${count===1?'':'s'} raised`}><span>{day.label}</span><strong>{count}</strong><small>{count===1?'action':'actions'}</small></button>})}</div>
+      <div className="panel-title"><div><h2>Rejection &amp; FTA Actions Raised by Day</h2><p>Includes actions linked directly to rejection records and corrective / preventive actions linked through FTA investigations. Counts follow the selected Quality / Rejection filters.</p></div></div>
+      <div className="daily-action-scroll">{rejectionActionDays.map((day:any)=>{const count=Number(day.action_count||0);const key=String(day.date).slice(0,10);return <button type="button" className={`daily-action-cell ${count>0?'has-actions':''}`} key={key} disabled={!count} onClick={()=>setSelectedActionDay(selectedActionDay===key?'':key)} title={`${day.label}: ${count} action${count===1?'':'s'} raised • Rejection: ${day.rejection_action_count} • FTA: ${day.fta_action_count}`}><span>{day.label}</span><strong>{count}</strong><small>{count===1?'action':'actions'}</small></button>})}</div>
       {selectedActionDay&&<div className="modal-backdrop" role="presentation" onClick={()=>setSelectedActionDay('')} style={{position:'fixed',inset:0,zIndex:1000,background:'rgba(15,23,42,.52)',display:'flex',alignItems:'center',justifyContent:'center',padding:'24px'}}>
         <section className="panel" role="dialog" aria-modal="true" aria-labelledby="rejection-action-modal-title" onClick={e=>e.stopPropagation()} style={{width:'min(1100px,100%)',maxHeight:'80vh',overflow:'auto',background:'var(--panel, #fff)',boxShadow:'0 20px 60px rgba(0,0,0,.25)',margin:0}}>
-          <div className="panel-title"><div><h2 id="rejection-action-modal-title">Rejection Actions — {selectedActionDay}</h2><p>Open actions linked to rejection records for this date, within the current Quality / Rejection filters.</p></div><button type="button" className="secondary" onClick={()=>setSelectedActionDay('')}>Close</button></div>
-          {selectedRejectionActions.length?<div className="table-wrap"><table><thead><tr><th>Action No.</th><th>Problem</th><th>Owner</th><th>Due Date</th><th>Status</th><th>Overdue Days</th></tr></thead><tbody>{selectedRejectionActions.map((a:any)=>{const due=a.due_at;const dueText=due?formatIST(due):'—';const overdue=Number(a.overdue_days??0);return <tr key={a.id}><td><button type="button" className="secondary small" onClick={()=>navigate(`/actions?date=${selectedActionDay}&action_id=${a.id}`)}>{a.action_no||`Action #${a.id}`}</button></td><td>{a.problem_description||'—'}</td><td>{a.owner_name||'Unassigned'}</td><td>{dueText}</td><td><span className="status-pill">{a.status||'—'}</span></td><td>{a.status!=='CLOSED'&&overdue>0?<span className="warning">{overdue} day(s)</span>:'0'}</td></tr>})}</tbody></table></div>:<p className="muted">No rejection actions for this date under the current filters.</p>}
+          <div className="panel-title"><div><h2 id="rejection-action-modal-title">Rejection &amp; FTA Actions — {selectedActionDay}</h2><p>Actions linked to rejection records and FTA investigations for this date, within the current Quality / Rejection filters.</p></div><button type="button" className="secondary" onClick={()=>setSelectedActionDay('')}>Close</button></div>
+          {selectedActionsCombined.length?<div className="table-wrap"><table><thead><tr><th>Source</th><th>Action No.</th><th>Problem</th><th>Owner</th><th>Due Date</th><th>Status</th><th>Overdue Days</th></tr></thead><tbody>{selectedActionsCombined.map((a:any)=>{const due=a.due_at;const dueText=due?formatIST(due):'—';const overdue=Number(a.overdue_days??0);return <tr key={`${a.source_type}-${a.id}`}><td><span className="status-pill">{a.source_type}</span></td><td><button type="button" className="secondary small" onClick={()=>navigate(`/actions?date=${selectedActionDay}&action_id=${a.id}`)}>{a.action_no||`Action #${a.id}`}</button></td><td>{a.problem_description||'—'}{a.investigation_no&&<div className="muted">FTA: {a.investigation_no}</div>}</td><td>{a.owner_name||'Unassigned'}</td><td>{dueText}</td><td><span className="status-pill">{a.status||'—'}</span></td><td>{a.status!=='CLOSED'&&overdue>0?<span className="warning">{overdue} day(s)</span>:'0'}</td></tr>})}</tbody></table></div>:<p className="muted">No rejection or FTA actions for this date under the current filters.</p>}
         </section>
       </div>}
     </section>
