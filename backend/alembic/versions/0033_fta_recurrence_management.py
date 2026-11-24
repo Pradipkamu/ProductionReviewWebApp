@@ -41,9 +41,14 @@ def upgrade():
     op.create_index("ix_fta_recurrences_original_investigation_id",
                     "fta_recurrences", ["original_investigation_id"])
     op.create_index("ix_fta_recurrences_created_at", "fta_recurrences", ["created_at"])
+    op.add_column("fta_recurrences", sa.Column(
+        "related_investigation_id", sa.Integer(),
+        sa.ForeignKey("fta_investigations.id", ondelete="SET NULL"), nullable=True,
+    ))
 
 
 def downgrade():
+    op.drop_column("fta_recurrences", "related_investigation_id")
     op.drop_index("ix_fta_recurrences_created_at", table_name="fta_recurrences")
     op.drop_index("ix_fta_recurrences_original_investigation_id", table_name="fta_recurrences")
     op.drop_table("fta_recurrences")
