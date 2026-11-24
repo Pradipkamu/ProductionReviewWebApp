@@ -322,7 +322,8 @@ export default function FTA({me}:{me:any}){
                   <td>{item.same_part?<span className="fta-match-tag same">Same part</span>:<span className="fta-match-tag">Same defect</span>}</td>
                   <td><div className="button-row">
                     <a className="button secondary small" href={`/fta?view=register&investigation_id=${item.investigation_id}`}>Open FTA</a>
-                    {rejectionId&&item.same_part&&<button type="button" className="small" onClick={()=>setSearchParams({view:'register',investigation_id:String(item.investigation_id),recurrence_rejection_id:String(rejectionId)})}>Link as recurrence</button>}
+                    {rejectionId&&item.same_part&&item.investigation_id===defectHistory.matches.find((match:any)=>match.same_part)?.investigation_id&&<button type="button" className="small" onClick={()=>setSearchParams({view:'register',investigation_id:String(item.investigation_id),recurrence_rejection_id:String(rejectionId)})}>Link to latest FTA</button>}
+                    {rejectionId&&item.same_part&&item.investigation_id!==defectHistory.matches.find((match:any)=>match.same_part)?.investigation_id&&<span className="muted small">Earlier FTA — use latest matching FTA</span>}
                     {rejectionId&&!item.same_part&&<span className="muted small">Different part — history only</span>}
                   </div></td>
                 </tr>)}</tbody>
