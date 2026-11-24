@@ -329,15 +329,16 @@ export default function FTA({me}:{me:any}){
   const confirmedRootCause=findings.some((f:any)=>f.investigation_status==='CONFIRMED'&&f.is_root_cause)||(detail?.discovered_causes||[]).some((cause:any)=>cause.status==='CONFIRMED')
   const treeNodes=(node:any):any[]=>node?[node,...(node.children||[]).flatMap((child:any)=>treeNodes(child))]:[]
   const allTreeNodes=treeNodes(tree)
-  const completedTreeNodes=allTreeNodes.filter((node:any)=>findings.some((f:any)=>f.node_id===node.id&&['CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE','NOT_APPLICABLE'].includes(f.investigation_status))).length
+  const investigationLeaves=allTreeNodes.filter((node:any)=>!node.children?.length&&['BASIC_EVENT','EXTERNAL_EVENT','UNDEVELOPED_EVENT'].includes(node.type))
+  const completedTreeNodes=investigationLeaves.filter((node:any)=>findings.some((f:any)=>f.node_id===node.id&&['CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE','NOT_APPLICABLE'].includes(f.investigation_status))).length
   const treeStarted=findings.length>0
-  const treeComplete=allTreeNodes.length>0&&completedTreeNodes===allTreeNodes.length
+  const treeComplete=investigationLeaves.length>0&&completedTreeNodes===investigationLeaves.length
   const actionsComplete=requiredActions.length>0&&requiredActions.every((a:any)=>a.status==='CLOSED')
   const unresolvedDiscovered=(detail?.discovered_causes||[]).some((x:any)=>['PROPOSED','ACCEPTED'].includes(x.status))
   const closed=detail?.status==='CLOSED'
   const flowSteps=[
     {title:'Investigation creation',description:'Quality Rejection linked and investigation details created.',done:!!detail?.source_rejection,started:!!detail?.id},
-    {title:'Fault Tree Analysis',description:`Cause nodes evaluated: ${completedTreeNodes} of ${allTreeNodes.length}.`,done:treeComplete,started:treeStarted},
+    {title:'Fault Tree Analysis',description:`Basic causes dispositioned: ${completedTreeNodes} of ${investigationLeaves.length}.`,done:treeComplete,started:treeStarted},
     {title:'Root cause confirmation',description:'At least one root cause is confirmed in the findings.',done:confirmedRootCause,started:findings.some((f:any)=>f.investigation_status==='CONFIRMED')},
     {title:'Corrective / preventive actions',description:requiredActions.length?`${requiredActions.length} corrective / preventive action(s) linked.`:'No corrective or preventive action linked yet.',done:requiredActions.length>0,started:requiredActions.length>0},
     {title:'Action implementation & review',description:requiredActions.length?`${requiredActions.filter((a:any)=>a.status==='CLOSED').length} of ${requiredActions.length} linked actions closed${unresolvedDiscovered?' · discovered causes still need review':''}.`:'Waiting for linked actions.',done:actionsComplete&&!unresolvedDiscovered,started:requiredActions.length>0||!!(detail?.discovered_causes||[]).length},
