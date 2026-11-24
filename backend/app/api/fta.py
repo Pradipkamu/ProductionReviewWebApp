@@ -372,6 +372,8 @@ def list_rejections(limit: int = 100, db: Session = Depends(get_db), user: User 
         LEFT JOIN machines m ON m.id=q.machine_id
         WHERE UPPER(COALESCE(ph.phenomenon_group,'')) NOT LIKE '%CAST%'
           AND UPPER(ph.name) NOT LIKE '%CASTING%'
+          AND NOT EXISTS (SELECT 1 FROM fta_investigations fi WHERE fi.rejection_id=q.id)
+          AND NOT EXISTS (SELECT 1 FROM fta_recurrences fr WHERE fr.rejection_id=q.id)
         ORDER BY q.rejection_date DESC, q.id DESC LIMIT :limit
     """), {"limit": limit}).mappings().all()
     return [dict(x) for x in rows]
@@ -1593,10 +1595,12 @@ def recurrence_candidates(rejection_id: int, db: Session = Depends(get_db),
           AND oq.phenomenon_id=:phenomenon_id
           AND i.rejection_id<>:rejection_id
           AND (:plant IS NULL OR COALESCE(oq.plant,p.plant)=:plant)
+          AND (:machine_id IS NULL OR COALESCE(i.machine_id,oq.machine_id)=:machine_id)
         ORDER BY oq.rejection_date DESC, i.id DESC
         LIMIT 50
     """), {"product_id": rejection["product_id"], "phenomenon_id": rejection["phenomenon_id"],
-           "rejection_id": rejection_id, "plant": rejection["plant"]}).mappings().all()
+           "rejection_id": rejection_id, "plant": rejection["plant"],
+           "machine_id": rejection["machine_id"]}).mappings().all()
     visible = []
     for row in rows:
         if _role_name(user) != "PRODUCTION" or db.execute(text("""
