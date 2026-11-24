@@ -293,12 +293,12 @@ export default function FTA({me}:{me:any}){
     {view==='register'&&detail&&tree&&<section className="panel fta-workspace">
       <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p></div><div className="button-row"><a className="button secondary" href={'/fta/report/'+detail.id}>FTA report</a><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div></div>
       <div className="fta-workspace-grid">
-        <div className="fta-tree-panel">
+        <div className="fta-tree-panel" id="fta-section-fault-tree">
           <h3>Fault tree</h3>
           <p className="muted small">Select a cause node to record evidence and investigation status. Gate labels describe logical relationships; they do not prove causality.</p>
           <TreeNode node={tree} findings={detail.findings||[]} selected={selectedNode} onSelect={setSelectedNode}/>
         </div>
-        <div className="fta-finding-panel">
+        <div className="fta-finding-panel" id="fta-section-root-cause">
           <h3>Investigation finding</h3>
           {currentFinding?<>
             <strong>{currentFinding.node_label}</strong>
@@ -331,7 +331,7 @@ export default function FTA({me}:{me:any}){
           </>:<p className="muted">Select a node in the fault tree.</p>}
         </div>
       </div>
-      <div className="fta-review-controls">
+      <div className="fta-review-controls" id="fta-section-closure">
         <label>Verification remarks<textarea rows={2} value={verificationRemarks} onChange={e=>setVerificationRemarks(e.target.value)} disabled={!canVerify||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
         <button className="secondary" disabled={!canVerify||busy||detail.status!=='IN_PROGRESS'||!hasRequiredAction} onClick={async()=>{try{setBusy(true);await api('/fta/investigations/'+detail.id+'/verify',{method:'POST',body:JSON.stringify({remarks:verificationRemarks})});await loadDetail(detail.id,true);await load();setMessage('Investigation verified. Complete linked actions before closure.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Verify investigation</button>
         <label>Closure remarks<textarea rows={2} value={closureRemarks} onChange={e=>setClosureRemarks(e.target.value)} disabled={!canVerify||detail.status!=='VERIFIED_PENDING_ACTIONS'}/></label>
@@ -340,10 +340,13 @@ export default function FTA({me}:{me:any}){
       <section className="fta-process-flow">
         <div className="panel-title"><div><h3>Investigation process flow</h3><p>Live completion status based on saved findings, linked actions and closure records.</p></div><strong>{flowRows.filter((x:any)=>x.state==='completed').length} / {flowRows.length} completed</strong></div>
         <div className="fta-process-list">
-          {flowRows.map((step:any,index:number)=><article className={`fta-process-step ${step.state}`} key={step.title}>
-            <div className="fta-process-marker">{step.state==='completed'?'✓':index+1}</div>
-            <div className="fta-process-copy"><div className="fta-process-heading"><strong>{step.title}</strong><span className={`fta-process-status ${step.state}`}>{step.state==='completed'?'Completed':step.state==='in-progress'?'In progress':'Pending'}</span></div><p>{step.description}</p></div>
-          </article>)}
+          {flowRows.map((step:any,index:number)=>{
+            const targets=['fta-section-investigation','fta-section-fault-tree','fta-section-root-cause','fta-section-actions','fta-section-action-review','fta-section-closure']
+            return <article className={`fta-process-step ${step.state}`} key={step.title}>
+              <div className="fta-process-marker">{step.state==='completed'?'✓':index+1}</div>
+              <div className="fta-process-copy"><div className="fta-process-heading"><a className="fta-process-link" href={`#${targets[index]}`}>{step.title}</a><span className={`fta-process-status ${step.state}`}>{step.state==='completed'?'Completed':step.state==='in-progress'?'In progress':'Pending'}</span></div><p>{step.description}</p><a className="fta-process-update-link" href={`#${targets[index]}`}>Go to section to update →</a></div>
+            </article>
+          })}
         </div>
       </section>
       <section className="fta-history">
@@ -351,12 +354,12 @@ export default function FTA({me}:{me:any}){
         {(detail.status_history||[]).map((h:any)=><div className="fta-history-row" key={h.id}><strong>{h.old_status||'NEW'} → {h.new_status}</strong><span>{String(h.created_at||'').replace('T',' ').slice(0,19)}</span><p>{h.remarks||'—'}</p></div>)}
       </section>
       <div className="fta-bottom-grid">
-        <div><h3>Investigation summary</h3>
+        <div id="fta-section-investigation"><h3>Investigation summary</h3>
           <label>Initial defect / investigation summary<textarea rows={2} value={summary} onChange={e=>setSummary(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
           <label>Occurrence cause summary<textarea rows={2} value={occurrenceSummary} onChange={e=>setOccurrenceSummary(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
           <label>Escape / detection cause summary<textarea rows={2} value={escapeSummary} onChange={e=>setEscapeSummary(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/></label>
           <button className="secondary" onClick={saveSummary} disabled={!canWrite||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)}>Save investigation summaries</button></div>
-        <div><h3>Corrective / preventive actions</h3>
+        <div id="fta-section-actions"><h3>Corrective / preventive actions</h3>
           <label>Create new corrective / preventive action
             <textarea rows={2} value={newActionDescription} onChange={e=>setNewActionDescription(e.target.value)} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)}/>
           </label>
@@ -368,7 +371,7 @@ export default function FTA({me}:{me:any}){
           </div>
           {(detail.actions||[]).length?detail.actions.map((a:any)=><p key={a.link_id}>{a.action_no} · {a.status} · {a.action_description}</p>):<p className="muted">No existing actions linked yet.</p>}</div>
       </div>
-      <section className="panel">
+      <section className="panel" id="fta-section-action-review">
         <div className="panel-title"><div><h3>Causes Discovered During Action Implementation</h3><p>New reasons reported by action owners are automatically recorded here and reviewed by Quality.</p></div></div>
         {(detail.discovered_causes||[]).length?(detail.discovered_causes||[]).map((cause:any)=><article className="fta-history-row" key={cause.id}>
           <div className="panel-title"><strong>{cause.cause_description}</strong><Status value={cause.status}/></div>
