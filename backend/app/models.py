@@ -6,7 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric,
-    String, Text, UniqueConstraint, Index, text
+    String, Text, UniqueConstraint, CheckConstraint, Index, text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -1343,6 +1343,43 @@ class FtaDiscoveredCause(Base, TimestampMixin):
         Index("ix_fta_discovered_causes_investigation", "investigation_id"),
         Index("ix_fta_discovered_causes_action", "action_id"),
         Index("ix_fta_discovered_causes_status", "status"),
+    )
+
+
+class FtaRecurrence(Base):
+    __tablename__ = "fta_recurrences"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    original_investigation_id: Mapped[int] = mapped_column(
+        ForeignKey("fta_investigations.id", ondelete="RESTRICT"), nullable=False
+    )
+    rejection_id: Mapped[int] = mapped_column(
+        ForeignKey("quality_rejection_daily.id", ondelete="RESTRICT"), nullable=False
+    )
+    classification: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="PENDING_REVIEW", server_default="PENDING_REVIEW"
+    )
+    same_root_cause: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    recurrence_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    containment_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_evidence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    previous_action_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    previous_verification_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    review_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    related_investigation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("fta_investigations.id", ondelete="SET NULL"), nullable=True
+    )
+    __table_args__ = (
+        UniqueConstraint("rejection_id", name="uq_fta_recurrences_rejection_id"),
+        CheckConstraint(
+            "classification IN ('PENDING_REVIEW','SAME_ROOT_CAUSE','DIFFERENT_ROOT_CAUSE','UNRELATED')",
+            name="ck_fta_recurrences_classification",
+        ),
+        Index("ix_fta_recurrences_original_investigation_id", "original_investigation_id"),
+        Index("ix_fta_recurrences_created_at", "created_at"),
     )
 
 
