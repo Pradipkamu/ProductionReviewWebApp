@@ -323,7 +323,10 @@ async def import_instruments_excel(file: UploadFile = File(...), commit: bool = 
     if not parsed:
         raise HTTPException(422, "No gauge data rows were found")
     codes = [x["data"]["instrument_code"] for x in parsed if x["data"]["instrument_code"]]
-    code_counts = {}\n    for code in codes:\n        code_counts[code] = code_counts.get(code, 0) + 1\n    duplicates_in_file = {code for code, count in code_counts.items() if count > 1}
+    code_counts = {}
+    for code in codes:
+        code_counts[code] = code_counts.get(code, 0) + 1
+    duplicates_in_file = {code for code, count in code_counts.items() if count > 1}
     existing = set()
     if codes:
         existing = set(db.execute(text("SELECT instrument_code FROM calibration_instruments WHERE instrument_code = ANY(:codes)"),
