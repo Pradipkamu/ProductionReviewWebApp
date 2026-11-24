@@ -1902,3 +1902,96 @@ def create_related_investigation(recurrence_id: int, payload: RelatedInvestigati
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "A related investigation already exists for this rejection and template") from exc
+
+
+@router.get("/defect-history/{defect_code}")
+def defect_history(defect_code: str, rejection_id: int | None = None,
+                   db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Show the latest investigations for the selected shared Quality phenomenon.
+
+    When a new rejection is selected, only FTA events preceding that rejection
+    are returned. This is an automatic history match, not an automatic
+    recurrence classification; Quality confirms the relationship.
+    """
+    _role(user, READ_ROLES)
+    mapping = db.execute(text("""
+        SELECT fm.phenomenon_id, ph.name AS phenomenon_name
+        FROM fta_phenomenon_code_map fm
+        JOIN fta_defect_library d ON d.code=fm.legacy_defect_code
+        JOIN quality_rejection_phenomena ph ON ph.id=fm.phenomenon_id
+        WHERE fm.legacy_defect_code=:code AND d.is_active=true AND ph.is_active=true
+    """), {"code": defect_code}).mappings().first()
+    if not mapping:
+        raise HTTPException(404, "Selected FTA defect is not linked to an active Quality phenomenon")
+
+    target = None
+    if rejection_id is not None:
+        target = db.execute(text("""
+            SELECT id, rejection_date, product_id, phenomenon_id
+            FROM quality_rejection_daily WHERE id=:id
+        """), {"id": rejection_id}).mappings().first()
+        if not target:
+            raise HTTPException(404, "Selected Quality Rejection record not found")
+        if target["phenomenon_id"] != mapping["phenomenon_id"]:
+            raise HTTPException(422, "Selected rejection does not match this Quality defect")
+
+    params = {
+        "phenomenon_id": mapping["phenomenon_id"],
+        "target_date": target["rejection_date"] if target else None,
+        "target_rejection_id": target["id"] if target else None,
+        "user_id": user.id,
+    }
+    production_scope = ""
+    if _role_name(user) == "PRODUCTION":
+        production_scope = " AND (i.owner_id=:user_id OR i.created_by_id=:user_id)"
+
+    rows = db.execute(text(f"""
+        SELECT i.id AS investigation_id, i.investigation_no, i.status,
+               i.operation_code, i.plant, i.machine_id, m.name AS machine_name,
+               i.rejection_id, q.rejection_date AS fta_date, q.shift,
+               p.code AS part_code, p.name AS part_name, q.reject_qty,
+               ph.name AS phenomenon_name, t.name AS template_name,
+               COALESCE((
+                   SELECT string_agg(DISTINCT a.status, ', ')
+                   FROM fta_action_links al JOIN actions a ON a.id=al.action_id
+                   WHERE al.investigation_id=i.id
+               ), 'NO LINKED ACTION') AS linked_action_status,
+               (
+                   SELECT COUNT(*) FROM fta_recurrences r
+                   WHERE r.original_investigation_id=i.id
+               ) AS linked_recurrence_count,
+               (
+                   SELECT string_agg(DISTINCT f.node_label, '; ')
+                   FROM fta_findings f
+                   WHERE f.investigation_id=i.id
+                     AND f.is_root_cause=true
+                     AND f.investigation_status='CONFIRMED'
+               ) AS confirmed_root_causes
+        FROM fta_investigations i
+        JOIN fta_templates t ON t.id=i.template_id
+        JOIN fta_phenomenon_code_map fm ON fm.legacy_defect_code=t.defect_code
+        JOIN quality_rejection_daily q ON q.id=i.rejection_id
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        LEFT JOIN machines m ON m.id=COALESCE(i.machine_id,q.machine_id)
+        WHERE fm.phenomenon_id=:phenomenon_id
+          AND (:target_date IS NULL
+               OR q.rejection_date < :target_date
+               OR (q.rejection_date=:target_date
+                   AND (:target_rejection_id IS NULL OR q.id < :target_rejection_id)))
+          {production_scope}
+        ORDER BY q.rejection_date DESC, i.id DESC
+        LIMIT 50
+    """), params).mappings().all()
+    matches = [dict(row) for row in rows]
+    return {
+        "defect_code": defect_code,
+        "phenomenon_id": mapping["phenomenon_id"],
+        "phenomenon_name": mapping["phenomenon_name"],
+        "selected_rejection_id": target["id"] if target else None,
+        "selected_rejection_date": target["rejection_date"] if target else None,
+        "total_previous_investigations": len(matches),
+        "last_fta_date": matches[0]["fta_date"] if matches else None,
+        "last_investigation_no": matches[0]["investigation_no"] if matches else None,
+        "matches": matches,
+    }
