@@ -792,3 +792,40 @@ button.ghost{color:inherit}
   .fta-report-tree-node, .fta-report-cause { break-inside:avoid; }
   body { background:#fff !important; color:#111 !important; }
 }
+
+
+/* FTA mind-map print layout */
+.fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-node {
+  border:0; margin:0; padding:10px 0; text-align:center;
+}
+.fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-heading {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:5px; min-width:180px; max-width:260px; min-height:64px; margin:0 auto;
+  padding:12px 16px; border:1.5px solid #6b86a5; border-radius:12px;
+  background:#f4f7fb; color:#172b45; text-align:center;
+}
+.fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-node:first-child > .fta-report-tree-heading {
+  background:#eaf1fb; border:2px solid #315f98; font-size:15px;
+}
+.fta-mindmap-print .fta-report-tree-children {
+  display:flex; flex-wrap:wrap; justify-content:center; align-items:flex-start;
+  gap:12px; margin:14px 0 0; padding:14px 8px 0;
+  border-top:2px solid #9aabc0; position:relative;
+}
+.fta-mindmap-print .fta-report-tree-children > .fta-report-tree-node {
+  flex:1 1 220px; max-width:340px; min-width:190px; padding:0 6px;
+  border:0; margin:0; position:relative;
+}
+.fta-mindmap-print .fta-report-tree-children > .fta-report-tree-node:before {
+  content:""; position:absolute; top:-15px; left:50%; height:15px; border-left:2px solid #9aabc0;
+}
+.fta-mindmap-print .fta-report-finding {
+  margin:8px auto 0; max-width:300px; text-align:left; border:1px solid #d7e0eb;
+  background:#fff; font-size:11px;
+}
+.fta-mindmap-print .fta-report-section:nth-of-type(2) { page-break-before:always; }
+@media print {
+  .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-node { break-inside:avoid; }
+  .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-children { break-inside:auto; }
+  .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-heading { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+}
