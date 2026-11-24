@@ -108,6 +108,8 @@ export default function FTA({me}:{me:any}){
   }
   useEffect(()=>{load()},[me?.role])
   const [searchParams]=useSearchParams()
+  const view=searchParams.get('view')||'dashboard'
+  const views=[{key:'dashboard',label:'Dashboard'},{key:'start',label:'Start Investigation'},{key:'register',label:'Investigation Register'},{key:'templates',label:'Template Master'}]
   useEffect(()=>{const id=Number(searchParams.get('investigation_id')||0);if(id>0)loadDetail(id)},[searchParams])
   useEffect(()=>{
     if(!currentFinding){setFindingForm({});return}
@@ -153,8 +155,10 @@ export default function FTA({me}:{me:any}){
 
   return <div className="page fta-page">
     <PageHeader title="Fault Tree Analysis" subtitle="Machining defect investigation, verified root causes and corrective-action linkage."/>
+    <nav className="fta-view-nav" aria-label="FTA workspace">{views.filter(v=>v.key!=='templates'||canManageTemplates).map(v=><a key={v.key} href={v.key==='dashboard'?'/fta':`/fta?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav>
     {error&&<div className="error" role="alert">{error}</div>}
     {message&&<div className="success" role="status">{message}</div>}
+    {view==='dashboard'&&<>
     <div className="kpi-grid">
       <Kpi label="Total investigations" value={counts.total||0}/>
       <Kpi label="Open / in progress" value={counts.open||0}/>
@@ -169,8 +173,9 @@ export default function FTA({me}:{me:any}){
         <div><h3>Top verified root causes</h3>{(dashboard.top_verified_causes||[]).length?(dashboard.top_verified_causes||[]).map((x:any)=><div className="master-row" key={x.cause}><b>{x.cause}</b><span>{x.occurrences} confirmed</span></div>):<p className="muted">No verified root causes yet.</p>}</div>
       </div>
     </section>
+    </>}
 
-    <section className="panel">
+    {view==='start'&&<section className="panel">
       <div className="panel-title"><div><h2>Start investigation</h2><p>Link an existing Quality Rejection record. Rejection quantities and PPM are not modified by FTA.</p></div></div>
       <div className="fta-create-grid">
         <label>Machining operation
@@ -205,10 +210,10 @@ export default function FTA({me}:{me:any}){
       </label>
       <div className="button-row"><button onClick={createInvestigation} disabled={!canWrite||busy||!rejectionId||!operationCode||!defectCode||!filteredTemplates.length}>Create investigation</button><button className="secondary" onClick={load} disabled={busy}>Refresh</button></div>
       <p className="muted small">Select the appropriate published template. Its version and tree are snapshotted when the investigation is created.</p>
-    </section>
+    </section>}
 
 
-    {canManageTemplates&&<section className="panel">
+    {view==='templates'&&canManageTemplates&&<section className="panel">
       <div className="panel-title"><div><h2>FTA Template Master</h2><p>Published templates are immutable. Create a revision, review its tree and publish it for new investigations.</p></div></div>
       <div className="fta-bottom-grid">
         <div><h3>Add machining operation</h3>
@@ -250,15 +255,15 @@ export default function FTA({me}:{me:any}){
       <p className="muted small">Node types: TOP_EVENT, INTERMEDIATE_EVENT, BASIC_EVENT, EXTERNAL_EVENT, UNDEVELOPED_EVENT. Nodes with children require an AND or OR gate. Each node ID must be unique.</p>
     </section>}
 
-    <section className="panel">
+    {view==='register'&&<section className="panel">
       <div className="panel-title"><div><h2>Investigation register</h2><p>Latest 500 investigations. Select a record to continue the analysis.</p></div><span className="muted">{investigations.length} records</span></div>
       <div className="table-wrap"><table><thead><tr><th>FTA No.</th><th>Date</th><th>Part</th><th>Defect / Template</th><th>Plant</th><th>Status</th><th></th></tr></thead>
         <tbody>{investigations.map(i=><tr key={i.id}><td>{i.investigation_no}</td><td>{String(i.created_at||'').slice(0,10)}</td><td>{i.part_code} – {i.part_name}</td><td>{i.defect_name}<div className="muted small">{i.template_name}</div></td><td>{i.plant||'—'}</td><td><span className="status-pill">{i.status.replaceAll('_',' ')}</span></td><td><button className="small secondary" onClick={()=>loadDetail(i.id)}>Open</button></td></tr>)}
         {!investigations.length&&<tr><td colSpan={7} className="muted">No FTA investigations created yet.</td></tr>}</tbody>
       </table></div>
-    </section>
+    </section>}
 
-    {detail&&tree&&<section className="panel fta-workspace">
+    {view==='register'&&detail&&tree&&<section className="panel fta-workspace">
       <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p></div><div className="button-row"><a className="button secondary" href={'/fta/report/'+detail.id}>FTA report</a><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div></div>
       <div className="fta-workspace-grid">
         <div className="fta-tree-panel">
