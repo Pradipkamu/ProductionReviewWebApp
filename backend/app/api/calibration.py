@@ -18,6 +18,7 @@ from ..services.file_security import UploadSecurityError, safe_original_name, sa
 
 from ..auth import get_current_user
 from ..db import get_db
+from ..time_utils import ist_today
 
 router = APIRouter(prefix="/calibration", tags=["calibration"])
 
@@ -1223,6 +1224,11 @@ def create_inspection_measurement(data: InspectionMeasurementIn,
         raise HTTPException(422, "Characteristic is inactive or does not belong to the selected product")
     if characteristic["operation_id"] is not None and characteristic["operation_id"] != data.operation_id:
         raise HTTPException(422, "Characteristic is not defined for the selected operation")
+    if data.operation_id is not None:
+        operation = db.execute(text("SELECT id FROM operations WHERE id=:id AND is_active=true"),
+                               {"id": data.operation_id}).first()
+        if not operation:
+            raise HTTPException(422, "Selected operation is inactive or does not exist")
     if len(data.measured_values) != int(characteristic["sample_size"]):
         raise HTTPException(422, f"Enter exactly {characteristic['sample_size']} sample measurement(s)")
     gauge = db.execute(text("""SELECT id,instrument_code,name,equipment_type,serial_number,status,
@@ -1231,7 +1237,7 @@ def create_inspection_measurement(data: InspectionMeasurementIn,
         {"id": data.instrument_id}).mappings().first()
     if not gauge:
         raise HTTPException(422, "Selected gauge is not active or does not exist")
-    today = date.today()
+    today = ist_today()
     due = gauge["next_due_date"]
     status = str(gauge["status"] or "").upper()
     if status not in {"ACTIVE", "CALIBRATED"} or due is None or due < today:
