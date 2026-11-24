@@ -39,6 +39,7 @@ class InstrumentIn(BaseModel):
     resolution_text: str | None = None
     accuracy_text: str | None = None
     location: str | None = None
+    home_plant: str | None = None
     owner_department: str | None = None
     owner_type: str = "INTERNAL"
     control_plan_reference: str | None = None
@@ -530,3 +531,159 @@ def download_calibration_certificate(event_id: int, db: Session = Depends(get_db
         raise HTTPException(404, "Certificate file is unavailable")
     return FileResponse(path, media_type=row["certificate_mime_type"] or "application/octet-stream",
                         filename=row["certificate_file_name"] or "calibration-certificate")
+
+
+class InstrumentScopeIn(BaseModel):
+    plants: list[str] = Field(default_factory=list)
+    home_plant: str | None = None
+    product_ids: list[int] = Field(default_factory=list)
+    route_operation_ids: list[int] = Field(default_factory=list)
+    machine_ids: list[int] = Field(default_factory=list)
+    reason: str = Field(min_length=5)
+
+
+@router.get("/scope-options")
+def calibration_scope_options(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    plants = [x[0] for x in db.execute(text("""
+        SELECT plant FROM products WHERE plant IS NOT NULL AND trim(plant) <> ''
+        UNION SELECT plant FROM machines WHERE plant IS NOT NULL AND trim(plant) <> ''
+        UNION SELECT plant FROM working_calendar WHERE plant IS NOT NULL AND trim(plant) <> ''
+        ORDER BY 1
+    """)).all()]
+    products = [dict(x) for x in db.execute(text("""
+        SELECT id,code,name,plant FROM products WHERE is_active=true ORDER BY plant,code
+    """)).mappings().all()]
+    operations = [dict(x) for x in db.execute(text("""
+        SELECT ro.id AS route_operation_id, p.id AS product_id, p.code AS product_code,
+               p.name AS product_name, o.id AS operation_id, o.code AS operation_code,
+               o.name AS operation_name, ro.sequence_no
+        FROM route_operations ro JOIN route_versions rv ON rv.id=ro.route_version_id
+        JOIN products p ON p.id=rv.product_id JOIN operations o ON o.id=ro.operation_id
+        WHERE rv.is_active=true AND p.is_active=true AND o.is_active=true
+        ORDER BY p.code,ro.sequence_no
+    """)).mappings().all()]
+    machines = [dict(x) for x in db.execute(text("""
+        SELECT id,code,name,plant,department FROM machines WHERE is_active=true ORDER BY plant,code
+    """)).mappings().all()]
+    return {"plants": plants, "products": products, "operations": operations, "machines": machines}
+
+
+@router.get("/instruments/{instrument_id}/scope")
+def get_instrument_scope(instrument_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    if not db.execute(text("SELECT 1 FROM calibration_instruments WHERE id=:id"), {"id": instrument_id}).first():
+        raise HTTPException(404, "Instrument not found")
+    plants = [x[0] for x in db.execute(text("""
+        SELECT plant_name FROM calibration_instrument_plants
+        WHERE instrument_id=:id ORDER BY is_home DESC,plant_name
+    """), {"id": instrument_id}).all()]
+    products = [x[0] for x in db.execute(text("""
+        SELECT product_id FROM calibration_instrument_products WHERE instrument_id=:id ORDER BY product_id
+    """), {"id": instrument_id}).all()]
+    operations = [x[0] for x in db.execute(text("""
+        SELECT route_operation_id FROM calibration_instrument_operations WHERE instrument_id=:id ORDER BY route_operation_id
+    """), {"id": instrument_id}).all()]
+    machines = [x[0] for x in db.execute(text("""
+        SELECT machine_id FROM calibration_instrument_machines WHERE instrument_id=:id ORDER BY machine_id
+    """), {"id": instrument_id}).all()]
+    home = db.execute(text("SELECT home_plant FROM calibration_instruments WHERE id=:id"), {"id": instrument_id}).scalar()
+    return {"home_plant": home, "plants": plants, "product_ids": products,
+            "route_operation_ids": operations, "machine_ids": machines}
+
+
+@router.put("/instruments/{instrument_id}/scope")
+def save_instrument_scope(instrument_id: int, data: InstrumentScopeIn,
+                          db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    inst = db.execute(text("SELECT * FROM calibration_instruments WHERE id=:id FOR UPDATE"),
+                      {"id": instrument_id}).mappings().first()
+    if not inst:
+        raise HTTPException(404, "Instrument not found")
+    plants = list(dict.fromkeys(x.strip() for x in data.plants if x and x.strip()))
+    home = data.home_plant.strip() if data.home_plant else None
+    if home and home not in plants:
+        plants.append(home)
+    if len(plants) > 50 or len(set(data.product_ids)) != len(data.product_ids) or len(set(data.route_operation_ids)) != len(data.route_operation_ids) or len(set(data.machine_ids)) != len(data.machine_ids):
+        raise HTTPException(422, "Duplicate or excessive scope selections")
+    checks = [
+        ("products", "id", data.product_ids),
+        ("route_operations", "id", data.route_operation_ids),
+        ("machines", "id", data.machine_ids),
+    ]
+    for table, col, ids in checks:
+        if ids:
+            found = db.execute(text(f"SELECT count(*) FROM {table} WHERE {col} = ANY(:ids)"), {"ids": ids}).scalar_one()
+            if found != len(ids):
+                raise HTTPException(422, f"One or more selected {table.replace('_',' ')} records do not exist")
+    before = {"home_plant": inst["home_plant"]}
+    for table in ("calibration_instrument_plants", "calibration_instrument_products",
+                  "calibration_instrument_operations", "calibration_instrument_machines"):
+        db.execute(text(f"DELETE FROM {table} WHERE instrument_id=:id"), {"id": instrument_id})
+    for plant in plants:
+        db.execute(text("""INSERT INTO calibration_instrument_plants
+            (instrument_id,plant_name,is_home,created_by) VALUES (:id,:plant,:home,:uid)"""),
+            {"id": instrument_id, "plant": plant, "home": plant == home, "uid": user.id})
+    for pid in data.product_ids:
+        db.execute(text("INSERT INTO calibration_instrument_products (instrument_id,product_id,created_by) VALUES (:id,:value,:uid)"),
+                   {"id": instrument_id, "value": pid, "uid": user.id})
+    for oid in data.route_operation_ids:
+        db.execute(text("INSERT INTO calibration_instrument_operations (instrument_id,route_operation_id,created_by) VALUES (:id,:value,:uid)"),
+                   {"id": instrument_id, "value": oid, "uid": user.id})
+    for mid in data.machine_ids:
+        db.execute(text("INSERT INTO calibration_instrument_machines (instrument_id,machine_id,created_by) VALUES (:id,:value,:uid)"),
+                   {"id": instrument_id, "value": mid, "uid": user.id})
+    db.execute(text("UPDATE calibration_instruments SET home_plant=:plant,updated_at=now() WHERE id=:id"),
+               {"plant": home, "id": instrument_id})
+    after = {"home_plant": home, "plants": plants, "product_ids": data.product_ids,
+             "route_operation_ids": data.route_operation_ids, "machine_ids": data.machine_ids}
+    _audit(db, instrument_id, "INSTRUMENT_SCOPE_UPDATED", before, after, data.reason, user.id)
+    db.commit()
+    return after
+
+
+@router.get("/reports/register")
+def calibration_register_report(plant: str | None = None, product_id: int | None = None,
+                                 route_operation_id: int | None = None, machine_id: int | None = None,
+                                 db: Session = Depends(get_db), user=Depends(get_current_user)):
+    q = """
+      SELECT DISTINCT i.id,i.instrument_code,i.name,i.equipment_type,i.home_plant,i.owner_department,
+        i.owner_type,i.location,i.range_text,i.resolution_text,i.criticality,i.status,
+        i.last_calibration_date,i.next_due_date,i.calibration_interval_days,
+        CASE WHEN i.next_due_date IS NULL THEN 'NEVER_CALIBRATED'
+             WHEN i.next_due_date < CURRENT_DATE THEN 'OVERDUE'
+             WHEN i.next_due_date <= CURRENT_DATE + 30 THEN 'DUE_SOON'
+             ELSE i.status END AS due_status
+      FROM calibration_instruments i
+      LEFT JOIN calibration_instrument_plants ip ON ip.instrument_id=i.id
+      LEFT JOIN calibration_instrument_products ixp ON ixp.instrument_id=i.id
+      LEFT JOIN calibration_instrument_operations ixo ON ixo.instrument_id=i.id
+      LEFT JOIN calibration_instrument_machines ixm ON ixm.instrument_id=i.id
+      WHERE i.is_active=true
+    """
+    params = {}
+    for key, col, value in (("plant","COALESCE(ip.plant_name,i.home_plant)",plant),
+                            ("product_id","ixp.product_id",product_id),
+                            ("route_operation_id","ixo.route_operation_id",route_operation_id),
+                            ("machine_id","ixm.machine_id",machine_id)):
+        if value is not None:
+            q += f" AND {col} = :{key}"
+            params[key] = value
+    q += " ORDER BY i.home_plant,i.instrument_code"
+    return [dict(x) for x in db.execute(text(q), params).mappings().all()]
+
+
+@router.get("/instruments/{instrument_id}/history-card")
+def calibration_history_card(instrument_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    instrument = db.execute(text("SELECT * FROM calibration_instruments WHERE id=:id"),
+                             {"id": instrument_id}).mappings().first()
+    if not instrument:
+        raise HTTPException(404, "Instrument not found")
+    scope = get_instrument_scope(instrument_id, db, user)
+    events = [dict(x) for x in db.execute(text("""
+      SELECT e.*,lp.name AS provider_name,ac.name AS criteria_name,ac.permissible_error,
+             ac.max_uncertainty,ac.decision_rule,ac.source_reference
+      FROM calibration_events e
+      LEFT JOIN calibration_laboratory_providers lp ON lp.id=e.laboratory_provider_id
+      LEFT JOIN calibration_acceptance_criteria ac ON ac.id=e.acceptance_criteria_id
+      WHERE e.instrument_id=:id ORDER BY e.calibration_date DESC,e.id DESC
+    """), {"id": instrument_id}).mappings().all()]
+    return {"instrument": dict(instrument), "scope": scope, "events": events}
