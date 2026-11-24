@@ -79,7 +79,7 @@ export default function FTA({me}:{me:any}){
   const filteredTemplates=useMemo(()=>templates.filter(t=>t.status==='PUBLISHED'&&(!operationCode||t.operation_code===operationCode)&&(!defectCode||t.defect_code===defectCode)),[templates,operationCode,defectCode])
   const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
   const normalizedRejectionSearch=rejectionSearch.trim().toLowerCase()
-  const filteredRejections=useMemo(()=>rejections.filter(r=>!normalizedRejectionSearch||[r.id,r.rejection_no,r.rejection_date,r.part_code,r.part_name,r.phenomenon,r.defect_name,r.machine_code].some(v=>String(v??'').toLowerCase().includes(normalizedRejectionSearch))),[rejections,normalizedRejectionSearch])
+  const filteredRejections=useMemo(()=>rejections.filter(r=>String(r.id)===rejectionId||!normalizedRejectionSearch||[r.id,r.rejection_no,r.rejection_date,r.part_code,r.part_name,r.phenomenon,r.defect_name,r.machine_code].some(v=>String(v??'').toLowerCase().includes(normalizedRejectionSearch))),[rejections,normalizedRejectionSearch])
   const selectedRejection=rejections.find(r=>String(r.id)===rejectionId)
   const plantMachines=machines.filter(m=>m.active!==false&&(!selectedRejection?.plant||m.plant===selectedRejection.plant))
   const currentFinding:Finding|undefined=detail?.findings?.find((f:Finding)=>f.node_id===selectedNode)
