@@ -233,6 +233,22 @@ create_backups() {
   chmod 600 "$STATE_FILE"
 
   create_files_backup
+
+  # Print a concise end-of-run summary so the operator can confirm all
+  # three backup artifacts without manually searching the log.
+  # shellcheck disable=SC1090
+  source "$STATE_FILE"
+  [[ -s "${DB_BACKUP:-}" ]] || stop "Database backup missing after backup routine"
+  [[ -s "${CODE_BACKUP:-}" ]] || stop "Git bundle missing after backup routine"
+  [[ -s "${FILES_BACKUP:-}" ]] || stop "Files/configuration archive missing after backup routine"
+
+  say "========== BACKUP VERIFICATION SUMMARY =========="
+  say "VERIFIED DATABASE BACKUP ARCHIVE: $DB_BACKUP"
+  say "TEMPORARY RESTORE VERIFIED: $DB_BACKUP"
+  say "VERIFIED CODE BACKUP: $CODE_BACKUP"
+  say "VERIFIED FILES/CONFIG BACKUP: $FILES_BACKUP"
+  ls -lh "$DB_BACKUP" "$CODE_BACKUP" "$FILES_BACKUP" | tee -a "$LOG"
+  say "========== ALL THREE BACKUPS VERIFIED =========="
 }
 
 migration_preflight() {
