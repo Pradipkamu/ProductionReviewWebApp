@@ -1,4 +1,4 @@
-"""Extend calibration controls for independent release, ownership, MSA and product impact.
+"""Complete calibration controls, MSA records and approval evidence.
 
 Revision ID: 0037_calibration_controls
 Revises: 0036_calibration_mgmt
@@ -19,14 +19,15 @@ def upgrade():
     op.drop_constraint("ck_calibration_instrument_status", "calibration_instruments", type_="check")
     op.create_check_constraint(
         "ck_calibration_instrument_status", "calibration_instruments",
-        "status IN ('PENDING','IN_CALIBRATION','PENDING_APPROVAL','CALIBRATED','OVERDUE','FAILED','QUARANTINED','RETIRED')",
+        "status IN ('PENDING','IN_CALIBRATION','PENDING_APPROVAL','CALIBRATED','OVERDUE','FAILED','QUARANTINED','RETIRED')"
     )
     op.create_check_constraint(
-        "ck_calibration_owner_type", "calibration_instruments",
-        "owner_type IN ('INTERNAL','CUSTOMER','SUPPLIER','EMPLOYEE')",
+        "ck_calibration_instrument_owner_type", "calibration_instruments",
+        "owner_type IN ('INTERNAL','CUSTOMER','SUPPLIER','EMPLOYEE')"
     )
     op.add_column("calibration_events", sa.Column("approval_reason", sa.Text()))
     op.add_column("calibration_events", sa.Column("approved_at", sa.DateTime()))
+    op.add_column("calibration_events", sa.Column("laboratory_scope_reference", sa.String(200)))
     op.add_column("calibration_impact_assessments", sa.Column("shipped_to_customer", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column("calibration_impact_assessments", sa.Column("customer_notified", sa.Boolean(), nullable=False, server_default=sa.false()))
     op.add_column("calibration_impact_assessments", sa.Column("customer_notification_reference", sa.String(200)))
@@ -59,14 +60,15 @@ def downgrade():
     op.drop_column("calibration_impact_assessments", "customer_notification_reference")
     op.drop_column("calibration_impact_assessments", "customer_notified")
     op.drop_column("calibration_impact_assessments", "shipped_to_customer")
+    op.drop_column("calibration_events", "laboratory_scope_reference")
     op.drop_column("calibration_events", "approved_at")
     op.drop_column("calibration_events", "approval_reason")
-    op.drop_constraint("ck_calibration_owner_type", "calibration_instruments", type_="check")
+    op.drop_constraint("ck_calibration_instrument_owner_type", "calibration_instruments", type_="check")
     op.drop_column("calibration_instruments", "special_characteristic")
     op.drop_column("calibration_instruments", "control_plan_reference")
     op.drop_column("calibration_instruments", "owner_type")
     op.drop_constraint("ck_calibration_instrument_status", "calibration_instruments", type_="check")
     op.create_check_constraint(
         "ck_calibration_instrument_status", "calibration_instruments",
-        "status IN ('PENDING','IN_CALIBRATION','CALIBRATED','OVERDUE','FAILED','QUARANTINED','RETIRED')",
+        "status IN ('PENDING','IN_CALIBRATION','CALIBRATED','OVERDUE','FAILED','QUARANTINED','RETIRED')"
     )
