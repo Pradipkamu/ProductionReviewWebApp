@@ -795,40 +795,61 @@ button.ghost{color:inherit}
 }
 
 
-/* FTA mind-map print layout */
-.fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-node {
-  border:0; margin:0; padding:10px 0; text-align:center;
+/* FTA mind-map print layout: dedicated single-page A3 landscape output */
+.fta-mindmap-print .fta-report-cover,
+.fta-mindmap-print .fta-report-section:not(.fta-mindmap-section),
+.fta-mindmap-print .fta-report-footer { display:none !important; }
+.fta-mindmap-print .fta-mindmap-section {
+  display:block !important; margin:0; padding:0; border:0; box-shadow:none;
+  width:100%; max-width:none; background:#fff;
 }
-.fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-heading {
+.fta-mindmap-print .fta-mindmap-section > h2 {
+  margin:0 0 3mm; padding:0 0 2mm; border-bottom:1px solid #9aabc0;
+  text-align:center; font-size:13pt; color:#172b45;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-node {
+  border:0; margin:0; padding:2mm 0; text-align:center;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading {
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:5px; min-width:180px; max-width:260px; min-height:64px; margin:0 auto;
-  padding:12px 16px; border:1.5px solid #6b86a5; border-radius:12px;
-  background:#f4f7fb; color:#172b45; text-align:center;
+  gap:2px; min-width:30mm; max-width:58mm; min-height:12mm; margin:0 auto;
+  padding:2mm 3mm; border:1px solid #6b86a5; border-radius:3mm;
+  background:#f4f7fb; color:#172b45; text-align:center; font-size:8pt;
+  overflow-wrap:anywhere;
 }
-.fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-node:first-child > .fta-report-tree-heading {
-  background:#eaf1fb; border:2px solid #315f98; font-size:15px;
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-node:first-child > .fta-report-tree-heading {
+  background:#eaf1fb; border:2px solid #315f98; font-size:10pt;
 }
-.fta-mindmap-print .fta-report-tree-children {
-  display:flex; flex-wrap:wrap; justify-content:center; align-items:flex-start;
-  gap:12px; margin:14px 0 0; padding:14px 8px 0;
-  border-top:2px solid #9aabc0; position:relative;
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading span,
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading .status-pill { font-size:6.5pt; }
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-children {
+  display:flex; flex-wrap:nowrap; justify-content:space-around; align-items:flex-start;
+  gap:2mm; margin:3mm 0 0; padding:3mm 1mm 0;
+  border-top:1px solid #9aabc0; position:relative;
 }
-.fta-mindmap-print .fta-report-tree-children > .fta-report-tree-node {
-  flex:1 1 220px; max-width:340px; min-width:190px; padding:0 6px;
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node {
+  flex:1 1 0; min-width:0; max-width:none; padding:0 1mm;
   border:0; margin:0; position:relative;
 }
-.fta-mindmap-print .fta-report-tree-children > .fta-report-tree-node:before {
-  content:""; position:absolute; top:-15px; left:50%; height:15px; border-left:2px solid #9aabc0;
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node:before {
+  content:""; position:absolute; top:-3.2mm; left:50%; height:3.2mm; border-left:1px solid #9aabc0;
 }
-.fta-mindmap-print .fta-report-finding {
-  margin:8px auto 0; max-width:300px; text-align:left; border:1px solid #d7e0eb;
-  background:#fff; font-size:11px;
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding {
+  margin:2mm auto 0; max-width:55mm; padding:1.5mm 2mm; text-align:left;
+  border:1px solid #d7e0eb; background:#fff; font-size:6.5pt; overflow-wrap:anywhere;
 }
-.fta-mindmap-print .fta-report-section:nth-of-type(2) { page-break-before:always; }
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding p { margin:1mm 0; }
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding small,
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding strong { font-size:6.5pt; }
+@page { size:A3 landscape; margin:7mm; }
 @media print {
-  .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-node { break-inside:avoid; }
-  .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-children { break-inside:auto; }
-  .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-heading { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .fta-mindmap-print { width:100%; max-width:none; margin:0; padding:0; }
+  .fta-mindmap-print .fta-report-actions { display:none !important; }
+  .fta-mindmap-print .fta-mindmap-section { break-before:avoid; break-after:avoid; }
+  .fta-mindmap-print .fta-mindmap-section .fta-report-tree-node { break-inside:avoid; }
+  .fta-mindmap-print .fta-mindmap-section .fta-report-tree-children { break-inside:auto; }
+  .fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .fta-mindmap-print, .fta-mindmap-print * { box-sizing:border-box; }
 }
 
 /* Dedicated Quality / Rejection workspace views */
