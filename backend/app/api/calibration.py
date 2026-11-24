@@ -604,16 +604,11 @@ def save_instrument_scope(instrument_id: int, data: InstrumentScopeIn,
         plants.append(home)
     if len(plants) > 50 or len(set(data.product_ids)) != len(data.product_ids) or len(set(data.route_operation_ids)) != len(data.route_operation_ids) or len(set(data.machine_ids)) != len(data.machine_ids):
         raise HTTPException(422, "Duplicate or excessive scope selections")
-    checks = [
-        ("products", "id", data.product_ids),
-        ("route_operations", "id", data.route_operation_ids),
-        ("machines", "id", data.machine_ids),
-    ]
-    for table, col, ids in checks:
-        if ids:
-            found = db.execute(text(f"SELECT count(*) FROM {table} WHERE {col} = ANY(:ids)"), {"ids": ids}).scalar_one()
-            if found != len(ids):
-                raise HTTPException(422, f"One or more selected {table.replace('_',' ')} records do not exist")
+    checks = [("products", data.product_ids), ("route_operations", data.route_operation_ids), ("machines", data.machine_ids)]
+    for table, ids in checks:
+        for record_id in ids:
+            if not db.execute(text(f"SELECT 1 FROM {table} WHERE id=:id"), {"id": record_id}).first():
+                raise HTTPException(422, f"Unknown {table.replace('_',' ')} ID: {record_id}")
     before = {"home_plant": inst["home_plant"]}
     for table in ("calibration_instrument_plants", "calibration_instrument_products",
                   "calibration_instrument_operations", "calibration_instrument_machines"):
