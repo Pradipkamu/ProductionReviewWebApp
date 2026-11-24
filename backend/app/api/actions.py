@@ -107,7 +107,7 @@ def serialize_action(db: Session, a: Action) -> dict:
         "closure_remark": a.closure_remark,
         "effectiveness_status": a.effectiveness_status,
         "action_type": a.action_type,
-        "requires_whywhy": a.requires_whywhy,
+        "requires_whywhy": bool(a.requires_whywhy) and str(a.action_type or "").upper() != "FTA",
         "age_days": max(0, (ist_today() - a.reference_date).days),
         "overdue": bool(a.due_at and a.status != ActionStatus.CLOSED and a.due_at < datetime.utcnow()),
         "whywhy_completion_percent": _serialize_plan(plan)["completion_percent"],
@@ -573,7 +573,7 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
             ).scalar_one()
             if unresolved_causes:
                 raise HTTPException(409, "Quality must review newly discovered causes before this FTA action can be closed.")
-        if payload.status == ActionStatus.CLOSED and a.requires_whywhy:
+        if payload.status == ActionStatus.CLOSED and a.requires_whywhy and str(a.action_type or "").upper() != "FTA":
             plan = db.scalar(select(ActionWhyWhy).where(ActionWhyWhy.action_id == action_id))
             pdata = _serialize_plan(plan)
             if not pdata["can_close"]:
