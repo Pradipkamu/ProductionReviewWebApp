@@ -720,6 +720,7 @@ button.ghost{color:inherit}
 
 
 /* Fault Tree Analysis workspace */
+.fta-view-nav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--line,#e3e8f0)}.fta-view-nav a{display:inline-flex;align-items:center;padding:8px 13px;border:1px solid var(--line,#dce3ec);border-radius:8px;color:inherit;text-decoration:none;font-size:13px;font-weight:650;background:var(--surface,#fff)}.fta-view-nav a:hover{border-color:var(--orange);background:rgba(242,145,48,.07)}.fta-view-nav a.active{background:var(--navy,#173653);border-color:var(--navy,#173653);color:#fff}
 .fta-page .panel-title p{margin:5px 0 0;color:#718096;font-size:12px}
 .fta-create-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .fta-workspace-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.8fr);gap:18px;align-items:start}
