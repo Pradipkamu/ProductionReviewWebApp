@@ -1232,12 +1232,12 @@ def create_inspection_measurement(data: InspectionMeasurementIn,
     if len(data.measured_values) != int(characteristic["sample_size"]):
         raise HTTPException(422, f"Enter exactly {characteristic['sample_size']} sample measurement(s)")
     gauge = db.execute(text("""SELECT id,instrument_code,name,equipment_type,serial_number,status,
-            next_due_date,calibration_interval_days,current_location_id
+            last_calibration_date,next_due_date,calibration_interval_days,current_location_id
         FROM calibration_instruments WHERE id=:id AND is_active=true FOR UPDATE"""),
         {"id": data.instrument_id}).mappings().first()
     if not gauge:
         raise HTTPException(422, "Selected gauge is not active or does not exist")
-    today = ist_today()
+    today = data.inspection_date
     due = gauge["next_due_date"]
     status = str(gauge["status"] or "").upper()
     if status not in {"ACTIVE", "CALIBRATED"} or due is None or due < today:
@@ -1254,6 +1254,7 @@ def create_inspection_measurement(data: InspectionMeasurementIn,
         "instrument_id": gauge["id"], "instrument_code": gauge["instrument_code"],
         "name": gauge["name"], "equipment_type": gauge["equipment_type"],
         "serial_number": gauge["serial_number"], "status_at_measurement": status,
+        "last_calibration_date": str(gauge["last_calibration_date"]) if gauge["last_calibration_date"] else None,
         "calibration_due_date": str(due), "location_id": gauge["current_location_id"],
     }
     characteristic_snapshot = {
