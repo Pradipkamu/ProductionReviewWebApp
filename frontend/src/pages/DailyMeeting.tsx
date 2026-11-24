@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { formatIST, dateIST, istLocalToUTC } from '../time'
 import { useEffect, useRef, useState } from 'react'
 import { api, downloadApi } from '../api'
@@ -43,6 +44,10 @@ function priorityForSeverity(severity: string) {
 }
 
 export default function DailyMeeting() {
+ const [workspaceParams]=useSearchParams()
+ const view=workspaceParams.get('view')||'workspace'
+ const views=[{key:'workspace',label:'Meeting Workspace'},{key:'history',label:'Meeting History'}]
+
   const [date, setDate] = useState(today())
   const [productionReviewDate, setProductionReviewDate] = useState('')
   const [productionReviewDateNote, setProductionReviewDateNote] = useState('')
@@ -881,6 +886,7 @@ export default function DailyMeeting() {
       title="Daily Management Review"
       subtitle="Review performance, discuss exceptions, assign accountable actions and follow commitments through to closure."
     />
+ <nav className="quality-view-nav" aria-label="Daily Meeting workspace">{views.map(v=><a key={v.key} href={v.key==='workspace'?'/daily-meeting':`/daily-meeting?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav>
 
 
     {ownerRequests.length > 0 && <section className="panel">
