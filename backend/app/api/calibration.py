@@ -144,7 +144,8 @@ def equipment_types(user=Depends(get_current_user)):
 @router.get("/instruments")
 def list_instruments(status: str | None = None, due_only: bool = False,
                      db: Session = Depends(get_db), user=Depends(get_current_user)):
-    q = """SELECT i.*,cl.name AS current_location_name,cl.plant_name AS current_location_plant,\n                  cl.department AS current_location_department,cl.area AS current_location_area\n             FROM calibration_instruments i\n             LEFT JOIN calibration_locations cl ON cl.id=i.current_location_id\n             WHERE i.is_active = true"""\n    params = {}
+    q = """SELECT i.*,cl.name AS current_location_name,cl.plant_name AS current_location_plant,\n                  cl.department AS current_location_department,cl.area AS current_location_area\n             FROM calibration_instruments i\n             LEFT JOIN calibration_locations cl ON cl.id=i.current_location_id\n             WHERE i.is_active = true"""
+    params = {}
     if status:
         q += " AND i.status = :status"
         params["status"] = status
