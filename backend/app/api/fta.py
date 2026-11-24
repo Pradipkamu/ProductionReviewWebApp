@@ -890,9 +890,12 @@ def _fta_excel_workbook(data: dict) -> bytes:
           x.get("is_root_cause"), x.get("is_occurrence_cause"), x.get("is_escape_cause")) for x in data.get("findings", [])])
     add_table_sheet("Evidence Register",
         ["Finding", "File Name", "Caption", "MIME Type", "Size (bytes)", "Uploaded Date"],
-        [((findings.get(str(x.get("finding_id"))) or {}).get("node_label") if x.get("finding_id") else "Investigation-level"),
-         x.get("file_name"), x.get("caption"), x.get("mime_type"), x.get("size_bytes"), x.get("created_at"))]
-         for x in data.get("evidence", [])])
+        [(
+            (findings.get(str(x.get("finding_id"))) or {}).get("node_label")
+            if x.get("finding_id") else "Investigation-level",
+            x.get("file_name"), x.get("caption"), x.get("mime_type"),
+            x.get("size_bytes"), x.get("created_at")
+        ) for x in data.get("evidence", [])])
     add_table_sheet("Actions",
         ["Action No.", "Relationship", "Problem", "Action Description", "Owner", "Due Date", "Status"],
         [(x.get("action_no"), x.get("relationship_type"), x.get("problem_description"), x.get("action_description"),
