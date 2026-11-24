@@ -5,11 +5,13 @@ import { canViewPage, navItems } from '../pageAccess'
 
 const groups=[
   {label:'Communication',keys:['chat']},
-  {label:'Executive & Review',keys:['control_tower','dispatch_intelligence','capacity_intelligence','operations_intelligence','management_assistant','daily_review','daily_meeting','insights','actions','admin_action_review']},
+  {label:'Executive & Review',keys:['control_tower','dispatch_intelligence','capacity_intelligence','operations_intelligence','management_assistant','daily_review','daily_meeting','insights']},
+  {label:'Quality & Rejection',keys:['quality','casting_quality','customer_quality']},
+  {label:'Fault Tree Analysis',keys:['fta']},
+  {label:'Actions & Reviews',keys:['actions','admin_action_review']},
   {label:'Planning & Production',keys:['mis','schedule','capacity','machine_master','product_master','process','process_actuals','vendor']},
-  {label:'Quality & OEE',keys:['quality','fta','casting_quality','customer_quality','oee']},
-  {label:'Automation & HMI',keys:['afms']},
-  {label:'Reports',keys:['reports','oee_reports','management_reports','analytics']},
+  {label:'OEE & Automation',keys:['oee','afms']},
+  {label:'Reports & Analytics',keys:['reports','oee_reports','management_reports','analytics']},
   {label:'Administration',keys:['masters','import','diagnostics','governance','account']},
 ]
 
@@ -66,7 +68,7 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
     <aside className={`sidebar ${menuOpen?'open':''}`}>
       <div className="brand"><div className="brand-mark">PR</div><div><b>Production Review</b><span>Process • Sales • Actions</span></div></div>
       <div className="user-card"><div className="user-avatar">{String(me?.full_name||me?.username||'U').slice(0,1).toUpperCase()}</div><div><b>{me?.full_name||me?.username}</b><span>{String(me?.role||'').replaceAll('_',' ')}</span></div></div>
-      <nav aria-label="Primary navigation">{groups.map(group=>{const items=visible.filter(item=>group.keys.includes(item.key));if(!items.length)return null;return <div className="nav-group" key={group.label}><div className="nav-group-label">{group.label}</div>{items.map(({to,label}) => <NavLink key={to} to={to} end={to==='/'} className={({isActive}) => isActive ? 'active' : ''}>{label}</NavLink>)}</div>})}</nav>
+      <nav aria-label="Primary navigation">{groups.map(group=>{const items=visible.filter(item=>group.keys.includes(item.key));if(!items.length)return null;return <details className="nav-group" key={group.label} open={group.keys.includes(currentNav?.key||'chat')}><summary className="nav-group-label">{group.label}<span aria-hidden="true">⌄</span></summary>{items.map(({to,label}) => <NavLink key={to} to={to} end={to==='/'} className={({isActive}) => isActive ? 'active' : ''}>{label}</NavLink>)}</details>})}</nav>
       <button className="ghost danger sign-out" onClick={signOut}>Sign out</button>
     </aside>
     <main className="content" id="main-content" tabIndex={-1}>
