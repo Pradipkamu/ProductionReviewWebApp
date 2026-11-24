@@ -1047,8 +1047,8 @@ def _fta_excel_workbook(data: dict) -> bytes:
         ("Closure Remarks", data.get("closure_remarks")),
     ])
     add_table_sheet("Findings",
-        ["Node", "Type", "Status", "Observation", "Measured Value", "Expected Value", "Verification Method", "Verification Result", "Root Cause", "Occurrence Cause", "Escape Cause"],
-        [(x.get("node_label"), x.get("node_type"), x.get("investigation_status"), x.get("observation"),
+        ["Node", "Type", "Status", "Priority", "Observation / N/A Reason", "Measured Value", "Expected Value", "Verification Method", "Verification Result", "Root Cause", "Occurrence Cause", "Escape Cause"],
+        [(x.get("node_label"), x.get("node_type"), x.get("investigation_status"), x.get("priority", "MEDIUM"), x.get("observation"),
           x.get("measured_value"), x.get("expected_value"), x.get("verification_method"), x.get("verification_result"),
           x.get("is_root_cause"), x.get("is_occurrence_cause"), x.get("is_escape_cause")) for x in data.get("findings", [])])
     add_table_sheet("Evidence Register",
