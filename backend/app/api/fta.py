@@ -1605,6 +1605,7 @@ def list_recurrences(investigation_id: int, db: Session = Depends(get_db),
                r.same_root_cause, r.recurrence_reason, r.containment_action, r.new_evidence,
                r.previous_action_status, r.previous_verification_result, r.review_remarks,
                r.reviewed_by_id, r.reviewed_at, r.created_by_id, r.created_at,
+               r.related_investigation_id, ri.investigation_no AS related_investigation_no,
                q.rejection_date, q.reject_qty, p.code AS part_code, p.name AS part_name,
                ph.name AS phenomenon, m.name AS machine_name
         FROM fta_recurrences r
@@ -1612,6 +1613,7 @@ def list_recurrences(investigation_id: int, db: Session = Depends(get_db),
         JOIN products p ON p.id=q.product_id
         JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
         LEFT JOIN machines m ON m.id=q.machine_id
+        LEFT JOIN fta_investigations ri ON ri.id=r.related_investigation_id
         WHERE r.original_investigation_id=:id
         ORDER BY q.rejection_date DESC, r.id DESC
     """), {"id": investigation_id}).mappings().all()
@@ -1725,3 +1727,122 @@ def review_recurrence(recurrence_id: int, payload: dict,
            "remarks": remarks, "user_id": user.id, "id": recurrence_id})
     db.commit()
     return {"success": True, "id": recurrence_id, "classification": classification}
+
+
+class RelatedInvestigationCreate(BaseModel):
+    template_id: int = Field(gt=0)
+    owner_id: int | None = Field(default=None, gt=0)
+    summary: str | None = Field(default=None, max_length=4000)
+
+
+@router.post("/recurrences/{recurrence_id}/related-investigation", status_code=201)
+def create_related_investigation(recurrence_id: int, payload: RelatedInvestigationCreate,
+                                 db: Session = Depends(get_db),
+                                 user: User = Depends(get_current_user)):
+    _role(user, WRITE_ROLES)
+    rec = db.execute(text("""
+        SELECT r.id, r.original_investigation_id, r.rejection_id, r.classification,
+               r.related_investigation_id, oq.plant AS original_plant
+        FROM fta_recurrences r
+        JOIN fta_investigations oi ON oi.id=r.original_investigation_id
+        LEFT JOIN quality_rejection_daily oq ON oq.id=oi.rejection_id
+        WHERE r.id=:id
+    """), {"id": recurrence_id}).mappings().first()
+    if not rec:
+        raise HTTPException(404, "FTA recurrence record not found")
+    _assert_investigation_access(db, rec["original_investigation_id"], user, WRITE_ROLES)
+    if rec["classification"] != "DIFFERENT_ROOT_CAUSE":
+        raise HTTPException(409, "Quality must classify this recurrence as a different root cause first")
+    if rec["related_investigation_id"]:
+        raise HTTPException(409, "A related investigation has already been created")
+    rejection = db.execute(text("""
+        SELECT q.id, COALESCE(q.plant,p.plant) AS plant, q.machine_id, q.product_id,
+               q.phenomenon_id, q.rejection_date, q.shift, q.reject_qty, q.remark,
+               p.code AS part_code, p.name AS part_name, ph.name AS rejection_phenomenon
+        FROM quality_rejection_daily q
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        WHERE q.id=:id
+    """), {"id": rec["rejection_id"]}).mappings().first()
+    if not rejection:
+        raise HTTPException(404, "Linked Quality Rejection record not found")
+    template = db.execute(text("""
+        SELECT t.id, t.code, t.name, t.operation_code, t.defect_code,
+               t.version, t.tree_json
+        FROM fta_templates t
+        JOIN fta_phenomenon_code_map fm ON fm.legacy_defect_code=t.defect_code
+        WHERE t.id=:id AND t.status='PUBLISHED'
+          AND fm.phenomenon_id=:phenomenon_id
+    """), {"id": payload.template_id, "phenomenon_id": rejection["phenomenon_id"]}).mappings().first()
+    if not template:
+        raise HTTPException(422, "Select a published template mapped to this rejection phenomenon")
+    latest = db.execute(text("""
+        SELECT MAX(version) FROM fta_templates WHERE code=:code AND status='PUBLISHED'
+    """), {"code": template["code"]}).scalar_one()
+    if template["version"] != latest:
+        raise HTTPException(409, "Template revision is no longer current; refresh and select the latest")
+    machine_id = rejection["machine_id"]
+    if machine_id:
+        machine = db.execute(text("SELECT id, plant FROM machines WHERE id=:id AND is_active=true"),
+                             {"id": machine_id}).mappings().first()
+        if not machine:
+            machine_id = None
+        elif rejection["plant"] and machine["plant"] and machine["plant"] != rejection["plant"]:
+            raise HTTPException(422, "The rejection machine belongs to a different plant")
+    if _role_name(user) == "PRODUCTION" and payload.owner_id not in {None, user.id}:
+        raise HTTPException(403, "Production users can assign an investigation only to themselves")
+    owner_id = payload.owner_id or user.id
+    if not db.execute(text("SELECT id FROM users WHERE id=:id AND is_active=true"),
+                      {"id": owner_id}).first():
+        raise HTTPException(422, "Selected investigation owner is not active")
+    tree = _json(template["tree_json"], {})
+    snapshot = {
+        "template_id": template["id"], "template_code": template["code"],
+        "template_name": template["name"], "template_version": template["version"],
+        "operation_code": template["operation_code"], "defect_code": template["defect_code"],
+        "rejection": {k: str(v) if v is not None else None for k, v in dict(rejection).items()},
+        "related_to_investigation_id": rec["original_investigation_id"],
+        "recurrence_id": recurrence_id, "tree": tree,
+    }
+    now = datetime.utcnow()
+    try:
+        new_id = db.execute(text("""
+            INSERT INTO fta_investigations
+              (investigation_no,rejection_id,template_id,template_version,template_snapshot_json,
+               plant,machine_id,operation_code,summary,status,owner_id,created_by_id,created_at,updated_at)
+            VALUES ('PENDING',:rejection_id,:template_id,:version,:snapshot,
+                    :plant,:machine_id,:operation_code,:summary,'OPEN',:owner_id,:user_id,:now,:now)
+            RETURNING id
+        """), {
+            "rejection_id": rec["rejection_id"], "template_id": template["id"],
+            "version": template["version"], "snapshot": json.dumps(snapshot, ensure_ascii=False, default=str),
+            "plant": rejection["plant"], "machine_id": machine_id,
+            "operation_code": template["operation_code"], "summary": payload.summary,
+            "owner_id": owner_id, "user_id": user.id, "now": now,
+        }).scalar_one()
+        number = f"FTA-{now.year}-{new_id:05d}"
+        db.execute(text("UPDATE fta_investigations SET investigation_no=:number WHERE id=:id"),
+                   {"number": number, "id": new_id})
+        nodes: list[dict] = []
+        _flatten_nodes(tree, nodes)
+        for node in nodes:
+            db.execute(text("""
+                INSERT INTO fta_findings
+                  (investigation_id,node_id,node_label,node_type,investigation_status,updated_by_id)
+                VALUES (:investigation_id,:node_id,:node_label,:node_type,'NOT_INVESTIGATED',:user_id)
+            """), {**node, "investigation_id": new_id, "user_id": user.id})
+        db.execute(text("""
+            INSERT INTO fta_status_history
+              (investigation_id,old_status,new_status,remarks,changed_by_id)
+            VALUES (:id,NULL,'OPEN',:remarks,:user_id)
+        """), {"id": new_id, "remarks": f"Separate investigation for different root cause; related to recurrence {recurrence_id} and original FTA {rec['original_investigation_id']}.", "user_id": user.id})
+        db.execute(text("""
+            UPDATE fta_recurrences SET related_investigation_id=:new_id WHERE id=:id
+        """), {"new_id": new_id, "id": recurrence_id})
+        db.commit()
+        return {"id": new_id, "investigation_no": number,
+                "original_investigation_id": rec["original_investigation_id"],
+                "recurrence_id": recurrence_id}
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "A related investigation already exists for this rejection and template") from exc
