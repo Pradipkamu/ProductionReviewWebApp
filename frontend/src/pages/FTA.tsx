@@ -460,7 +460,7 @@ export default function FTA({me}:{me:any}){
           </div>
           <div className="fta-defect-history-summary">
             <div><span>Quality defect</span><strong>{detail.recurrence_suggestions?.phenomenon_name||detail.source_rejection?.defect_name||'—'}</strong></div>
-            <div><span>Original FTA date</span><strong>{detail.recurrence_suggestions?.original_rejection_date?String(detail.recurrence_suggestions.original_rejection_date).slice(0,10):String(detail.source_rejection?.rejection_date||'').slice(0,10)||'—'}</strong></div>
+            <div><span>Original FTA date</span><strong>{detail.recurrence_suggestions?.original_fta_date?String(detail.recurrence_suggestions.original_fta_date).slice(0,10):String(detail.created_at||'').slice(0,10)||'—'}</strong></div>
             <div><span>Latest detected rejection</span><strong>{detail.recurrence_suggestions?.last_matching_rejection_date?String(detail.recurrence_suggestions.last_matching_rejection_date).slice(0,10):'No later rejection'}</strong></div>
           </div>
           {recurrenceSuggestionsLoading&&<p className="muted small">Checking Quality Rejection history…</p>}
