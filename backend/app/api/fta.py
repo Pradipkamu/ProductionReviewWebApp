@@ -30,7 +30,7 @@ router = APIRouter(prefix="/fta", tags=["fault-tree-analysis"])
 READ_ROLES = {"ADMIN", "MANAGEMENT", "QUALITY", "PRODUCTION"}
 WRITE_ROLES = {"ADMIN", "QUALITY", "PRODUCTION"}
 TEMPLATE_ROLES = {"ADMIN", "QUALITY"}
-NODE_STATUSES = {"NOT_INVESTIGATED", "UNDER_INVESTIGATION", "SUSPECTED", "CONFIRMED", "RULED_OUT", "UNABLE_TO_DETERMINE"}
+NODE_STATUSES = {"NOT_INVESTIGATED", "UNDER_INVESTIGATION", "SUSPECTED", "CONFIRMED", "RULED_OUT", "UNABLE_TO_DETERMINE", "NOT_APPLICABLE"}
 INVESTIGATION_STATUSES = {"OPEN", "IN_PROGRESS", "VERIFIED_PENDING_ACTIONS", "CLOSED"}
 MAX_FTA_EVIDENCE_BYTES = 20 * 1024 * 1024
 MAX_FTA_EVIDENCE_FILES = 40
@@ -174,7 +174,7 @@ def _investigation(row, db: Session) -> dict:
     """), {"id": result["id"], "rejection_id": result["rejection_id"]}).mappings().first()
     result["source_rejection"] = dict(source) if source else {}
     findings = db.execute(text("""
-        SELECT id, node_id, node_label, node_type, investigation_status, observation,
+        SELECT id, node_id, node_label, node_type, investigation_status, priority, observation,
                measured_value, expected_value, verification_method, verification_result,
                is_root_cause, is_occurrence_cause, is_escape_cause, updated_by_id, updated_at
         FROM fta_findings WHERE investigation_id=:id ORDER BY id
@@ -316,6 +316,7 @@ class FindingUpdate(BaseModel):
     expected_value: str | None = Field(default=None, max_length=120)
     verification_method: str | None = Field(default=None, max_length=4000)
     verification_result: str | None = Field(default=None, max_length=4000)
+    priority: str = Field(default="MEDIUM", pattern="^(HIGH|MEDIUM|LOW)$")
     is_root_cause: bool = False
     is_occurrence_cause: bool = False
     is_escape_cause: bool = False
@@ -1148,6 +1149,8 @@ def update_finding(investigation_id: int, node_id: str, payload: FindingUpdate,
     if not finding:
         raise HTTPException(404, "Fault-tree node not found in this investigation")
     _validate_cause_classification(finding["node_type"], payload)
+    if payload.investigation_status == "NOT_APPLICABLE" and not (payload.observation or "").strip():
+        raise HTTPException(422, "Record why this cause is not applicable")
     if payload.investigation_status == "CONFIRMED" and not (payload.verification_method or "").strip():
         raise HTTPException(422, "Enter the verification method before confirming a cause")
     if payload.investigation_status == "CONFIRMED":
@@ -1159,7 +1162,7 @@ def update_finding(investigation_id: int, node_id: str, payload: FindingUpdate,
             raise HTTPException(422, "Attach at least one evidence file to this cause before confirming it")
     audit_fields = [
         "node_id", "node_label", "node_type", "investigation_status", "observation",
-        "measured_value", "expected_value", "verification_method", "verification_result",
+        "measured_value", "expected_value", "verification_method", "verification_result", "priority",
         "is_root_cause", "is_occurrence_cause", "is_escape_cause",
     ]
     old_snapshot = {key: finding[key] for key in audit_fields}
@@ -1171,13 +1174,13 @@ def update_finding(investigation_id: int, node_id: str, payload: FindingUpdate,
     """), {"finding_id": finding["id"], "old_snapshot": json.dumps(old_snapshot, ensure_ascii=False, default=str),
            "new_snapshot": json.dumps(new_snapshot, ensure_ascii=False, default=str), "user_id": user.id})
     db.execute(text("""
-        UPDATE fta_findings SET investigation_status=:status, observation=:observation,
+        UPDATE fta_findings SET investigation_status=:status, priority=:priority, observation=:observation,
           measured_value=:measured, expected_value=:expected, verification_method=:method,
           verification_result=:result, is_root_cause=:root, is_occurrence_cause=:occurrence,
           is_escape_cause=:escape, updated_by_id=:user_id, updated_at=:now
         WHERE id=:id
     """), {
-        "status": payload.investigation_status, "observation": payload.observation,
+        "status": payload.investigation_status, "priority": payload.priority, "observation": payload.observation,
         "measured": payload.measured_value, "expected": payload.expected_value,
         "method": payload.verification_method, "result": payload.verification_result,
         "root": payload.is_root_cause, "occurrence": payload.is_occurrence_cause,
