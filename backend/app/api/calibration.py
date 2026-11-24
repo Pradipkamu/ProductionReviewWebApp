@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import qrcode
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from openpyxl import Workbook, load_workbook
@@ -370,6 +371,76 @@ async def import_instruments_excel(file: UploadFile = File(...), commit: bool = 
         raise
     return {"mode":"COMMITTED","inserted":len(inserted),"instrument_ids":inserted,
             "message":"Gauge register imported. Calibration history and certificates were not fabricated."}
+
+
+GAUGE_LIFECYCLE_STATUSES = {"ACTIVE", "DUE", "OVERDUE", "OUT_FOR_CALIBRATION", "OOT", "QUARANTINED", "PENDING_APPROVAL", "RETIRED"}
+GAUGE_BLOCKED_STATUSES = {"DUE", "OVERDUE", "OUT_FOR_CALIBRATION", "OOT", "QUARANTINED", "PENDING_APPROVAL", "RETIRED"}
+
+
+@router.get("/instruments/by-qr/{qr_token}")
+def instrument_by_qr(qr_token: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    row = db.execute(text("""
+        SELECT i.*, cl.name AS current_location_name, cl.plant_name AS current_location_plant,
+               cl.department AS current_location_department
+        FROM calibration_instruments i
+        LEFT JOIN calibration_locations cl ON cl.id=i.current_location_id
+        WHERE i.qr_token=:token
+    """), {"token": qr_token}).mappings().first()
+    if not row:
+        raise HTTPException(404, "Gauge QR code is not recognised")
+    return dict(row)
+
+
+@router.get("/instruments/{instrument_id}/qr")
+def instrument_qr_label(instrument_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    row = db.execute(text("SELECT instrument_code,qr_token FROM calibration_instruments WHERE id=:id"),
+                     {"id": instrument_id}).mappings().first()
+    if not row:
+        raise HTTPException(404, "Instrument not found")
+    base = getattr(get_settings(), "public_app_url", "").rstrip("/")
+    target = (base if base else "") + "/calibration?gauge=" + row["qr_token"]
+    stream = BytesIO()
+    qrcode.make(target).save(stream, format="PNG")
+    stream.seek(0)
+    return StreamingResponse(stream, media_type="image/png", headers={
+        "Content-Disposition": 'attachment; filename="' + row["instrument_code"] + '_QR.png"'
+    })
+
+
+@router.post("/instruments/{instrument_id}/status")
+def change_gauge_lifecycle_status(instrument_id: int, status: str, reason: str,
+                                  db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    target = (status or "").strip().upper()
+    if target not in GAUGE_LIFECYCLE_STATUSES:
+        raise HTTPException(422, "Invalid gauge lifecycle status")
+    if len((reason or "").strip()) < 5:
+        raise HTTPException(422, "A reason of at least 5 characters is required")
+    row = db.execute(text("SELECT * FROM calibration_instruments WHERE id=:id FOR UPDATE"),
+                     {"id": instrument_id}).mappings().first()
+    if not row:
+        raise HTTPException(404, "Instrument not found")
+    current = row["status"]
+    if current == "RETIRED" and target != "RETIRED":
+        raise HTTPException(409, "Retired gauges cannot be reactivated; create a new gauge record")
+    if target == "ACTIVE":
+        passed = db.execute(text("""
+            SELECT 1 FROM calibration_events
+            WHERE instrument_id=:id AND result='PASS'
+              AND event_type IN ('CALIBRATION','VERIFICATION') AND approved_by IS NOT NULL
+            ORDER BY calibration_date DESC,id DESC LIMIT 1
+        """), {"id": instrument_id}).first()
+        if not passed:
+            raise HTTPException(409, "ACTIVE requires a passed and independently approved calibration event")
+        if row["next_due_date"] and row["next_due_date"] < date.today():
+            raise HTTPException(409, "An overdue gauge cannot be set ACTIVE")
+    db.execute(text("UPDATE calibration_instruments SET status=:status,is_active=:active,updated_at=now() WHERE id=:id"),
+               {"status": target, "active": target != "RETIRED", "id": instrument_id})
+    _audit(db, instrument_id, "GAUGE_STATUS_CHANGED",
+           {"status": current, "is_active": row["is_active"]},
+           {"status": target, "is_active": target != "RETIRED"}, reason, user.id)
+    db.commit()
+    return {"id": instrument_id, "previous_status": current, "status": target}
 
 
 @router.get("/instruments")
@@ -841,6 +912,8 @@ def issue_or_transfer_instrument(instrument_id: int, data: InstrumentLocationTra
     """), {"id": instrument_id}).mappings().first()
     if not instrument:
         raise HTTPException(404, "Instrument not found")
+    if instrument["status"] in GAUGE_BLOCKED_STATUSES:
+        raise HTTPException(409, "Gauge is blocked from issue/transfer while status is " + instrument["status"])
     destination = db.execute(text("""
         SELECT id,name,plant_name,department FROM calibration_locations
         WHERE id=:id AND is_active=true
