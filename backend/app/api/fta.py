@@ -296,6 +296,11 @@ class TemplateRevisionCreate(BaseModel):
     tree: dict
 
 
+class TemplateVersionUpgrade(BaseModel):
+    template_id: int = Field(gt=0)
+    reason: str = Field(min_length=5, max_length=2000)
+
+
 class InvestigationCreate(BaseModel):
     rejection_id: int = Field(gt=0)
     template_id: int = Field(gt=0)
@@ -730,6 +735,135 @@ def create_investigation(payload: InvestigationCreate, db: Session = Depends(get
     db.commit()
     row = db.execute(text("SELECT * FROM fta_investigations WHERE id=:id"), {"id": new_id}).mappings().one()
     return _investigation(row, db)
+
+
+@router.post("/investigations/{investigation_id}/template-version")
+def upgrade_investigation_template_version(
+    investigation_id: int,
+    payload: TemplateVersionUpgrade,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Upgrade an open FTA to a newer published revision of the same template only."""
+    row = _assert_investigation_access(db, investigation_id, user, WRITE_ROLES)
+    if row["status"] not in {"OPEN", "IN_PROGRESS"}:
+        raise HTTPException(409, "FTA template version can only be upgraded before verification.")
+
+    confirmed_root_cause = db.execute(text("""
+        SELECT EXISTS (
+            SELECT 1 FROM fta_findings
+            WHERE investigation_id=:id
+              AND investigation_status='CONFIRMED'
+              AND is_root_cause=true
+        ) OR EXISTS (
+            SELECT 1 FROM fta_discovered_causes
+            WHERE investigation_id=:id AND status='CONFIRMED'
+        )
+    """), {"id": investigation_id}).scalar()
+    if confirmed_root_cause:
+        raise HTTPException(409, "FTA template version cannot be changed after root cause confirmation.")
+
+    current = db.execute(text("""
+        SELECT i.template_id, i.template_version, i.template_snapshot_json,
+               t.code, t.operation_code, t.defect_code
+        FROM fta_investigations i
+        JOIN fta_templates t ON t.id=i.template_id
+        WHERE i.id=:id
+        FOR UPDATE OF i
+    """), {"id": investigation_id}).mappings().one()
+
+    target = db.execute(text("""
+        SELECT id, code, name, operation_code, defect_code, version, status, tree_json
+        FROM fta_templates WHERE id=:template_id
+    """), {"template_id": payload.template_id}).mappings().first()
+    if not target or target["status"] != "PUBLISHED":
+        raise HTTPException(404, "Target published template version not found.")
+    if target["code"] != current["code"]:
+        raise HTTPException(422, "Only a newer version of the same FTA template can be selected.")
+    if target["operation_code"] != current["operation_code"] or target["defect_code"] != current["defect_code"]:
+        raise HTTPException(422, "The template version must retain the same operation and Quality defect.")
+    latest = db.execute(text("""
+        SELECT MAX(version) FROM fta_templates
+        WHERE code=:code AND status='PUBLISHED'
+    """), {"code": current["code"]}).scalar_one()
+    if target["version"] != latest:
+        raise HTTPException(409, "Select the latest published version of this template.")
+    if int(target["version"]) <= int(current["template_version"]):
+        raise HTTPException(409, "Only a newer template version can be applied.")
+
+    new_tree = _json(target["tree_json"], {})
+    new_nodes = _validate_tree(new_tree)
+    old_snapshot = _json(current["template_snapshot_json"], {})
+    new_snapshot = {
+        **old_snapshot,
+        "template_id": target["id"],
+        "template_code": target["code"],
+        "template_name": target["name"],
+        "template_version": target["version"],
+        "operation_code": target["operation_code"],
+        "defect_code": target["defect_code"],
+        "tree": new_tree,
+    }
+    now = datetime.utcnow()
+    try:
+        # Keep existing findings (including nodes removed from the new tree) so their
+        # evidence and finding history remain available for audit. Matching node IDs
+        # retain all recorded investigation data; newly introduced IDs start blank.
+        existing_nodes = {
+            str(x["node_id"]) for x in db.execute(text("""
+                SELECT node_id FROM fta_findings WHERE investigation_id=:id
+            """), {"id": investigation_id}).mappings().all()
+        }
+        for node in new_nodes:
+            if node["node_id"] in existing_nodes:
+                db.execute(text("""
+                    UPDATE fta_findings SET node_label=:label, node_type=:type
+                    WHERE investigation_id=:id AND node_id=:node_id
+                """), {"label": node["node_label"], "type": node["node_type"],
+                       "id": investigation_id, "node_id": node["node_id"]})
+            else:
+                db.execute(text("""
+                    INSERT INTO fta_findings
+                    (investigation_id, node_id, node_label, node_type,
+                     investigation_status, updated_by_id, updated_at)
+                    VALUES (:id, :node_id, :label, :type, 'NOT_INVESTIGATED', :user_id, :now)
+                """), {"id": investigation_id, "node_id": node["node_id"],
+                       "label": node["node_label"], "type": node["node_type"],
+                       "user_id": user.id, "now": now})
+
+        db.execute(text("""
+            UPDATE fta_investigations
+            SET template_id=:template_id, template_version=:version,
+                template_snapshot_json=:snapshot, updated_at=:now
+            WHERE id=:id
+        """), {"template_id": target["id"], "version": target["version"],
+               "snapshot": json.dumps(new_snapshot, ensure_ascii=False, default=str),
+               "now": now, "id": investigation_id})
+
+        audit = {
+            "event": "FTA_TEMPLATE_VERSION_UPGRADED",
+            "reason": payload.reason.strip(),
+            "old_template_id": current["template_id"],
+            "old_template_version": current["template_version"],
+            "new_template_id": target["id"],
+            "new_template_version": target["version"],
+            "old_template_snapshot": old_snapshot,
+            "new_template_snapshot": new_snapshot,
+        }
+        db.execute(text("""
+            INSERT INTO fta_status_history
+            (investigation_id, old_status, new_status, remarks, changed_by_id, created_at)
+            VALUES (:id, :status, :status, :remarks, :user_id, :now)
+        """), {"id": investigation_id, "status": row["status"],
+               "remarks": json.dumps(audit, ensure_ascii=False, default=str),
+               "user_id": user.id, "now": now})
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    updated = db.execute(text("SELECT * FROM fta_investigations WHERE id=:id"),
+                         {"id": investigation_id}).mappings().one()
+    return _investigation(updated, db)
 
 
 @router.get("/investigations/{investigation_id}")
