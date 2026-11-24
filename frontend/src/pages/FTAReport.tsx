@@ -8,7 +8,7 @@ function ReportTree({node,findings,depth=0}:{node:any,findings:any[],depth?:numb
   return <div className="fta-report-tree-node" style={{marginLeft:depth*18}}>
     <div className="fta-report-tree-heading"><span>{node.gate||node.type?.replaceAll('_',' ')||'EVENT'}</span><b>{node.label}</b><Status value={finding?.investigation_status||'NOT_INVESTIGATED'}/></div>
     {finding&&<div className="fta-report-finding"><p>{finding.observation||'No observation recorded.'}</p>{finding.measured_value&&<small>Measured: {finding.measured_value} · Expected: {finding.expected_value||'—'}</small>}{finding.verification_method&&<p><b>Verification:</b> {finding.verification_method}</p>}{finding.verification_result&&<p><b>Result:</b> {finding.verification_result}</p>}{finding.is_root_cause&&<strong>Confirmed root cause</strong>}{finding.is_occurrence_cause&&<strong> · Occurrence cause</strong>}{finding.is_escape_cause&&<strong> · Escape cause</strong>}</div>}
-    {(node.children||[]).map((child:any)=><ReportTree key={child.id} node={child} findings={findings} depth={depth+1}/>)}
+    {(node.children||[]).length>0&&<div className="fta-report-tree-children">{(node.children||[]).map((child:any)=><ReportTree key={child.id} node={child} findings={findings} depth={depth+1}/>)}</div>}
   </div>
 }
 
@@ -17,14 +17,16 @@ export default function FTAReport(){
   const [data,setData]=useState<any>(null)
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(true)
+  const [mindMapPrint,setMindMapPrint]=useState(false)
+  useEffect(()=>{const reset=()=>setMindMapPrint(false);window.addEventListener('afterprint',reset);return()=>window.removeEventListener('afterprint',reset)},[])
   useEffect(()=>{let live=true;api('/fta/investigations/'+id).then((x:any)=>{if(live)setData(x)}).catch((e:any)=>{if(live)setError(e.message||'Unable to load FTA report')}).finally(()=>{if(live)setBusy(false)});return()=>{live=false}},[id])
   const tree=data?.template_snapshot?.tree
   const confirmed=(data?.findings||[]).filter((x:any)=>x.investigation_status==='CONFIRMED'&&(x.is_root_cause||x.is_occurrence_cause||x.is_escape_cause))
   const confirmedDiscovered=(data?.discovered_causes||[]).filter((x:any)=>x.status==='CONFIRMED')
   if(busy)return <div className="panel">Loading FTA report…</div>
   if(error||!data)return <div className="page"><div className="error">{error||'FTA report not found.'}</div><a href="/fta">Back to FTA</a></div>
-  return <div className="page fta-report-page">
-    <div className="fta-report-actions"><PageHeader title="FTA Investigation Report" subtitle="Complete fault tree, confirmed causes, action implementation and verification result." actions={<><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button><a className="button secondary" href={'/fta?investigation_id='+id}>Open investigation</a></>}/></div>
+  return <div className={`page fta-report-page${mindMapPrint?' fta-mindmap-print':''}`}>
+    <div className="fta-report-actions"><PageHeader title="FTA Investigation Report" subtitle="Complete fault tree, confirmed causes, action implementation and verification result." actions={<><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button><button className="secondary" onClick={()=>{setMindMapPrint(true);window.setTimeout(()=>window.print(),150)}}>Print Mind Map</button><a className="button secondary" href={'/fta?investigation_id='+id}>Open investigation</a></>}/></div>
     <header className="fta-report-cover"><div><small>FAULT TREE ANALYSIS</small><h1>{data.investigation_no}</h1><p>{data.template_snapshot?.template_name||'Machining defect investigation'} · {data.status?.replaceAll('_',' ')}</p></div><div><b>Plant</b><span>{data.plant||'—'}</span><b>Operation</b><span>{data.operation_code||'—'}</span><b>Machine</b><span>{data.source_rejection?.machine_name||data.machine_id||'—'}</span><b>Part</b><span>{data.source_rejection?.part_code||''} {data.source_rejection?.part_name||'—'}</span><b>Defect</b><span>{data.source_rejection?.defect_name||'—'}</span><b>Rejection date / Qty</b><span>{String(data.source_rejection?.rejection_date||'—').slice(0,10)} / {data.source_rejection?.reject_qty??'—'}</span><b>Rejection reference</b><span>#{data.rejection_id}</span></div></header>
     <section className="panel fta-report-section"><h2>1. Investigation summary</h2><p>{data.summary||'No initial summary recorded.'}</p><div className="fta-report-meta"><span><b>Investigation status:</b> {data.status}</span><span><b>Created:</b> {String(data.created_at||'').slice(0,10)}</span><span><b>Verified:</b> {data.verified_at?String(data.verified_at).slice(0,10):'Not verified'}</span><span><b>Closed:</b> {data.closed_at?String(data.closed_at).slice(0,10):'Not closed'}</span></div><h3>Occurrence cause analysis</h3><p>{data.occurrence_cause_summary||'Not recorded.'}</p><h3>Escape / detection cause analysis</h3><p>{data.escape_cause_summary||'Not recorded.'}</p></section>
     <section className="panel fta-report-section"><h2>2. Complete fault tree and investigation findings</h2>{tree?<ReportTree node={tree} findings={data.findings||[]}/>:<p>No fault-tree snapshot is available.</p>}</section>
