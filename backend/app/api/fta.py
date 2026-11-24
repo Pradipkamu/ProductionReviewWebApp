@@ -1642,6 +1642,76 @@ def recurrence_candidates(rejection_id: int, db: Session = Depends(get_db),
     return visible
 
 
+
+@router.get("/investigations/{investigation_id}/recurrence-suggestions")
+def recurrence_suggestions(investigation_id: int, db: Session = Depends(get_db),
+                           user: User = Depends(get_current_user)):
+    """Automatically find later Quality rejection events for the same defect."""
+    _assert_investigation_access(db, investigation_id, user)
+    original = db.execute(text("""
+        SELECT i.id, i.investigation_no, i.operation_code,
+               q.id AS rejection_id, q.rejection_date, q.product_id, q.phenomenon_id,
+               COALESCE(q.plant,p.plant) AS plant, q.machine_id,
+               p.code AS part_code, ph.name AS phenomenon_name,
+               m.name AS machine_name
+        FROM fta_investigations i
+        JOIN quality_rejection_daily q ON q.id=i.rejection_id
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        LEFT JOIN machines m ON m.id=COALESCE(i.machine_id,q.machine_id)
+        WHERE i.id=:id
+    """), {"id": investigation_id}).mappings().first()
+    if not original:
+        raise HTTPException(404, "FTA investigation not found")
+
+    later = db.execute(text("""
+        SELECT q.id AS rejection_id, q.rejection_date, q.shift, q.reject_qty,
+               q.remark, COALESCE(q.plant,p.plant) AS plant, q.machine_id,
+               p.code AS part_code, p.name AS part_name, m.name AS machine_name
+        FROM quality_rejection_daily q
+        JOIN products p ON p.id=q.product_id
+        LEFT JOIN machines m ON m.id=q.machine_id
+        WHERE q.phenomenon_id=:phenomenon_id
+          AND (q.rejection_date > :original_date
+               OR (q.rejection_date=:original_date AND q.id>:original_rejection_id))
+          AND NOT EXISTS (
+              SELECT 1 FROM fta_investigations fi WHERE fi.rejection_id=q.id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM fta_recurrences fr WHERE fr.rejection_id=q.id
+          )
+        ORDER BY q.rejection_date DESC, q.id DESC
+        LIMIT 100
+    """), {"phenomenon_id": original["phenomenon_id"],
+           "original_date": original["rejection_date"],
+           "original_rejection_id": original["rejection_id"]}).mappings().all()
+
+    suggestions = []
+    for item in later:
+        row = dict(item)
+        row["same_part"] = row["part_code"] == original["part_code"]
+        row["same_plant"] = bool(row["plant"] and original["plant"] and row["plant"] == original["plant"])
+        row["same_machine"] = bool(row["machine_id"] and original["machine_id"]
+                                   and row["machine_id"] == original["machine_id"])
+        row["days_after_original"] = (
+            (row["rejection_date"] - original["rejection_date"]).days
+            if row["rejection_date"] and original["rejection_date"] else None
+        )
+        suggestions.append(row)
+
+    return {
+        "original_investigation_id": investigation_id,
+        "original_investigation_no": original["investigation_no"],
+        "original_rejection_id": original["rejection_id"],
+        "original_rejection_date": original["rejection_date"],
+        "phenomenon_id": original["phenomenon_id"],
+        "phenomenon_name": original["phenomenon_name"],
+        "last_matching_rejection_date": suggestions[0]["rejection_date"] if suggestions else None,
+        "suggestion_count": len(suggestions),
+        "suggestions": suggestions,
+    }
+
+
 @router.get("/investigations/{investigation_id}/recurrences")
 def list_recurrences(investigation_id: int, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
