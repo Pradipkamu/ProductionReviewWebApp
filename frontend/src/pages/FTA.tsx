@@ -314,7 +314,7 @@ export default function FTA({me}:{me:any}){
     </section>}
 
     {view==='register'&&detail&&tree&&<section className="panel fta-workspace">
-      <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p></div><div className="button-row"><a className="button secondary" href={'/fta/report/'+detail.id}>FTA report</a><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div></div>
+      <div className="panel-title"><div><h2>{detail.investigation_no} – {detail.template_snapshot?.template_name}</h2><p>Rejection #{detail.rejection_id} · {detail.plant||'Plant not specified'} · {detail.status.replaceAll('_',' ')}</p>{detail.template_snapshot?.related_to_investigation_id&&<p className="muted small">Related to original FTA <a href={`/fta?view=register&investigation_id=${detail.template_snapshot.related_to_investigation_id}`}>{detail.template_snapshot.related_to_investigation_no||('#'+detail.template_snapshot.related_to_investigation_id)}</a></p>}</div><div className="button-row"><a className="button secondary" href={'/fta/report/'+detail.id}>FTA report</a><button className="secondary small" onClick={()=>{setDetail(null);setSelectedId(null)}}>Close workspace</button></div></div>
       <div className="fta-workspace-grid">
         <div className="fta-tree-panel" id="fta-section-fault-tree">
           <h3>Fault tree</h3>
