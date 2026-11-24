@@ -170,7 +170,8 @@ create_files_backup() {
 
   archive="$CODE_BACKUP_DIR/files_before_update_$STAMP.tar.gz"
   [[ -f "$APP_DIR/.env" ]] || stop "Production .env file is missing; configuration backup is mandatory"
-  # Include the server-local Compose override (for example Firebase credentials mount).\n  for p in .env docker-compose.yml docker-compose.override.yml database/imports database/attachments database/backups mqtt/config mqtt/certs; do
+  # Include the server-local Compose override (for example Firebase credentials mount).
+  for p in .env docker-compose.yml docker-compose.override.yml database/imports database/attachments database/backups mqtt/config mqtt/certs; do
     [[ -e "$APP_DIR/$p" ]] && paths+=("$p")
   done
   ((${#paths[@]} > 0)) || stop "No application data/configuration paths found for file backup"
