@@ -784,6 +784,8 @@ button.ghost{color:inherit}
 .fta-process-link:hover{text-decoration:underline;color:var(--primary,#245ca6)}
 .fta-process-update-link{display:inline-block;margin-top:7px;color:var(--primary,#245ca6);font-size:11px;font-weight:700;text-decoration:none}
 .fta-process-update-link:hover{text-decoration:underline}
+.fta-process-action-links{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px}
+.fta-process-action-links .fta-process-update-link{margin-top:3px}
 #fta-section-investigation,#fta-section-fault-tree,#fta-section-root-cause,#fta-section-actions,#fta-section-action-review,#fta-section-closure{scroll-margin-top:90px}
 
 @media(max-width:700px){.fta-process-list{grid-template-columns:1fr}.fta-process-flow{padding:12px}.fta-process-flow .panel-title{flex-direction:column}}
