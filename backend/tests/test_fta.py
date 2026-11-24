@@ -315,3 +315,11 @@ def test_discovered_cause_endpoints_are_registered():
     }
     assert ("/fta/actions/{action_id}/discovered-causes", ("POST",)) in paths
     assert ("/fta/discovered-causes/{cause_id}/review", ("POST",)) in paths
+
+
+
+def test_shared_quality_phenomenon_model_exposes_fta_metadata():
+    from app.models import QualityPhenomenon
+
+    assert "fta_category" in QualityPhenomenon.__table__.columns
+    assert "fta_description" in QualityPhenomenon.__table__.columns
