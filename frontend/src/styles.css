@@ -760,6 +760,27 @@ button.ghost{color:inherit}
 @media(max-width:600px){.fta-review-controls{grid-template-columns:1fr}}
 
 
+
+.fta-process-flow{border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0;background:var(--panel,#fff)}
+.fta-process-flow .panel-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.fta-process-flow .panel-title h3{margin:0;color:var(--navy);font-size:16px}
+.fta-process-flow .panel-title p{margin:5px 0 0;color:var(--muted);font-size:12px}
+.fta-process-flow .panel-title>strong{white-space:nowrap;color:var(--navy);font-size:13px}
+.fta-process-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fta-process-step{display:flex;align-items:flex-start;gap:11px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface,#fff)}
+.fta-process-marker{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;font-size:12px;font-weight:800;background:#eef2f7;color:#64748b}
+.fta-process-step.completed .fta-process-marker{background:#dcfce7;color:#166534}
+.fta-process-step.in-progress .fta-process-marker{background:#fef3c7;color:#92400e}
+.fta-process-copy{min-width:0;flex:1}
+.fta-process-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.fta-process-heading>strong{font-size:13px;color:var(--navy)}
+.fta-process-status{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.02em}
+.fta-process-status.completed{color:#15803d}
+.fta-process-status.in-progress{color:#b45309}
+.fta-process-status.pending{color:#64748b}
+.fta-process-copy p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
+@media(max-width:700px){.fta-process-list{grid-template-columns:1fr}.fta-process-flow{padding:12px}.fta-process-flow .panel-title{flex-direction:column}}
+
 .fta-history{border:1px solid var(--line);border-radius:10px;padding:14px;margin:16px 0;background:#fff}
 .fta-history h3{margin:0 0 8px;color:var(--navy);font-size:15px}
 .fta-history-row{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:4px 12px;padding:8px 0;border-top:1px solid #edf0f5;font-size:11px}
