@@ -1,12 +1,12 @@
 """Add plant, part, operation and machine scope mappings for calibration instruments.
 
-Revision ID: 0039_calibration_instrument_scope
+Revision ID: 0039_calib_instr_scope
 Revises: 0038_calibration_labs_criteria
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0039_calibration_instrument_scope"
+revision = "0039_calib_instr_scope"
 down_revision = "0038_calibration_labs_criteria"
 branch_labels = None
 depends_on = None
