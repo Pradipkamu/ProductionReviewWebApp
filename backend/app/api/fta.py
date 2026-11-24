@@ -1795,7 +1795,8 @@ def create_related_investigation(recurrence_id: int, payload: RelatedInvestigati
     _role(user, WRITE_ROLES)
     rec = db.execute(text("""
         SELECT r.id, r.original_investigation_id, r.rejection_id, r.classification,
-               r.related_investigation_id, oq.plant AS original_plant
+               r.related_investigation_id, oi.investigation_no AS original_investigation_no,
+               oq.plant AS original_plant
         FROM fta_recurrences r
         JOIN fta_investigations oi ON oi.id=r.original_investigation_id
         LEFT JOIN quality_rejection_daily oq ON oq.id=oi.rejection_id
@@ -1856,6 +1857,7 @@ def create_related_investigation(recurrence_id: int, payload: RelatedInvestigati
         "operation_code": template["operation_code"], "defect_code": template["defect_code"],
         "rejection": {k: str(v) if v is not None else None for k, v in dict(rejection).items()},
         "related_to_investigation_id": rec["original_investigation_id"],
+        "related_to_investigation_no": rec["original_investigation_no"],
         "recurrence_id": recurrence_id, "tree": tree,
     }
     now = datetime.utcnow()
