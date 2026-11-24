@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from io import BytesIO
+from openpyxl import load_workbook
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -141,10 +143,209 @@ def equipment_types(user=Depends(get_current_user)):
     return EQUIPMENT_TYPES
 
 
+
+IMPORT_ALIASES = {
+    "instrument_code": ("instrument_code", "gauge_id", "gauge_no", "gauge_number", "gauge_code", "id", "asset_id", "tag_no", "control_no"),
+    "name": ("name", "gauge_name", "instrument_name", "description", "equipment_name"),
+    "equipment_type": ("equipment_type", "gauge_type", "instrument_type", "type"),
+    "manufacturer": ("manufacturer", "make", "brand"),
+    "model": ("model", "model_no"),
+    "serial_number": ("serial_number", "serial_no", "serial", "s_no"),
+    "range_text": ("range_text", "range", "measuring_range", "measurement_range"),
+    "resolution_text": ("resolution_text", "resolution", "least_count"),
+    "accuracy_text": ("accuracy_text", "accuracy", "permissible_error", "tolerance"),
+    "location": ("location", "current_location", "gauge_location", "storage_location"),
+    "home_plant": ("home_plant", "plant", "plant_name"),
+    "owner_department": ("owner_department", "department", "owner", "section"),
+    "owner_type": ("owner_type", "ownership"),
+    "control_plan_reference": ("control_plan_reference", "control_plan", "cp_reference"),
+    "special_characteristic": ("special_characteristic", "special_char", "characteristic"),
+    "calibration_interval_days": ("calibration_interval_days", "calibration_interval", "interval_days", "frequency_days"),
+    "last_calibration_date": ("last_calibration_date", "last_calibration", "calibration_date", "last_cal_date"),
+    "next_due_date": ("next_due_date", "due_date", "calibration_due_date", "next_calibration_date"),
+    "status": ("status", "gauge_status", "calibration_status"),
+    "criticality": ("criticality", "risk", "criticality_level"),
+    "remarks": ("remarks", "remark", "notes", "comments"),
+}
+
+def _import_header(value):
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_").replace("/", "_")
+
+def _import_date(value):
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%d.%m.%Y"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+    raise ValueError("Invalid date; use Excel date or DD-MM-YYYY")
+
+def _parse_gauge_workbook(raw):
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Excel file exceeds the 10 MB limit")
+    try:
+        workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(422, "Unable to read workbook. Upload a valid .xlsx file.") from exc
+    sheet = workbook.active
+    iterator = sheet.iter_rows(values_only=True)
+    headers = next(iterator, None)
+    if not headers:
+        raise HTTPException(422, "The selected worksheet is empty")
+    normalized = [_import_header(v) for v in headers]
+    mapping = {}
+    for field, aliases in IMPORT_ALIASES.items():
+        for idx, header in enumerate(normalized):
+            if header in aliases:
+                mapping[field] = idx
+                break
+    missing = [field for field in ("instrument_code", "name", "equipment_type") if field not in mapping]
+    if missing:
+        workbook.close()
+        raise HTTPException(422, "Missing required columns: " + ", ".join(missing) +
+                            ". Required: Gauge ID/Instrument Code, Gauge Name, Equipment Type.")
+    parsed = []
+    errors = []
+    for row_number, cells in enumerate(iterator, start=2):
+        if not cells or not any(v not in (None, "") for v in cells):
+            continue
+        if len(parsed) >= 5000:
+            errors.append({"row": row_number, "instrument_code": None, "error": "Workbook exceeds 5,000 gauge rows"})
+            break
+        item = {field: (cells[idx] if idx < len(cells) else None) for field, idx in mapping.items()}
+        code = str(item.get("instrument_code") or "").strip()
+        name = str(item.get("name") or "").strip()
+        equipment = str(item.get("equipment_type") or "").strip()
+        row_errors = []
+        if not code: row_errors.append("Gauge ID is required")
+        if not name: row_errors.append("Gauge name is required")
+        if equipment not in EQUIPMENT_TYPES:
+            row_errors.append("Unknown equipment type: " + equipment)
+        try:
+            interval = int(item.get("calibration_interval_days") or 365)
+            if interval < 1 or interval > 3650: raise ValueError()
+        except (TypeError, ValueError):
+            interval = 365
+            row_errors.append("Calibration interval must be 1–3650 days")
+        try:
+            last_date = _import_date(item.get("last_calibration_date"))
+            due_date = _import_date(item.get("next_due_date"))
+        except ValueError as exc:
+            last_date, due_date = None, None
+            row_errors.append(str(exc))
+        status = str(item.get("status") or "").strip().upper()
+        if status and status not in {"PENDING","IN_CALIBRATION","PENDING_APPROVAL","CALIBRATED","OVERDUE","FAILED","QUARANTINED","RETIRED"}:
+            row_errors.append("Invalid status: " + status)
+        criticality = str(item.get("criticality") or "NORMAL").strip().upper()
+        if criticality not in {"NORMAL","IMPORTANT","CRITICAL"}:
+            row_errors.append("Invalid criticality: " + criticality)
+        owner_type = str(item.get("owner_type") or "INTERNAL").strip().upper()
+        if owner_type not in {"INTERNAL","CUSTOMER","SUPPLIER","EMPLOYEE"}:
+            row_errors.append("Invalid owner type: " + owner_type)
+        if last_date and not due_date:
+            due_date = last_date + timedelta(days=interval)
+        if not status:
+            status = "PENDING" if not last_date else ("OVERDUE" if due_date and due_date < date.today() else "PENDING_APPROVAL")
+        clean = {
+            "instrument_code": code, "name": name, "equipment_type": equipment,
+            "manufacturer": str(item.get("manufacturer") or "").strip() or None,
+            "model": str(item.get("model") or "").strip() or None,
+            "serial_number": str(item.get("serial_number") or "").strip() or None,
+            "range_text": str(item.get("range_text") or "").strip() or None,
+            "resolution_text": str(item.get("resolution_text") or "").strip() or None,
+            "accuracy_text": str(item.get("accuracy_text") or "").strip() or None,
+            "location": str(item.get("location") or "").strip() or None,
+            "home_plant": str(item.get("home_plant") or "").strip() or None,
+            "owner_department": str(item.get("owner_department") or "").strip() or None,
+            "owner_type": owner_type,
+            "control_plan_reference": str(item.get("control_plan_reference") or "").strip() or None,
+            "special_characteristic": str(item.get("special_characteristic") or "").strip() or None,
+            "calibration_interval_days": interval, "last_calibration_date": last_date,
+            "next_due_date": due_date, "status": status, "criticality": criticality,
+            "remarks": str(item.get("remarks") or "").strip() or None,
+        }
+        parsed.append({"row": row_number, "data": clean, "errors": row_errors})
+    workbook.close()
+    return parsed, mapping, errors
+
+@router.post("/instruments/import")
+async def import_instruments_excel(file: UploadFile = File(...), commit: bool = False,
+                                   db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".xlsx"):
+        raise HTTPException(415, "Only .xlsx Excel workbooks are supported")
+    raw = await file.read(10 * 1024 * 1024 + 1)
+    parsed, mapping, workbook_errors = _parse_gauge_workbook(raw)
+    if not parsed:
+        raise HTTPException(422, "No gauge data rows were found")
+    codes = [x["data"]["instrument_code"] for x in parsed if x["data"]["instrument_code"]]
+    duplicates_in_file = {code for code in codes if codes.count(code) > 1}
+    existing = set()
+    if codes:
+        existing = set(db.execute(text("SELECT instrument_code FROM calibration_instruments WHERE instrument_code = ANY(:codes)"),
+                                  {"codes": list(set(codes))}).scalars().all())
+    for item in parsed:
+        code = item["data"]["instrument_code"]
+        if code in duplicates_in_file:
+            item["errors"].append("Duplicate Gauge ID in uploaded workbook")
+        if code in existing:
+            item["errors"].append("Gauge ID already exists; existing record will not be overwritten")
+    valid = [x for x in parsed if not x["errors"]]
+    invalid = [x for x in parsed if x["errors"]]
+    if not commit:
+        return {"mode":"PREVIEW","sheet":"active worksheet","column_mapping":mapping,
+                "total_rows":len(parsed),"valid_rows":len(valid),"invalid_rows":len(invalid),
+                "existing_duplicates":len([x for x in parsed if "already exists" in " ".join(x["errors"])]),
+                "rows":[{"row":x["row"],"instrument_code":x["data"]["instrument_code"],
+                         "name":x["data"]["name"],"equipment_type":x["data"]["equipment_type"],
+                         "status":x["data"]["status"],"next_due_date":x["data"]["next_due_date"],
+                         "errors":x["errors"]} for x in parsed],
+                "workbook_errors":workbook_errors}
+    if invalid:
+        raise HTTPException(409, detail={"message":"Import blocked because the workbook contains invalid or duplicate rows. Correct the file and preview again.",
+                                         "invalid_rows":[{"row":x["row"],"instrument_code":x["data"]["instrument_code"],"errors":x["errors"]} for x in invalid]})
+    inserted = []
+    try:
+        for item in valid:
+            data = item["data"]
+            result = db.execute(text("""INSERT INTO calibration_instruments
+              (instrument_code,name,equipment_type,manufacturer,model,serial_number,range_text,resolution_text,
+               accuracy_text,location,home_plant,owner_department,owner_type,control_plan_reference,
+               special_characteristic,calibration_interval_days,last_calibration_date,next_due_date,status,
+               criticality,remarks,created_by)
+              VALUES (:instrument_code,:name,:equipment_type,:manufacturer,:model,:serial_number,:range_text,
+               :resolution_text,:accuracy_text,:location,:home_plant,:owner_department,:owner_type,
+               :control_plan_reference,:special_characteristic,:calibration_interval_days,:last_calibration_date,
+               :next_due_date,:status,:criticality,:remarks,:created_by) RETURNING id"""),
+              {**data,"created_by":user.id})
+            iid = result.scalar_one()
+            _audit(db, iid, "INSTRUMENT_IMPORTED", None, data,
+                   "Imported from Excel gauge register", user.id)
+            inserted.append(iid)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"mode":"COMMITTED","inserted":len(inserted),"instrument_ids":inserted,
+            "message":"Gauge register imported. Calibration history and certificates were not fabricated."}
+
+
 @router.get("/instruments")
 def list_instruments(status: str | None = None, due_only: bool = False,
                      db: Session = Depends(get_db), user=Depends(get_current_user)):
-    q = """SELECT i.*,cl.name AS current_location_name,cl.plant_name AS current_location_plant,\n                  cl.department AS current_location_department,cl.area AS current_location_area\n             FROM calibration_instruments i\n             LEFT JOIN calibration_locations cl ON cl.id=i.current_location_id\n             WHERE i.is_active = true"""
+    q = """SELECT i.*,cl.name AS current_location_name,cl.plant_name AS current_location_plant,
+                  cl.department AS current_location_department,cl.area AS current_location_area
+             FROM calibration_instruments i
+             LEFT JOIN calibration_locations cl ON cl.id=i.current_location_id
+             WHERE i.is_active = true"""
     params = {}
     if status:
         q += " AND i.status = :status"
