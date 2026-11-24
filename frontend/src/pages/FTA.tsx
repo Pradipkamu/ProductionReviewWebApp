@@ -66,7 +66,7 @@ function TemplateNodeEditor({node,onChange,onRemove,onRemoveDisabled=false,depth
 
 type Finding = {
   id:number, node_id:string, node_label:string, node_type:string, investigation_status:string,
-  observation?:string|null, measured_value?:string|null, expected_value?:string|null,
+  priority?:string, observation?:string|null, measured_value?:string|null, expected_value?:string|null,
   verification_method?:string|null, verification_result?:string|null,
   is_root_cause:boolean, is_occurrence_cause:boolean, is_escape_cause:boolean, updated_at?:string
 }
@@ -85,7 +85,7 @@ function historyRemark(value:any){
 function TreeNode({node,findings,selected,onSelect,depth=0}:{node:FtaNode,findings:Finding[],selected:string,onSelect:(id:string)=>void,depth?:number}){
   const finding=findings.find(x=>x.node_id===node.id)
   const status=finding?.investigation_status||'NOT_INVESTIGATED'
-  const tone=status==='CONFIRMED'?'success':status==='SUSPECTED'?'warning':status==='RULED_OUT'?'muted':''
+  const tone=status==='CONFIRMED'?'success':status==='SUSPECTED'?'warning':status==='RULED_OUT'||status==='NOT_APPLICABLE'?'muted':''
   return <div className="fta-tree-node" style={{marginLeft:depth?18:0}}>
     <button type="button" className={`fta-node-button ${selected===node.id?'selected':''}`} onClick={()=>onSelect(node.id)}>
       <span className="fta-node-gate">{node.gate||node.type.replaceAll('_',' ')}</span>
@@ -222,7 +222,7 @@ export default function FTA({me}:{me:any}){
   useEffect(()=>{
     if(!currentFinding){setFindingForm({});return}
     setFindingForm({
-      investigation_status:currentFinding.investigation_status||'NOT_INVESTIGATED',
+      investigation_status:currentFinding.investigation_status||'NOT_INVESTIGATED',priority:currentFinding.priority||'MEDIUM',
       observation:currentFinding.observation||'',measured_value:currentFinding.measured_value||'',
       expected_value:currentFinding.expected_value||findTemplateNode(detail?.template_snapshot?.tree,selectedNode)?.requirement||'',verification_method:currentFinding.verification_method||'',
       verification_result:currentFinding.verification_result||'',is_root_cause:!!currentFinding.is_root_cause,
@@ -324,7 +324,7 @@ export default function FTA({me}:{me:any}){
   const confirmedRootCause=findings.some((f:any)=>f.investigation_status==='CONFIRMED'&&f.is_root_cause)||(detail?.discovered_causes||[]).some((cause:any)=>cause.status==='CONFIRMED')
   const treeNodes=(node:any):any[]=>node?[node,...(node.children||[]).flatMap((child:any)=>treeNodes(child))]:[]
   const allTreeNodes=treeNodes(tree)
-  const completedTreeNodes=allTreeNodes.filter((node:any)=>findings.some((f:any)=>f.node_id===node.id&&['CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE'].includes(f.investigation_status))).length
+  const completedTreeNodes=allTreeNodes.filter((node:any)=>findings.some((f:any)=>f.node_id===node.id&&['CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE','NOT_APPLICABLE'].includes(f.investigation_status))).length
   const treeStarted=findings.length>0
   const treeComplete=allTreeNodes.length>0&&completedTreeNodes===allTreeNodes.length
   const actionsComplete=requiredActions.length>0&&requiredActions.every((a:any)=>a.status==='CLOSED')
@@ -587,9 +587,11 @@ export default function FTA({me}:{me:any}){
             {currentNodeTemplate?.requirement?.trim()&&<div className="fta-template-requirement" style={{margin:'10px 0',padding:'10px 12px',borderLeft:'3px solid #2563eb',background:'var(--panel-soft, #f5f8fc)',borderRadius:6}}><b>Template requirement / specification</b><p style={{margin:'4px 0 0',whiteSpace:'pre-wrap'}}>{currentNodeTemplate.requirement}</p><small className="muted">Use this as the expected condition while checking the cause. You can adjust the expected value below for this investigation.</small></div>}
             <label>Investigation status
               <select value={findingForm.investigation_status||'NOT_INVESTIGATED'} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,investigation_status:e.target.value}))}>
-                {['NOT_INVESTIGATED','UNDER_INVESTIGATION','SUSPECTED','CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE'].map(x=><option key={x} value={x}>{x.replaceAll('_',' ')}</option>)}
+                {['NOT_INVESTIGATED','UNDER_INVESTIGATION','SUSPECTED','CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE','NOT_APPLICABLE'].map(x=><option key={x} value={x}>{x.replaceAll('_',' ')}</option>)}
               </select>
             </label>
+            <label>Investigation priority<select value={findingForm.priority||'MEDIUM'} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,priority:e.target.value}))}><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option></select></label>
+            {findingForm.investigation_status==='NOT_APPLICABLE'&&<p className="muted small">Explain why this cause does not apply in the observation field. A reason is required before saving.</p>}
             <label>Observation / evidence reference<textarea rows={3} value={findingForm.observation||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,observation:e.target.value}))}/></label>
             <div className="fta-create-grid">
               <label>Measured value<input value={findingForm.measured_value||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,measured_value:e.target.value}))}/></label>
