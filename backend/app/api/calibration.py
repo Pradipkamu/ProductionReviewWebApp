@@ -241,8 +241,12 @@ def _parse_gauge_workbook(raw):
             last_date, due_date = None, None
             row_errors.append(str(exc))
         status = str(item.get("status") or "").strip().upper()
+        warnings = []
         if status and status not in {"PENDING","IN_CALIBRATION","PENDING_APPROVAL","CALIBRATED","OVERDUE","FAILED","QUARANTINED","RETIRED"}:
             row_errors.append("Invalid status: " + status)
+        elif status == "CALIBRATED":
+            status = "PENDING_APPROVAL"
+            warnings.append("Imported CALIBRATED status changed to PENDING_APPROVAL because historical calibration and independent release evidence were not imported.")
         criticality = str(item.get("criticality") or "NORMAL").strip().upper()
         if criticality not in {"NORMAL","IMPORTANT","CRITICAL"}:
             row_errors.append("Invalid criticality: " + criticality)
@@ -271,7 +275,7 @@ def _parse_gauge_workbook(raw):
             "next_due_date": due_date, "status": status, "criticality": criticality,
             "remarks": str(item.get("remarks") or "").strip() or None,
         }
-        parsed.append({"row": row_number, "data": clean, "errors": row_errors})
+        parsed.append({"row": row_number, "data": clean, "errors": row_errors, "warnings": warnings})
     workbook.close()
     return parsed, mapping, errors
 
@@ -287,7 +291,7 @@ async def import_instruments_excel(file: UploadFile = File(...), commit: bool = 
     if not parsed:
         raise HTTPException(422, "No gauge data rows were found")
     codes = [x["data"]["instrument_code"] for x in parsed if x["data"]["instrument_code"]]
-    duplicates_in_file = {code for code in codes if codes.count(code) > 1}
+    code_counts = {}\n    for code in codes:\n        code_counts[code] = code_counts.get(code, 0) + 1\n    duplicates_in_file = {code for code, count in code_counts.items() if count > 1}
     existing = set()
     if codes:
         existing = set(db.execute(text("SELECT instrument_code FROM calibration_instruments WHERE instrument_code = ANY(:codes)"),
