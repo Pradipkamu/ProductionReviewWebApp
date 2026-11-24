@@ -729,7 +729,6 @@ def _fta_excel_workbook(data: dict) -> bytes:
     ws = wb.active
     ws.title = "FTA Mind Map"
     navy = "17365D"
-    blue = "D9EAF7"
     grey = "E7E6E6"
     green = "E2F0D9"
     yellow = "FFF2CC"
@@ -765,10 +764,6 @@ def _fta_excel_workbook(data: dict) -> bytes:
     tree = (data.get("template_snapshot") or {}).get("tree")
     leaf_cursor = [5]
     node_positions = []
-
-    def count_leaves(node):
-        children = node.get("children") or []
-        return sum(count_leaves(child) for child in children) if children else 1
 
     def place(node, depth=0):
         children = node.get("children") or []
@@ -910,6 +905,10 @@ def _fta_excel_workbook(data: dict) -> bytes:
         ["Date", "From Status", "To Status", "Remarks", "Changed By"],
         [(x.get("created_at"), x.get("old_status"), x.get("new_status"), x.get("remarks"), x.get("changed_by_id"))
          for x in data.get("status_history", [])])
+    add_table_sheet("Action Attachments",
+        ["Action No.", "File Name", "Caption", "Uploaded By", "Uploaded Date", "Size (bytes)"],
+        [(x.get("action_no"), x.get("file_name"), x.get("caption"), x.get("uploaded_by_name"), x.get("created_at"), x.get("size_bytes"))
+         for x in data.get("action_evidence", [])])
     add_table_sheet("Discovered Causes",
         ["Cause", "Source Action", "Status", "Evidence Reference", "Verification Method", "Review Remarks", "Reported By", "Reviewed By"],
         [(x.get("cause_description"), x.get("action_no"), x.get("status"), x.get("evidence_reference"),
