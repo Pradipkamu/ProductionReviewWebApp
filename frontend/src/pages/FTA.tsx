@@ -82,13 +82,12 @@ export default function FTA({me}:{me:any}){
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
 
-  const filteredTemplates=useMemo(()=>templates.filter(t=>t.status==='PUBLISHED'&&(!operationCode||t.operation_code===operationCode)&&(!defectCode||t.defect_code===defectCode)),[templates,operationCode,defectCode])
+  const filteredTemplates=useMemo(()=>operationCode&&defectCode?templates.filter(t=>t.status==='PUBLISHED'&&t.operation_code===operationCode&&t.defect_code===defectCode):[],[templates,operationCode,defectCode])
   const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
   const rejectionOptionLabel=(r:any)=>`#${r.id} · ${String(r.rejection_date||'').slice(0,10)} · ${r.part_code||''} · ${r.part_name||''} · ${r.phenomenon||r.defect_name||''} · ${r.machine_code||''} · Qty ${r.reject_qty??''}`
   const normalizedRejectionSearch=rejectionSearch.trim().toLowerCase()
   const filteredRejections=useMemo(()=>rejections.filter(r=>[r.id,r.rejection_no,r.rejection_date,r.part_code,r.part_name,r.phenomenon,r.defect_name,r.machine_code].some(v=>String(v??'').toLowerCase().includes(normalizedRejectionSearch))),[rejections,normalizedRejectionSearch])
   const selectedRejection=rejections.find(r=>String(r.id)===rejectionId)
-  const filteredDefects=useMemo(()=>selectedRejection?defects.filter(d=>Number(d.phenomenon_id)===Number(selectedRejection.phenomenon_id)):defects,[defects,selectedRejection?.phenomenon_id])
   const plantMachines=machines.filter(m=>m.active!==false&&(!selectedRejection?.plant||m.plant===selectedRejection.plant))
   const currentFinding:Finding|undefined=detail?.findings?.find((f:Finding)=>f.node_id===selectedNode)
   const hasRequiredAction=(detail?.actions||[]).some((a:any)=>['CORRECTIVE','PREVENTIVE'].includes(a.relationship_type))
@@ -234,7 +233,7 @@ export default function FTA({me}:{me:any}){
         </label>
         <label>Defect
           <select value={defectCode} onChange={e=>setDefectCode(e.target.value)}>
-            <option value="">Select defect</option>{filteredDefects.map(d=><option key={d.code} value={d.code}>{d.category} – {d.name}</option>)}
+            <option value="">Select defect</option>{defects.map(d=><option key={d.code} value={d.code}>{d.category} – {d.name}</option>)}
           </select>
         </label>
         <label>Search and select Quality rejection
@@ -251,7 +250,7 @@ export default function FTA({me}:{me:any}){
         </label>
         <label>Matching published template
           <select value={selectedTemplate?String(selectedTemplate.id):''} disabled={!canWrite||!filteredTemplates.length} onChange={e=>setSelectedTemplateId(e.target.value)}>
-            {filteredTemplates.length?filteredTemplates.map(t=><option key={t.id} value={t.id}>{t.name} · v{t.version}</option>):<option value="">No matching template</option>}
+            {filteredTemplates.length?filteredTemplates.map(t=><option key={t.id} value={t.id}>{t.name} · v{t.version}</option>):<option value="">{!operationCode||!defectCode?'Select operation and defect first':'No published template for this operation and defect'}</option>}
           </select>
         </label>
       </div>
