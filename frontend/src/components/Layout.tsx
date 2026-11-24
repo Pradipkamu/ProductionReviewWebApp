@@ -50,7 +50,8 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
   const visible=[{key:'chat',to:'/chat',label:'Chat'},...navItems].filter(item=>item.key==='chat'||canViewPage(me,item.key))
   const currentNav=navItems.find(item=>item.to===routeLocation.pathname)
     || navItems.find(item=>item.to!=='/'&&routeLocation.pathname.startsWith(item.to+'/'))
-  const currentLabel=routeLocation.pathname==='/quality-salvage'?'Rejection Salvage'
+  const currentLabel=routeLocation.pathname==='/inspection-measurements'?'Inspection Measurements'
+    :routeLocation.pathname==='/quality-salvage'?'Rejection Salvage'
     :routeLocation.pathname==='/admin-action-review'?'User-wise Action Review'
     :routeLocation.pathname==='/casting-quality'?'Casting Quality'
     :routeLocation.pathname==='/customer-quality'?'Customer Quality'
