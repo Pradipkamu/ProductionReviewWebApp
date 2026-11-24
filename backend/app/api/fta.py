@@ -395,7 +395,7 @@ def create_defect(payload: DefectCreate, db: Session = Depends(get_db),
     try:
         code = payload.code.upper()
         name = " ".join(payload.name.split())
-        normalized = " ".join(name.replace("\\n", " ").strip().lower().split())
+        normalized = " ".join(name.replace("\n", " ").strip().lower().split())
         canonical_code = "FTA_" + re.sub(r"[^A-Z0-9]+", "_", code).strip("_")
         row = db.execute(text("""
             INSERT INTO fta_defect_library (code, category, name, description)
