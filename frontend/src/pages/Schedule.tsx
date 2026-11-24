@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { formatIST, dateIST, monthIST } from '../time'
 import { useEffect, useMemo, useState } from 'react'
 import { api, downloadApi } from '../api'
@@ -11,6 +12,10 @@ function priceFmt(value:number|string){return new Intl.NumberFormat('en-IN',{min
 const emptyScope:ScopeValues={plant:[],productGroup:[],customerId:[],productId:[]}
 
 export default function Schedule(){
+ const [workspaceParams]=useSearchParams()
+ const view=workspaceParams.get('view')||'schedule'
+ const views=[{key:'schedule',label:'Schedule'},{key:'prices',label:'Sales Prices'},{key:'calendar',label:'Working Calendar'}]
+
  const [products,setProducts]=useState<any[]>([]); const [options,setOptions]=useState<any>({}); const [scope,setScope]=useState<ScopeValues>(emptyScope); const [pid,setPid]=useState(''); const [month,setMonth]=useState(monthNow()); const [rows,setRows]=useState<any[]>([]); const [calendar,setCalendar]=useState<any[]>([])
  const [eff,setEff]=useState(today()); const [target,setTarget]=useState(''); const [reason,setReason]=useState('Customer schedule revision'); const [preview,setPreview]=useState<any>(null); const [msg,setMsg]=useState('')
  const [capacityRefreshNeeded,setCapacityRefreshNeeded]=useState(false)
@@ -105,6 +110,7 @@ export default function Schedule(){
  const currentPrice=prices.find((x:any)=>x.effective_from<=today()&&(!x.effective_to||x.effective_to>=today()))
  const latestSchedule=rows.length?rows[rows.length-1]:null
  return <><PageHeader title="Schedule, Price & Working Calendar" subtitle="Disp_Done Stage Schedule is the customer monthly schedule; revisions, prices and Plant calendars remain effective-dated with audit history." actions={<button className="secondary" onClick={recalcAll}>Recalculate month</button>}/>
+ <nav className="quality-view-nav" aria-label="Schedule, Price & Working Calendar workspace">{views.map(v=><a key={v.key} href={v.key==='schedule'?'/schedule':`/schedule?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav>
  {capacityRefreshNeeded&&<div className="warning-box">Monthly schedule changed. Saved machine allocations may be stale. <a href="/capacity">Open Machine Capacity &amp; Manpower to regenerate the all-product allocation preview.</a></div>}
  <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
  <section className="panel dispatch-export-panel">
