@@ -50,6 +50,7 @@ export default function FTA({me}:{me:any}){
   const [escapeSummary,setEscapeSummary]=useState('')
   const [availableActions,setAvailableActions]=useState<any[]>([])
   const [recurrenceCandidates,setRecurrenceCandidates]=useState<any[]>([])
+  const [recurrenceSuggestionsLoading,setRecurrenceSuggestionsLoading]=useState(false)
   const [defectHistory,setDefectHistory]=useState<any>(null)
   const [defectHistoryLoading,setDefectHistoryLoading]=useState(false)
   const [recurrenceRejectionId,setRecurrenceRejectionId]=useState('')
@@ -112,6 +113,9 @@ export default function FTA({me}:{me:any}){
     try{
       const result:any=await api(`/fta/investigations/${id}`)
       if(!Array.isArray(result.recurrences))result.recurrences=await api(`/fta/investigations/${id}/recurrences`).catch(()=>[])
+      setRecurrenceSuggestionsLoading(true)
+      result.recurrence_suggestions=await api(`/fta/investigations/${id}/recurrence-suggestions`).catch(()=>({suggestions:[]}))
+      setRecurrenceSuggestionsLoading(false)
       setDetail(result);setSelectedId(id);setSelectedNode(preserveNode&&selectedNode&&result.findings?.some((f:Finding)=>f.node_id===selectedNode)?selectedNode:(result.template_snapshot?.tree?.id||''))
       setSummary(result.summary||'');setOccurrenceSummary(result.occurrence_cause_summary||'');setEscapeSummary(result.escape_cause_summary||'')
     }catch(e:any){setError(e.message||'Unable to load investigation.')}
@@ -152,6 +156,24 @@ export default function FTA({me}:{me:any}){
       is_occurrence_cause:!!currentFinding.is_occurrence_cause,is_escape_cause:!!currentFinding.is_escape_cause
     })
   },[selectedNode,detail?.id,currentFinding?.updated_at])
+
+  async function linkDetectedRecurrence(suggestion:any){
+    if(!detail)return
+    const detectedReason=`Automatically detected: Quality defect "${detail.recurrence_suggestions?.phenomenon_name||'selected defect'}" was recorded again on ${String(suggestion.rejection_date||'').slice(0,10)} for part ${suggestion.part_code}. Quality review is required to confirm whether it is related to ${detail.investigation_no}.`
+    setBusy(true);setError('');setMessage('')
+    try{
+      await api('/fta/investigations/'+detail.id+'/recurrences',{method:'POST',body:JSON.stringify({
+        rejection_id:Number(suggestion.rejection_id),
+        recurrence_reason:detectedReason,
+        containment_action:null,
+        new_evidence:suggestion.remark||null
+      })})
+      await loadDetail(detail.id,true)
+      await load()
+      setMessage(`Quality Rejection #${suggestion.rejection_id} was linked as a detected recurrence and sent for Quality review.`)
+    }catch(e:any){setError(e.message||'Unable to link detected recurrence.')}
+    finally{setBusy(false)}
+  }
 
   async function createInvestigation(){
     if(!rejectionId||!operationCode||!defectCode||!filteredTemplates.length){setError('Select a machining operation, defect, rejection and matching published template.');return}
