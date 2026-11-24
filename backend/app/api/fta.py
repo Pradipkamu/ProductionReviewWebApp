@@ -5,14 +5,18 @@ import re
 import uuid
 from pathlib import Path
 from datetime import date, datetime
+from io import BytesIO
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 from ..auth import get_current_user
 from ..db import get_db
@@ -706,6 +710,230 @@ def get_investigation(investigation_id: int, db: Session = Depends(get_db),
     _assert_investigation_access(db, investigation_id, user)
     row = db.execute(text("SELECT * FROM fta_investigations WHERE id=:id"), {"id": investigation_id}).mappings().one()
     return _investigation(row, db)
+
+
+
+
+def _excel_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, (datetime, date)):
+        return value.replace(tzinfo=None) if isinstance(value, datetime) else value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return value
+
+
+def _fta_excel_workbook(data: dict) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "FTA Mind Map"
+    navy = "17365D"
+    blue = "D9EAF7"
+    grey = "E7E6E6"
+    green = "E2F0D9"
+    yellow = "FFF2CC"
+    red = "FCE4D6"
+    white = "FFFFFF"
+    thin_grey = Side(style="thin", color="A6A6A6")
+
+    ws.sheet_view.showGridLines = False
+    ws.sheet_view.zoomScale = 70
+    ws.merge_cells("A1:H1")
+    ws["A1"] = f"FAULT TREE ANALYSIS — {data.get('investigation_no') or ''}"
+    ws["A1"].font = Font(bold=True, size=16, color=white)
+    ws["A1"].fill = PatternFill("solid", fgColor=navy)
+    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 30
+    ws.merge_cells("A2:H2")
+    src = data.get("source_rejection") or {}
+    ws["A2"] = (
+        f"Part: {src.get('part_code') or ''} {src.get('part_name') or ''} | "
+        f"Defect: {src.get('defect_name') or ''} | Machine: {src.get('machine_name') or data.get('machine_id') or ''} | "
+        f"Status: {data.get('status') or ''}"
+    )
+    ws["A2"].font = Font(italic=True, color="404040")
+    ws["A2"].alignment = Alignment(wrap_text=True, vertical="center")
+    ws.row_dimensions[2].height = 30
+    ws.merge_cells("A3:H3")
+    ws["A3"] = "Read from left to right. Each box is a fault-tree event; AND / OR indicates the logic gate connecting its child events."
+    ws["A3"].font = Font(size=9, color="666666")
+    ws["A3"].alignment = Alignment(wrap_text=True)
+    ws.row_dimensions[3].height = 24
+
+    findings = {str(x.get("node_id")): x for x in data.get("findings", [])}
+    tree = (data.get("template_snapshot") or {}).get("tree")
+    leaf_cursor = [5]
+    node_positions = []
+
+    def count_leaves(node):
+        children = node.get("children") or []
+        return sum(count_leaves(child) for child in children) if children else 1
+
+    def place(node, depth=0):
+        children = node.get("children") or []
+        if not children:
+            start = end = leaf_cursor[0]
+            leaf_cursor[0] += 3
+        else:
+            child_positions = [place(child, depth + 1) for child in children]
+            start, end = child_positions[0][0], child_positions[-1][1]
+        center = (start + end) // 2
+        node_positions.append((node, depth, start, end, center))
+        return start, end
+
+    if isinstance(tree, dict):
+        place(tree)
+    max_depth = max((x[1] for x in node_positions), default=0)
+    last_col = 1 + max_depth * 3
+    for col in range(1, last_col + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 4 if (col - 1) % 3 else 34
+    for row in range(5, max(6, leaf_cursor[0])):
+        ws.row_dimensions[row].height = 18
+
+    for node, depth, start, end, center in node_positions:
+        col = 1 + depth * 3
+        finding = findings.get(str(node.get("id")), {})
+        status = finding.get("investigation_status") or "NOT_INVESTIGATED"
+        fill = green if status == "CONFIRMED" else yellow if status in {"SUSPECTED", "UNDER_INVESTIGATION"} else red if status == "RULED_OUT" else grey
+        flags = []
+        if finding.get("is_root_cause"): flags.append("ROOT CAUSE")
+        if finding.get("is_occurrence_cause"): flags.append("OCCURRENCE")
+        if finding.get("is_escape_cause"): flags.append("ESCAPE")
+        gate = node.get("gate") or "LEAF EVENT"
+        label = str(node.get("label") or "Unnamed event")
+        cell = ws.cell(center, col)
+        cell.value = f"{label}\n[{node.get('type', 'EVENT').replace('_', ' ')}] · {gate}\nStatus: {status.replace('_', ' ')}"
+        if flags:
+            cell.value += "\n" + " / ".join(flags)
+        cell.fill = PatternFill("solid", fgColor=fill)
+        cell.font = Font(bold=True, size=9, color="202020")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = Border(left=thin_grey, right=thin_grey, top=thin_grey, bottom=thin_grey)
+        ws.row_dimensions[center].height = max(ws.row_dimensions[center].height or 18, 66)
+        children = node.get("children") or []
+        if children:
+            connector_col = col + 1
+            child_centers = []
+            for child, child_depth, child_start, child_end, child_center in node_positions:
+                if child_depth == depth + 1 and child_start >= start and child_end <= end:
+                    # Direct children are those whose parent is this node.
+                    if child in children:
+                        child_centers.append(child_center)
+            if child_centers:
+                top, bottom = min(child_centers), max(child_centers)
+                for rr in range(top, bottom + 1):
+                    ws.cell(rr, connector_col).border = Border(left=thin_grey)
+                for rr in child_centers:
+                    ws.cell(rr, connector_col).border = Border(left=thin_grey, bottom=thin_grey)
+                    ws.cell(rr, col + 2).border = Border(bottom=thin_grey)
+
+    ws.freeze_panes = "A5"
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A3
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.page_margins.left = 0.25
+    ws.page_margins.right = 0.25
+    ws.page_margins.top = 0.4
+    ws.page_margins.bottom = 0.4
+    ws.print_title_rows = "1:3"
+    ws.sheet_properties.outlinePr.summaryRight = True
+
+    def add_table_sheet(title, headers, rows):
+        sh = wb.create_sheet(title[:31])
+        sh.sheet_view.showGridLines = False
+        sh.append([title])
+        sh.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(1, len(headers)))
+        sh["A1"].font = Font(bold=True, size=14, color=white)
+        sh["A1"].fill = PatternFill("solid", fgColor=navy)
+        sh["A1"].alignment = Alignment(vertical="center")
+        sh.row_dimensions[1].height = 26
+        sh.append(headers)
+        for cell in sh[2]:
+            cell.font = Font(bold=True, color=white)
+            cell.fill = PatternFill("solid", fgColor=navy)
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+        for row in rows:
+            sh.append([_excel_value(v) for v in row])
+        sh.freeze_panes = "A3"
+        sh.auto_filter.ref = sh.dimensions
+        for col_cells in sh.columns:
+            letter = get_column_letter(col_cells[0].column)
+            max_len = min(55, max((len(str(c.value or "")) for c in col_cells), default=12))
+            sh.column_dimensions[letter].width = max(14, max_len + 2)
+            for cell in col_cells[2:]:
+                cell.alignment = Alignment(vertical="top", wrap_text=True)
+        sh.sheet_properties.pageSetUpPr.fitToPage = True
+        sh.page_setup.orientation = "landscape"
+        sh.page_setup.fitToWidth = 1
+        sh.page_setup.fitToHeight = 0
+        return sh
+
+    add_table_sheet("Investigation", ["Field", "Value"], [
+        ("Investigation No.", data.get("investigation_no")),
+        ("Status", data.get("status")),
+        ("Plant", data.get("plant")),
+        ("Operation", data.get("operation_code")),
+        ("Machine", src.get("machine_name") or data.get("machine_id")),
+        ("Part", f"{src.get('part_code') or ''} {src.get('part_name') or ''}".strip()),
+        ("Defect", src.get("defect_name")),
+        ("Rejection Date", src.get("rejection_date")),
+        ("Rejected Quantity", src.get("reject_qty")),
+        ("Summary", data.get("summary")),
+        ("Occurrence Cause Analysis", data.get("occurrence_cause_summary")),
+        ("Escape / Detection Analysis", data.get("escape_cause_summary")),
+        ("Verification Date", data.get("verified_at")),
+        ("Closure Date", data.get("closed_at")),
+        ("Closure Remarks", data.get("closure_remarks")),
+    ])
+    add_table_sheet("Findings",
+        ["Node", "Type", "Status", "Observation", "Measured Value", "Expected Value", "Verification Method", "Verification Result", "Root Cause", "Occurrence Cause", "Escape Cause"],
+        [(x.get("node_label"), x.get("node_type"), x.get("investigation_status"), x.get("observation"),
+          x.get("measured_value"), x.get("expected_value"), x.get("verification_method"), x.get("verification_result"),
+          x.get("is_root_cause"), x.get("is_occurrence_cause"), x.get("is_escape_cause")) for x in data.get("findings", [])])
+    add_table_sheet("Evidence Register",
+        ["Finding", "File Name", "Caption", "MIME Type", "Size (bytes)", "Uploaded Date"],
+        [((findings.get(str(x.get("finding_id"))) or {}).get("node_label") if x.get("finding_id") else "Investigation-level"),
+         x.get("file_name"), x.get("caption"), x.get("mime_type"), x.get("size_bytes"), x.get("created_at")]
+         for x in data.get("evidence", [])])
+    add_table_sheet("Actions",
+        ["Action No.", "Relationship", "Problem", "Action Description", "Owner", "Due Date", "Status"],
+        [(x.get("action_no"), x.get("relationship_type"), x.get("problem_description"), x.get("action_description"),
+          x.get("owner_name"), x.get("due_at"), x.get("status")) for x in data.get("actions", [])])
+    add_table_sheet("Action History",
+        ["Action No.", "Changed By", "Changed At", "Old Status", "New Status", "Comment"],
+        [(x.get("action_no"), x.get("changed_by_name"), x.get("changed_at"), x.get("old_status"), x.get("new_status"), x.get("comment"))
+         for x in data.get("action_history", [])])
+    add_table_sheet("Status History",
+        ["Date", "From Status", "To Status", "Remarks", "Changed By"],
+        [(x.get("created_at"), x.get("old_status"), x.get("new_status"), x.get("remarks"), x.get("changed_by_id"))
+         for x in data.get("status_history", [])])
+    add_table_sheet("Discovered Causes",
+        ["Cause", "Source Action", "Status", "Evidence Reference", "Verification Method", "Review Remarks", "Reported By", "Reviewed By"],
+        [(x.get("cause_description"), x.get("action_no"), x.get("status"), x.get("evidence_reference"),
+          x.get("verification_method"), x.get("review_remarks"), x.get("reported_by_name"), x.get("reviewed_by_name"))
+         for x in data.get("discovered_causes", [])])
+    output = BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+
+@router.get("/investigations/{investigation_id}/export.xlsx")
+def export_investigation_excel(investigation_id: int, db: Session = Depends(get_db),
+                               user: User = Depends(get_current_user)):
+    _assert_investigation_access(db, investigation_id, user)
+    row = db.execute(text("SELECT * FROM fta_investigations WHERE id=:id"),
+                     {"id": investigation_id}).mappings().one()
+    data = _investigation(row, db)
+    content = _fta_excel_workbook(data)
+    safe_no = re.sub(r"[^A-Za-z0-9_-]+", "_", str(data.get("investigation_no") or investigation_id))
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="FTA_{safe_no}.xlsx"'},
+    )
 
 
 @router.patch("/investigations/{investigation_id}")
