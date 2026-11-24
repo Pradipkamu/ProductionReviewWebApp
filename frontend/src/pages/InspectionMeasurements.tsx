@@ -22,7 +22,7 @@ export default function InspectionMeasurements(){
  async function loadRecords(){
   const q=new URLSearchParams()
   if(fromDate)q.set('from_date',fromDate);if(toDate)q.set('to_date',toDate);if(filterProduct)q.set('product_id',filterProduct)
-  const data=await api('/calibration/inspection/measurements'+(q.size?'?'+q.toString():''))
+  const data=await api('/calibration/inspection/measurements'+(q.toString()?'?'+q.toString():''))
   setRecords(data)
  }
  useEffect(()=>{Promise.all([loadMasters(),loadRecords()]).catch((e:any)=>setError(e.message))},[])
