@@ -144,15 +144,14 @@ def equipment_types(user=Depends(get_current_user)):
 @router.get("/instruments")
 def list_instruments(status: str | None = None, due_only: bool = False,
                      db: Session = Depends(get_db), user=Depends(get_current_user)):
-    q = "SELECT * FROM calibration_instruments WHERE is_active = true"
-    params = {}
+    q = """SELECT i.*,cl.name AS current_location_name,cl.plant_name AS current_location_plant,\n                  cl.department AS current_location_department,cl.area AS current_location_area\n             FROM calibration_instruments i\n             LEFT JOIN calibration_locations cl ON cl.id=i.current_location_id\n             WHERE i.is_active = true"""\n    params = {}
     if status:
-        q += " AND status = :status"
+        q += " AND i.status = :status"
         params["status"] = status
     if due_only:
-        q += " AND next_due_date <= :today"
+        q += " AND i.next_due_date <= :today"
         params["today"] = date.today()
-    q += " ORDER BY next_due_date NULLS FIRST, instrument_code"
+    q += " ORDER BY i.next_due_date NULLS FIRST, i.instrument_code"
     rows = db.execute(text(q), params).mappings().all()
     today = date.today()
     result = []
