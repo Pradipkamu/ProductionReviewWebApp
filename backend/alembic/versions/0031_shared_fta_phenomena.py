@@ -52,52 +52,56 @@ def upgrade():
     )
 
     # Preserve existing Quality IDs/codes. Add a canonical row only when no
-    # normalized-name match exists. FTA codes remain unchanged in the map and
-    # in fta_templates.defect_code for compatibility with existing templates.
-    op.execute(sa.text("""
-        INSERT INTO quality_rejection_phenomena
-            (code, name, normalized_name, phenomenon_group,
-             default_responsible_team, criticality, is_active,
-             created_at, updated_at)
-        SELECT
-            'FTA_' || regexp_replace(d.code, '[^A-Za-z0-9]+', '_', 'g'),
-            d.name,
-            regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\s+', ' ', 'g'),
-            'Machining Rejection',
-            NULL,
-            'NORMAL',
-            d.is_active,
-            now(),
-            now()
-        FROM fta_defect_library d
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM quality_rejection_phenomena q
-            WHERE q.normalized_name =
-                regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\s+', ' ', 'g')
-        )
-    """))
+    # normalized-name match exists. Use Python normalization so the migration
+    # behaves identically on PostgreSQL and SQLite legacy-adoption tests.
+    import re
+    bind = op.get_bind()
+    defects = bind.execute(sa.text(
+        "SELECT code, name, category, description, is_active FROM fta_defect_library"
+    )).mappings().all()
+    canonical = {
+        row["normalized_name"]: row["id"]
+        for row in bind.execute(sa.text(
+            "SELECT id, normalized_name FROM quality_rejection_phenomena"
+        )).mappings().all()
+    }
+    for defect in defects:
+        normalized = re.sub(r"\\s+", " ", (defect["name"] or "").strip().lower())
+        phenomenon_id = canonical.get(normalized)
+        if phenomenon_id is None:
+            result = bind.execute(sa.text("""
+                INSERT INTO quality_rejection_phenomena
+                    (code, name, normalized_name, phenomenon_group,
+                     default_responsible_team, criticality, is_active,
+                     created_at, updated_at)
+                VALUES
+                    (:code, :name, :normalized, 'Machining Rejection',
+                     NULL, 'NORMAL', :active, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                RETURNING id
+            """), {
+                "code": "FTA_" + re.sub(r"[^A-Za-z0-9]+", "_", defect["code"]),
+                "name": defect["name"],
+                "normalized": normalized,
+                "active": defect["is_active"],
+            })
+            phenomenon_id = result.scalar_one()
+            canonical[normalized] = phenomenon_id
 
-    # Attach FTA metadata to the canonical row. Do not overwrite Quality
-    # grouping, responsibility, criticality, name, code, or active state.
-    op.execute(sa.text("""
-        UPDATE quality_rejection_phenomena q
-        SET fta_category = d.category,
-            fta_description = d.description,
-            updated_at = now()
-        FROM fta_defect_library d
-        WHERE q.normalized_name =
-            regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\s+', ' ', 'g')
-    """))
-
-    op.execute(sa.text("""
-        INSERT INTO fta_phenomenon_code_map (legacy_defect_code, phenomenon_id)
-        SELECT d.code, q.id
-        FROM fta_defect_library d
-        JOIN quality_rejection_phenomena q
-          ON q.normalized_name =
-             regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\s+', ' ', 'g')
-    """))
+        bind.execute(sa.text("""
+            UPDATE quality_rejection_phenomena
+            SET fta_category = :category,
+                fta_description = :description,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        """), {
+            "category": defect["category"],
+            "description": defect["description"],
+            "id": phenomenon_id,
+        })
+        bind.execute(sa.text("""
+            INSERT INTO fta_phenomenon_code_map (legacy_defect_code, phenomenon_id)
+            VALUES (:code, :phenomenon_id)
+        """), {"code": defect["code"], "phenomenon_id": phenomenon_id})
 
     # Fail the migration rather than silently leaving an FTA code unmapped.
     op.execute(sa.text("""
