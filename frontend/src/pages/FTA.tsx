@@ -322,7 +322,8 @@ export default function FTA({me}:{me:any}){
                   <td>{item.same_part?<span className="fta-match-tag same">Same part</span>:<span className="fta-match-tag">Same defect</span>}</td>
                   <td><div className="button-row">
                     <a className="button secondary small" href={`/fta?view=register&investigation_id=${item.investigation_id}`}>Open FTA</a>
-                    {rejectionId&&<button type="button" className="small" onClick={()=>setSearchParams({view:'register',investigation_id:String(item.investigation_id),recurrence_rejection_id:String(rejectionId)})}>Link as recurrence</button>}
+                    {rejectionId&&item.same_part&&<button type="button" className="small" onClick={()=>setSearchParams({view:'register',investigation_id:String(item.investigation_id),recurrence_rejection_id:String(rejectionId)})}>Link as recurrence</button>}
+                    {rejectionId&&!item.same_part&&<span className="muted small">Different part — history only</span>}
                   </div></td>
                 </tr>)}</tbody>
               </table>
@@ -471,7 +472,7 @@ export default function FTA({me}:{me:any}){
                 <td>{item.machine_name||'—'}<div className="muted small">{item.plant||'Plant not recorded'}</div></td>
                 <td>{item.days_after_original===0?'Same day':item.days_after_original+' days later'}</td>
                 <td><div className="fta-match-tags"><span className="fta-match-tag">Same defect</span>{item.same_part&&<span className="fta-match-tag same">Same part</span>}{item.same_plant&&<span className="fta-match-tag same">Same plant</span>}{item.same_machine&&<span className="fta-match-tag same">Same machine</span>}</div></td>
-                <td><button type="button" className="small" disabled={!canWrite||busy} onClick={()=>linkDetectedRecurrence(item)}>Link as recurrence</button></td>
+                <td>{item.same_part?<button type="button" className="small" disabled={!canWrite||busy} onClick={()=>linkDetectedRecurrence(item)}>Link as recurrence</button>:<span className="muted small">Different part — history only</span>}</td>
               </tr>)}</tbody>
             </table>
           </div>:!recurrenceSuggestionsLoading&&<p className="muted small">No later, unlinked Quality Rejection records were found for this defect.</p>}
