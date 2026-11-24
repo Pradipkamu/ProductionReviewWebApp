@@ -62,7 +62,7 @@ def upgrade():
         SELECT
             'FTA_' || regexp_replace(d.code, '[^A-Za-z0-9]+', '_', 'g'),
             d.name,
-            regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\\s+', ' ', 'g'),
+            regexp_replace(lower(replace(trim(d.name), E'\n', ' ')), '\s+', ' ', 'g'),
             'Machining Rejection',
             NULL,
             'NORMAL',
@@ -74,7 +74,7 @@ def upgrade():
             SELECT 1
             FROM quality_rejection_phenomena q
             WHERE q.normalized_name =
-                regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\\s+', ' ', 'g')
+                regexp_replace(lower(replace(trim(d.name), E'\n', ' ')), '\s+', ' ', 'g')
         )
     """))
 
@@ -87,7 +87,7 @@ def upgrade():
             updated_at = now()
         FROM fta_defect_library d
         WHERE q.normalized_name =
-            regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\\s+', ' ', 'g')
+            regexp_replace(lower(replace(trim(d.name), E'\n', ' ')), '\s+', ' ', 'g')
     """))
 
     op.execute(sa.text("""
@@ -96,7 +96,7 @@ def upgrade():
         FROM fta_defect_library d
         JOIN quality_rejection_phenomena q
           ON q.normalized_name =
-             regexp_replace(lower(replace(trim(d.name), E'\\n', ' ')), '\\s+', ' ', 'g')
+             regexp_replace(lower(replace(trim(d.name), E'\n', ' ')), '\s+', ' ', 'g')
     """))
 
     # Fail the migration rather than silently leaving an FTA code unmapped.
