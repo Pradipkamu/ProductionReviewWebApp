@@ -830,3 +830,6 @@ button.ghost{color:inherit}
   .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-children { break-inside:auto; }
   .fta-mindmap-print .fta-report-section:nth-of-type(2) .fta-report-tree-heading { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
 }
+
+/* Dedicated Quality / Rejection workspace views */
+.quality-view-nav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--line)}.quality-view-nav a{display:inline-flex;align-items:center;padding:8px 13px;border:1px solid var(--line);border-radius:8px;color:inherit;text-decoration:none;font-size:13px;font-weight:650;background:#fff}.quality-view-nav a:hover{border-color:var(--orange);background:#ed7d310d}.quality-view-nav a.active{background:var(--navy);border-color:var(--navy);color:#fff}
