@@ -891,7 +891,7 @@ def _fta_excel_workbook(data: dict) -> bytes:
     add_table_sheet("Evidence Register",
         ["Finding", "File Name", "Caption", "MIME Type", "Size (bytes)", "Uploaded Date"],
         [((findings.get(str(x.get("finding_id"))) or {}).get("node_label") if x.get("finding_id") else "Investigation-level"),
-         x.get("file_name"), x.get("caption"), x.get("mime_type"), x.get("size_bytes"), x.get("created_at")]
+         x.get("file_name"), x.get("caption"), x.get("mime_type"), x.get("size_bytes"), x.get("created_at"))]
          for x in data.get("evidence", [])])
     add_table_sheet("Actions",
         ["Action No.", "Relationship", "Problem", "Action Description", "Owner", "Due Date", "Status"],
