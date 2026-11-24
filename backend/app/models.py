@@ -577,6 +577,10 @@ class QualityPhenomenon(Base, TimestampMixin):
     normalized_name: Mapped[str] = mapped_column(String(220), unique=True, index=True)
     phenomenon_group: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
     default_responsible_team: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # FTA metadata lives on the shared phenomenon; legacy FTA codes resolve through
+    # fta_phenomenon_code_map and are retained for template compatibility.
+    fta_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    fta_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     criticality: Mapped[str] = mapped_column(String(40), default="NORMAL", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
