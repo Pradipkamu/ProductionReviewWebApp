@@ -1718,6 +1718,13 @@ def export_dispatch_schedule_actual(
         actual_row = ws.max_row
         ws.append(["Gap (Actual - Plan)", *gaps])
         gap_row = ws.max_row
+        cumulative_gap = []
+        running_gap = 0.0
+        for daily_gap in gaps:
+            running_gap += daily_gap
+            cumulative_gap.append(running_gap)
+        ws.append(["Cumulative Gap", *cumulative_gap])
+        cumulative_gap_row = ws.max_row
         ws.append([
             "MOM Action / Discussion",
             *[
@@ -1727,7 +1734,7 @@ def export_dispatch_schedule_actual(
         ])
         action_row = ws.max_row
 
-        for row_number in (plan_row, actual_row, gap_row, action_row):
+        for row_number in (plan_row, actual_row, gap_row, cumulative_gap_row, action_row):
             label_cell = ws.cell(row=row_number, column=1)
             label_cell.font = Font(bold=True, color="1F1F1F")
             label_cell.fill = metric_fill
@@ -1744,6 +1751,7 @@ def export_dispatch_schedule_actual(
         ws.row_dimensions[plan_row].height = 20
         ws.row_dimensions[actual_row].height = 20
         ws.row_dimensions[gap_row].height = 20
+        ws.row_dimensions[cumulative_gap_row].height = 20
         max_action_lines = max(
             (str(ws.cell(row=action_row, column=column).value or "").count("\n") + 1
              for column in range(2, len(dates) + 2)),
