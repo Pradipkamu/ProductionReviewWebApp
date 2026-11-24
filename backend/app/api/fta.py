@@ -343,8 +343,13 @@ def list_operations(db: Session = Depends(get_db), user: User = Depends(get_curr
 def list_defects(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _role(user, READ_ROLES)
     rows = db.execute(text("""
-        SELECT id, code, category, name, description
-        FROM fta_defect_library WHERE is_active=true ORDER BY category, name
+        SELECT l.id, l.code, q.fta_category AS category, q.name,
+               q.fta_description AS description, q.id AS phenomenon_id
+        FROM fta_phenomenon_code_map fm
+        JOIN fta_defect_library l ON l.code=fm.legacy_defect_code
+        JOIN quality_rejection_phenomena q ON q.id=fm.phenomenon_id
+        WHERE l.is_active=true AND q.is_active=true
+        ORDER BY q.fta_category, q.name
     """)).mappings().all()
     return [dict(x) for x in rows]
 
@@ -388,13 +393,37 @@ def create_defect(payload: DefectCreate, db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
     _role(user, TEMPLATE_ROLES)
     try:
+        code = payload.code.upper()
+        name = " ".join(payload.name.split())
+        normalized = " ".join(name.replace("\\n", " ").strip().lower().split())
+        canonical_code = "FTA_" + re.sub(r"[^A-Z0-9]+", "_", code).strip("_")
         row = db.execute(text("""
             INSERT INTO fta_defect_library (code, category, name, description)
-            VALUES (:code, :category, :name, :description) RETURNING id, code, category, name, description
-        """), {"code": payload.code.upper(), "category": payload.category.strip(),
-               "name": payload.name.strip(), "description": payload.description}).mappings().one()
+            VALUES (:code, :category, :name, :description)
+            RETURNING id, code, category, name, description
+        """), {"code": code, "category": payload.category.strip(),
+               "name": name, "description": payload.description}).mappings().one()
+        phenomenon = db.execute(text("""
+            INSERT INTO quality_rejection_phenomena
+                (code, name, normalized_name, phenomenon_group,
+                 criticality, is_active, fta_category, fta_description,
+                 created_at, updated_at)
+            VALUES
+                (:canonical_code, :name, :normalized, 'Machining Rejection',
+                 'NORMAL', true, :category, :description, now(), now())
+            ON CONFLICT (normalized_name) DO UPDATE
+            SET fta_category=EXCLUDED.fta_category,
+                fta_description=EXCLUDED.fta_description,
+                updated_at=now()
+            RETURNING id
+        """), {"canonical_code": canonical_code, "name": name, "normalized": normalized,
+               "category": payload.category.strip(), "description": payload.description}).mappings().one()
+        db.execute(text("""
+            INSERT INTO fta_phenomenon_code_map (legacy_defect_code, phenomenon_id)
+            VALUES (:code, :phenomenon_id)
+        """), {"code": code, "phenomenon_id": phenomenon["id"]})
         db.commit()
-        return dict(row)
+        return {**dict(row), "phenomenon_id": phenomenon["id"]}
     except Exception:
         db.rollback()
         raise HTTPException(409, "Defect code already exists or could not be created")
@@ -407,9 +436,13 @@ def create_template(payload: TemplateCreate, db: Session = Depends(get_db),
     if not db.execute(text("SELECT code FROM fta_operations WHERE code=:code AND is_active=true"),
                       {"code": payload.operation_code}).first():
         raise HTTPException(422, "Select an active machining operation")
-    if not db.execute(text("SELECT code FROM fta_defect_library WHERE code=:code AND is_active=true"),
-                      {"code": payload.defect_code}).first():
-        raise HTTPException(422, "Select an active defect")
+    if not db.execute(text("""
+        SELECT l.code FROM fta_defect_library l
+        JOIN fta_phenomenon_code_map fm ON fm.legacy_defect_code=l.code
+        JOIN quality_rejection_phenomena q ON q.id=fm.phenomenon_id
+        WHERE l.code=:code AND l.is_active=true AND q.is_active=true
+    """), {"code": payload.defect_code}).first():
+        raise HTTPException(422, "Select an active shared phenomenon")
     _validate_tree(payload.tree)
     try:
         row = db.execute(text("""
@@ -497,11 +530,12 @@ def list_templates(operation_code: str | None = None, defect_code: str | None = 
         _role(user, TEMPLATE_ROLES)
     query = """
         SELECT t.id, t.code, t.name, t.operation_code, o.name AS operation_name,
-               t.defect_code, d.name AS defect_name, d.category AS defect_category,
+               t.defect_code, d.name AS defect_name, d.fta_category AS defect_category,
                t.version, t.status
         FROM fta_templates t
         JOIN fta_operations o ON o.code=t.operation_code
-        JOIN fta_defect_library d ON d.code=t.defect_code
+        JOIN fta_phenomenon_code_map fm ON fm.legacy_defect_code=t.defect_code
+        JOIN quality_rejection_phenomena d ON d.id=fm.phenomenon_id
         WHERE (
           (t.status='PUBLISHED' AND t.version=(
               SELECT MAX(t2.version) FROM fta_templates t2
@@ -527,10 +561,11 @@ def get_template(template_id: int, db: Session = Depends(get_db), user: User = D
     _role(user, READ_ROLES)
     row = db.execute(text("""
         SELECT t.id, t.code, t.name, t.operation_code, o.name AS operation_name,
-               t.defect_code, d.name AS defect_name, d.category AS defect_category,
+               t.defect_code, d.name AS defect_name, d.fta_category AS defect_category,
                t.version, t.status, t.tree_json
         FROM fta_templates t JOIN fta_operations o ON o.code=t.operation_code
-        JOIN fta_defect_library d ON d.code=t.defect_code WHERE t.id=:id
+        JOIN fta_phenomenon_code_map fm ON fm.legacy_defect_code=t.defect_code
+        JOIN quality_rejection_phenomena d ON d.id=fm.phenomenon_id WHERE t.id=:id
     """), {"id": template_id}).mappings().first()
     if not row:
         raise HTTPException(404, "FTA template not found")
@@ -550,7 +585,8 @@ def list_investigations(status: str | None = None, rejection_id: int | None = No
                t.name AS template_name, d.name AS defect_name, p.code AS part_code, p.name AS part_name
         FROM fta_investigations i
         JOIN fta_templates t ON t.id=i.template_id
-        JOIN fta_defect_library d ON d.code=t.defect_code
+        JOIN fta_phenomenon_code_map fm ON fm.legacy_defect_code=t.defect_code
+        JOIN quality_rejection_phenomena d ON d.id=fm.phenomenon_id
         JOIN quality_rejection_daily q ON q.id=i.rejection_id
         JOIN products p ON p.id=q.product_id
         LEFT JOIN machines m ON m.id=i.machine_id WHERE 1=1
@@ -1182,7 +1218,8 @@ def dashboard(db: Session = Depends(get_db), user: User = Depends(get_current_us
     defects = db.execute(text(f"""
         SELECT d.name AS defect, COUNT(*) AS investigations
         FROM fta_investigations i JOIN fta_templates t ON t.id=i.template_id
-        JOIN fta_defect_library d ON d.code=t.defect_code
+        JOIN fta_phenomenon_code_map fm ON fm.legacy_defect_code=t.defect_code
+        JOIN quality_rejection_phenomena d ON d.id=fm.phenomenon_id
         WHERE 1=1 {production_scope}
         GROUP BY d.name ORDER BY investigations DESC, d.name LIMIT 5
     """), params).mappings().all()
