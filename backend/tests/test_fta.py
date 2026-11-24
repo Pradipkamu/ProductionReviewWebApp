@@ -386,3 +386,12 @@ def test_fta_recurrence_request_schemas_require_reasons_and_quality_decision():
         review_remarks="Confirmed against the previous FTA evidence and action history.",
     )
     assert reviewed.classification == "SAME_ROOT_CAUSE"
+
+
+
+def test_fta_automatic_defect_history_and_recurrence_suggestion_routes_are_registered():
+    from app.api.fta import router
+
+    paths = {(route.path, tuple(sorted(route.methods or []))) for route in router.routes}
+    assert ("/fta/defect-history/{defect_code}", ("GET",)) in paths
+    assert ("/fta/investigations/{investigation_id}/recurrence-suggestions", ("GET",)) in paths
