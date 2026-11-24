@@ -165,6 +165,7 @@ export default function FTA({me}:{me:any}){
   }
   const tree:FtaNode|undefined=detail?.template_snapshot?.tree
   const counts=dashboard.counts||{}
+  const recurrenceCounts=dashboard.recurrence_counts||{}
   const findings:any[]=detail?.findings||[]
   const linkedActions:any[]=detail?.actions||[]
   const requiredActions=linkedActions.filter((a:any)=>['CORRECTIVE','PREVENTIVE'].includes(a.relationship_type))
@@ -203,6 +204,14 @@ export default function FTA({me}:{me:any}){
       <Kpi label="Open / in progress" value={counts.open||0}/>
       <Kpi label="Verified / actions pending" value={counts.verified_pending_actions||0}/>
       <Kpi label="Closed" value={counts.closed||0}/>
+    </div>
+
+    <div className="kpi-grid">
+      <Kpi label="Linked recurrence events" value={recurrenceCounts.total||0}/>
+      <Kpi label="Awaiting Quality review" value={recurrenceCounts.pending_review||0}/>
+      <Kpi label="Same root cause" value={recurrenceCounts.same_root_cause||0}/>
+      <Kpi label="Different root cause" value={recurrenceCounts.different_root_cause||0}/>
+      <Kpi label="Unrelated occurrences" value={recurrenceCounts.unrelated||0}/>
     </div>
 
     <section className="panel">
