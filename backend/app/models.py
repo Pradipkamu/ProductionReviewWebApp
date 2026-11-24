@@ -1325,6 +1325,26 @@ class FtaStatusHistory(Base):
     changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
 
+ 
+class FtaDiscoveredCause(Base, TimestampMixin):
+    __tablename__ = "fta_discovered_causes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), nullable=False)
+    cause_description: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_reference: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="PROPOSED", server_default="PROPOSED", nullable=False)
+    reported_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    review_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verification_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (
+        Index("ix_fta_discovered_causes_investigation", "investigation_id"),
+        Index("ix_fta_discovered_causes_action", "action_id"),
+        Index("ix_fta_discovered_causes_status", "status"),
+    )
+
 
 class FtaFindingHistory(Base):
     __tablename__ = "fta_finding_history"
