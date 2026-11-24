@@ -320,7 +320,6 @@ export default function FTA({me}:{me:any}){
             <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_root_cause} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,is_root_cause:e.target.checked}))}/> Confirmed root cause</label>
             <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_occurrence_cause} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,is_occurrence_cause:e.target.checked}))}/> Occurrence cause</label>
             <label className="fta-check"><input type="checkbox" checked={!!findingForm.is_escape_cause} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,is_escape_cause:e.target.checked}))}/> Escape / detection cause</label>
-            <button onClick={saveFinding} disabled={!canWrite||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)}>Save finding</button>
             <div className="fta-evidence-box">
               <strong>Evidence attachments</strong>
               <label>Photo, PDF or inspection document<input type="file" accept=".jpg,.jpeg,.png,.webp,.pdf,.xlsx,.csv,.txt" onChange={e=>setEvidenceFile(e.target.files?.[0]||null)}/></label>
@@ -328,6 +327,7 @@ export default function FTA({me}:{me:any}){
               <button className="secondary" disabled={!canWrite||!evidenceFile||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)} onClick={async()=>{try{setBusy(true);const form=new FormData();form.append('file',evidenceFile as File);form.append('finding_id',String(currentFinding.id));form.append('caption',evidenceCaption);await api('/fta/investigations/'+detail.id+'/evidence',{method:'POST',body:form});setEvidenceFile(null);setEvidenceCaption('');await loadDetail(detail.id,true);setMessage('Evidence uploaded securely.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Upload evidence</button>
               {(detail.evidence||[]).filter((x:any)=>x.finding_id===currentFinding.id).map((x:any)=><div className="fta-evidence-item" key={x.id}><span>{x.file_name}{x.caption?' · '+x.caption:''}</span><button className="small secondary" onClick={()=>downloadApi('/fta/investigations/'+detail.id+'/evidence/'+x.id,x.file_name)}>Download</button></div>)}
             </div>
+            <button onClick={saveFinding} disabled={!canWrite||busy||!['OPEN','IN_PROGRESS'].includes(detail.status)}>Save finding</button>
           </>:<p className="muted">Select a node in the fault tree.</p>}
         </div>
       </div>
