@@ -158,10 +158,10 @@ def create_instrument(data: InstrumentIn, db: Session = Depends(get_db), user=De
     try:
         result = db.execute(text("""INSERT INTO calibration_instruments
           (instrument_code,name,equipment_type,manufacturer,model,serial_number,range_text,resolution_text,
-           accuracy_text,location,owner_department,owner_type,control_plan_reference,special_characteristic,
+           accuracy_text,location,home_plant,owner_department,owner_type,control_plan_reference,special_characteristic,
            calibration_interval_days,criticality,remarks,created_by)
           VALUES (:instrument_code,:name,:equipment_type,:manufacturer,:model,:serial_number,:range_text,
-           :resolution_text,:accuracy_text,:location,:owner_department,:owner_type,:control_plan_reference,
+           :resolution_text,:accuracy_text,:location,:home_plant,:owner_department,:owner_type,:control_plan_reference,
            :special_characteristic,:calibration_interval_days,:criticality,:remarks,:created_by)
           RETURNING id"""), values)
         iid = result.scalar_one()
@@ -586,6 +586,8 @@ def get_instrument_scope(instrument_id: int, db: Session = Depends(get_db), user
         SELECT machine_id FROM calibration_instrument_machines WHERE instrument_id=:id ORDER BY machine_id
     """), {"id": instrument_id}).all()]
     home = db.execute(text("SELECT home_plant FROM calibration_instruments WHERE id=:id"), {"id": instrument_id}).scalar()
+    if home and home not in plants:
+        plants.insert(0, home)
     return {"home_plant": home, "plants": plants, "product_ids": products,
             "route_operation_ids": operations, "machine_ids": machines}
 
