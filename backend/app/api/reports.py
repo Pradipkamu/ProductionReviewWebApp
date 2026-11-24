@@ -1634,14 +1634,34 @@ def export_dispatch_schedule_actual(
     ws = wb.active
     ws.title = "Dispatch vs Actual"
     ws.sheet_view.showGridLines = False
-    ws.freeze_panes = "B2"
+    ws.freeze_panes = "B5"
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    ws.print_title_rows = "1:1"
+    ws.print_title_rows = "1:4"
     wb.properties.title = "Dispatch Schedule vs Actual"
     wb.properties.subject = f"All parts from {from_date.isoformat()} to {to_date.isoformat()}"
+
+    last_column = len(dates) + 1
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_column)
+    title_cell = ws.cell(row=1, column=1, value="DISPATCH SCHEDULE VS ACTUAL")
+    title_cell.font = Font(bold=True, size=14, color="FFFFFF")
+    title_cell.fill = PatternFill(fill_type="solid", fgColor="17365D")
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 30
+
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_column)
+    control_cell = ws.cell(
+        row=2,
+        column=1,
+        value="Format No.: MF/PPC/06    |    Issue Rev No.: -01    |    Issue Date: 01-07-2026",
+    )
+    control_cell.font = Font(bold=True, size=10, color="1F1F1F")
+    control_cell.fill = PatternFill(fill_type="solid", fgColor="D9EAF7")
+    control_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 23
+    ws.row_dimensions[3].height = 8
 
     ws.append(["Part / Metric", *dates])
     header_fill = PatternFill(fill_type="solid", fgColor="1F4E78")
