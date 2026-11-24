@@ -11,6 +11,17 @@ type Finding = {
   is_root_cause:boolean, is_occurrence_cause:boolean, is_escape_cause:boolean, updated_at?:string
 }
 
+function historyRemark(value:any){
+  if(!value)return '—'
+  try{
+    const parsed=JSON.parse(value)
+    if(parsed?.event==='FTA_TEMPLATE_VERSION_UPGRADED'){
+      return `Template upgraded V${parsed.old_template_version} → V${parsed.new_template_version}. Reason: ${parsed.reason||'Not recorded'}`
+    }
+  }catch{}
+  return value
+}
+
 function TreeNode({node,findings,selected,onSelect,depth=0}:{node:FtaNode,findings:Finding[],selected:string,onSelect:(id:string)=>void,depth?:number}){
   const finding=findings.find(x=>x.node_id===node.id)
   const status=finding?.investigation_status||'NOT_INVESTIGATED'
@@ -248,7 +259,7 @@ export default function FTA({me}:{me:any}){
   const findings:any[]=detail?.findings||[]
   const linkedActions:any[]=detail?.actions||[]
   const requiredActions=linkedActions.filter((a:any)=>['CORRECTIVE','PREVENTIVE'].includes(a.relationship_type))
-  const confirmedRootCause=findings.some((f:any)=>f.investigation_status==='CONFIRMED'&&f.is_root_cause)
+  const confirmedRootCause=findings.some((f:any)=>f.investigation_status==='CONFIRMED'&&f.is_root_cause)||(detail?.discovered_causes||[]).some((cause:any)=>cause.status==='CONFIRMED')
   const treeNodes=(node:any):any[]=>node?[node,...(node.children||[]).flatMap((child:any)=>treeNodes(child))]:[]
   const allTreeNodes=treeNodes(tree)
   const completedTreeNodes=allTreeNodes.filter((node:any)=>findings.some((f:any)=>f.node_id===node.id&&['CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE'].includes(f.investigation_status))).length
@@ -558,7 +569,7 @@ export default function FTA({me}:{me:any}){
       </section>
       <section className="fta-history">
         <h3>Investigation audit history</h3>
-        {(detail.status_history||[]).map((h:any)=><div className="fta-history-row" key={h.id}><strong>{h.old_status||'NEW'} → {h.new_status}</strong><span>{String(h.created_at||'').replace('T',' ').slice(0,19)}</span><p>{h.remarks||'—'}</p></div>)}
+        {(detail.status_history||[]).map((h:any)=><div className="fta-history-row" key={h.id}><strong>{h.old_status||'NEW'} → {h.new_status}</strong><span>{String(h.created_at||'').replace('T',' ').slice(0,19)}</span><p>{historyRemark(h.remarks)}</p></div>)}
       </section>
       <div className="fta-bottom-grid">
         <div id="fta-section-investigation"><h3>Investigation summary</h3>
