@@ -192,8 +192,8 @@ def record_calibration(instrument_id: int, data: CalibrationEventIn,
           unc=data.uncertainty, uri=data.certificate_uri, remarks=data.remarks, uid=user.id))
         eid = result.scalar_one()
         # A PASS is not released for production use until an independent reviewer approves it.
-        new_status = "PENDING_APPROVAL" if data.result == "PASS" else (
-            "FAILED" if data.result == "FAIL" else "QUARANTINED")
+        new_status = ("PENDING_APPROVAL" if data.result == "PASS" and data.event_type in ("CALIBRATION", "VERIFICATION")
+                      else ("FAILED" if data.result == "FAIL" else "QUARANTINED"))
         db.execute(text("""UPDATE calibration_instruments SET last_calibration_date=:dt,next_due_date=:due,
           status=:status,updated_at=now() WHERE id=:id"""),
           dict(dt=data.calibration_date, due=due, status=new_status, id=instrument_id))
@@ -226,6 +226,10 @@ def approve_calibration_event(event_id: int, data: ApprovalIn,
         raise HTTPException(403, "The person who performed the calibration cannot approve it")
     if ev["approved_by"] is not None:
         raise HTTPException(409, "Calibration event is already approved")
+    latest_event_id = db.execute(text("SELECT max(id) FROM calibration_events WHERE instrument_id=:iid"),
+                                 {"iid": ev["instrument_id"]}).scalar()
+    if latest_event_id != event_id:
+        raise HTTPException(409, "Only the latest calibration event can release this instrument")
     if ev["result"] != "PASS" or ev["event_type"] not in ("CALIBRATION", "VERIFICATION"):
         raise HTTPException(409, "Only a passing calibration or verification can be released")
     due = ev["due_date"]
