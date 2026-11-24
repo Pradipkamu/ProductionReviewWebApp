@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import json
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pathlib import Path
+import uuid
+from fastapi.responses import FileResponse
+from ..config import get_settings
+from ..services.file_security import UploadSecurityError, safe_original_name, safe_path, save_limited_stream, validate_attachment_file
 
 from ..auth import get_current_user
 from ..db import get_db
@@ -57,6 +62,8 @@ class CalibrationEventIn(BaseModel):
     as_left: str | None = None
     uncertainty: str | None = None
     certificate_uri: str | None = None
+    laboratory_provider_id: int | None = None
+    acceptance_criteria_id: int | None = None
     remarks: str | None = None
 
 
@@ -189,12 +196,12 @@ def record_calibration(instrument_id: int, data: CalibrationEventIn,
         result = db.execute(text("""INSERT INTO calibration_events
           (instrument_id,event_type,calibration_date,due_date,certificate_number,laboratory_name,
            laboratory_accreditation,laboratory_scope_reference,traceability_reference,result,as_found,as_left,uncertainty,certificate_uri,
-           remarks,performed_by,approved_by)
-          VALUES (:iid,:typ,:dt,:due,:cert,:lab,:acc,:scope,:trace,:res,:found,:left,:unc,:uri,:remarks,:uid,NULL)
+           laboratory_provider_id,acceptance_criteria_id,remarks,performed_by,approved_by)
+          VALUES (:iid,:typ,:dt,:due,:cert,:lab,:acc,:scope,:trace,:res,:found,:left,:unc,:uri,:provider,:criteria,:remarks,:uid,NULL)
           RETURNING id"""), dict(iid=instrument_id, typ=data.event_type, dt=data.calibration_date,
           due=due, cert=data.certificate_number, lab=data.laboratory_name, acc=data.laboratory_accreditation,
           scope=data.laboratory_scope_reference, trace=data.traceability_reference, res=data.result, found=data.as_found, left=data.as_left,
-          unc=data.uncertainty, uri=data.certificate_uri, remarks=data.remarks, uid=user.id))
+          unc=data.uncertainty, uri=data.certificate_uri, provider=data.laboratory_provider_id, criteria=data.acceptance_criteria_id, remarks=data.remarks, uid=user.id))
         eid = result.scalar_one()
         # A PASS is not released for production use until an independent reviewer approves it.
         new_status = ("PENDING_APPROVAL" if data.result == "PASS" and data.event_type in ("CALIBRATION", "VERIFICATION")
@@ -395,3 +402,131 @@ def calibration_due_schedule(days: int = 30, db: Session = Depends(get_db), user
           AND (next_due_date IS NULL OR next_due_date <= :horizon)
         ORDER BY next_due_date NULLS FIRST,criticality DESC,instrument_code"""),
         {"horizon": today + timedelta(days=days)}).mappings().all()]
+
+
+class LaboratoryProviderIn(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    address: str | None = None
+    contact_person: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    accreditation_body: str | None = None
+    accreditation_number: str | None = None
+    accreditation_valid_to: date | None = None
+    iso_iec_17025: bool = False
+    scope_reference: str | None = None
+    scope_parameters: str | None = None
+    active: bool = True
+    remarks: str | None = None
+
+
+class AcceptanceCriteriaIn(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    equipment_type: str
+    parameter: str | None = None
+    range_text: str | None = None
+    permissible_error: str = Field(min_length=1)
+    max_uncertainty: str | None = None
+    tur_requirement: str | None = None
+    decision_rule: str = "SIMPLE_ACCEPTANCE"
+    source_type: str = "INTERNAL_QMS"
+    source_reference: str | None = None
+    effective_from: date
+    effective_to: date | None = None
+    approval_status: str = "DRAFT"
+    approved_by: str | None = None
+    remarks: str | None = None
+
+
+@router.get("/laboratories")
+def list_laboratories(db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return [dict(x) for x in db.execute(text("SELECT * FROM calibration_laboratory_providers WHERE active=true ORDER BY name")).mappings().all()]
+
+
+@router.post("/laboratories")
+def create_laboratory(data: LaboratoryProviderIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    values = data.model_dump()
+    values["uid"] = user.id
+    pid = db.execute(text("""INSERT INTO calibration_laboratory_providers
+      (name,address,contact_person,email,phone,accreditation_body,accreditation_number,accreditation_valid_to,
+       iso_iec_17025,scope_reference,scope_parameters,active,remarks,created_by)
+      VALUES (:name,:address,:contact_person,:email,:phone,:accreditation_body,:accreditation_number,:accreditation_valid_to,
+       :iso_iec_17025,:scope_reference,:scope_parameters,:active,:remarks,:uid) RETURNING id"""), values).scalar_one()
+    db.commit()
+    return {"id": pid}
+
+
+@router.get("/acceptance-criteria")
+def list_acceptance_criteria(equipment_type: str | None = None, approved_only: bool = True,
+                             db: Session = Depends(get_db), user=Depends(get_current_user)):
+    q = "SELECT * FROM calibration_acceptance_criteria WHERE (effective_to IS NULL OR effective_to >= :today)"
+    p = {"today": date.today()}
+    if equipment_type:
+        q += " AND equipment_type=:equipment_type"
+        p["equipment_type"] = equipment_type
+    if approved_only:
+        q += " AND approval_status='APPROVED'"
+    q += " ORDER BY equipment_type,name"
+    return [dict(x) for x in db.execute(text(q), p).mappings().all()]
+
+
+@router.post("/acceptance-criteria")
+def create_acceptance_criteria(data: AcceptanceCriteriaIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    if data.equipment_type not in EQUIPMENT_TYPES:
+        raise HTTPException(422, "Select a valid equipment type")
+    if data.decision_rule not in ("SIMPLE_ACCEPTANCE", "GUARD_BAND", "CUSTOMER_RULE"):
+        raise HTTPException(422, "Invalid decision rule")
+    if data.source_type not in ("INTERNAL_QMS", "CUSTOMER", "DRAWING", "OEM", "STANDARD"):
+        raise HTTPException(422, "Invalid criteria source")
+    if data.approval_status not in ("DRAFT", "APPROVED", "OBSOLETE"):
+        raise HTTPException(422, "Invalid approval status")
+    values = data.model_dump()
+    values["uid"] = user.id
+    cid = db.execute(text("""INSERT INTO calibration_acceptance_criteria
+      (name,equipment_type,parameter,range_text,permissible_error,max_uncertainty,tur_requirement,decision_rule,
+       source_type,source_reference,effective_from,effective_to,approval_status,approved_by,remarks,created_by)
+      VALUES (:name,:equipment_type,:parameter,:range_text,:permissible_error,:max_uncertainty,:tur_requirement,:decision_rule,
+       :source_type,:source_reference,:effective_from,:effective_to,:approval_status,:approved_by,:remarks,:uid) RETURNING id"""),
+      values).scalar_one()
+    db.commit()
+    return {"id": cid}
+
+
+@router.post("/events/{event_id}/certificate")
+def upload_calibration_certificate(event_id: int, file: UploadFile = File(...),
+                                    db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    if not db.execute(text("SELECT id FROM calibration_events WHERE id=:id"), {"id": event_id}).first():
+        raise HTTPException(404, "Calibration event not found")
+    settings = get_settings()
+    original = safe_original_name(file.filename, "calibration-certificate")
+    ext = Path(original).suffix.lower()
+    if ext not in {".pdf", ".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(422, "Calibration certificate must be PDF or an image")
+    target = safe_path(Path(settings.attachments_dir) / "calibration" / str(event_id), uuid.uuid4().hex + ext)
+    try:
+        size, digest = save_limited_stream(file.file, target, settings.attachment_max_mb * 1024 * 1024)
+        mime = validate_attachment_file(target, original, settings.attachment_extension_set, settings.office_max_uncompressed_mb * 1024 * 1024)
+    except UploadSecurityError as exc:
+        raise HTTPException(exc.status_code, exc.detail) from exc
+    db.execute(text("""UPDATE calibration_events SET certificate_file_path=:path,certificate_file_name=:name,
+      certificate_mime_type=:mime,certificate_size_bytes=:size,certificate_sha256=:sha WHERE id=:id"""),
+      {"path": str(target), "name": original, "mime": mime, "size": size, "sha": digest, "id": event_id})
+    db.commit()
+    return {"event_id": event_id, "file_name": original, "size_bytes": size, "sha256": digest}
+
+
+@router.get("/events/{event_id}/certificate")
+def download_calibration_certificate(event_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    row = db.execute(text("""SELECT certificate_file_path,certificate_file_name,certificate_mime_type
+      FROM calibration_events WHERE id=:id"""), {"id": event_id}).mappings().first()
+    if not row or not row["certificate_file_path"]:
+        raise HTTPException(404, "No certificate attached to this calibration event")
+    path = Path(row["certificate_file_path"]).resolve()
+    base = (Path(get_settings().attachments_dir) / "calibration").resolve()
+    if base not in path.parents or not path.is_file():
+        raise HTTPException(404, "Certificate file is unavailable")
+    return FileResponse(path, media_type=row["certificate_mime_type"] or "application/octet-stream",
+                        filename=row["certificate_file_name"] or "calibration-certificate")
