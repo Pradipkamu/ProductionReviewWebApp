@@ -1939,6 +1939,7 @@ def defect_history(defect_code: str, rejection_id: int | None = None,
         "phenomenon_id": mapping["phenomenon_id"],
         "target_date": target["rejection_date"] if target else None,
         "target_rejection_id": target["id"] if target else None,
+        "target_product_id": target["product_id"] if target else None,
         "user_id": user.id,
     }
     production_scope = ""
@@ -1950,6 +1951,8 @@ def defect_history(defect_code: str, rejection_id: int | None = None,
                i.operation_code, i.plant, i.machine_id, m.name AS machine_name,
                i.rejection_id, q.rejection_date AS fta_date, q.shift,
                p.code AS part_code, p.name AS part_name, q.reject_qty,
+               CASE WHEN :target_product_id IS NOT NULL AND q.product_id=:target_product_id
+                    THEN true ELSE false END AS same_part,
                ph.name AS phenomenon_name, t.name AS template_name,
                COALESCE((
                    SELECT string_agg(DISTINCT a.status, ', ')
