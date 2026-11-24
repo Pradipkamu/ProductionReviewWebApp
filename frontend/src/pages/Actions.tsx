@@ -12,6 +12,8 @@ const emptyPlan:any={containment_action:'',why1:'',why2:'',why3:'',why4:'',why5:
 
 export default function Actions(){
  const [params]=useSearchParams()
+ const view=params.get('view')||'dashboard'
+ const views=[{key:'dashboard',label:'Dashboard'},{key:'register',label:'Action Register'},{key:'create',label:'Raise Action'}]
  const queryDate=params.get('date')||dateIST()
  const queryProduct=params.get('product_id')||''
  const queryProblem=params.get('problem')||''
@@ -65,7 +67,7 @@ export default function Actions(){
  async function uploadAttachment(){if(!selected||!attachFile)return;try{setPlanBusy(true);const fd=new FormData();fd.append('file',attachFile);if(caption)fd.append('caption',caption);await api(`/actions/${selected.id}/attachments`,{method:'POST',body:fd});setAttachFile(null);setCaption('');const refreshed:any=await api(`/actions/${selected.id}/plan`);setAttachments(refreshed.attachments||[]);setMessage(`Attachment added to ${selected.action_no}.`);await loadHistory(selected.id)}catch(e:any){setErr(e.message)}finally{setPlanBusy(false)}}
  async function downloadPlanPdf(evidence=false){if(!selected)return;try{setErr('');await downloadApi(`/actions/${selected.id}/pdf${evidence?"?evidence=true":""}`,`${selected.action_no}_WhyWhy_ActionPlan${evidence?"_With_Evidence":""}.pdf`)}catch(e:any){setErr(e.message)}}
  return <><PageHeader title="Action Management" subtitle="Manage action ownership and implementation. Standalone actions use Why-Why; FTA actions retain their root-cause analysis in the linked investigation." actions={<MultiSelect value={filter} onChange={setFilter} placeholder="All Status" searchable={false} options={["OPEN","IN_PROGRESS","BLOCKED","CLOSED"].map(x=>({value:x,label:x.replaceAll('_',' ')}))}/>}/>
- <div className="form-row compact"><label>Find action<input value={actionSearch} onChange={e=>setActionSearch(e.target.value)} placeholder="Action number or problem"/></label><label className="inline-check"><input type="checkbox" checked={overdueOnly} onChange={e=>setOverdueOnly(e.target.checked)}/> Overdue only</label><span>{rows.filter((a:any)=>(!overdueOnly||a.overdue)&&(!actionSearch||String([a.action_no,a.problem_description,a.action_description].join(' ')).toLowerCase().includes(actionSearch.toLowerCase()))).length} actions shown</span></div>
+ <nav className="quality-view-nav" aria-label="Action workspace">{views.map(v=><a key={v.key} href={v.key==='dashboard'?'/actions':`/actions?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav> <div className="form-row compact"><label>Find action<input value={actionSearch} onChange={e=>setActionSearch(e.target.value)} placeholder="Action number or problem"/></label><label className="inline-check"><input type="checkbox" checked={overdueOnly} onChange={e=>setOverdueOnly(e.target.checked)}/> Overdue only</label><span>{rows.filter((a:any)=>(!overdueOnly||a.overdue)&&(!actionSearch||String([a.action_no,a.problem_description,a.action_description].join(' ')).toLowerCase().includes(actionSearch.toLowerCase()))).length} actions shown</span></div>
  <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
  <section className="panel action-corporate-dashboard">
   <div className="panel-title"><div><h2>Management Overview</h2><p>Action accountability, aging and escalation across the selected scope.</p></div><small>Based on current filters</small></div>
