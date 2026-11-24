@@ -323,3 +323,41 @@ def test_shared_quality_phenomenon_model_exposes_fta_metadata():
 
     assert "fta_category" in QualityPhenomenon.__table__.columns
     assert "fta_description" in QualityPhenomenon.__table__.columns
+
+
+
+def test_fta_recurrence_management_routes_are_registered():
+    from app.api.fta import router
+
+    paths = {(route.path, tuple(sorted(route.methods or []))) for route in router.routes}
+    assert ("/fta/recurrence-candidates/{rejection_id}", ("GET",)) in paths
+    assert ("/fta/investigations/{investigation_id}/recurrences", ("GET",)) in paths
+    assert ("/fta/investigations/{investigation_id}/recurrences", ("POST",)) in paths
+    assert ("/fta/recurrences/{recurrence_id}/review", ("PATCH",)) in paths
+    assert ("/fta/recurrences/{recurrence_id}/related-investigation", ("POST",)) in paths
+
+
+def test_fta_recurrence_model_preserves_separate_event_and_parent_links():
+    from app.models import FtaRecurrence
+
+    columns = FtaRecurrence.__table__.columns
+    assert columns["original_investigation_id"].nullable is False
+    assert columns["rejection_id"].nullable is False
+    assert columns["recurrence_reason"].nullable is False
+    assert columns["related_investigation_id"].nullable is True
+    assert columns["previous_action_status"].nullable is True
+    assert columns["previous_verification_result"].nullable is True
+    assert any(index.name == "ix_fta_recurrences_original_investigation_id"
+               for index in FtaRecurrence.__table__.indexes)
+    assert any(constraint.name == "uq_fta_recurrences_rejection_id"
+               for constraint in FtaRecurrence.__table__.constraints)
+
+
+def test_fta_related_investigation_requires_positive_template_id():
+    from pydantic import ValidationError
+    from app.api.fta import RelatedInvestigationCreate
+
+    payload = RelatedInvestigationCreate(template_id=7, summary="Separate root cause review")
+    assert payload.template_id == 7
+    with pytest.raises(ValidationError):
+        RelatedInvestigationCreate(template_id=0)
