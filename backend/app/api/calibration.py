@@ -50,6 +50,7 @@ class CalibrationEventIn(BaseModel):
     certificate_number: str | None = None
     laboratory_name: str | None = None
     laboratory_accreditation: str | None = None
+    laboratory_scope_reference: str | None = None
     traceability_reference: str | None = None
     result: str
     as_found: str | None = None
@@ -183,9 +184,9 @@ def record_calibration(instrument_id: int, data: CalibrationEventIn,
     try:
         result = db.execute(text("""INSERT INTO calibration_events
           (instrument_id,event_type,calibration_date,due_date,certificate_number,laboratory_name,
-           laboratory_accreditation,traceability_reference,result,as_found,as_left,uncertainty,certificate_uri,
+           laboratory_accreditation,laboratory_scope_reference,traceability_reference,result,as_found,as_left,uncertainty,certificate_uri,
            remarks,performed_by,approved_by)
-          VALUES (:iid,:typ,:dt,:due,:cert,:lab,:acc,:trace,:res,:found,:left,:unc,:uri,:remarks,:uid,NULL)
+          VALUES (:iid,:typ,:dt,:due,:cert,:lab,:acc,:scope,:trace,:res,:found,:left,:unc,:uri,:remarks,:uid,NULL)
           RETURNING id"""), dict(iid=instrument_id, typ=data.event_type, dt=data.calibration_date,
           due=due, cert=data.certificate_number, lab=data.laboratory_name, acc=data.laboratory_accreditation,
           trace=data.traceability_reference, res=data.result, found=data.as_found, left=data.as_left,
@@ -272,7 +273,7 @@ def assess_impact(event_id: int, data: ImpactIn,
         raise HTTPException(422, "Document objective evidence supporting the no-impact conclusion")
     if data.disposition == "ACCEPT_JUSTIFIED" and len(data.assessment.strip()) < 20:
         raise HTTPException(422, "Document the technical justification and approval basis for acceptance")
-    if data.shipped_to_customer and data.disposition in ("PENDING", "REINSPECT", "REJECT") and not data.customer_notified:
+    if data.shipped_to_customer and (not data.customer_notified or not data.customer_notification_reference):
         raise HTTPException(422, "Customer notification is required for shipped suspect product requiring action")
     result = db.execute(text("""INSERT INTO calibration_impact_assessments
       (event_id,period_from,period_to,affected_product_ids,affected_lot_references,affected_quantity,
@@ -314,7 +315,7 @@ def create_msa_study(data: MSAStudyIn, db: Session = Depends(get_db), user=Depen
                             {"id": iid}).scalar()
         if not exists:
             raise HTTPException(422, f"Unknown instrument ID: {iid}")
-    values = data.model_dump(mode="json")
+    values = data.model_dump()
     result = db.execute(text("""INSERT INTO calibration_msa_studies
       (study_type,measurement_system,characteristic,control_plan_reference,study_date,method_reference,
        acceptance_criteria,result_summary,result,customer_approval_reference,instrument_ids,remarks,created_by)
