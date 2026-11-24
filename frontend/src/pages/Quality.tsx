@@ -1,6 +1,6 @@
 import { dateIST, daysAgoIST, formatIST } from '../time'
 import ImportPreview from '../components/ImportPreview'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { api, blobApi, downloadApi } from '../api'
 import { Kpi, PageHeader, num } from '../components/UI'
@@ -84,6 +84,9 @@ function RejectionPhotoGallery({rejectionId,count}:{rejectionId:number,count:num
 
 export default function Quality(){
   const navigate=useNavigate()
+  const [searchParams]=useSearchParams()
+  const view=searchParams.get('view')||'dashboard'
+  const views=[{key:'dashboard',label:'Dashboard'},{key:'entry',label:'Rejection Entry'},{key:'history',label:'Rejection History'},{key:'master',label:'Phenomena & Imports'}]
   function drill(r:any){const month=r.month;const first=month||r.date||r.rejection_date||fromDate;const last=month?monthEnd(month):first;const q=new URLSearchParams({kind:'ppm',from_date:first,to_date:last});if(productId.length)q.set('product_id',productId.join(','));if(plant.length)q.set('plant',plant.join(','));if(phenomenonId.length)q.set('phenomenon_id',phenomenonId.join(','));if(machineId.length)q.set('machine_id',machineId.join(','));if(operationId.length)q.set('operation_id',operationId.join(','));if(shift.length)q.set('shift',shift.join(','));navigate(`/insights?${q}`)}
   const today=dateIST(); const weekAgo=daysAgoIST(7)
   const [fromDate,setFromDate]=useState(weekAgo); const [toDate,setToDate]=useState(today)
@@ -235,8 +238,8 @@ export default function Quality(){
   const dailyPpmRows=trend.filter((x:any)=>x.ppm!=null).map((x:any)=>({...x,value:Number(x.ppm)}))
   const dailyPpmPending=trend.filter((x:any)=>x.ppm==null&&Number(x.reject_qty||0)>0).length
   return <>
-    <PageHeader title="Quality / Rejection" subtitle="Daily rejection, historical monthly rejection, PPM, Pareto and Why-Why actions." actions={<div className="button-row"><button className="secondary" onClick={()=>navigate('/quality-salvage')}>Rejection Correction & Salvage</button><button onClick={()=>{setShowManual(!showManual);setManualMsg('')}}>{showManual?'Close Entry':'+ Add Rejection'}</button><button className="secondary" onClick={()=>downloadApi('/quality/template','Daily_Rejection_Upload_v0.4.6.xlsx')}>Download Daily Template</button>{historyRange?.records>0&&<button className="secondary" onClick={showImportedHistory}>Show Imported History</button>}<button onClick={()=>window.print()}>Print / PDF</button></div>}/>
-
+    <PageHeader title="Quality / Rejection" subtitle="Daily rejection, historical monthly rejection, PPM, Pareto and Why-Why actions." actions={<div className="button-row"><button className="secondary" onClick={()=>navigate('/quality-salvage')}>Rejection Correction & Salvage</button>{view==='entry'&&<button onClick={()=>{setShowManual(!showManual);setManualMsg('')}}>{showManual?'Close Entry':'+ Add Rejection'}</button>}{view==='dashboard'&&<button onClick={()=>window.print()}>Print / PDF</button>}</div>}/>
+    <nav className="quality-view-nav" aria-label="Quality workspace">{views.map(v=><a key={v.key} href={v.key==='dashboard'?'/quality':`/quality?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav>
 {view==='entry'&&<>    {showManual&&<section className="panel manual-rejection-panel"><div className="panel-title"><div><h2>Add Rejection</h2><p>Manual entry for a single daily rejection. Master-linked fields use the same validation and PPM denominator logic as Excel import.</p></div></div>
       <div className="quality-entry-grid">
         <label>Date<input type="date" value={manual.rejection_date} onChange={e=>setManual({...manual,rejection_date:e.target.value})}/></label>
