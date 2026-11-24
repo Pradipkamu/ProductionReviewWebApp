@@ -118,7 +118,12 @@ export default function FTA({me}:{me:any}){
   const [searchParams,setSearchParams]=useSearchParams()
   const view=searchParams.get('view')||'dashboard'
   const views=[{key:'dashboard',label:'Dashboard'},{key:'start',label:'Start Investigation'},{key:'register',label:'Investigation Register'},{key:'templates',label:'Template Master'}]
-  useEffect(()=>{const id=Number(searchParams.get('investigation_id')||0);if(id>0)loadDetail(id)},[searchParams])
+  useEffect(()=>{
+    const id=Number(searchParams.get('investigation_id')||0)
+    const recurrenceId=searchParams.get('recurrence_rejection_id')||''
+    if(recurrenceId){setRecurrenceRejectionId(recurrenceId);setRecurrenceClassification('PENDING_REVIEW')}
+    if(id>0)loadDetail(id)
+  },[searchParams])
   useEffect(()=>{
     if(!currentFinding){setFindingForm({});return}
     setFindingForm({
@@ -223,9 +228,10 @@ export default function FTA({me}:{me:any}){
           </select>
         </label>
         <label>Search and select Quality rejection
-          <input type="search" list="fta-rejection-options" value={rejectionSearch} onChange={e=>{const value=e.target.value;setRejectionSearch(value);const selected=rejections.find(r=>rejectionOptionLabel(r)===value);if(selected){setRejectionId(String(selected.id));setMachineId(selected.machine_id?String(selected.machine_id):'')}else{setRejectionId('');setMachineId('')}}} placeholder="Type rejection ID, part, date, defect or machine..." aria-label="Search and select Quality rejection"/>
+          <input type="search" list="fta-rejection-options" value={rejectionSearch} onChange={e=>{const value=e.target.value;setRejectionSearch(value);const selected=rejections.find(r=>rejectionOptionLabel(r)===value);if(selected){setRejectionId(String(selected.id));setMachineId(selected.machine_id?String(selected.machine_id):'');setRecurrenceCandidates([]);api('/fta/recurrence-candidates/'+selected.id).then((rows:any)=>setRecurrenceCandidates(rows)).catch(()=>setRecurrenceCandidates([]))}else{setRejectionId('');setMachineId('');setRecurrenceCandidates([])}}} placeholder="Type rejection ID, part, date, defect or machine..." aria-label="Search and select Quality rejection"/>
           <datalist id="fta-rejection-options">{filteredRejections.map(r=><option key={r.id} value={rejectionOptionLabel(r)}/>)}</datalist>
           {rejectionId&&selectedRejection&&<small className="muted">Selected rejection: #{selectedRejection.id} · {selectedRejection.part_code} · {selectedRejection.phenomenon||selectedRejection.defect_name||'—'} <button type="button" className="secondary small" onClick={()=>{setRejectionId('');setRejectionSearch('');setMachineId('')}}>Change</button></small>}
+          {recurrenceCandidates.length>0&&<div className="fta-recurrence-candidates"><strong>Possible recurrence matches</strong><p className="muted small">Same part and shared phenomenon found in earlier FTA investigations. Open the original investigation to register this rejection as a recurrence instead of creating another FTA.</p>{recurrenceCandidates.map((candidate:any)=><div className="master-row" key={candidate.investigation_id}><span><b>{candidate.investigation_no}</b> · {candidate.status} · {candidate.original_rejection_date} · Previous actions: {candidate.previous_action_status||'None'}</span><button type="button" className="small secondary" onClick={()=>setSearchParams({view:'register',investigation_id:String(candidate.investigation_id),recurrence_rejection_id:String(rejectionId)})}>Open original FTA</button></div>)}</div>}
           {!filteredRejections.length&&normalizedRejectionSearch&&<small className="muted">No rejection records match this search.</small>}
         </label>
         <label>Machine (optional)
