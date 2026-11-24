@@ -19,7 +19,7 @@ def upgrade():
         "ck_calibration_instrument_status", "calibration_instruments",
         "status IN ('PENDING','IN_CALIBRATION','CALIBRATED','OVERDUE','FAILED','QUARANTINED','RETIRED','PENDING_APPROVAL','ACTIVE','DUE','OUT_FOR_CALIBRATION','OOT')",
     )
-    op.add_column("calibration_instruments", sa.Column("qr_token", sa.String(36), nullable=True))
+    op.add_column("calibration_instruments", sa.Column("qr_token", sa.String(36), nullable=True, server_default=sa.text("gen_random_uuid()::text")))
     connection = op.get_bind()
     rows = connection.execute(sa.text("SELECT id FROM calibration_instruments WHERE qr_token IS NULL")).fetchall()
     for row in rows:
