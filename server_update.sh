@@ -170,7 +170,7 @@ create_files_backup() {
 
   archive="$CODE_BACKUP_DIR/files_before_update_$STAMP.tar.gz"
   [[ -f "$APP_DIR/.env" ]] || stop "Production .env file is missing; configuration backup is mandatory"
-  for p .env docker-compose.yml database/imports database/attachments database/backups mqtt/config mqtt/certs; do
+  for p in .env docker-compose.yml database/imports database/attachments database/backups mqtt/config mqtt/certs; do
     [[ -e "$APP_DIR/$p" ]] && paths+=("$p")
   done
   ((${#paths[@]} > 0)) || stop "No application data/configuration paths found for file backup"
