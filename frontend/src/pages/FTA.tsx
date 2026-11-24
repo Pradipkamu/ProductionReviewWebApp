@@ -49,6 +49,12 @@ export default function FTA({me}:{me:any}){
   const [occurrenceSummary,setOccurrenceSummary]=useState('')
   const [escapeSummary,setEscapeSummary]=useState('')
   const [availableActions,setAvailableActions]=useState<any[]>([])
+  const [recurrenceCandidates,setRecurrenceCandidates]=useState<any[]>([])
+  const [recurrenceRejectionId,setRecurrenceRejectionId]=useState('')
+  const [recurrenceReason,setRecurrenceReason]=useState('')
+  const [recurrenceContainment,setRecurrenceContainment]=useState('')
+  const [recurrenceEvidence,setRecurrenceEvidence]=useState('')
+  const [recurrenceClassification,setRecurrenceClassification]=useState('PENDING_REVIEW')
   const [actionId,setActionId]=useState('')
   const [actionRelationship,setActionRelationship]=useState('CORRECTIVE')
   const [newActionDescription,setNewActionDescription]=useState('Implement corrective action for confirmed FTA root cause')
@@ -350,6 +356,24 @@ export default function FTA({me}:{me:any}){
             </article>
           })}
         </div>
+      </section>
+      <section className="panel fta-recurrence-panel" id="fta-section-recurrences">
+        <div className="panel-title"><div><h3>Recurrence management</h3><p>Link a later rejection for the same part and shared phenomenon. Original findings and actions remain unchanged.</p></div><strong>{(detail.recurrences||[]).length} linked recurrences</strong></div>
+        <label>New Quality Rejection
+          <select value={recurrenceRejectionId} onChange={async e=>{const value=e.target.value;setRecurrenceRejectionId(value);setRecurrenceCandidates([]);if(value){try{setRecurrenceCandidates(await api('/fta/recurrence-candidates/'+value))}catch(err:any){setError(err.message)}}}}>
+            <option value="">Select later rejection</option>
+            {rejections.filter((r:any)=>Number(r.id)!==Number(detail.rejection_id)).map((r:any)=><option key={r.id} value={r.id}>{rejectionOptionLabel(r)}</option>)}
+          </select>
+        </label>
+        {recurrenceCandidates.length>0&&<div className="fta-history-row"><b>Possible original investigations:</b>{recurrenceCandidates.map((x:any)=><p key={x.investigation_id}>{x.investigation_no} · {x.part_code} · {x.status} · Previous actions: {x.previous_action_status||'None'}</p>)}</div>}
+        <label>Recurrence reason (required)<textarea rows={2} value={recurrenceReason} onChange={e=>setRecurrenceReason(e.target.value)} placeholder="Describe why this new rejection may be related to the original investigation."/></label>
+        <div className="fta-create-grid"><label>Containment action<textarea rows={2} value={recurrenceContainment} onChange={e=>setRecurrenceContainment(e.target.value)}/></label><label>New evidence / observations<textarea rows={2} value={recurrenceEvidence} onChange={e=>setRecurrenceEvidence(e.target.value)}/></label></div>
+        <label>Initial classification<select value={recurrenceClassification} onChange={e=>setRecurrenceClassification(e.target.value)}><option value="PENDING_REVIEW">Pending Quality review</option><option value="SAME_ROOT_CAUSE">Same root cause</option><option value="DIFFERENT_ROOT_CAUSE">Different root cause</option><option value="UNRELATED">Unrelated occurrence</option></select></label>
+        <button className="secondary" disabled={!canWrite||busy||!recurrenceRejectionId||recurrenceReason.trim().length<5} onClick={async()=>{try{setBusy(true);const created:any=await api('/fta/investigations/'+detail.id+'/recurrences',{method:'POST',body:JSON.stringify({rejection_id:Number(recurrenceRejectionId),recurrence_reason:recurrenceReason,containment_action:recurrenceContainment,new_evidence:recurrenceEvidence,classification:recurrenceClassification})});setRecurrenceRejectionId('');setRecurrenceReason('');setRecurrenceContainment('');setRecurrenceEvidence('');setRecurrenceCandidates([]);await loadDetail(detail.id,true);setMessage('Recurrence linked without changing the original FTA record.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Link recurrence</button>
+        {(detail.recurrences||[]).map((r:any)=><article className="fta-history-row" key={r.id}><div className="panel-title"><strong>Rejection #{r.rejection_id} · {String(r.rejection_date||'').slice(0,10)} · {r.classification.replaceAll('_',' ')}</strong><span>{r.part_code} · Qty {r.reject_qty}</span></div><p>{r.recurrence_reason}</p>{r.containment_action&&<p><b>Containment:</b> {r.containment_action}</p>}{r.new_evidence&&<p><b>New evidence:</b> {r.new_evidence}</p>}<p className="muted small">Previous action status: {r.previous_action_status||'Not recorded'} · Previous verification: {r.previous_verification_result||'Not recorded'}</p>{r.review_remarks&&<p><b>Quality review:</b> {r.review_remarks}</p>}
+          {canVerify&&r.classification==='PENDING_REVIEW'&&<div className="button-row"><select id={'fta-recurrence-review-'+r.id} defaultValue="SAME_ROOT_CAUSE"><option value="SAME_ROOT_CAUSE">Same root cause</option><option value="DIFFERENT_ROOT_CAUSE">Different root cause</option><option value="UNRELATED">Unrelated</option></select><button className="secondary" disabled={busy} onClick={async()=>{const classification=(document.getElementById('fta-recurrence-review-'+r.id) as HTMLSelectElement).value;const remarks=window.prompt('Quality review remarks (minimum 5 characters)');if(!remarks||remarks.trim().length<5)return;try{setBusy(true);await api('/fta/recurrences/'+r.id+'/review',{method:'PATCH',body:JSON.stringify({classification,review_remarks:remarks})});await loadDetail(detail.id,true);setMessage('Recurrence classification reviewed and saved.')}catch(e:any){setError(e.message)}finally{setBusy(false)}}}>Save Quality review</button></div>}
+        </article>)}
+        {!(detail.recurrences||[]).length&&<p className="muted">No recurrence records linked to this investigation.</p>}
       </section>
       <section className="fta-history">
         <h3>Investigation audit history</h3>
