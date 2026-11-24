@@ -108,7 +108,7 @@ export default function FTA({me}:{me:any}){
     }catch(e:any){setError(e.message||'Unable to load investigation.')}
   }
   useEffect(()=>{load()},[me?.role])
-  const [searchParams]=useSearchParams()
+  const [searchParams,setSearchParams]=useSearchParams()
   const view=searchParams.get('view')||'dashboard'
   const views=[{key:'dashboard',label:'Dashboard'},{key:'start',label:'Start Investigation'},{key:'register',label:'Investigation Register'},{key:'templates',label:'Template Master'}]
   useEffect(()=>{const id=Number(searchParams.get('investigation_id')||0);if(id>0)loadDetail(id)},[searchParams])
@@ -130,7 +130,7 @@ export default function FTA({me}:{me:any}){
       const result:any=await api('/fta/investigations',{method:'POST',body:JSON.stringify({
         rejection_id:Number(rejectionId),template_id:Number(selectedTemplate.id),machine_id:machineId?Number(machineId):null,summary:summary||null
       })})
-      await load();await loadDetail(result.id);setMessage(`Investigation ${result.investigation_no} created.`)
+      await load();await loadDetail(result.id);setSearchParams({view:'register',investigation_id:String(result.id)});setMessage(`Investigation ${result.investigation_no} created. You can now continue the FTA analysis.`)
     }catch(e:any){setError(e.message||'Unable to create investigation.')}
     finally{setBusy(false)}
   }
