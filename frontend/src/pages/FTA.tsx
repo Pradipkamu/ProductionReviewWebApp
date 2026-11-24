@@ -151,6 +151,7 @@ export default function FTA({me}:{me:any}){
   const selectedRejection=rejections.find(r=>String(r.id)===rejectionId)
   const plantMachines=machines.filter(m=>m.active!==false&&(!selectedRejection?.plant||m.plant===selectedRejection.plant))
   const currentFinding:Finding|undefined=detail?.findings?.find((f:Finding)=>f.node_id===selectedNode)
+  const currentNodeTemplate=findTemplateNode(detail?.template_snapshot?.tree,selectedNode)
   const hasRequiredAction=(detail?.actions||[]).some((a:any)=>['CORRECTIVE','PREVENTIVE'].includes(a.relationship_type))
 
   async function load(){
@@ -512,6 +513,7 @@ export default function FTA({me}:{me:any}){
           <h3>Investigation finding</h3>
           {currentFinding?<>
             <strong>{currentFinding.node_label}</strong>
+            {currentNodeTemplate?.requirement?.trim()&&<div className="fta-template-requirement" style={{margin:'10px 0',padding:'10px 12px',borderLeft:'3px solid #2563eb',background:'var(--panel-soft, #f5f8fc)',borderRadius:6}}><b>Template requirement / specification</b><p style={{margin:'4px 0 0',whiteSpace:'pre-wrap'}}>{currentNodeTemplate.requirement}</p><small className="muted">Use this as the expected condition while checking the cause. You can adjust the expected value below for this investigation.</small></div>}
             <label>Investigation status
               <select value={findingForm.investigation_status||'NOT_INVESTIGATED'} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,investigation_status:e.target.value}))}>
                 {['NOT_INVESTIGATED','UNDER_INVESTIGATION','SUSPECTED','CONFIRMED','RULED_OUT','UNABLE_TO_DETERMINE'].map(x=><option key={x} value={x}>{x.replaceAll('_',' ')}</option>)}
@@ -520,7 +522,7 @@ export default function FTA({me}:{me:any}){
             <label>Observation / evidence reference<textarea rows={3} value={findingForm.observation||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,observation:e.target.value}))}/></label>
             <div className="fta-create-grid">
               <label>Measured value<input value={findingForm.measured_value||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,measured_value:e.target.value}))}/></label>
-              <label>Expected value<input value={findingForm.expected_value||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,expected_value:e.target.value}))}/></label>
+              <label>Expected value (prefilled from template, editable)<input value={findingForm.expected_value||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,expected_value:e.target.value}))}/></label>
             </div>
             <label>Verification method<textarea rows={2} value={findingForm.verification_method||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,verification_method:e.target.value}))}/></label>
             <label>Verification result<textarea rows={2} value={findingForm.verification_result||''} disabled={!canWrite||!['OPEN','IN_PROGRESS'].includes(detail.status)} onChange={e=>setFindingForm((v:any)=>({...v,verification_result:e.target.value}))}/></label>
