@@ -138,6 +138,7 @@ def list_instruments(status: str | None = None, due_only: bool = False,
 
 @router.post("/instruments")
 def create_instrument(data: InstrumentIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
     if data.equipment_type not in EQUIPMENT_TYPES:
         raise HTTPException(422, "Select a valid equipment type")
     if data.criticality not in ("NORMAL", "IMPORTANT", "CRITICAL"):
@@ -170,6 +171,9 @@ def create_instrument(data: InstrumentIn, db: Session = Depends(get_db), user=De
 @router.post("/instruments/{instrument_id}/calibration")
 def record_calibration(instrument_id: int, data: CalibrationEventIn,
                        db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    if data.calibration_date > date.today():
+        raise HTTPException(422, "Calibration date cannot be in the future")
     if data.event_type not in ("CALIBRATION", "VERIFICATION", "REPAIR", "ADJUSTMENT"):
         raise HTTPException(422, "Invalid calibration event type")
     if data.result not in ("PASS", "FAIL", "CONDITIONAL"):
@@ -259,6 +263,7 @@ def approve_calibration_event(event_id: int, data: ApprovalIn,
 @router.post("/events/{event_id}/impact")
 def assess_impact(event_id: int, data: ImpactIn,
                   db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
     ev = db.execute(text("SELECT * FROM calibration_events WHERE id=:id"),
                     {"id": event_id}).mappings().first()
     if not ev:
@@ -304,6 +309,9 @@ def list_msa_studies(db: Session = Depends(get_db), user=Depends(get_current_use
 
 @router.post("/msa")
 def create_msa_study(data: MSAStudyIn, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    _require_role(user, {"ADMIN", "MANAGEMENT", "QUALITY"})
+    if data.study_date > date.today():
+        raise HTTPException(422, "MSA study date cannot be in the future")
     if data.study_type not in ("GAGE_RR", "BIAS", "LINEARITY", "STABILITY", "OTHER"):
         raise HTTPException(422, "Invalid MSA study type")
     if data.result not in ("ACCEPTABLE", "UNACCEPTABLE", "CONDITIONAL", "CUSTOMER_APPROVED_ALTERNATIVE"):
@@ -375,3 +383,15 @@ def calibration_compliance_summary(db: Session = Depends(get_db), user=Depends(g
         count(*) FILTER (WHERE is_active AND next_due_date IS NULL) AS never_calibrated
         FROM calibration_instruments"""), {"today": today}).mappings().one()
     return dict(row)
+
+@router.get("/due-schedule")
+def calibration_due_schedule(days: int = 30, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    if days < 0 or days > 365:
+        raise HTTPException(422, "Schedule horizon must be between 0 and 365 days")
+    today = date.today()
+    return [dict(x) for x in db.execute(text("""SELECT id,instrument_code,name,equipment_type,location,
+        next_due_date,status,criticality,owner_department
+        FROM calibration_instruments WHERE is_active=true
+          AND (next_due_date IS NULL OR next_due_date <= :horizon)
+        ORDER BY next_due_date NULLS FIRST,criticality DESC,instrument_code"""),
+        {"horizon": today + timedelta(days=days)}).mappings().all()]
