@@ -68,22 +68,27 @@ export default function Actions(){
  async function downloadPlanPdf(evidence=false){if(!selected)return;try{setErr('');await downloadApi(`/actions/${selected.id}/pdf${evidence?"?evidence=true":""}`,`${selected.action_no}_WhyWhy_ActionPlan${evidence?"_With_Evidence":""}.pdf`)}catch(e:any){setErr(e.message)}}
  return <><PageHeader title="Action Management" subtitle="Manage action ownership and implementation. Standalone actions use Why-Why; FTA actions retain their root-cause analysis in the linked investigation." actions={<MultiSelect value={filter} onChange={setFilter} placeholder="All Status" searchable={false} options={["OPEN","IN_PROGRESS","BLOCKED","CLOSED"].map(x=>({value:x,label:x.replaceAll('_',' ')}))}/>}/>
  <nav className="quality-view-nav" aria-label="Action workspace">{views.map(v=><a key={v.key} href={v.key==='dashboard'?'/actions':`/actions?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav>{view==='register'&&<> <div className="form-row compact"><label>Find action<input value={actionSearch} onChange={e=>setActionSearch(e.target.value)} placeholder="Action number or problem"/></label><label className="inline-check"><input type="checkbox" checked={overdueOnly} onChange={e=>setOverdueOnly(e.target.checked)}/> Overdue only</label><span>{rows.filter((a:any)=>(!overdueOnly||a.overdue)&&(!actionSearch||String([a.action_no,a.problem_description,a.action_description].join(' ')).toLowerCase().includes(actionSearch.toLowerCase()))).length} actions shown</span></div>
- <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
-{view==='dashboard'&&<><section className="panel action-corporate-dashboard">
-  <div className="panel-title"><div><h2>Management Overview</h2><p>Action accountability, aging and escalation across the selected scope.</p></div><small>Based on current filters</small></div>
-  <div className="kpi-grid">
-   <div className="kpi-card"><small>Open Actions</small><strong>{actionStats.open}</strong></div>
-   <div className="kpi-card"><small>Overdue</small><strong className="text-danger">{actionStats.overdue}</strong></div>
-   <div className="kpi-card"><small>Blocked</small><strong>{actionStats.blocked}</strong></div>
-   <div className="kpi-card"><small>Closed</small><strong className="text-success">{actionStats.closed}</strong></div>
-  </div>
-  {actionStats.criticalOverdue.length>0&&<div className="error"><b>Management escalation:</b> {actionStats.criticalOverdue.length} overdue Critical / High action(s): {actionStats.criticalOverdue.map((a:any)=>a.action_no).join(', ')}</div>}
-  <div className="two-col">
-   <div><h3>Action aging — open actions</h3><div className="table-wrap"><table><thead><tr><th>Age</th><th>Actions</th></tr></thead><tbody>{actionStats.buckets.map((b:any)=><tr key={b.label}><td>{b.label}</td><td><b>{b.count}</b></td></tr>)}</tbody></table></div></div>
-   <div><h3>Owner accountability</h3><div className="table-wrap"><table><thead><tr><th>Owner</th><th>Open</th><th>Overdue</th></tr></thead><tbody>{actionStats.owners.slice(0,8).map((o:any)=><tr key={o.name}><td>{o.name}</td><td>{o.open}</td><td className={o.overdue?'text-danger':''}>{o.overdue}</td></tr>)}</tbody></table></div></div>
-  </div>
-  {actionStats.repeats.length>0&&<div><h3>Recurring problem categories</h3><div className="form-row compact">{actionStats.repeats.map((r:any)=><span className="data-note" key={r.problem}>{r.problem}: <b>{r.count}</b></span>)}</div><small>Category recurrence is an indicator; confirm root-cause similarity during review.</small></div>}
- </section></>}
+  {view==='register'&&<>
+    <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
+  </>}
+  {view==='dashboard'&&<>
+    <section className="panel action-corporate-dashboard">
+<div className="panel-title"><div><h2>Management Overview</h2><p>Action accountability, aging and escalation across the selected scope.</p></div><small>Based on current filters</small></div>
+<div className="kpi-grid">
+<div className="kpi-card"><small>Open Actions</small><strong>{actionStats.open}</strong></div>
+<div className="kpi-card"><small>Overdue</small><strong className="text-danger">{actionStats.overdue}</strong></div>
+<div className="kpi-card"><small>Blocked</small><strong>{actionStats.blocked}</strong></div>
+<div className="kpi-card"><small>Closed</small><strong className="text-success">{actionStats.closed}</strong></div>
+</div>
+{actionStats.criticalOverdue.length>0&&<div className="error"><b>Management escalation:</b> {actionStats.criticalOverdue.length} overdue Critical / High action(s): {actionStats.criticalOverdue.map((a:any)=>a.action_no).join(', ')}</div>}
+<div className="two-col">
+<div><h3>Action aging — open actions</h3><div className="table-wrap"><table><thead><tr><th>Age</th><th>Actions</th></tr></thead><tbody>{actionStats.buckets.map((b:any)=><tr key={b.label}><td>{b.label}</td><td><b>{b.count}</b></td></tr>)}</tbody></table></div></div>
+<div><h3>Owner accountability</h3><div className="table-wrap"><table><thead><tr><th>Owner</th><th>Open</th><th>Overdue</th></tr></thead><tbody>{actionStats.owners.slice(0,8).map((o:any)=><tr key={o.name}><td>{o.name}</td><td>{o.open}</td><td className={o.overdue?'text-danger':''}>{o.overdue}</td></tr>)}</tbody></table></div></div>
+</div>
+{actionStats.repeats.length>0&&<div><h3>Recurring problem categories</h3><div className="form-row compact">{actionStats.repeats.map((r:any)=><span className="data-note" key={r.problem}>{r.problem}: <b>{r.count}</b></span>)}</div><small>Category recurrence is an indicator; confirm root-cause similarity during review.</small></div>}
+</section>
+  </>}
+  {err&&<div className="error">{err}</div>}{message&&<div className="notice">{message}</div>}
 </>} {err&&<div className="error">{err}</div>}{message&&<div className="notice">{message}</div>}
  <section className="panel">
   <div className="panel-title"><div><h2>FTA Investigations</h2><p>Fault-tree investigations linked to machining rejections and their corrective actions.</p></div><a className="button secondary" href="/fta">Open FTA workspace</a></div>
