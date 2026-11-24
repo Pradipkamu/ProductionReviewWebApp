@@ -934,3 +934,88 @@ button.ghost{color:inherit}
   .fta-page .kpi-grid>.kpi{min-height:72px;padding:10px 11px}
   .fta-page .kpi-grid>.kpi strong{font-size:20px}
 }
+
+
+/* FTA automatic Quality-defect history and recurrence linkage */
+.fta-defect-history,.fta-auto-recurrence{
+  margin:14px 0 18px;
+  padding:14px;
+  border:1px solid #dbe4ef;
+  border-radius:10px;
+  background:#f8fafd;
+}
+.fta-defect-history h3,.fta-auto-recurrence h4{
+  margin:0 0 4px;
+  color:var(--navy);
+  font-size:15px;
+}
+.fta-defect-history .panel-title,.fta-auto-recurrence .panel-title{align-items:flex-start}
+.fta-defect-history-summary{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:9px;
+  margin:10px 0;
+}
+.fta-defect-history-summary>div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+  padding:10px 12px;
+  border:1px solid #e1e8f1;
+  border-radius:8px;
+  background:#fff;
+}
+.fta-defect-history-summary span{
+  color:#718096;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.45px;
+  text-transform:uppercase;
+}
+.fta-defect-history-summary strong{color:#183451;font-size:14px;overflow-wrap:anywhere}
+.fta-defect-history-summary small{color:#7a8798;font-size:10px}
+.fta-defect-history-notice{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  margin:10px 0;
+  padding:10px 12px;
+  border-left:3px solid #3873ad;
+  border-radius:7px;
+  background:#edf4fb;
+  color:#38516d;
+  font-size:11px;
+}
+.fta-defect-history-table{margin-top:8px}
+.fta-defect-history-table table{font-size:11px}
+.fta-defect-history-table th,.fta-defect-history-table td{padding:8px}
+.fta-match-tags{display:flex;flex-wrap:wrap;gap:4px}
+.fta-match-tag{
+  display:inline-flex;
+  align-items:center;
+  padding:3px 6px;
+  border:1px solid #dbe3ec;
+  border-radius:999px;
+  background:#f1f4f8;
+  color:#53657a;
+  font-size:9px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.fta-match-tag.same{border-color:#c9e3d5;background:#edf8f2;color:#236b49}
+.fta-auto-recurrence{background:#fbfcfe}
+.fta-auto-recurrence>p:last-child{margin:10px 0 0}
+.fta-manual-recurrence{
+  margin:10px 0 16px;
+  padding:10px 12px;
+  border:1px dashed #cbd6e3;
+  border-radius:8px;
+  background:#fff;
+}
+.fta-manual-recurrence summary{cursor:pointer;color:#52657c;font-size:12px;font-weight:700}
+.fta-manual-recurrence[open] summary{margin-bottom:12px}
+@media(max-width:760px){
+  .fta-defect-history-summary{grid-template-columns:1fr}
+  .fta-auto-recurrence .panel-title{flex-direction:column}
+}
