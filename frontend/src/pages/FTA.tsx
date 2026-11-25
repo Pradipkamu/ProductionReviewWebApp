@@ -338,7 +338,7 @@ export default function FTA({me}:{me:any}){
   const closed=detail?.status==='CLOSED'
   const flowSteps=[
     {title:'Investigation creation',description:'Quality Rejection linked and investigation details created.',done:!!detail?.source_rejection,started:!!detail?.id},
-    {title:'Fault Tree Analysis',description:`Basic causes dispositioned: ${completedTreeNodes} of ${investigationLeaves.length}.`,done:treeComplete,started:treeStarted},
+    {title:'Fault Tree Analysis (optional review)',description:`${completedTreeNodes} of ${investigationLeaves.length} basic causes reviewed. Remaining nodes do not block verification.`,done:treeComplete,started:treeStarted},
     {title:'Root cause confirmation',description:'At least one root cause is confirmed in the findings.',done:confirmedRootCause,started:findings.some((f:any)=>f.investigation_status==='CONFIRMED')},
     {title:'Corrective / preventive actions',description:requiredActions.length?`${requiredActions.length} corrective / preventive action(s) linked.`:'No corrective or preventive action linked yet.',done:requiredActions.length>0,started:requiredActions.length>0},
     {title:'Action implementation & review',description:requiredActions.length?`${requiredActions.filter((a:any)=>a.status==='CLOSED').length} of ${requiredActions.length} linked actions closed${unresolvedDiscovered?' · discovered causes still need review':''}.`:'Waiting for linked actions.',done:actionsComplete&&!unresolvedDiscovered,started:requiredActions.length>0||!!(detail?.discovered_causes||[]).length},
