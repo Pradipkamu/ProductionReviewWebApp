@@ -25,7 +25,15 @@ function CorrectionControls({role}:{role:string}){
 
 export default function Layout({ children, me }: { children: React.ReactNode, me:any }) {
   const [menuOpen,setMenuOpen]=useState(false)
+  const preferenceKey=`production-review-theme:${me?.id||me?.user_id||me?.username||'user'}`
+  const [skin,setSkin]=useState(()=>{try{return JSON.parse(localStorage.getItem(preferenceKey)||'{}').skin||'corporate'}catch{return 'corporate'}})
+  const [mode,setMode]=useState(()=>{try{return JSON.parse(localStorage.getItem(preferenceKey)||'{}').mode||'light'}catch{return 'light'}})
   const routeLocation=useLocation()
+  useEffect(()=>{
+    document.documentElement.dataset.skin=skin
+    document.documentElement.dataset.mode=mode
+    try{localStorage.setItem(preferenceKey,JSON.stringify({skin,mode}))}catch{}
+  },[skin,mode,preferenceKey])
   useEffect(()=>setMenuOpen(false),[routeLocation.pathname])
   useEffect(()=>{
     if(!menuOpen)return
@@ -84,6 +92,9 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
         </div>
         <div className="app-topbar-profile">
           <span className="app-environment"><i/>Operational workspace</span>
+          <label className="theme-picker"><span>Skin</span><select aria-label="Colour skin" value={skin} onChange={e=>setSkin(e.target.value)}><option value="corporate">Corporate Blue</option><option value="slate">Slate</option><option value="industrial">Industrial Green</option><option value="executive">Executive Purple</option></select></label>
+          <label className="theme-picker"><span>Mode</span><select aria-label="Display mode" value={mode} onChange={e=>setMode(e.target.value)}><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <button className="theme-reset" type="button" onClick={()=>{setSkin('corporate');setMode('light')}}>Reset</button>
         </div>
       </header>
       <CorrectionControls role={me?.role}/>{children}
