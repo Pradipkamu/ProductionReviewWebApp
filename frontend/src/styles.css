@@ -1043,3 +1043,6 @@ button.ghost{color:inherit}
 .sidebar nav a.active{background:rgba(68,135,190,.23);border-left-color:#69b9e8;box-shadow:inset 0 0 0 1px rgba(139,192,228,.10);color:#fff}
 .sign-out{margin-top:auto!important;border-radius:8px!important}
 @media(max-width:1000px){.sidebar{width:272px;left:-282px;padding-top:64px}.content{margin-left:0;width:100%}}
+
+
+.nav-group[open] summary.nav-group-label .nav-group-title{transform:none}
