@@ -1,10 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" role="img" aria-labelledby="title">
-  <title id="title">Machine Shop Operations</title>
-  <path fill="#102F4D" d="M0 0h108v108H0z"/>
-  <path fill="#0B6BA8" d="M54 8a46 46 0 1 0 .1 0z"/>
-  <path fill="#FFFFFF" d="M51 20h6v8.2c2.5.5 4.8 1.5 6.8 2.8l5.8-5.8 4.2 4.2-5.8 5.8c1.3 2 2.3 4.3 2.8 6.8H79v6h-8.2c-.5 2.5-1.5 4.8-2.8 6.8l5.8 5.8-4.2 4.2-5.8-5.8c-2 1.3-4.3 2.3-6.8 2.8V72h-6v-8.2c-2.5-.5-4.8-1.5-6.8-2.8l-5.8 5.8-4.2-4.2 5.8-5.8c-1.3-2-2.3-4.3-2.8-6.8H28v-6h8.2c.5-2.5 1.5-4.8 2.8-6.8l-5.8-5.8 4.2-4.2 5.8 5.8c2-1.3 4.3-2.3 6.8-2.8z"/>
-  <path fill="#102F4D" d="M54 38a11 11 0 1 0 .1 0z"/>
-  <path fill="#FFFFFF" d="M24 73h60v18H24zM29 68l12-8 10 8 10-8 10 8 8-5v10H29z"/>
-  <path fill="#102F4D" d="M32 78h5v8h-5zM44 78h5v8h-5zM56 78h5v8h-5zM68 78h5v8h-5z"/>
-  <path fill="#FF9D22" d="M14 94h80v4H14z"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Machine Shop Control</title><defs><linearGradient id="b" x2="0" y2="1"><stop stop-color="#075080"/><stop offset="1" stop-color="#001a35"/></linearGradient><linearGradient id="s" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#39a9e8"/></linearGradient><linearGradient id="o" x2="0" y2="1"><stop stop-color="#ffd34a"/><stop offset="1" stop-color="#ff7900"/></linearGradient></defs><rect width="512" height="512" rx="80" fill="url(#b)"/><path d="M65 340V180l100-58v58l92-58v58l83-48v208H65Z" fill="url(#s)"/><path d="M110 214h30v32h-30zm55 0h30v32h-30zm-55 58h30v32h-30zm55 0h30v32h-30z" fill="#062c4d"/><path d="M360 70h42v26h-42zm-5 34h52v178h-52z" fill="url(#s)"/><path d="M58 405c70-100 145-132 220-111" fill="none" stroke="url(#o)" stroke-width="18"/><path d="M298 190l24 10 22-14 20 20 25-2 10 25 23 11-4 27 17 18-14 24 4 24-24 14-8 24-27 1-17 19-24-12-24 9-18-20-26-3-8-25-22-14 8-26-13-23 20-20-1-26 25-10 11-24 26 1z" fill="url(#s)"/><circle cx="341" cy="282" r="62" fill="#062746"/><path d="M300 330v-42h24v42zm36 0v-68h24v68zm36 0v-96h24v96z" fill="url(#o)"/></svg>
