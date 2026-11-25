@@ -70,7 +70,7 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
     <button className="mobile-menu-button" aria-label="Open navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(v=>!v)}>{menuOpen?'×':'☰'}<span>Menu</span></button>
     {menuOpen&&<button className="sidebar-backdrop" aria-label="Close navigation" onClick={()=>setMenuOpen(false)}/>}
     <aside className={`sidebar ${menuOpen?'open':''}`}>
-      <div className="brand"><div className="brand-mark">PR</div><div className="brand-copy"><b>PRODUCTION REVIEW</b><span>MANAGEMENT SYSTEM</span></div></div>
+      <div className="brand"><img className="brand-mark" src="/app-icon.svg" alt="Machine Shop Operations"/><div className="brand-copy"><b>PRODUCTION REVIEW</b><span>MANAGEMENT SYSTEM</span></div></div>
       <div className="user-card"><div className="user-avatar">{String(me?.full_name||me?.username||'U').slice(0,1).toUpperCase()}</div><div><b>{me?.full_name||me?.username}</b><span>{String(me?.role||'').replaceAll('_',' ')}</span></div></div>
       <nav aria-label="Primary navigation">{groups.map(group=>{const items=visible.filter(item=>group.keys.includes(item.key));if(!items.length)return null;return <details className="nav-group" key={group.label} open={group.keys.includes(currentNav?.key||'chat')}><summary className="nav-group-label"><GroupIcon label={group.label}/><span className="nav-group-title">{group.label}</span><span className="nav-chevron" aria-hidden="true">⌄</span></summary>{items.map(({to,label}) => <NavLink key={to} to={to} end={to==='/'} className={({isActive}) => isActive ? 'active' : ''}>{label}</NavLink>)}</details>})}</nav>
       <button className="ghost danger sign-out" onClick={signOut}>Sign out</button>
