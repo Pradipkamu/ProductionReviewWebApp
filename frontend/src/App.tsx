@@ -71,7 +71,7 @@ export default function App(){
     return ()=>{active=false}
   },[retryAuth])
   if(!getToken()) return <Login />
-  if(!me) return <div className="loading-screen"><div><div className="brand-mark lg">PR</div>{authError
+  if(!me) return <div className="loading-screen"><div><img className="brand-mark lg app-login-logo" src="/app-icon.svg" alt="Machine Shop Control"/>{authError
     ? <><p>Unable to load your workspace.</p><div className="error">{authError}</div><button onClick={()=>setRetryAuth(v=>v+1)}>Retry connection</button><button className="secondary" onClick={()=>{clearToken();location.reload()}}>Return to sign in</button></>
     : <p>Loading your workspace…</p>}</div></div>
   if(me.must_change_password) return <div className="login-page"><PasswordForm required/></div>
