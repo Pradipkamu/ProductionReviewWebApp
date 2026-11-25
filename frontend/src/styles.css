@@ -1046,3 +1046,7 @@ button.ghost{color:inherit}
 
 
 .nav-group[open] summary.nav-group-label .nav-group-title{transform:none}
+
+
+/* Shared production-control mark in authentication and loading views */
+.app-login-logo{display:block;object-fit:cover;background:transparent;border-radius:14px;box-shadow:0 8px 22px rgba(0,0,0,.22)}

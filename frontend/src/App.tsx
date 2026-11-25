@@ -50,7 +50,7 @@ function Login() {
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
   async function submit(e: React.FormEvent) { e.preventDefault(); setBusy(true); setError(''); try { const r:any = await login(username,password); setToken(r.access_token); location.reload() } catch(e:any){setError(e.message)} finally {setBusy(false)} }
   return <div className="login-page"><form className="login-card" onSubmit={submit}>
-    <div className="brand-mark lg">PR</div><h1>Production Review Manager</h1><p>Daily sales, process, WIP, actions and OEE in one system.</p>
+    <img className="brand-mark lg app-login-logo" src="/app-icon.svg" alt="Machine Shop Control"/><h1>Production Review Manager</h1><p>Daily sales, process, WIP, actions and OEE in one system.</p>
     <label>User name<input value={username} onChange={e=>setUsername(e.target.value)} /></label>
     <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} /></label>
     {error && <div className="error">{error}</div>}<button disabled={busy}>{busy?'Signing in…':'Sign in'}</button>
