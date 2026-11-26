@@ -160,7 +160,6 @@ export default function FTA({me}:{me:any}){
   const canVerify=['ADMIN','QUALITY'].includes(me?.role)
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
-  useEffect(()=>{if(error)window.dispatchEvent(new CustomEvent('app:api-error',{detail:{message:error}}))},[error])
   const [message,setMessage]=useState('')
 
   const filteredTemplates=useMemo(()=>operationCode&&defectCode?templates.filter(t=>t.status==='PUBLISHED'&&t.operation_code===operationCode&&t.defect_code===defectCode):[],[templates,operationCode,defectCode])
@@ -275,7 +274,7 @@ export default function FTA({me}:{me:any}){
   }
 
   async function createInvestigation(){
-    if(!rejectionId||!operationCode||!defectCode||!filteredTemplates.length){setError('Select a machining operation, defect, rejection and matching published template.');return}
+    if(!rejectionId||!operationCode||!defectCode||!filteredTemplates.length){const message='Select a machining operation, defect, rejection and matching published template.';setError(message);window.dispatchEvent(new CustomEvent('app:api-error',{detail:{message}}));return}
     setBusy(true);setError('');setMessage('')
     try{
       const result:any=await api('/fta/investigations',{method:'POST',body:JSON.stringify({
