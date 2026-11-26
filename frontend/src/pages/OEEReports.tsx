@@ -7,10 +7,9 @@ import { PercentTrendChart, RankedBars, ValueTrendChart } from '../components/Ch
 import { Kpi, PageHeader, num, pct } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
-function firstDaySixMonthsAgo(){
-  const d=new Date(dateIST()+'T00:00:00')
-  d.setMonth(d.getMonth()-5,1)
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`
+function firstDayOfCurrentMonth(){
+  const today=dateIST()
+  return `${today.slice(0,7)}-01`
 }
 function csvCell(v:any){const s=String(v??'');return `"${s.replaceAll('"','""')}"`}
 function downloadCsv(name:string,rows:any[]){
@@ -22,7 +21,7 @@ function downloadCsv(name:string,rows:any[]){
 }
 
 export default function OEEReports(){
-  const [fromDate,setFromDate]=useState(firstDaySixMonthsAgo)
+  const [fromDate,setFromDate]=useState(firstDayOfCurrentMonth)
   const [toDate,setToDate]=useState(dateIST())
   const [scope,setScope]=useState<ScopeValues>({plant:[],productGroup:[],customerId:[],productId:[]})
   const [options,setOptions]=useState<any>({plants:[],product_groups:[],customers:[]})
@@ -106,7 +105,7 @@ export default function OEEReports(){
   },[filteredEntries,operators])
   const selectedMachineLabel=selectedMachineNames.join(', ')
   const machineOptions=machines.map(m=>({value:String(m.id),label:`${m.name} — ${m.code}`}))
-  const pageActions=<div className="export-row"><label>From <input aria-label="From date" type="date" value={fromDate} max={toDate} onChange={e=>setFromDate(e.target.value)}/></label><label>To <input aria-label="To date" type="date" value={toDate} min={fromDate} onChange={e=>setToDate(e.target.value)}/></label><button className="primary" disabled={exporting||busy} onClick={exportOeeExcel}>{exporting?'Preparing Excel…':'Download OEE Excel'}</button><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button></div>
+  const pageActions=<div className="export-row"><label>From · Current month <input aria-label="Current month start date" type="date" value={fromDate} disabled/></label><label>To · Today <input aria-label="Today date" type="date" value={toDate} disabled/></label><button className="primary" disabled={exporting||busy} onClick={exportOeeExcel}>{exporting?'Preparing Excel…':'Download OEE Excel'}</button><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button></div>
 
   async function exportOeeExcel(){
     const q=new URLSearchParams({from_date:fromDate,as_of:toDate})
