@@ -893,6 +893,69 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun openPendingOeeEntry(row: JSONObject) {
+                val auth = token
+                if (auth.isNullOrBlank()) {
+                    oeeError = "Your session has expired. Please sign in again."
+                    return
+                }
+                val productId = row.optInt("product_id")
+                val operationId = row.optInt("route_operation_id")
+                val machineId = row.optInt("machine_id")
+                val entryDate = row.optString("date")
+                val shiftName = row.optString("shift")
+                if (productId <= 0 || operationId <= 0 || machineId <= 0 ||
+                    entryDate.isBlank() || shiftName !in listOf("A", "B", "C")) {
+                    oeeError = "The pending plan is missing its part, process, machine, date or shift. Check planning configuration."
+                    return
+                }
+                scope.launch {
+                    oeeLoading = true
+                    oeeError = null
+                    try {
+                        val product = masters?.products?.firstOrNull { it.id == productId }
+                            ?: Choice(productId, row.optString("product").ifBlank { "Part #$productId" })
+                        val routes = withContext(Dispatchers.IO) {
+                            ApiClient.loadRoutes(productId, entryDate, auth)
+                        }
+                        val operation = routes.firstOrNull { it.id == operationId }
+                            ?: throw IllegalStateException("The planned process is no longer available for this part and date.")
+                        val machines = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeMachines(operationId, entryDate, auth)
+                        }
+                        val machine = machines.firstOrNull { it.id == machineId }
+                            ?: throw IllegalStateException("The planned machine is not available for this process on the selected date. Check machine mapping.")
+                        
+                        // Load the exact planned scope before opening the form. Do not
+                        // silently substitute the first operation or first machine.
+                        oeeProduct = product
+                        oeeDate = entryDate
+                        oeeShift = shiftName
+                        oeeRoutes = routes
+                        oeeOperation = operation
+                        oeeMachines = machines
+                        oeeMachine = machine
+                        oeeSummary = null
+                        oeeEntryId = null
+                        oeeLoadingPreviousEntry = false
+                        oeeCorrectionReason = ""
+                        oeeShiftMinutes = "440"
+                        oeeBreakMinutes = "0"
+                        oeeGoodCount = "0"
+                        oeeRejectCount = "0"
+                        oeeEntryRemarks = ""
+                        oeeEntryLosses = listOf(OeeLossDraft())
+                        oeeSuccess = null
+                        homeTab = "OEE"
+                        oeeMode = "ENTRY"
+                    } catch (e: Exception) {
+                        oeeError = e.message ?: "Unable to open the planned OEE entry."
+                    } finally {
+                        oeeLoading = false
+                    }
+                }
+            }
+
             fun editOeeEntry(entryDate: String, entryShift: String, expectedEntryId: Int) {
                 val auth = token
                 val product = oeeProduct
@@ -2377,11 +2440,16 @@ class MainActivity : ComponentActivity() {
                                         for(i in 0 until minOf(pendingRows.length(),50)) {
                                             val row=pendingRows.getJSONObject(i)
                                             Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
-                                                Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                                Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
                                                     Text("${row.optString("machine")}  •  ${row.optString("machine_name")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                     Text("${row.optString("date")}  •  Shift ${row.optString("shift")}  •  ${row.optString("product")}",color=Muted,fontSize=11.sp)
                                                     Text("Planned qty: ${row.optDouble("planned_qty").toInt()}",color=Muted,fontSize=11.sp)
-                                                    Text("PENDING",color=Danger,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                        Text("PENDING",color=Danger,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                        Button(onClick={openPendingOeeEntry(row)},enabled=!oeeLoading,contentPadding=PaddingValues(horizontal=14.dp,vertical=6.dp)) {
+                                                            Text("START ENTRY",fontSize=11.sp)
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
