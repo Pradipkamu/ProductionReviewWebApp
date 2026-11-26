@@ -1057,3 +1057,43 @@ button.ghost{color:inherit}
 .global-error-message{padding:20px 22px;color:#26364c;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
 .global-error-path{margin:0;padding:0 22px 14px;color:#8490a0;font-size:11px;overflow-wrap:anywhere}
 .global-error-dialog>footer{display:flex;justify-content:flex-end;padding:12px 20px;background:#f7f9fc;border-top:1px solid #e8edf3}
+
+
+/* Corporate OEE Reports filter layout */
+.oee-report-filter-panel{padding:20px 22px;background:linear-gradient(180deg,#fff 0%,#fbfcfe 100%)}
+.oee-report-filter-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid #e8edf4}
+.oee-report-filter-heading h2{margin:0;color:var(--navy);font-size:18px}
+.oee-report-filter-heading p{margin:4px 0 0;color:#758297;font-size:12px}
+.oee-report-filter-heading>span{flex:0 0 auto;padding:6px 10px;border:1px solid #dce5f0;border-radius:999px;background:#f4f7fb;color:#63748d;font-size:10px;font-weight:800;letter-spacing:.09em}
+.oee-filter-group-title{margin:0 0 10px;color:#52647e;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.oee-filter-group-spaced{margin-top:18px}
+.oee-report-filter-panel .scope-filters.oee-scope-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:end;margin:0}
+.oee-scope-filter,.oee-report-filter-control{display:grid;grid-template-rows:auto auto;gap:7px;min-width:0;margin:0;color:#536176;font-size:11px;font-weight:700;letter-spacing:.025em;text-transform:uppercase}
+.oee-report-filter-panel .multi-select{width:100%;min-width:0;max-width:none}
+.oee-report-filter-panel .multi-select-trigger{width:100%;min-height:44px;padding:9px 12px;border-color:#cfd9e6;border-radius:8px;background:#fff;color:#203754;font-size:13px;font-weight:500;box-shadow:0 1px 2px rgba(18,40,68,.03)}
+.oee-report-filter-panel .multi-select-trigger:hover{border-color:#8da9ca;background:#fbfdff}
+.oee-report-filter-panel .oee-report-filter-control>select{width:100%;min-width:0;min-height:44px;margin:0;padding:9px 12px;border-color:#cfd9e6;border-radius:8px;background:#fff;color:#203754;font-size:13px}
+.oee-detail-filter-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;align-items:end}
+.oee-filter-export-row{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:18px;padding-top:15px;border-top:1px solid #e8edf4}
+.oee-filter-export-row>div:first-child{display:grid;gap:3px;min-width:0}
+.oee-filter-export-row>div:first-child b{color:#304762;font-size:12px}
+.oee-filter-export-row>div:first-child span{color:#7b8798;font-size:11px}
+.oee-filter-export-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}
+.oee-filter-export-actions button{min-height:40px;padding:9px 15px;font-size:12px}
+@media(max-width:1100px){
+  .oee-report-filter-panel .scope-filters.oee-scope-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .oee-detail-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:700px){
+  .oee-report-filter-panel{padding:15px}
+  .oee-report-filter-heading{align-items:flex-start}
+  .oee-report-filter-panel .scope-filters.oee-scope-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .oee-detail-filter-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .oee-filter-export-row{align-items:stretch;flex-direction:column}
+  .oee-filter-export-actions{display:grid;grid-template-columns:1fr 1fr;width:100%}
+  .oee-filter-export-actions button{width:100%;min-width:0;padding:8px}
+}
+@media(max-width:420px){
+  .oee-report-filter-panel .scope-filters.oee-scope-filter-grid,.oee-detail-filter-grid{grid-template-columns:minmax(0,1fr)}
+  .oee-filter-export-actions{grid-template-columns:minmax(0,1fr)}
+}
