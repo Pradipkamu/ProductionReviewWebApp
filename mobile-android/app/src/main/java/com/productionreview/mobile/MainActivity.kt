@@ -2408,7 +2408,13 @@ class MainActivity : ComponentActivity() {
                                             try {
                                                 require(LocalDate.parse(oeeReportTo)>=LocalDate.parse(oeeManagementFrom)) { "To date must be on or after From date." }
                                                 oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,oeeOperation?.id,null)}
-                                            } catch(e:Exception){oeeError=e.message ?: "Unable to load OEE report."}
+                                                // Populate the compliance state consumed by the section below.
+                                                oeeReportingCompliance=withContext(Dispatchers.IO){
+                                                    ApiClient.loadOeeReportingCompliance(
+                                                        oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,null
+                                                    )
+                                                }
+                                            } catch(e:Exception){oeeError=e.message ?: "Unable to load OEE report and reporting compliance."}
                                             finally{oeeLoading=false}
                                         }
                                     },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading) "LOADING REPORT…" else "LOAD OEE REPORT") }
