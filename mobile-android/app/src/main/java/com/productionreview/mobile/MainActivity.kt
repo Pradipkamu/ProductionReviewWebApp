@@ -1471,7 +1471,6 @@ class MainActivity : ComponentActivity() {
                                 }
                                 if(homeOeeProduct==null || homeOeeOperation==null) EmptyState("Select a part and process", "The dashboard will show real records for the selected shift over the last seven days.")
                                 else {
-                                    }
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                         MetricTile("OEE RECORDS",homeOeeRecords.size.toString(),Teal,Modifier.weight(1f))
                                         MetricTile("GOOD QTY",goodQty.toLong().toString(),Success,Modifier.weight(1f))
@@ -1494,6 +1493,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     }
+                                }
                                 }
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                     Card(Modifier.weight(1f).clickable { homeTab="ACTIONS";token?.let{refreshPendingActions(it)} },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
