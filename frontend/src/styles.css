@@ -571,13 +571,7 @@ button.ghost{color:inherit}
 @media(max-width:600px){.oee-live-hero{align-items:flex-start;flex-direction:column;padding:15px}.oee-live-metrics{width:100%;justify-content:space-between;gap:8px}.oee-success-grid{grid-template-columns:1fr 1fr}}
 
 
-/* OEE live card: remain visible while the entry page scrolls */
-.oee-live-sticky{position:sticky;top:8px;z-index:80;isolation:isolate;}
-.oee-live-sticky>div:first-child{position:relative;padding-left:18px}
-.oee-live-sticky>div:first-child:before{content:"";position:absolute;left:0;top:5px;width:9px;height:9px;border-radius:50%;background:#55e39b;box-shadow:0 0 0 0 rgba(85,227,155,.65);animation:oee-live-pulse 1.5s infinite}
-.oee-live-sticky strong{font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(255,255,255,.18)}
-@keyframes oee-live-pulse{0%{box-shadow:0 0 0 0 rgba(85,227,155,.65);opacity:1}70%{box-shadow:0 0 0 9px rgba(85,227,155,0);opacity:.82}100%{box-shadow:0 0 0 0 rgba(85,227,155,0);opacity:1}}
-@media(prefers-reduced-motion:reduce){.oee-live-sticky>div:first-child:before{animation:none}}
+/* Live OEE card stays in normal document flow to keep the entry form unobstructed. */
 
 
 /* Shared employee chat */
