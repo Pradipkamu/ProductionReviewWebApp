@@ -512,6 +512,11 @@ internal object ApiClient {
         }
     }
 
+    fun loadTodayRejectionRows(today: LocalDate, token: String): JSONArray =
+        array("/quality/daily?from_date=$today&to_date=$today", token)
+
+    fun loadFtaDashboard(token: String): JSONObject = request("/fta/dashboard", "GET", token=token)
+
     fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
         val uploadFile = PhotoCompressor.prepare(file)
         val boundary = "----ProductionMobile${System.currentTimeMillis()}"
@@ -641,6 +646,11 @@ class MainActivity : ComponentActivity() {
             var rejectionTrend by remember { mutableStateOf<List<RejectionTrendPoint>>(emptyList()) }
             var rejectionTrendLoading by remember { mutableStateOf(false) }
             var rejectionTrendError by remember { mutableStateOf<String?>(null) }
+            var todayRejectionCount by remember { mutableIntStateOf(0) }
+            var todayRejectedQuantity by remember { mutableDoubleStateOf(0.0) }
+            var openFtaCount by remember { mutableIntStateOf(0) }
+            var rejectionKpiLoading by remember { mutableStateOf(false) }
+            var rejectionKpiError by remember { mutableStateOf<String?>(null) }
             var detection by remember { mutableStateOf<RouteChoice?>(null) }
             var responsible by remember { mutableStateOf<RouteChoice?>(null) }
             var machine by remember { mutableStateOf<Choice?>(null) }
@@ -1164,6 +1174,31 @@ class MainActivity : ComponentActivity() {
                     finally { busy=false }
                 }
             }
+            fun refreshRejectionKpis(auth: String) {
+                scope.launch {
+                    rejectionKpiLoading = true
+                    rejectionKpiError = null
+                    try {
+                        val today = LocalDate.now()
+                        val result = withContext(Dispatchers.IO) {
+                            val rows = ApiClient.loadTodayRejectionRows(today, auth)
+                            val fta = ApiClient.loadFtaDashboard(auth)
+                            val qty = (0 until rows.length()).sumOf { i ->
+                                rows.optJSONObject(i)?.optDouble("reject_qty", 0.0) ?: 0.0
+                            }
+                            Triple(rows.length(), qty, fta.optJSONObject("counts")?.optInt("open", 0) ?: 0)
+                        }
+                        todayRejectionCount = result.first
+                        todayRejectedQuantity = result.second
+                        openFtaCount = result.third
+                    } catch (e: Exception) {
+                        rejectionKpiError = e.message ?: "Unable to load rejection summary."
+                    } finally {
+                        rejectionKpiLoading = false
+                    }
+                }
+            }
+
             fun refreshRejectionTrend(productId: Int, auth: String) {
                 val today = LocalDate.now()
                 val fromDate = today.withDayOfMonth(1)
@@ -1710,7 +1745,14 @@ class MainActivity : ComponentActivity() {
                                 val totalOpen = if (isManager) pendingActionGroups.sumOf { it.openCount } else pendingActions.size
                                 val totalOverdue = if (isManager) pendingActionGroups.sumOf { it.overdueCount } else pendingActions.count { it.overdue }
                                 val dueToday = if (isManager) pendingActionGroups.sumOf { it.dueTodayCount } else pendingActions.count { it.due.substringBefore("T") == LocalDate.now().toString() }
-                                if (homeTab != "OEE") {
+                                if (homeTab == "REJECTION") {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        MetricTile("TODAY'S REJECTIONS", if (rejectionKpiLoading) "…" else todayRejectionCount.toString(), Teal, Modifier.weight(1f))
+                                        MetricTile("REJECTED QTY", if (rejectionKpiLoading) "…" else String.format("%.0f", todayRejectedQuantity), Danger, Modifier.weight(1f))
+                                        MetricTile("OPEN FTAs", if (rejectionKpiLoading) "…" else openFtaCount.toString(), Warning, Modifier.weight(1f))
+                                    }
+                                    rejectionKpiError?.let { Text(it, color=Danger, fontSize=11.sp) }
+                                } else if (homeTab != "OEE") {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         MetricTile("OPEN ACTIONS", totalOpen.toString(), Teal, Modifier.weight(1f))
                                         MetricTile("OVERDUE", totalOverdue.toString(), Danger, Modifier.weight(1f))
@@ -2591,6 +2633,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 if(homeTab=="REJECTION") {
+                                LaunchedEffect(token, homeTab) { token?.let { refreshRejectionKpis(it) } }
                                 ScreenTitle("New rejection", "Capture a defect with process and quantity details")
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
                                     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
