@@ -1971,13 +1971,33 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                             if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
-                                                oeeOperation=oeeRoutes.firstOrNull{it.id==selected.id};oeeMachine=null;oeeMachines=emptyList();oeeSummary=null
-                                                val auth=token
-                                                if(auth!=null) scope.launch {
-                                                    oeeLoading=true
-                                                    try { val loaded=withContext(Dispatchers.IO){ApiClient.loadOeeMachines(selected.id,oeeDate,auth)};oeeMachines=loaded;oeeMachine=loaded.firstOrNull() }
-                                                    catch(e:Exception){oeeError=userFriendlyOeeError(e,"Could not load machines for this operation. Check your connection and try again.")}
-                                                    finally{oeeLoading=false}
+                                                // Operation changes are handled by the Activity lifecycle scope, not a
+                                                // composition-bound scope. Closing the dropdown/recomposing the OEE
+                                                // screen must not cancel this machine-mapping request.
+                                                val auth = token
+                                                oeeOperation = oeeRoutes.firstOrNull { it.id == selected.id }
+                                                oeeMachine = null
+                                                oeeMachines = emptyList()
+                                                oeeSummary = null
+                                                oeeError = null
+                                                if (auth != null) this@MainActivity.lifecycleScope.launch(Dispatchers.Main.immediate) {
+                                                    oeeLoading = true
+                                                    try {
+                                                        val loaded = withContext(Dispatchers.IO) {
+                                                            ApiClient.loadOeeMachines(selected.id, oeeDate, auth)
+                                                        }
+                                                        oeeMachines = loaded
+                                                        oeeMachine = loaded.firstOrNull()
+                                                        if (loaded.isEmpty()) {
+                                                            oeeError = "No active machines are mapped to this operation for the selected date."
+                                                        }
+                                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                                        throw e
+                                                    } catch (e: Exception) {
+                                                        oeeError = userFriendlyOeeError(e, "Could not load machines for this operation. Check your connection and try again.")
+                                                    } finally {
+                                                        oeeLoading = false
+                                                    }
                                                 }
                                             })
                                             if(oeeMachines.isNotEmpty()) ChoiceDropdown("Machine",oeeMachines,oeeMachine,{oeeMachine=it;oeeSummary=null})
