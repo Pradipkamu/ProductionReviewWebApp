@@ -963,11 +963,17 @@ def reporting_compliance(from_date: date, to_date: date, product_id: int | None 
         requirements = db.scalars(select(DailyRequirement).where(
             DailyRequirement.req_date == day
         )).all()
+        specific_requirement_products = {
+            r.product_id for r in requirements
+            if r.route_operation_id is not None
+            and float(r.revised_plan_qty if r.revised_plan_qty is not None else r.baseline_plan_qty or 0) > 0
+        }
         planned_requirements = [
             r for r in requirements
             if float(r.revised_plan_qty if r.revised_plan_qty is not None else r.baseline_plan_qty or 0) > 0
             and (product_id is None or r.product_id == product_id)
             and (route_operation_id is None or r.route_operation_id in (None, route_operation_id))
+            and not (r.route_operation_id is None and r.product_id in specific_requirement_products)
         ]
 
         # Effective machine-to-operation mappings only; no implicit fallback.
