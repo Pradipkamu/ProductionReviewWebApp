@@ -398,7 +398,7 @@ internal object ApiClient {
         return request("/oee/management-summary?from_date=$fromDate&to_date=$toDate$filters", "GET", token=token)
     }
 
-    fun loadOeeLossCategories(token: String): List<Choice> {
+undefined    fun loadOeeLossCategories(token: String): List<Choice> {
         val rows = array("/masters/loss-categories", token)
         return (0 until rows.length()).map { i ->
             val row = rows.getJSONObject(i)
@@ -739,7 +739,7 @@ class MainActivity : ComponentActivity() {
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
             var oeeReportTo by remember { mutableStateOf(LocalDate.now().toString()) }
             var oeeReportProduct by remember { mutableStateOf<Choice?>(null) }
-            var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
+undefined            var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 if(uri!=null) {
@@ -881,7 +881,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            fun editOeeEntry(entryDate: String, entryShift: String, expectedEntryId: Int) {
+undefined            fun editOeeEntry(entryDate: String, entryShift: String, expectedEntryId: Int) {
                 val auth = token
                 val product = oeeProduct
                 val operation = oeeOperation
@@ -2321,7 +2321,7 @@ class MainActivity : ComponentActivity() {
                                     SectionLabel("REPORT PERIOD", "Default: first day of this month through today")
                                     OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                                     OutlinedTextField(oeeReportTo,{oeeReportTo=it},label={Text("To date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters?.products.orEmpty(), oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null })
+                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters?.products.orEmpty(), oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null; oeeReportingCompliance = null })
                                     Text("Process: ${oeeOperation?.label ?: "All processes"}",color=Muted,fontSize=11.sp)
                                     Button(onClick={
                                         val auth=token
@@ -2335,7 +2335,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading) "LOADING REPORT…" else "LOAD OEE REPORT") }
                                     oeeError?.let { Text(it,color=Danger,fontSize=12.sp) }
-                                    oeeManagement?.let { report ->
+undefined                                    oeeManagement?.let { report ->
                                         val overall=report.optJSONObject("overall")
                                         if(overall!=null) {
                                             Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
@@ -2747,6 +2747,14 @@ private fun RejectionQuantityTrend(
     }
 }
 
+
+@Composable
+private fun ComplianceMetric(label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
+    Column(modifier,verticalArrangement=Arrangement.spacedBy(2.dp)) {
+        Text(value,color=tint,fontSize=19.sp,fontWeight=FontWeight.ExtraBold)
+        Text(label,color=Muted,fontSize=9.sp,maxLines=1)
+    }
+}
 
 @Composable
 private fun ChoiceDropdown(
