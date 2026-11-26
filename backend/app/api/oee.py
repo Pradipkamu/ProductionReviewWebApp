@@ -1001,6 +1001,7 @@ def reporting_compliance(from_date: date, to_date: date, product_id: int | None 
                 allocation for allocation in latest_allocations
                 if allocation.product_id == requirement.product_id
                 and (requirement.route_operation_id is None or allocation.route_operation_id == requirement.route_operation_id)
+                and (route_operation_id is None or allocation.route_operation_id == route_operation_id)
                 and float(allocation.allocated_qty or 0) > 0
             ]
             for allocation in candidates:
