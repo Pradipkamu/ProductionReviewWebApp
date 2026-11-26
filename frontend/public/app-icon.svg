@@ -1,1 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Machine Shop Control</title><defs><linearGradient id="b" x2="0" y2="1"><stop stop-color="#075080"/><stop offset="1" stop-color="#001a35"/></linearGradient><linearGradient id="s" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#39a9e8"/></linearGradient><linearGradient id="o" x2="0" y2="1"><stop stop-color="#ffd34a"/><stop offset="1" stop-color="#ff7900"/></linearGradient></defs><rect width="512" height="512" rx="80" fill="url(#b)"/><path d="M65 340V180l100-58v58l92-58v58l83-48v208H65Z" fill="url(#s)"/><path d="M110 214h30v32h-30zm55 0h30v32h-30zm-55 58h30v32h-30zm55 0h30v32h-30z" fill="#062c4d"/><path d="M360 70h42v26h-42zm-5 34h52v178h-52z" fill="url(#s)"/><path d="M58 405c70-100 145-132 220-111" fill="none" stroke="url(#o)" stroke-width="18"/><path d="M298 190l24 10 22-14 20 20 25-2 10 25 23 11-4 27 17 18-14 24 4 24-24 14-8 24-27 1-17 19-24-12-24 9-18-20-26-3-8-25-22-14 8-26-13-23 20-20-1-26 25-10 11-24 26 1z" fill="url(#s)"/><circle cx="341" cy="282" r="62" fill="#062746"/><path d="M300 330v-42h24v42zm36 0v-68h24v68zm36 0v-96h24v96z" fill="url(#o)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Production Review</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0877c9"/>
+      <stop offset=".48" stop-color="#063e79"/>
+      <stop offset="1" stop-color="#001b49"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#35b9ff"/>
+      <stop offset="1" stop-color="#00316d"/>
+    </linearGradient>
+    <linearGradient id="white" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#fff"/>
+      <stop offset="1" stop-color="#e7f3ff"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#ffbd24"/>
+      <stop offset="1" stop-color="#ff8500"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="7"/>
+      <feOffset dy="7"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".3"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="5" y="5" width="502" height="502" rx="104" fill="url(#bg)" stroke="url(#edge)" stroke-width="10"/>
+  <circle cx="256" cy="245" r="205" fill="#0874b7" opacity=".42"/>
+  <g fill="url(#white)" filter="url(#shadow)">
+    <path d="M236 77h40v49a132 132 0 0 1 38 12l34-34 29 29-34 35a132 132 0 0 1 15 38h49v41h-49a132 132 0 0 1-15 38l34 34-29 29-35-34a132 132 0 0 1-37 15v27h-41v-27a132 132 0 0 1-38-15l-34 34-29-29 34-34a132 132 0 0 1-15-38h-49v-41h49a132 132 0 0 1 15-38l-34-35 29-29 34 34a132 132 0 0 1 38-12z"/>
+    <path d="M92 324 194 260v42l75-48v48l77-48v70h74v119H92z"/>
+    <path d="M360 100h34v34h-34z"/>
+  </g>
+  <circle cx="256" cy="245" r="65" fill="#062a50"/>
+  <g fill="#062a50">
+    <rect x="130" y="365" width="30" height="43" rx="3"/>
+    <rect x="198" y="365" width="30" height="43" rx="3"/>
+    <rect x="266" y="365" width="30" height="43" rx="3"/>
+    <rect x="334" y="365" width="30" height="43" rx="3"/>
+  </g>
+  <path d="M363 101h34v21h-34z" fill="url(#orange)"/>
+  <path d="M55 444c82-55 169-75 264-62 56 8 96 1 136-26-14 38-57 63-124 69-93 8-179-2-276 19z" fill="url(#orange)"/>
+</svg>
