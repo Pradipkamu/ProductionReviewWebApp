@@ -1414,11 +1414,11 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(),color=Canvas) {
                     Column(Modifier.fillMaxSize()) {
                     Column(Modifier.weight(1f).fillMaxWidth()) {
-                        Row(Modifier.fillMaxWidth().background(Brush.horizontalGradient(listOf(Color(0xFF102A43), Navy, Color(0xFF1D4568)))).padding(horizontal=12.dp,vertical=12.dp), verticalAlignment=Alignment.CenterVertically) {
-                            if (account != null) IconButton(onClick={drawerScope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
+                        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=12.dp,vertical=10.dp), verticalAlignment=Alignment.CenterVertically) {
+                            if (account != null) IconButton(onClick={drawerScope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Navy) }
                             Column(Modifier.weight(1f)) {
-                                Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "HOME"->"Home"; "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                Text("PRODUCTION REVIEW",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "HOME"->"Home"; "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
                         LaunchedEffect(homeTab, token, selectedChatId) {
@@ -2875,7 +2875,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     if (account != null) {
-                        NavigationBar(containerColor=Color.White, tonalElevation=10.dp, windowInsets = NavigationBarDefaults.windowInsets) {
+                        NavigationBar(modifier=Modifier.padding(horizontal=10.dp, vertical=6.dp).clip(RoundedCornerShape(26.dp)),containerColor=Color.White, tonalElevation=8.dp, windowInsets = NavigationBarDefaults.windowInsets) {
                             bottomDestinations.forEach { destination ->
                                 val selected = homeTab==destination || (destination=="ACTIONS" && homeTab in listOf("USER_ACTIONS","DETAIL"))
                                 NavigationBarItem(
