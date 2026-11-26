@@ -4,6 +4,18 @@ export function getToken() { return localStorage.getItem('token') }
 export function setToken(token: string) { localStorage.setItem('token', token) }
 export function clearToken() { localStorage.removeItem('token') }
 
+async function requestWithErrorHandling(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (cause: any) {
+    const message = cause?.message || 'Unable to reach the server. Check your network connection and try again.'
+    window.dispatchEvent(new CustomEvent('app:api-error', {
+      detail: { message, path: url.replace(API, '') }
+    }))
+    throw new Error(message)
+  }
+}
+
 function readableApiError(detail: any): string {
   if (typeof detail === 'string' && detail.trim()) return detail
   if (Array.isArray(detail)) {
@@ -32,7 +44,7 @@ export async function api<T=any>(path: string, init: RequestInit = {}): Promise<
     const reason=sessionStorage.getItem('changeReason'); if(reason)headers.set('X-Change-Reason',reason)
     const correction=sessionStorage.getItem('correctionId'); if(correction)headers.set('X-Correction-ID',correction)
   }
-  const res = await fetch(`${API}${path}`, { ...init, headers })
+  const res = await requestWithErrorHandling(`${API}${path}`, { ...init, headers })
   if (res.status === 401) { clearToken(); location.reload() }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
@@ -62,7 +74,7 @@ export async function downloadApi(path: string, filename: string) {
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const res = await fetch(`${API}${path}`, { headers })
+  const res = await requestWithErrorHandling(`${API}${path}`, { headers })
   if (res.status === 401) { clearToken(); location.reload(); return }
   if (!res.ok) { const body=await res.json().catch(()=>({})); const message=readableApiError(body?.detail??body); window.dispatchEvent(new CustomEvent('app:api-error',{detail:{message,status:res.status,path}})); throw new Error(message) }
   const blob = await res.blob()
@@ -83,6 +95,6 @@ export async function blobApi(path: string): Promise<Blob> {
   if (token) headers.set('Authorization', `Bearer ${token}`)
   const res = await fetch(`${API}${path}`, { headers })
   if (res.status === 401) { clearToken(); location.reload() }
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status} ${res.statusText}`)
+  if (!res.ok) { const body=await res.json().catch(()=>({})); const message=readableApiError(body?.detail??body); window.dispatchEvent(new CustomEvent('app:api-error',{detail:{message,status:res.status,path}})); throw new Error(message) }
   return res.blob()
 }
