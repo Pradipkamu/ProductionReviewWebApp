@@ -1444,11 +1444,13 @@ class MainActivity : ComponentActivity() {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                         Text("OPERATIONS OVERVIEW", color=Muted, fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
-                                        Text("Good " + LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd MMM")), color=Navy, fontSize=22.sp, fontWeight=FontWeight.ExtraBold)
+                                        Text("Welcome back", color=Navy, fontSize=22.sp, fontWeight=FontWeight.ExtraBold)
+                                        Text(LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd MMM yyyy")), color=Muted, fontSize=11.sp)
                                         Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(), color=Muted, fontSize=12.sp)
                                     }
                                     IconButton(onClick={homeTab="CHAT";selectedChatId=null}) { Icon(Icons.Filled.Email, contentDescription="Open chat", tint=Navy) }
                                 }
+                                if (isProductionRole || isAdminOrManagement) {
                                 Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(22.dp), colors=CardDefaults.cardColors(containerColor=Navy)) {
                                     Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF173B5E),Color(0xFF087F8C)))).padding(18.dp), verticalArrangement=Arrangement.spacedBy(9.dp)) {
                                         Text("SHIFT PERFORMANCE", color=Color(0xFFBFE8E4), fontSize=10.sp, fontWeight=FontWeight.ExtraBold, letterSpacing=1.2.sp)
@@ -1469,7 +1471,8 @@ class MainActivity : ComponentActivity() {
                                 }
                                 if(homeOeeProduct==null || homeOeeOperation==null) EmptyState("Select a part and process", "The dashboard will show real records for the selected shift over the last seven days.")
                                 else {
-                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    }
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                         MetricTile("OEE RECORDS",homeOeeRecords.size.toString(),Teal,Modifier.weight(1f))
                                         MetricTile("GOOD QTY",goodQty.toLong().toString(),Success,Modifier.weight(1f))
                                         MetricTile("REJECT QTY",rejectQty.toLong().toString(),Danger,Modifier.weight(1f))
@@ -1501,12 +1504,14 @@ class MainActivity : ComponentActivity() {
                                             if(overdueActions>0) StatusPill(overdueActions.toString() + " OVERDUE",Danger)
                                         }
                                     }
+                                    if (isQualityRole || isAdminOrManagement) {
                                     Card(Modifier.weight(1f).clickable { homeTab="REJECTION" },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                             Icon(Icons.Filled.AssignmentLate,contentDescription=null,tint=Warning,modifier=Modifier.size(24.dp))
                                             Text("Quality",color=Navy,fontSize=18.sp,fontWeight=FontWeight.Bold)
                                             Text("Rejection & FTA",color=Muted,fontSize=11.sp,fontWeight=FontWeight.SemiBold)
                                         }
+                                    }
                                     }
                                 }
                                 Card(Modifier.fillMaxWidth().clickable { homeTab="CHAT";selectedChatId=null },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
