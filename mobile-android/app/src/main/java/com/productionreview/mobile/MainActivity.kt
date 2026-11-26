@@ -1447,7 +1447,7 @@ class MainActivity : ComponentActivity() {
                             val unreadChats = (0 until chatConversations.length()).sumOf { chatConversations.optJSONObject(it)?.optInt("unread_count", 0) ?: 0 }
                             val goodQty = homeOeeRecords.sumOf { it.optDouble("good_count", 0.0) }
                             val rejectQty = homeOeeRecords.sumOf { it.optDouble("reject_count", 0.0) }
-                            Column(Modifier.fillMaxSize().background(Canvas).verticalScroll(rememberScrollState()).padding(horizontal=16.dp, vertical=14.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                            Column(Modifier.fillMaxSize().background(Canvas).verticalScroll(rememberScrollState()).padding(horizontal=16.dp, vertical=16.dp), verticalArrangement=Arrangement.spacedBy(16.dp)) {
                                 Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                         Text("OPERATIONS OVERVIEW", color=Muted, fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
@@ -1488,7 +1488,7 @@ class MainActivity : ComponentActivity() {
                                         homeOeeError!=null -> Text(homeOeeError!!,color=Danger,fontSize=12.sp)
                                         homeOeeRecords.isEmpty() -> EmptyState("No OEE records for Shift " + homeOeeShift, "No saved entries found for this part and process in the last seven days.")
                                         else -> homeOeeRecords.forEach { entry ->
-                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                 Column(Modifier.padding(13.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                                         Text(entry.optString("machine").ifBlank{"Machine"},color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
@@ -1544,7 +1544,7 @@ class MainActivity : ComponentActivity() {
                                             Button(onClick={chatShowNew=true;chatSearch="";chatEmployees=JSONArray()},colors=ButtonDefaults.buttonColors(containerColor=Teal),shape=RoundedCornerShape(22.dp)) { Text("+ NEW CHAT",fontSize=11.sp,fontWeight=FontWeight.Bold) }
                                         }
                                         if (chatShowNew) {
-                                            Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Card(Modifier.fillMaxWidth().weight(1f),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                 Column(Modifier.fillMaxSize().padding(12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
                                                     Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                                                         Text("Start a conversation",Modifier.weight(1f),color=Navy,fontSize=16.sp,fontWeight=FontWeight.Bold)
@@ -1606,7 +1606,7 @@ class MainActivity : ComponentActivity() {
                                                             val title=conversation.optString("title").takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}.filter{it.optString("username")!=account?.username}.joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
                                                             val last=conversation.optJSONObject("last_message")
                                                             val preview=last?.optString("body")?.takeIf{it.isNotBlank()} ?: if(last?.optJSONArray("attachments")?.length()?.let{it>0}==true) "Attachment" else "No messages yet"
-                                                            Card(Modifier.fillMaxWidth().clickable { selectedChatId=conversationId;token?.let{refreshChatMessages(it,conversationId)} },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedChatId==conversationId)Teal else Border)) {
+                                                            Card(Modifier.fillMaxWidth().clickable { selectedChatId=conversationId;token?.let{refreshChatMessages(it,conversationId)} },shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,if(selectedChatId==conversationId)Teal else Border)) {
                                                                 Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                                                                     Box(Modifier.size(48.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(title.trim().take(1).uppercase(),color=Teal,fontSize=16.sp,fontWeight=FontWeight.Bold) }
                                                                     Column(Modifier.weight(1f).padding(start=11.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
@@ -1736,7 +1736,7 @@ class MainActivity : ComponentActivity() {
                             val headerQual=if(showLiveHeader)headerQuality else monthOee?.optDouble("quality")?:0.0
                             Card(
                                 Modifier.fillMaxWidth().padding(horizontal=12.dp, vertical=6.dp),
-                                shape=RoundedCornerShape(15.dp),
+                                shape=RoundedCornerShape(20.dp),
                                 colors=CardDefaults.cardColors(containerColor=Navy),
                                 elevation=CardDefaults.cardElevation(defaultElevation=2.dp)
                             ) {
@@ -1855,7 +1855,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         if (pendingActionGroups.isEmpty()) EmptyState("No open actions", "There are no open actions assigned across the team.", { Icon(Icons.Filled.Assignment, contentDescription = null, tint = Teal, modifier = Modifier.size(30.dp)) })
                                         pendingActionGroups.forEach { group ->
-                                            Card(Modifier.fillMaxWidth().clickable { selectedOwner=group;homeTab="USER_ACTIONS" },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border),elevation=CardDefaults.cardElevation(1.dp)) {
+                                            Card(Modifier.fillMaxWidth().clickable { selectedOwner=group;homeTab="USER_ACTIONS" },shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border),elevation=CardDefaults.cardElevation(1.dp)) {
                                                 Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                                         Text(group.name,color=Navy,fontWeight=FontWeight.Bold)
@@ -1875,7 +1875,7 @@ class MainActivity : ComponentActivity() {
                                         if(pendingActions.isEmpty()) EmptyState("You're all caught up", "No pending actions are currently assigned to you.", { Icon(Icons.Filled.Assignment, contentDescription = null, tint = Teal, modifier = Modifier.size(30.dp)) })
                                     }
                                     pendingActions.forEach { item ->
-                                        Card(Modifier.fillMaxWidth().clickable { token?.let{openAction(item,it)} },shape=RoundedCornerShape(15.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border),elevation=CardDefaults.cardElevation(1.dp)) {
+                                        Card(Modifier.fillMaxWidth().clickable { token?.let{openAction(item,it)} },shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border),elevation=CardDefaults.cardElevation(1.dp)) {
                                             Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                                     Text(item.number,color=Navy,fontWeight=FontWeight.Bold)
@@ -1911,7 +1911,7 @@ class MainActivity : ComponentActivity() {
                                     val item=selectedAction!!
                                     TextButton(onClick={homeTab=if(account?.role?.uppercase() in listOf("ADMIN","MANAGEMENT")) "USER_ACTIONS" else "ACTIONS";token?.let{refreshPendingActions(it)}}) { Text("← BACK TO ACTIONS") }
                                     OutlinedButton(onClick={val auth=token;if(auth==null)message="Please sign in again." else scope.launch {homeTab="HISTORY";actionHistoryLoading=true;actionHistoryError=null;try{actionHistory=withContext(Dispatchers.IO){ApiClient.loadActionHistory(item.id,auth)}}catch(e:Exception){actionHistoryError=e.message ?: "Unable to load action history."}finally{actionHistoryLoading=false}}},modifier=Modifier.fillMaxWidth()){Text("VIEW ACTION HISTORY")}
-                                    Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(16.dp), colors=CardDefaults.cardColors(containerColor=Color.White), border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                    Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(20.dp), colors=CardDefaults.cardColors(containerColor=Color.White), border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                             Text(item.number,color=Navy,fontSize=20.sp,fontWeight=FontWeight.Bold)
                                             Text(item.description,color=Muted,fontSize=14.sp)
@@ -1990,7 +1990,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 if(homeTab=="OEE") {
                                     ScreenTitle("Machine effectiveness", "Production entry, shift performance and loss analysis")
-                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
                                             Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                                                 Icon(Icons.Filled.Settings,contentDescription=null,tint=Teal,modifier=Modifier.size(19.dp))
@@ -2118,7 +2118,7 @@ class MainActivity : ComponentActivity() {
                                         val selectedLosses = oeeSummary?.optJSONArray("losses") ?: JSONArray()
                                         Card(
                                             Modifier.fillMaxWidth(),
-                                            shape=RoundedCornerShape(14.dp),
+                                            shape=RoundedCornerShape(20.dp),
                                             colors=CardDefaults.cardColors(containerColor=Color.White),
                                             border=androidx.compose.foundation.BorderStroke(1.dp,Border)
                                         ) {
@@ -2555,7 +2555,7 @@ class MainActivity : ComponentActivity() {
                                         val updated = compliance.optInt("updated")
                                         val pending = compliance.optInt("pending")
                                         val incomplete = compliance.optInt("incomplete")
-                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                             Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                                 Text("REPORTING COMPLIANCE  •  ${compliance.optDouble("compliance_percent").let { "%.1f".format(it) }}%",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=14.sp)
                                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -2610,7 +2610,7 @@ class MainActivity : ComponentActivity() {
                                     oeeManagement?.let { report ->
                                         val overall=report.optJSONObject("overall")
                                         if(overall!=null) {
-                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                 Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                                     Text("OVERALL PERFORMANCE",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=12.sp)
                                                     Text("OEE ${"%.1f".format(overall.optDouble("oee_reported")*100)}%  •  Availability ${"%.1f".format(overall.optDouble("availability")*100)}%  •  Performance ${"%.1f".format(overall.optDouble("performance_raw")*100)}%  •  Quality ${"%.1f".format(overall.optDouble("quality")*100)}%",color=Teal,fontWeight=FontWeight.Bold,fontSize=14.sp)
@@ -2662,7 +2662,7 @@ class MainActivity : ComponentActivity() {
                                         actionHistoryError?.let{Text(it,color=Danger,fontSize=12.sp)}
                                         if(!actionHistoryLoading && actionHistory.isEmpty() && actionHistoryError==null) EmptyState("No history entries yet","Progress updates and status changes will appear here.",{Icon(Icons.Filled.History,contentDescription=null,tint=Teal,modifier=Modifier.size(30.dp))})
                                         actionHistory.forEach { row ->
-                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                 Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                                                     val changedByName=row.opt("changed_by_name")?.takeUnless{it==JSONObject.NULL}?.toString()?.trim().orEmpty()
                                                      val changedByUsername=row.opt("changed_by_username")?.takeUnless{it==JSONObject.NULL}?.toString()?.trim().orEmpty()
@@ -2722,7 +2722,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 if(homeTab=="REJECTION") {
                                 ScreenTitle("New rejection", "Capture a defect with process and quantity details")
-                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
+                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
                                     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                                         SectionLabel("Production details", "Date, shift, part and process information")
                                         OutlinedTextField(date,{date=it; product?.let{p->token?.let{t->refreshRoutes(p.id,it,t)}}},label={Text("Rejection date (YYYY-MM-DD)")},singleLine=true,modifier=Modifier.fillMaxWidth())
@@ -2969,7 +2969,7 @@ private fun RejectionQuantityTrend(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC))
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
