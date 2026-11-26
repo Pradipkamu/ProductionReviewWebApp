@@ -18,7 +18,7 @@ function readableApiError(detail: any): string {
   if (detail && typeof detail === 'object') {
     if (typeof detail.message === 'string') return detail.message
     if (detail.detail !== undefined && detail.detail !== detail) return readableApiError(detail.detail)
-    try { return JSON.stringify(detail) } catch { /* use fallback below */ }
+    if (Object.keys(detail).length) { try { return JSON.stringify(detail) } catch { /* use fallback below */ } }
   }
   return 'The request failed. Please check the entered values and try again.'
 }
@@ -37,7 +37,10 @@ export async function api<T=any>(path: string, init: RequestInit = {}): Promise<
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
     const detail = body && typeof body === 'object' && 'detail' in body ? body.detail : body
-    throw new Error(readableApiError(detail) || `${res.status} ${res.statusText}`)
+    const message = readableApiError(detail)
+    const error = new Error(message)
+    window.dispatchEvent(new CustomEvent('app:api-error', { detail: { message, status: res.status, path } }))
+    throw error
   }
   if(res.ok && headers.has('X-Correction-ID') && !path.split('?')[0].includes('/preview'))sessionStorage.removeItem('correctionId')
   return res.json()
@@ -61,7 +64,7 @@ export async function downloadApi(path: string, filename: string) {
   if (token) headers.set('Authorization', `Bearer ${token}`)
   const res = await fetch(`${API}${path}`, { headers })
   if (res.status === 401) { clearToken(); location.reload(); return }
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `${res.status} ${res.statusText}`)
+  if (!res.ok) { const body=await res.json().catch(()=>({})); const message=readableApiError(body?.detail??body); window.dispatchEvent(new CustomEvent('app:api-error',{detail:{message,status:res.status,path}})); throw new Error(message) }
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
