@@ -655,7 +655,7 @@ class MainActivity : ComponentActivity() {
             var remark by remember { mutableStateOf("") }
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
-            var homeTab by remember { mutableStateOf("HOME") }
+            var homeTab by remember { mutableStateOf("OEE") }
             var homeOeeShift by remember { mutableStateOf("A") }
             var homeOeeProduct by remember { mutableStateOf<Choice?>(null) }
             var homeOeeOperation by remember { mutableStateOf<RouteChoice?>(null) }
@@ -1230,7 +1230,8 @@ class MainActivity : ComponentActivity() {
                         message="Connected to Production Review."
                     } catch(_:Exception) {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
-                        message="Your saved session has expired. Please sign in again."
+                        homeTab="OEE"
+                         message="Your saved session has expired. Please sign in again."
                     } finally { busy=false }
                 }
             }
@@ -1251,7 +1252,7 @@ class MainActivity : ComponentActivity() {
                     withContext(Dispatchers.IO) { sessionStore.clear() }
                     token = null
                     account = null
-                    homeTab = "ACTIONS"
+                    homeTab = "OEE"
                     selectedChatId = null
                     chatConversations = JSONArray()
                     chatMessages = JSONArray()
@@ -2939,7 +2940,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 } catch(_:Exception){}
                                 withContext(Dispatchers.IO){sessionStore.clear()}
-                                token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;selectedChatId=null;chatConversations=JSONArray();chatMessages=JSONArray();chatDraft="";chatShowNew=false;homeTab="ACTIONS";message="Signed out.";busy=false
+                                token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;selectedChatId=null;chatConversations=JSONArray();chatMessages=JSONArray();chatDraft="";chatShowNew=false;homeTab="OEE";message="Signed out.";busy=false
                             }
                         }){Text("LOG OUT",color=Color(0xFFB3261E))}},
                         dismissButton={TextButton(onClick={showLogoutConfirm=false}){Text("CANCEL")}}
