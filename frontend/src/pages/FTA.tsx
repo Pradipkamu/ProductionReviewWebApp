@@ -161,7 +161,6 @@ export default function FTA({me}:{me:any}){
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
-  useEffect(()=>{if(!message)return;window.dispatchEvent(new CustomEvent('app:api-success',{detail:{message}}));setMessage('')},[message])
 
   const filteredTemplates=useMemo(()=>operationCode&&defectCode?templates.filter(t=>t.status==='PUBLISHED'&&t.operation_code===operationCode&&t.defect_code===defectCode):[],[templates,operationCode,defectCode])
   const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
