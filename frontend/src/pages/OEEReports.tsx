@@ -155,16 +155,26 @@ export default function OEEReports(){
 
   return <>
     <PageHeader title="OEE Reports" subtitle="Machine, product, shift and operator performance with availability, performance, quality and loss analysis." actions={pageActions}/>
-    <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
-    <div className="filters">
-      <MultiSelect value={machineId} onChange={setMachineId} placeholder="All Machines" options={machineOptions}/>
-      <label className="inline-filter">Shift <select value={shift} onChange={e=>setShift(e.target.value)}><option value="">All Shifts</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></label>
-      <label className="inline-filter">Operator <select value={operatorId} onChange={e=>setOperatorId(e.target.value)}><option value="">All Operators</option>{operators.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
-      <MultiSelect value={lossCategoryIds} onChange={setLossCategoryIds} placeholder="All Loss Categories" options={lossCategories.map((x:any)=>({value:String(x.id),label:x.name}))}/>
-      <label className="inline-filter">Loss Component <select value={lossComponent} onChange={e=>setLossComponent(e.target.value)}><option value="">All Components</option><option value="AVAILABILITY">Availability</option><option value="PERFORMANCE">Performance</option><option value="QUALITY">Quality</option></select></label>
-      <button className="secondary" onClick={()=>downloadCsv('oee_shift_details.csv',filteredEntries)}>Export OEE CSV</button>
-      <button className="secondary" onClick={()=>downloadCsv('oee_loss_details.csv',loss?.events||[])}>Export Loss CSV</button>
-    </div>
+    <section className="panel oee-report-filter-panel">
+      <div className="oee-report-filter-heading">
+        <div><h2>Report Filters</h2><p>Choose the production scope and operational filters. Reports refresh automatically.</p></div>
+        <span>FILTERS</span>
+      </div>
+      <div className="oee-filter-group-title">Production scope</div>
+      <ScopeFilters value={scope} onChange={setScope} options={options} products={products} showLabels/>
+      <div className="oee-filter-group-title oee-filter-group-spaced">Operational filters</div>
+      <div className="oee-detail-filter-grid">
+        <div className="oee-report-filter-control"><span>Machine</span><MultiSelect value={machineId} onChange={setMachineId} placeholder="All Machines" options={machineOptions}/></div>
+        <div className="oee-report-filter-control"><span>Shift</span><select value={shift} onChange={e=>setShift(e.target.value)}><option value="">All Shifts</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></div>
+        <div className="oee-report-filter-control"><span>Operator</span><select value={operatorId} onChange={e=>setOperatorId(e.target.value)}><option value="">All Operators</option>{operators.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></div>
+        <div className="oee-report-filter-control"><span>Loss category</span><MultiSelect value={lossCategoryIds} onChange={setLossCategoryIds} placeholder="All Loss Categories" options={lossCategories.map((x:any)=>({value:String(x.id),label:x.name}))}/></div>
+        <div className="oee-report-filter-control"><span>Loss component</span><select value={lossComponent} onChange={e=>setLossComponent(e.target.value)}><option value="">All Components</option><option value="AVAILABILITY">Availability</option><option value="PERFORMANCE">Performance</option><option value="QUALITY">Quality</option></select></div>
+      </div>
+      <div className="oee-filter-export-row">
+        <div><b>Export filtered data</b><span>Download the current selection for further review.</span></div>
+        <div className="oee-filter-export-actions"><button type="button" className="secondary" onClick={()=>downloadCsv('oee_shift_details.csv',filteredEntries)}>Export OEE CSV</button><button type="button" className="secondary" onClick={()=>downloadCsv('oee_loss_details.csv',loss?.events||[])}>Export Loss CSV</button></div>
+      </div>
+    </section>
     {selectedMachineLabel&&<div className="filter-summary"><button className="filter-chip removable" onClick={()=>setMachineId([])}>Machine: {selectedMachineLabel} ×</button></div>}
     {error&&<div className="error" role="alert">{error}</div>}
     {busy&&<div className="notice">Refreshing OEE report…</div>}
