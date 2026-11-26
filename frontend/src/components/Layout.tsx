@@ -25,8 +25,20 @@ function CorrectionControls({role}:{role:string}){
 
 export default function Layout({ children, me }: { children: React.ReactNode, me:any }) {
   const [menuOpen,setMenuOpen]=useState(false)
+  const [apiError,setApiError]=useState<{message:string;status?:number;path?:string}|null>(null)
   const routeLocation=useLocation()
   useEffect(()=>setMenuOpen(false),[routeLocation.pathname])
+  useEffect(()=>{
+    const showError=(event:Event)=>{const detail=(event as CustomEvent).detail||{};setApiError({message:String(detail.message||'The request could not be completed.'),status:detail.status,path:detail.path})}
+    window.addEventListener('app:api-error',showError)
+    return()=>window.removeEventListener('app:api-error',showError)
+  },[])
+  useEffect(()=>{
+    if(!apiError)return
+    const onKey=(event:KeyboardEvent)=>{if(event.key==='Escape')setApiError(null)}
+    window.addEventListener('keydown',onKey)
+    return()=>window.removeEventListener('keydown',onKey)
+  },[apiError])
   useEffect(()=>{
     if(!menuOpen)return
     const previous=document.body.style.overflow
@@ -87,6 +99,7 @@ export default function Layout({ children, me }: { children: React.ReactNode, me
         </div>
       </header>
       <CorrectionControls role={me?.role}/>{children}
+      {apiError&&<div className="global-error-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setApiError(null)}}><section className="global-error-dialog" role="alertdialog" aria-modal="true" aria-labelledby="global-error-title"><header><span className="global-error-symbol">!</span><div><h2 id="global-error-title">Unable to complete request</h2><p>{apiError.status?`Request failed (${apiError.status})`:'Please review the details below.'}</p></div><button type="button" className="global-error-close" aria-label="Close error" onClick={()=>setApiError(null)}>×</button></header><div className="global-error-message">{apiError.message}</div>{apiError.path&&<p className="global-error-path">Reference: {apiError.path}</p>}<footer><button type="button" onClick={()=>setApiError(null)}>Close</button></footer></section></div>}
     </main>
   </div>
 }
