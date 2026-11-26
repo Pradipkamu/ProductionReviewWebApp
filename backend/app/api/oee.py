@@ -944,16 +944,21 @@ def reporting_compliance(from_date: date, to_date: date, product_id: int | None 
             MachineMonthlyAllocation.effective_from <= day,
         )).all()
 
-        # Keep the latest effective allocation revision for each product,
-        # operation and machine as of the reporting date.
-        latest_allocations = {}
+        # A schedule revision is a complete allocation snapshot for a
+        # product/operation. Select the latest revision first, then take every
+        # machine row belonging to that revision; otherwise a removed machine
+        # from an older revision could incorrectly remain expected.
+        latest_revision = {}
         for allocation in month_allocations:
-            key = (allocation.product_id, allocation.route_operation_id, allocation.machine_id)
-            previous = latest_allocations.get(key)
-            if previous is None or (allocation.effective_from, allocation.revision_no, allocation.id) > (
-                previous.effective_from, previous.revision_no, previous.id
-            ):
-                latest_allocations[key] = allocation
+            key = (allocation.product_id, allocation.route_operation_id)
+            revision_key = (allocation.effective_from, allocation.revision_no)
+            if key not in latest_revision or revision_key > latest_revision[key]:
+                latest_revision[key] = revision_key
+        latest_allocations = [
+            allocation for allocation in month_allocations
+            if latest_revision.get((allocation.product_id, allocation.route_operation_id))
+            == (allocation.effective_from, allocation.revision_no)
+        ]
 
         requirements = db.scalars(select(DailyRequirement).where(
             DailyRequirement.req_date == day
@@ -987,7 +992,7 @@ def reporting_compliance(from_date: date, to_date: date, product_id: int | None 
         for requirement in planned_requirements:
             req_qty = float(requirement.revised_plan_qty if requirement.revised_plan_qty is not None else requirement.baseline_plan_qty or 0)
             candidates = [
-                allocation for allocation in latest_allocations.values()
+                allocation for allocation in latest_allocations
                 if allocation.product_id == requirement.product_id
                 and (requirement.route_operation_id is None or allocation.route_operation_id == requirement.route_operation_id)
                 and float(allocation.allocated_qty or 0) > 0
