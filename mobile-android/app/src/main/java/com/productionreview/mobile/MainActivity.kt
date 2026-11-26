@@ -576,32 +576,32 @@ internal data class RejectionTrendPoint(val date: LocalDate, val quantity: Float
 
 @Composable
 private fun ScreenTitle(title: String, subtitle: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(title, color = Navy, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-        if (!subtitle.isNullOrBlank()) Text(subtitle, color = Muted, fontSize = 13.sp)
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(title, color = Navy, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.3).sp)
+        if (!subtitle.isNullOrBlank()) Text(subtitle, color = Muted, fontSize = 13.sp, lineHeight = 18.sp)
     }
 }
 @Composable
 private fun SectionLabel(title: String, subtitle: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title.uppercase(), color = Navy, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
-        if (!subtitle.isNullOrBlank()) Text(subtitle, color = Muted, fontSize = 12.sp)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title.uppercase(), color = Navy, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.9.sp)
+        if (!subtitle.isNullOrBlank()) Text(subtitle, color = Muted, fontSize = 12.sp, lineHeight = 17.sp)
     }
 }
 @Composable
 private fun MetricTile(label: String, value: String, accent: Color, modifier: Modifier = Modifier, compact: Boolean = false) {
-    Card(modifier = modifier, shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = androidx.compose.foundation.BorderStroke(1.dp, Border), elevation = CardDefaults.cardElevation(1.dp)) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = if (compact) 7.dp else 12.dp, vertical = if (compact) 10.dp else 13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Box(Modifier.width(28.dp).height(3.dp).clip(RoundedCornerShape(3.dp)).background(accent))
-            Text(value, color = Navy, fontSize = if (compact) 19.sp else 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-            Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 2)
+    Card(modifier = modifier, shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Border), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = if (compact) 9.dp else 14.dp, vertical = if (compact) 11.dp else 15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.width(30.dp).height(3.dp).clip(RoundedCornerShape(3.dp)).background(accent))
+            Text(value, color = Navy, fontSize = if (compact) 19.sp else 24.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false)
+            Text(label, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, letterSpacing = 0.25.sp)
         }
     }
 }
 @Composable
 private fun EmptyState(title: String, description: String, icon: @Composable () -> Unit = {}) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = Color.White),
         border = androidx.compose.foundation.BorderStroke(1.dp, Border)) {
         Column(Modifier.fillMaxWidth().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             icon()
@@ -1367,6 +1367,13 @@ class MainActivity : ComponentActivity() {
                     bodySmall = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, color = Muted),
                     titleLarge = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, fontWeight = FontWeight.Bold),
                     titleMedium = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                ),
+                shapes = Shapes(
+                    extraSmall = RoundedCornerShape(8.dp),
+                    small = RoundedCornerShape(13.dp),
+                    medium = RoundedCornerShape(18.dp),
+                    large = RoundedCornerShape(24.dp),
+                    extraLarge = RoundedCornerShape(28.dp)
                 )
             ) {
                 ModalNavigationDrawer(
@@ -1526,7 +1533,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         } else if (homeTab == "CHAT") {
-                            Column(Modifier.fillMaxSize().background(Color(0xFFE8F0ED))) {
+                            Column(Modifier.fillMaxSize().background(Canvas)) {
                                 if (selectedChatId == null) {
                                     Column(Modifier.fillMaxSize().padding(horizontal=12.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
                                         Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.SpaceBetween) {
@@ -1560,7 +1567,7 @@ class MainActivity : ComponentActivity() {
                                                                             chatEmployees=JSONArray();chatSearch=""
                                                                         } catch(e:Exception){message="Unable to start chat: ${e.message}"}
                                                                     }
-                                                                }.background(Color(0xFFF5F8F7)).padding(11.dp),verticalAlignment=Alignment.CenterVertically) {
+                                                                }.background(Color(0xFFF4F6F8)).padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                                                                     Box(Modifier.size(40.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(employee.optString("full_name").trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold) }
                                                                     Column(Modifier.weight(1f).padding(start=10.dp)) {
                                                                         Text(employee.optString("full_name"),color=Navy,fontSize=13.sp,fontWeight=FontWeight.Bold)
@@ -1646,7 +1653,7 @@ class MainActivity : ComponentActivity() {
                                                 if(msg!=null) {
                                                     val mine=msg.optString("sender_username")==account?.username
                                                     Row(Modifier.fillMaxWidth(),horizontalArrangement=if(mine)Arrangement.End else Arrangement.Start) {
-                                                        Card(Modifier.widthIn(max=320.dp).fillMaxWidth(0.88f),shape=RoundedCornerShape(topStart=12.dp,topEnd=12.dp,bottomStart=if(mine)12.dp else 3.dp,bottomEnd=if(mine)3.dp else 12.dp),colors=CardDefaults.cardColors(containerColor=if(mine)Color(0xFFD9FDD3) else Color.White),elevation=CardDefaults.cardElevation(defaultElevation=1.dp)) {
+                                                        Card(Modifier.widthIn(max=320.dp).fillMaxWidth(0.88f),shape=RoundedCornerShape(topStart=12.dp,topEnd=12.dp,bottomStart=if(mine)12.dp else 3.dp,bottomEnd=if(mine)3.dp else 12.dp),colors=CardDefaults.cardColors(containerColor=if(mine)Color(0xFFE4F2F0) else Color.White),elevation=CardDefaults.cardElevation(defaultElevation=1.dp)) {
                                                             Column(Modifier.padding(horizontal=11.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
                                                                 if(!mine&&activeConversation?.optString("kind")=="GROUP") Text(msg.optString("sender_name"),color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
                                                                 val messageBody=msg.optString("body")
@@ -3042,7 +3049,8 @@ private fun ChoiceDropdown(
         OutlinedButton(
             onClick = { search = ""; expanded = true },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp)
+            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 13.dp)
         ) {
             Text(
                 selectedText ?: selected?.label ?: if (allowNone) "Not selected" else "Select…",
