@@ -1050,3 +1050,16 @@ button.ghost{color:inherit}
 
 /* Shared production-control mark in authentication and loading views */
 .app-login-logo{display:block;object-fit:cover;background:transparent;border-radius:14px;box-shadow:0 8px 22px rgba(0,0,0,.22)}
+
+
+/* Workspace-wide API error dialog */
+.global-error-backdrop{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;padding:20px;background:rgba(13,27,45,.58);backdrop-filter:blur(2px)}
+.global-error-dialog{width:min(520px,100%);background:#fff;border:1px solid #e2bcbc;border-top:5px solid #c63c3c;border-radius:13px;box-shadow:0 24px 80px rgba(8,24,45,.32);color:#24364d;overflow:hidden}
+.global-error-dialog>header{display:flex;align-items:center;gap:13px;padding:19px 20px 14px;border-bottom:1px solid #edf0f4}
+.global-error-symbol{flex:0 0 36px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#fff0f0;color:#b42323;font-size:23px;font-weight:800}
+.global-error-dialog h2{margin:0;color:#17365d;font-size:18px}
+.global-error-dialog header p{margin:4px 0 0;color:#718096;font-size:12px}
+.global-error-close{margin-left:auto;background:transparent;color:#60708a;font-size:25px;padding:2px 8px}
+.global-error-message{padding:20px 22px;color:#26364c;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.global-error-path{margin:0;padding:0 22px 14px;color:#8490a0;font-size:11px;overflow-wrap:anywhere}
+.global-error-dialog>footer{display:flex;justify-content:flex-end;padding:12px 20px;background:#f7f9fc;border-top:1px solid #e8edf3}
