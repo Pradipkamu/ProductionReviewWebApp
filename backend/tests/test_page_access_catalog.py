@@ -38,3 +38,13 @@ def test_new_intelligence_and_product_pages_are_available_to_role_configuration(
 
     assert expected.issubset(set(PAGE_KEYS))
     assert expected.issubset(set(default_page_keys(UserRole.VIEW_ONLY)))
+
+
+def test_fta_page_is_available_only_to_supported_roles_by_default():
+    assert "fta" in PAGE_KEYS
+    assert "fta" in default_page_keys(UserRole.ADMIN)
+    assert "fta" in default_page_keys(UserRole.MANAGEMENT)
+    assert "fta" in default_page_keys(UserRole.QUALITY)
+    assert "fta" in default_page_keys(UserRole.PRODUCTION)
+    assert "fta" not in default_page_keys(UserRole.PLANNING)
+    assert "fta" not in default_page_keys(UserRole.VIEW_ONLY)

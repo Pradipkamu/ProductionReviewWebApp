@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, record_security_event
@@ -107,7 +107,7 @@ def serialize_action(db: Session, a: Action) -> dict:
         "closure_remark": a.closure_remark,
         "effectiveness_status": a.effectiveness_status,
         "action_type": a.action_type,
-        "requires_whywhy": a.requires_whywhy,
+        "requires_whywhy": bool(a.requires_whywhy) and str(a.action_type or "").upper() != "FTA",
         "age_days": max(0, (ist_today() - a.reference_date).days),
         "overdue": bool(a.due_at and a.status != ActionStatus.CLOSED and a.due_at < datetime.utcnow()),
         "whywhy_completion_percent": _serialize_plan(plan)["completion_percent"],
@@ -566,7 +566,14 @@ def update_action(action_id: int, payload: ActionUpdate, db: Session = Depends(g
         if field in data:
             setattr(a, field, data[field])
     if payload.status is not None:
-        if payload.status == ActionStatus.CLOSED and a.requires_whywhy:
+        if payload.status == ActionStatus.CLOSED and a.action_type == "FTA":
+            unresolved_causes = db.execute(
+                text("SELECT COUNT(*) FROM fta_discovered_causes WHERE action_id=:id AND status IN ('PROPOSED','ACCEPTED')"),
+                {"id": action_id},
+            ).scalar_one()
+            if unresolved_causes:
+                raise HTTPException(409, "Quality must review newly discovered causes before this FTA action can be closed.")
+        if payload.status == ActionStatus.CLOSED and a.requires_whywhy and str(a.action_type or "").upper() != "FTA":
             plan = db.scalar(select(ActionWhyWhy).where(ActionWhyWhy.action_id == action_id))
             pdata = _serialize_plan(plan)
             if not pdata["can_close"]:

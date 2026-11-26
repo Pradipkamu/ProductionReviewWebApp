@@ -164,6 +164,38 @@ verify_database_backup() {
   say "Live database pms was not modified."
 }
 
+create_files_backup() {
+  local archive p
+  local -a paths=()
+
+  archive="$CODE_BACKUP_DIR/files_before_update_$STAMP.tar.gz"
+  [[ -f "$APP_DIR/.env" ]] || stop "Production .env file is missing; configuration backup is mandatory"
+  # Include the server-local Compose override (for example Firebase credentials mount).
+  for p in .env docker-compose.yml docker-compose.override.yml database/imports database/attachments database/backups mqtt/config mqtt/certs; do
+    [[ -e "$APP_DIR/$p" ]] && paths+=("$p")
+  done
+  ((${#paths[@]} > 0)) || stop "No application data/configuration paths found for file backup"
+
+  say "Creating protected application-data/configuration archive..."
+  command -v sudo >/dev/null || stop "sudo is required to archive protected production files"
+
+  if ! sudo tar -czf "$archive" -C "$APP_DIR" "${paths[@]}"; then
+    sudo rm -f "$archive" || true
+    stop "Application data/configuration backup failed"
+  fi
+
+  if ! sudo tar -tzf "$archive" >/dev/null; then
+    sudo rm -f "$archive" || true
+    stop "Application data/configuration archive verification failed"
+  fi
+
+  sudo chown "$(id -u):$(id -g)" "$archive" ||
+    stop "Could not assign backup archive ownership to current user"
+  chmod 600 "$archive"
+  say "VERIFIED FILES/CONFIG BACKUP: $archive"
+  printf 'FILES_BACKUP=%q\n' "$archive" >> "$STATE_FILE"
+}
+
 create_backups() {
   local db_file bundle_file
 
@@ -200,6 +232,134 @@ create_backups() {
     printf 'BRANCH=%q\n' "$(git branch --show-current)"
   } > "$STATE_FILE"
   chmod 600 "$STATE_FILE"
+
+  create_files_backup
+
+  # Print a concise end-of-run summary so the operator can confirm all
+  # three backup artifacts without manually searching the log.
+  # shellcheck disable=SC1090
+  source "$STATE_FILE"
+  [[ -s "${DB_BACKUP:-}" ]] || stop "Database backup missing after backup routine"
+  [[ -s "${CODE_BACKUP:-}" ]] || stop "Git bundle missing after backup routine"
+  [[ -s "${FILES_BACKUP:-}" ]] || stop "Files/configuration archive missing after backup routine"
+
+  say "========== BACKUP VERIFICATION SUMMARY =========="
+  say "VERIFIED DATABASE BACKUP ARCHIVE: $DB_BACKUP"
+  say "TEMPORARY RESTORE VERIFIED: $DB_BACKUP"
+  say "VERIFIED CODE BACKUP: $CODE_BACKUP"
+  say "VERIFIED FILES/CONFIG BACKUP: $FILES_BACKUP"
+  ls -lh "$DB_BACKUP" "$CODE_BACKUP" "$FILES_BACKUP" | tee -a "$LOG"
+  say "========== ALL THREE BACKUPS VERIFIED =========="
+}
+
+migration_preflight() {
+  local current heads sql_file
+  sql_file="$LOG_DIR/migration-preview-$STAMP.sql"
+
+  say "Checking database migration state against application source..."
+  current="$(docker compose run --rm --no-deps backend alembic current 2>&1)" ||
+    stop "Could not read current database Alembic revision"
+  heads="$(docker compose run --rm --no-deps backend alembic heads 2>&1)" ||
+    stop "Could not read Alembic migration heads"
+  say "Current database revision: $current"
+  say "Application migration head(s): $heads"
+
+  if ! docker compose run --rm --no-deps backend alembic upgrade head --sql > "$sql_file" 2>>"$LOG"; then
+    stop "Could not generate offline migration preview; inspect $LOG"
+  fi
+  chmod 600 "$sql_file"
+  say "Offline migration SQL preview saved to: $sql_file"
+  say "No migration was applied. Review it before running: bash server_update.sh migrate --confirm"
+}
+
+install_daily_backup() {
+  local service_file timer_file run_user run_group
+  command -v systemctl >/dev/null || stop "systemd is required for daily backups"
+  command -v flock >/dev/null || stop "flock is required for safe backup locking"
+  command -v sudo >/dev/null || stop "sudo is required to install the systemd timer"
+
+  run_user="$(id -un)"
+  run_group="$(id -gn)"
+  service_file="/etc/systemd/system/productionreview-daily-backup.service"
+  timer_file="/etc/systemd/system/productionreview-daily-backup.timer"
+
+  say "Installing daily backup service for user $run_user..."
+  sudo tee "$service_file" >/dev/null <<EOF
+[Unit]
+Description=ProductionReviewWebApp verified daily backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=$run_user
+Group=$run_group
+WorkingDirectory=$APP_DIR
+Environment=HOME=$HOME
+UMask=0077
+ExecStart=/usr/bin/flock -n /run/lock/productionreview-daily-backup.lock /bin/bash $APP_DIR/server_update.sh backup
+EOF
+
+  sudo tee "$timer_file" >/dev/null <<'EOF'
+[Unit]
+Description=Run ProductionReviewWebApp backup daily at 02:00 Asia/Kolkata
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=5m
+Unit=productionreview-daily-backup.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+  sudo chmod 644 "$service_file" "$timer_file"
+  sudo systemd-analyze verify "$service_file" "$timer_file" ||
+    stop "systemd unit validation failed; timer was not enabled"
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now productionreview-daily-backup.timer
+  say "Daily backup timer installed and enabled for 02:00 Asia/Kolkata."
+  say "No backup files were deleted; retention remains manual."
+  systemctl list-timers productionreview-daily-backup.timer --no-pager | tee -a "$LOG"
+}
+
+daily_backup_status() {
+  command -v systemctl >/dev/null || stop "systemd is required"
+  systemctl status productionreview-daily-backup.timer --no-pager || true
+  systemctl list-timers productionreview-daily-backup.timer --no-pager || true
+  say "Recent daily backup service logs:"
+  journalctl -u productionreview-daily-backup.service -n 60 --no-pager 2>&1 | tee -a "$LOG" || true
+}
+
+uninstall_daily_backup() {
+  command -v systemctl >/dev/null || stop "systemd is required"
+  command -v sudo >/dev/null || stop "sudo is required"
+  sudo systemctl disable --now productionreview-daily-backup.timer || true
+  sudo rm -f /etc/systemd/system/productionreview-daily-backup.timer /etc/systemd/system/productionreview-daily-backup.service
+  sudo systemctl daemon-reload
+  say "Daily backup timer and service removed. Existing backup files were preserved."
+}
+
+apply_migrations() {
+  local confirm="${1:-}"
+  [[ "$confirm" == "--confirm" ]] || stop "Use migrate --confirm to apply migrations"
+  [[ -f "$STATE_FILE" ]] || stop "No deployment backup state found. Run backup first."
+
+  # shellcheck disable=SC1090
+  source "$STATE_FILE"
+  [[ -n "${DB_BACKUP:-}" && -s "$DB_BACKUP" ]] || stop "Saved database backup is missing or empty"
+  [[ -n "${BRANCH:-}" && "$(git branch --show-current)" == "$BRANCH" ]] ||
+    stop "Current branch does not match saved deployment branch"
+
+  verify_database_backup "$DB_BACKUP"
+  migration_preflight
+  say "Applying Alembic migrations after explicit confirmation..."
+  docker compose run --rm backend alembic upgrade head ||
+    stop "Migration failed. Do not attempt automatic downgrade; inspect database and logs."
+  docker compose run --rm --no-deps backend alembic current ||
+    stop "Migration ran but current revision could not be verified"
+  say "MIGRATIONS APPLIED. Database rollback is NOT automatic; use a planned restore procedure if needed."
 }
 
 health_check() {
@@ -294,8 +454,13 @@ usage() {
 Usage:
   bash server_update.sh check
   bash server_update.sh backup
+  bash server_update.sh daily-backup-install
+  bash server_update.sh daily-backup-status
+  bash server_update.sh daily-backup-uninstall
   bash server_update.sh verify-backup <dump-path>
   bash server_update.sh verify
+  bash server_update.sh migration-check
+  bash server_update.sh migrate --confirm
   bash server_update.sh prepare <branch>
   bash server_update.sh deploy <branch> --confirm
   bash server_update.sh rollback
@@ -308,8 +473,11 @@ Deployment safeguards:
   - Git bundle is verified before deployment.
   - Backend/frontend are built and restarted.
   - Post-deploy verification checks API, frontend, and PostgreSQL readiness.
-  - Alembic migrations are NOT run.
-  - Database restore is NOT run.
+  - Alembic migrations are NOT run by deploy; use migration-check then migrate --confirm.
+  - Database restore is NOT run automatically.
+  - .env, Compose config, uploads, attachments, app backups, MQTT config and certificates are archived when present.
+  - MQTT named-volume contents are not modified by this helper and are not included in the file archive.
+  - Database rollback after a migration requires a separately planned restore.
 EOF
 }
 
@@ -322,8 +490,23 @@ main() {
       ;;
 
     backup)
+      # Keep scheduled/manual backup metadata separate from deployment rollback state.
+      STATE_FILE="$BACKUP_ROOT/last_backup.env"
       status
       create_backups
+      ;;
+
+    daily-backup-install)
+      status
+      install_daily_backup
+      ;;
+
+    daily-backup-status)
+      daily_backup_status
+      ;;
+
+    daily-backup-uninstall)
+      uninstall_daily_backup
       ;;
 
     verify-backup)
@@ -336,6 +519,16 @@ main() {
       status
       health_check || stop "Application verification failed; inspect the update log."
       say "APPLICATION VERIFICATION PASSED."
+      ;;
+
+    migration-check)
+      status
+      migration_preflight
+      ;;
+
+    migrate)
+      status
+      apply_migrations "${2:-}"
       ;;
 
     prepare)
@@ -412,8 +605,9 @@ main() {
       fi
 
       say "UPDATE COMPLETED."
-      say "Alembic migrations were NOT run."
+      say "Alembic migrations were NOT run. Review/apply separately with migration-check and migrate --confirm."
       say "Database backup: $BACKUP_DIR/pms_before_update_$STAMP.dump"
+      say "Files/config backup: $CODE_BACKUP_DIR/files_before_update_$STAMP.tar.gz"
       say "Code backup: $CODE_BACKUP_DIR/code_before_update_$STAMP.bundle"
       ;;
 

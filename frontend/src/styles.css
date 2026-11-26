@@ -76,7 +76,7 @@ body{min-width:320px;background:#f3f6fa}
 .user-card b{font-size:13px}.user-card span{font-size:10px;opacity:.68;text-transform:capitalize;margin-top:2px}
 .user-avatar{flex:0 0 32px;width:32px;height:32px;border-radius:9px;display:grid;place-items:center;background:rgba(255,255,255,.14);font-weight:800}
 .sidebar nav{display:block;padding-bottom:18px}
-.nav-group{margin:0 0 12px}.nav-group-label{padding:0 12px 5px;color:#8fa8c5;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase}
+.nav-group{margin:0 0 12px}.nav-group-label{padding:0 12px 5px;color:#8fa8c5;font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase}.nav-group summary.nav-group-label{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;list-style:none;user-select:none}.nav-group summary.nav-group-label::-webkit-details-marker{display:none}.nav-group summary.nav-group-label span{font-size:13px;transition:transform .15s ease}.nav-group[open] summary.nav-group-label span{transform:rotate(180deg)}.nav-group summary.nav-group-label:focus-visible{outline:2px solid var(--orange);outline-offset:2px;border-radius:4px}
 .sidebar nav a{display:block;padding:9px 12px;margin:2px 0;border-left:3px solid transparent}
 .sidebar nav a:hover{background:rgba(255,255,255,.07)}
 .sidebar nav a.active{background:rgba(255,255,255,.12);border-left-color:var(--orange);box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
@@ -571,13 +571,7 @@ button.ghost{color:inherit}
 @media(max-width:600px){.oee-live-hero{align-items:flex-start;flex-direction:column;padding:15px}.oee-live-metrics{width:100%;justify-content:space-between;gap:8px}.oee-success-grid{grid-template-columns:1fr 1fr}}
 
 
-/* OEE live card: remain visible while the entry page scrolls */
-.oee-live-sticky{position:sticky;top:8px;z-index:80;isolation:isolate;}
-.oee-live-sticky>div:first-child{position:relative;padding-left:18px}
-.oee-live-sticky>div:first-child:before{content:"";position:absolute;left:0;top:5px;width:9px;height:9px;border-radius:50%;background:#55e39b;box-shadow:0 0 0 0 rgba(85,227,155,.65);animation:oee-live-pulse 1.5s infinite}
-.oee-live-sticky strong{font-variant-numeric:tabular-nums;text-shadow:0 0 14px rgba(255,255,255,.18)}
-@keyframes oee-live-pulse{0%{box-shadow:0 0 0 0 rgba(85,227,155,.65);opacity:1}70%{box-shadow:0 0 0 9px rgba(85,227,155,0);opacity:.82}100%{box-shadow:0 0 0 0 rgba(85,227,155,0);opacity:1}}
-@media(prefers-reduced-motion:reduce){.oee-live-sticky>div:first-child:before{animation:none}}
+/* Live OEE card stays in normal document flow to keep the entry form unobstructed. */
 
 
 /* Shared employee chat */
@@ -717,3 +711,349 @@ button.ghost{color:inherit}
   .chat-wa-composer{padding:8px}
   .chat-wa-conversation .chat-conversation-copy small{max-width:180px}
 }
+
+
+/* Fault Tree Analysis workspace */
+.fta-view-nav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--line,#e3e8f0)}.fta-view-nav a{display:inline-flex;align-items:center;padding:8px 13px;border:1px solid var(--line,#dce3ec);border-radius:8px;color:inherit;text-decoration:none;font-size:13px;font-weight:650;background:var(--surface,#fff)}.fta-view-nav a:hover{border-color:var(--orange);background:rgba(242,145,48,.07)}.fta-view-nav a.active{background:var(--navy,#173653);border-color:var(--navy,#173653);color:#fff}
+.fta-page .panel-title p{margin:5px 0 0;color:#718096;font-size:12px}
+.fta-create-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.fta-workspace-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.8fr);gap:18px;align-items:start}
+.fta-tree-panel,.fta-finding-panel{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px;background:#fbfcfe}
+.fta-tree-panel h3,.fta-finding-panel h3,.fta-bottom-grid h3{margin:0 0 8px;color:var(--navy);font-size:15px}
+.fta-tree-node{margin-top:9px}
+.fta-node-button{width:100%;display:flex;align-items:center;gap:9px;text-align:left;background:#fff;color:#20334e;border:1px solid #dbe3ed;border-left:4px solid #8b9bb0;padding:10px;border-radius:8px}
+.fta-node-button.selected{border-color:var(--blue);background:#edf4ff;box-shadow:0 0 0 2px #255ea81a}
+.fta-node-gate{flex:0 0 auto;border-radius:5px;padding:3px 6px;background:#e9eef5;color:#405572;font-size:9px;font-weight:800}
+.fta-node-button strong{font-size:12px;flex:1}
+.fta-node-status{font-size:9px;color:#718096;font-weight:700;white-space:nowrap}
+.fta-node-status.success{color:#16734c}.fta-node-status.warning{color:#a36b08}
+.fta-tree-children{border-left:1px dashed #cbd5e1;margin:5px 0 5px 13px;padding-left:5px}
+.fta-finding-panel label{margin-top:10px}
+.fta-check{display:flex;grid-template-columns:18px 1fr;align-items:center;gap:8px;text-transform:none;font-size:12px}
+.fta-check input{width:16px;height:16px}
+.fta-bottom-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+.fta-bottom-grid>div{min-width:0;border:1px solid var(--line);border-radius:10px;padding:14px}
+.fta-action-link{display:grid;grid-template-columns:1fr 150px auto;gap:8px;margin:10px 0 14px}
+.status-pill{display:inline-block;padding:4px 8px;border-radius:99px;background:#edf1f6;color:#43546c;font-size:10px;font-weight:700}
+.success{background:#eaf7ef;color:#176b45;border:1px solid #cbe9d6;padding:10px 12px;border-radius:8px;margin:10px 0}
+@media(max-width:900px){.fta-workspace-grid{grid-template-columns:1fr}.fta-create-grid,.fta-bottom-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.fta-action-link{grid-template-columns:1fr}.fta-node-button{flex-wrap:wrap}.fta-node-status{margin-left:auto}.fta-page .panel{padding:13px}}
+
+
+.fta-evidence-box{margin-top:14px;padding:12px;border:1px dashed #b9c7d8;border-radius:9px;background:#fff}
+.fta-evidence-box>strong{display:block;color:var(--navy);font-size:13px;margin-bottom:8px}
+.fta-evidence-box label{margin-bottom:8px}
+.fta-evidence-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid #edf0f5;font-size:11px;color:#52627a}
+.fta-evidence-item span{min-width:0;overflow-wrap:anywhere}
+
+
+.fta-node-logic{margin-left:auto;border-radius:5px;padding:3px 6px;background:#eef2f7;color:#52627a;font-size:9px;font-weight:800;white-space:nowrap}
+.fta-review-controls{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;gap:10px;align-items:end;margin:18px 0;padding:14px;border:1px solid var(--line);border-radius:10px;background:#fbfcfe}
+.fta-review-controls label{margin:0}
+@media(max-width:900px){.fta-review-controls{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.fta-review-controls{grid-template-columns:1fr}}
+
+
+
+.fta-process-flow{border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0;background:var(--panel,#fff)}
+.fta-process-flow .panel-title{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.fta-process-flow .panel-title h3{margin:0;color:var(--navy);font-size:16px}
+.fta-process-flow .panel-title p{margin:5px 0 0;color:var(--muted);font-size:12px}
+.fta-process-flow .panel-title>strong{white-space:nowrap;color:var(--navy);font-size:13px}
+.fta-process-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fta-process-step{display:flex;align-items:flex-start;gap:11px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:9px;background:var(--surface,#fff)}
+.fta-process-marker{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:50%;font-size:12px;font-weight:800;background:#eef2f7;color:#64748b}
+.fta-process-step.completed .fta-process-marker{background:#dcfce7;color:#166534}
+.fta-process-step.in-progress .fta-process-marker{background:#fef3c7;color:#92400e}
+.fta-process-copy{min-width:0;flex:1}
+.fta-process-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.fta-process-heading>strong{font-size:13px;color:var(--navy)}
+.fta-process-status{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.02em}
+.fta-process-status.completed{color:#15803d}
+.fta-process-status.in-progress{color:#b45309}
+.fta-process-status.pending{color:#64748b}
+.fta-process-copy p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
+
+.fta-process-link{color:var(--navy);font-size:13px;font-weight:800;text-decoration:none}
+.fta-process-link:hover{text-decoration:underline;color:var(--primary,#245ca6)}
+.fta-process-update-link{display:inline-block;margin-top:7px;color:var(--primary,#245ca6);font-size:11px;font-weight:700;text-decoration:none}
+.fta-process-update-link:hover{text-decoration:underline}
+.fta-process-action-links{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px}
+.fta-process-action-links .fta-process-update-link{margin-top:3px}
+#fta-section-investigation,#fta-section-fault-tree,#fta-section-root-cause,#fta-section-actions,#fta-section-action-review,#fta-section-closure{scroll-margin-top:90px}
+
+@media(max-width:700px){.fta-process-list{grid-template-columns:1fr}.fta-process-flow{padding:12px}.fta-process-flow .panel-title{flex-direction:column}}
+
+.fta-history{border:1px solid var(--line);border-radius:10px;padding:14px;margin:16px 0;background:#fff}
+.fta-history h3{margin:0 0 8px;color:var(--navy);font-size:15px}
+.fta-history-row{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:4px 12px;padding:8px 0;border-top:1px solid #edf0f5;font-size:11px}
+.fta-history-row strong{color:#29405f}.fta-history-row span{color:#7a8799}.fta-history-row p{grid-column:1/-1;margin:0;color:#68768b}
+
+
+.fta-finding-history{margin:12px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.fta-finding-history summary{cursor:pointer;color:var(--navy);font-size:12px;font-weight:700}
+
+
+/* Printable Fault Tree Analysis investigation report */
+.fta-report-page { max-width: 1180px; margin: 0 auto; }
+.fta-report-cover { display:grid; grid-template-columns:2fr 1fr; gap:24px; padding:28px; margin:16px 0; border:1px solid var(--border); border-radius:14px; background:var(--surface); }
+.fta-report-cover h1 { margin:8px 0; font-size:30px; }
+.fta-report-cover > div:last-child { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; align-content:center; }
+.fta-report-section { margin:16px 0; break-inside:avoid; }
+.fta-report-section h2 { margin-top:0; }
+.fta-report-meta { display:flex; flex-wrap:wrap; gap:10px 22px; padding:12px 0; }
+.fta-report-tree-node { border-left:2px solid var(--border); padding:7px 0 7px 12px; margin-top:6px; }
+.fta-report-tree-heading { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.fta-report-tree-heading span { font-size:11px; color:var(--muted); text-transform:uppercase; }
+.fta-report-finding { margin:6px 0 4px 10px; padding:8px 12px; background:var(--surface-secondary); border-radius:8px; }
+.fta-report-finding p { margin:4px 0; }
+.fta-report-cause { border-bottom:1px solid var(--border); padding:10px 0; break-inside:avoid; }
+.fta-report-footer { padding:18px 0; color:var(--muted); font-size:12px; }
+@media print {
+  .fta-report-actions, .sidebar, nav, button, a.button { display:none !important; }
+  .fta-report-page { max-width:none; margin:0; }
+  .fta-report-section, .fta-report-cover { box-shadow:none !important; break-inside:avoid; }
+  .fta-report-section { page-break-inside:auto; }
+  .fta-report-tree-node, .fta-report-cause { break-inside:avoid; }
+  body { background:#fff !important; color:#111 !important; }
+}
+
+
+/* FTA mind-map print layout: dedicated single-page A3 landscape output */
+.fta-mindmap-print .fta-report-cover,
+.fta-mindmap-print .fta-report-section:not(.fta-mindmap-section),
+.fta-mindmap-print .fta-report-footer { display:none !important; }
+.fta-mindmap-print .fta-mindmap-section {
+  display:block !important; margin:0; padding:0; border:0; box-shadow:none;
+  width:100%; max-width:none; background:#fff;
+}
+.fta-mindmap-print .fta-mindmap-section > h2 {
+  margin:0 0 3mm; padding:0 0 2mm; border-bottom:1px solid #9aabc0;
+  text-align:center; font-size:13pt; color:#172b45;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-node {
+  border:0; margin:0; padding:2mm 0; text-align:center;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:2px; min-width:30mm; max-width:58mm; min-height:12mm; margin:0 auto;
+  padding:2mm 3mm; border:1px solid #6b86a5; border-radius:3mm;
+  background:#f4f7fb; color:#172b45; text-align:center; font-size:8pt;
+  overflow-wrap:anywhere;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-node:first-child > .fta-report-tree-heading {
+  background:#eaf1fb; border:2px solid #315f98; font-size:10pt;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading span,
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading .status-pill { font-size:6.5pt; }
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-children {
+  display:flex; flex-wrap:nowrap; justify-content:space-around; align-items:flex-start;
+  gap:2mm; margin:3mm 0 0; padding:3mm 1mm 0;
+  border-top:1px solid #9aabc0; position:relative;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node {
+  flex:1 1 0; min-width:0; max-width:none; padding:0 1mm;
+  border:0; margin:0; position:relative;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node:before {
+  content:""; position:absolute; top:-3.2mm; left:50%; height:3.2mm; border-left:1px solid #9aabc0;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding {
+  margin:2mm auto 0; max-width:55mm; padding:1.5mm 2mm; text-align:left;
+  border:1px solid #d7e0eb; background:#fff; font-size:6.5pt; overflow-wrap:anywhere;
+}
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding p { margin:1mm 0; }
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding small,
+.fta-mindmap-print .fta-mindmap-section .fta-report-finding strong { font-size:6.5pt; }
+@page { size:A3 landscape; margin:7mm; }
+@media print {
+  .fta-mindmap-print { width:100%; max-width:none; margin:0; padding:0; }
+  .fta-mindmap-print .fta-report-actions { display:none !important; }
+  .fta-mindmap-print .fta-mindmap-section { break-before:avoid; break-after:avoid; }
+  .fta-mindmap-print .fta-mindmap-section .fta-report-tree-node { break-inside:avoid; }
+  .fta-mindmap-print .fta-mindmap-section .fta-report-tree-children { break-inside:auto; }
+  .fta-mindmap-print .fta-mindmap-section .fta-report-tree-heading { print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+  .fta-mindmap-print, .fta-mindmap-print * { box-sizing:border-box; }
+}
+
+/* Dedicated Quality / Rejection workspace views */
+.quality-view-nav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--line)}.quality-view-nav a{display:inline-flex;align-items:center;padding:8px 13px;border:1px solid var(--line);border-radius:8px;color:inherit;text-decoration:none;font-size:13px;font-weight:650;background:#fff}.quality-view-nav a:hover{border-color:var(--orange);background:#ed7d310d}.quality-view-nav a.active{background:var(--navy);border-color:var(--navy);color:#fff}
+
+/* Interactive, zoomable FTA mind-map browser view */
+.fta-mindmap-web-view .fta-report-cover,
+.fta-mindmap-web-view .fta-report-section:not(.fta-mindmap-section),
+.fta-mindmap-web-view .fta-report-footer { display:none !important; }
+.fta-mindmap-web-view .fta-report-page { max-width:none; }
+.fta-mindmap-web-view .fta-report-actions .page-header { align-items:center; }
+.fta-mindmap-web-view .fta-mindmap-section { padding:18px; }
+.fta-mindmap-web-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+.fta-mindmap-web-toolbar h2 { margin:0 0 4px; }
+.fta-mindmap-web-toolbar small { color:#718096; }
+.fta-mindmap-zoom { display:flex; align-items:center; gap:8px; }
+.fta-mindmap-zoom b { min-width:48px; text-align:center; color:#29405f; font-size:12px; }
+.fta-mindmap-canvas { width:100%; min-height:65vh; max-height:calc(100vh - 260px); overflow:auto; padding:24px; border:1px solid #dbe3ee; border-radius:10px; background-color:#f8fafd; background-image:radial-gradient(#cbd5e1 0.8px,transparent 0.8px); background-size:18px 18px; }
+.fta-mindmap-scaled { min-width:max-content; width:max-content; min-height:100%; transform:scale(var(--fta-map-zoom)); transform-origin:top left; padding:18px 28px 40px; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-node { border:0; margin:0; padding:8px 0; text-align:center; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-heading { display:flex; flex-direction:column; align-items:center; gap:5px; min-width:220px; max-width:320px; min-height:72px; margin:0 auto; padding:14px 18px; border:1px solid #9aafc8; border-radius:12px; background:#fff; color:#203754; text-align:center; box-shadow:0 3px 10px #18324d12; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-node:first-child > .fta-report-tree-heading { background:#eaf1fb; border:2px solid #315f98; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-children { display:flex; flex-wrap:nowrap; justify-content:center; align-items:flex-start; gap:16px; margin:14px 0 0; padding:18px 8px 0; border-top:2px solid #9aabc0; position:relative; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node { flex:0 0 250px; max-width:320px; min-width:220px; padding:0 6px; border:0; margin:0; position:relative; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-tree-children > .fta-report-tree-node:before { content:""; position:absolute; top:-19px; left:50%; height:19px; border-left:2px solid #9aabc0; }
+.fta-mindmap-web-view .fta-mindmap-section .fta-report-finding { margin:9px auto 0; max-width:300px; padding:10px 12px; text-align:left; border:1px solid #d7e0eb; background:#fff; font-size:12px; }
+@media(max-width:700px){.fta-mindmap-web-toolbar{align-items:flex-start;flex-direction:column}.fta-mindmap-canvas{max-height:calc(100vh - 300px);padding:12px}}
+
+
+/* FTA dashboard: compact investigation and recurrence KPI cards */
+.fta-page .kpi-grid{
+  gap:10px;
+  margin-bottom:12px;
+}
+.fta-page .kpi-grid>.kpi{
+  height:auto;
+  min-height:84px;
+  padding:12px 15px;
+}
+.fta-page .kpi-grid>.kpi span{
+  font-size:10px;
+  line-height:1.3;
+  letter-spacing:.45px;
+}
+.fta-page .kpi-grid>.kpi strong{
+  margin-top:4px;
+  font-size:22px;
+  line-height:1.15;
+}
+@media(max-width:700px){
+  .fta-page .kpi-grid{gap:8px;margin-bottom:10px}
+  .fta-page .kpi-grid>.kpi{min-height:72px;padding:10px 11px}
+  .fta-page .kpi-grid>.kpi strong{font-size:20px}
+}
+
+
+/* FTA automatic Quality-defect history and recurrence linkage */
+.fta-defect-history,.fta-auto-recurrence{
+  margin:14px 0 18px;
+  padding:14px;
+  border:1px solid #dbe4ef;
+  border-radius:10px;
+  background:#f8fafd;
+}
+.fta-defect-history h3,.fta-auto-recurrence h4{
+  margin:0 0 4px;
+  color:var(--navy);
+  font-size:15px;
+}
+.fta-defect-history .panel-title,.fta-auto-recurrence .panel-title{align-items:flex-start}
+.fta-defect-history-summary{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:9px;
+  margin:10px 0;
+}
+.fta-defect-history-summary>div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  min-width:0;
+  padding:10px 12px;
+  border:1px solid #e1e8f1;
+  border-radius:8px;
+  background:#fff;
+}
+.fta-defect-history-summary span{
+  color:#718096;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.45px;
+  text-transform:uppercase;
+}
+.fta-defect-history-summary strong{color:#183451;font-size:14px;overflow-wrap:anywhere}
+.fta-defect-history-summary small{color:#7a8798;font-size:10px}
+.fta-defect-history-notice{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  margin:10px 0;
+  padding:10px 12px;
+  border-left:3px solid #3873ad;
+  border-radius:7px;
+  background:#edf4fb;
+  color:#38516d;
+  font-size:11px;
+}
+.fta-defect-history-table{margin-top:8px}
+.fta-defect-history-table table{font-size:11px}
+.fta-defect-history-table th,.fta-defect-history-table td{padding:8px}
+.fta-match-tags{display:flex;flex-wrap:wrap;gap:4px}
+.fta-match-tag{
+  display:inline-flex;
+  align-items:center;
+  padding:3px 6px;
+  border:1px solid #dbe3ec;
+  border-radius:999px;
+  background:#f1f4f8;
+  color:#53657a;
+  font-size:9px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.fta-match-tag.same{border-color:#c9e3d5;background:#edf8f2;color:#236b49}
+.fta-auto-recurrence{background:#fbfcfe}
+.fta-auto-recurrence>p:last-child{margin:10px 0 0}
+.fta-manual-recurrence{
+  margin:10px 0 16px;
+  padding:10px 12px;
+  border:1px dashed #cbd6e3;
+  border-radius:8px;
+  background:#fff;
+}
+.fta-manual-recurrence summary{cursor:pointer;color:#52657c;font-size:12px;font-weight:700}
+.fta-manual-recurrence[open] summary{margin-bottom:12px}
+@media(max-width:760px){
+  .fta-defect-history-summary{grid-template-columns:1fr}
+  .fta-auto-recurrence .panel-title{flex-direction:column}
+}
+
+
+/* Corporate ERP sidebar v2 */
+.sidebar{width:272px;padding:22px 15px 16px;background:linear-gradient(180deg,#102d4b 0%,#0d263f 100%);box-shadow:7px 0 24px rgba(8,27,48,.12)}
+.content{margin-left:272px;width:calc(100% - 272px)}
+.brand{gap:11px;padding:0 5px 19px;margin-bottom:15px;border-bottom:1px solid rgba(191,211,231,.15)}
+.brand-mark{width:39px;height:39px;flex:0 0 39px;border-radius:10px;background:#2e5d89;font-size:13px;letter-spacing:.3px}
+.brand-copy{min-width:0}.brand-copy b{display:block;font-size:12px;letter-spacing:.8px;color:#f4f8fc}.brand-copy span{display:block;margin-top:4px;color:#a9bfd4;font-size:9px;font-weight:700;letter-spacing:1.1px}
+.user-card{gap:10px;padding:10px;margin-bottom:18px;border:1px solid rgba(191,211,231,.16);background:rgba(255,255,255,.055);border-radius:10px}
+.user-avatar{width:36px;height:36px;flex-basis:36px;border-radius:9px;background:#365b7e;font-size:14px}
+.user-card-copy{flex:1;min-width:0}.user-card b{font-size:12px;color:#f4f8fc}.user-card span{font-size:10px;color:#b7c9d9;letter-spacing:.25px}
+.nav-group{margin:0 0 5px}
+.nav-group summary.nav-group-label{min-height:39px;padding:8px 9px;border-radius:7px;justify-content:flex-start;gap:11px;color:#b2c5d8;font-size:10px;font-weight:750;letter-spacing:.65px;transition:background .15s ease,color .15s ease}
+.nav-group summary.nav-group-label:hover{background:rgba(255,255,255,.055);color:#fff}
+.nav-group-icon{width:16px;height:16px;flex:0 0 16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.9}
+.nav-group-title{flex:1;font-size:10px!important;letter-spacing:.65px}
+.nav-group summary.nav-group-label .nav-chevron{font-size:12px;line-height:1;opacity:.75;transition:transform .16s ease}
+.nav-group[open] summary.nav-group-label .nav-chevron{transform:rotate(180deg)}
+.nav-group[open] summary.nav-group-label{color:#fff}
+.sidebar nav a{margin:2px 0 2px 17px;padding:9px 11px 9px 13px;border-left:2px solid transparent;border-radius:6px;font-size:12px;font-weight:550;color:#d4e0ec}
+.sidebar nav a:hover{background:rgba(255,255,255,.07);color:#fff}
+.sidebar nav a.active{background:rgba(68,135,190,.23);border-left-color:#69b9e8;box-shadow:inset 0 0 0 1px rgba(139,192,228,.10);color:#fff}
+.sign-out{margin-top:auto!important;border-radius:8px!important}
+@media(max-width:1000px){.sidebar{width:272px;left:-282px;padding-top:64px}.content{margin-left:0;width:100%}}
+
+
+.nav-group[open] summary.nav-group-label .nav-group-title{transform:none}
+
+
+/* Shared production-control mark in authentication and loading views */
+.app-login-logo{display:block;object-fit:cover;background:transparent;border-radius:14px;box-shadow:0 8px 22px rgba(0,0,0,.22)}
+
+
+/* Workspace-wide API error dialog */
+.global-error-backdrop{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;padding:20px;background:rgba(13,27,45,.58);backdrop-filter:blur(2px)}
+.global-error-dialog{width:min(520px,100%);background:#fff;border:1px solid #e2bcbc;border-top:5px solid #c63c3c;border-radius:13px;box-shadow:0 24px 80px rgba(8,24,45,.32);color:#24364d;overflow:hidden}
+.global-error-dialog>header{display:flex;align-items:center;gap:13px;padding:19px 20px 14px;border-bottom:1px solid #edf0f4}
+.global-error-symbol{flex:0 0 36px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#fff0f0;color:#b42323;font-size:23px;font-weight:800}
+.global-error-dialog h2{margin:0;color:#17365d;font-size:18px}
+.global-error-dialog header p{margin:4px 0 0;color:#718096;font-size:12px}
+.global-error-close{margin-left:auto;background:transparent;color:#60708a;font-size:25px;padding:2px 8px}
+.global-error-message{padding:20px 22px;color:#26364c;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.global-error-path{margin:0;padding:0 22px 14px;color:#8490a0;font-size:11px;overflow-wrap:anywhere}
+.global-error-dialog>footer{display:flex;justify-content:flex-end;padding:12px 20px;background:#f7f9fc;border-top:1px solid #e8edf3}

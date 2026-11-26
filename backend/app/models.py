@@ -6,7 +6,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Integer, Numeric,
-    String, Text, UniqueConstraint, Index, text
+    String, Text, UniqueConstraint, CheckConstraint, Index, text
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,7 +18,7 @@ from .enums import (
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
@@ -577,6 +577,10 @@ class QualityPhenomenon(Base, TimestampMixin):
     normalized_name: Mapped[str] = mapped_column(String(220), unique=True, index=True)
     phenomenon_group: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
     default_responsible_team: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    # FTA metadata lives on the shared phenomenon; legacy FTA codes resolve through
+    # fta_phenomenon_code_map and are retained for template compatibility.
+    fta_category: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    fta_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     criticality: Mapped[str] = mapped_column(String(40), default="NORMAL", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -1187,3 +1191,204 @@ class ChatReport(Base):
     resolved_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     __table_args__ = (UniqueConstraint("message_id", "reported_by_id", name="uq_chat_reporter_message"),)
+
+
+
+class FtaOperation(Base, TimestampMixin):
+    __tablename__ = "fta_operations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+
+
+class FtaDefectLibrary(Base, TimestampMixin):
+    __tablename__ = "fta_defect_library"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
+    category: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+
+
+class FtaTemplate(Base, TimestampMixin):
+    __tablename__ = "fta_templates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(220), nullable=False)
+    operation_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    defect_code: Mapped[str] = mapped_column(String(60), ForeignKey("fta_defect_library.code"), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT", server_default="DRAFT")
+    tree_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        UniqueConstraint("code", "version", name="uq_fta_template_code_version"),
+        Index("ix_fta_templates_operation_defect", "operation_code", "defect_code"),
+    )
+
+
+class FtaInvestigation(Base, TimestampMixin):
+    __tablename__ = "fta_investigations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_no: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
+    rejection_id: Mapped[int] = mapped_column(ForeignKey("quality_rejection_daily.id", ondelete="RESTRICT"), nullable=False)
+    template_id: Mapped[int] = mapped_column(ForeignKey("fta_templates.id", ondelete="RESTRICT"), nullable=False)
+    template_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    template_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    plant: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    machine_id: Mapped[Optional[int]] = mapped_column(ForeignKey("machines.id", ondelete="SET NULL"), nullable=True)
+    operation_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN", server_default="OPEN", index=True)
+    owner_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    occurrence_cause_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    escape_cause_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    closure_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    verified_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    closed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (
+        Index("ix_fta_investigations_rejection", "rejection_id"),
+        Index(
+            "uq_fta_open_rejection_template", "rejection_id", "template_id",
+            unique=True,
+            postgresql_where=text("status <> 'CLOSED'"),
+            sqlite_where=text("status <> 'CLOSED'"),
+        ),
+    )
+
+
+class FtaFinding(Base, TimestampMixin):
+    __tablename__ = "fta_findings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
+    node_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    node_label: Mapped[str] = mapped_column(String(240), nullable=False)
+    node_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    investigation_status: Mapped[str] = mapped_column(String(30), nullable=False, default="NOT_INVESTIGATED", server_default="NOT_INVESTIGATED")
+    observation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    measured_value: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    expected_value: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    verification_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verification_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_root_cause: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_occurrence_cause: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_escape_cause: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    updated_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (
+        Index("ix_fta_findings_investigation", "investigation_id"),
+        UniqueConstraint("investigation_id", "node_id", name="uq_fta_finding_investigation_node"),
+    )
+
+
+class FtaEvidence(Base):
+    __tablename__ = "fta_evidence"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
+    finding_id: Mapped[Optional[int]] = mapped_column(ForeignKey("fta_findings.id", ondelete="CASCADE"), nullable=True)
+    file_name: Mapped[str] = mapped_column(String(260), nullable=False)
+    stored_name: Mapped[str] = mapped_column(String(260), nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(160), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    caption: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    uploaded_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    __table_args__ = (Index("ix_fta_evidence_investigation", "investigation_id"),)
+
+
+class FtaActionLink(Base):
+    __tablename__ = "fta_action_links"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
+    finding_id: Mapped[Optional[int]] = mapped_column(ForeignKey("fta_findings.id", ondelete="CASCADE"), nullable=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), nullable=False)
+    relationship_type: Mapped[str] = mapped_column(String(30), nullable=False, default="CORRECTIVE", server_default="CORRECTIVE")
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    __table_args__ = (UniqueConstraint("investigation_id", "action_id", "relationship_type", name="uq_fta_action_link"),)
+
+
+class FtaStatusHistory(Base):
+    __tablename__ = "fta_status_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
+    old_status: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+
+ 
+class FtaDiscoveredCause(Base, TimestampMixin):
+    __tablename__ = "fta_discovered_causes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    investigation_id: Mapped[int] = mapped_column(ForeignKey("fta_investigations.id", ondelete="CASCADE"), nullable=False)
+    action_id: Mapped[int] = mapped_column(ForeignKey("actions.id", ondelete="CASCADE"), nullable=False)
+    cause_description: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_reference: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="PROPOSED", server_default="PROPOSED", nullable=False)
+    reported_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    review_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    verification_method: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    __table_args__ = (
+        Index("ix_fta_discovered_causes_investigation", "investigation_id"),
+        Index("ix_fta_discovered_causes_action", "action_id"),
+        Index("ix_fta_discovered_causes_status", "status"),
+    )
+
+
+class FtaRecurrence(Base):
+    __tablename__ = "fta_recurrences"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    original_investigation_id: Mapped[int] = mapped_column(
+        ForeignKey("fta_investigations.id", ondelete="RESTRICT"), nullable=False
+    )
+    rejection_id: Mapped[int] = mapped_column(
+        ForeignKey("quality_rejection_daily.id", ondelete="RESTRICT"), nullable=False
+    )
+    classification: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="PENDING_REVIEW", server_default="PENDING_REVIEW"
+    )
+    same_root_cause: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    recurrence_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    containment_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_evidence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    previous_action_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    previous_verification_result: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    review_remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    related_investigation_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("fta_investigations.id", ondelete="SET NULL"), nullable=True
+    )
+    __table_args__ = (
+        UniqueConstraint("rejection_id", name="uq_fta_recurrences_rejection_id"),
+        CheckConstraint(
+            "classification IN ('PENDING_REVIEW','SAME_ROOT_CAUSE','DIFFERENT_ROOT_CAUSE','UNRELATED')",
+            name="ck_fta_recurrences_classification",
+        ),
+        Index("ix_fta_recurrences_original_investigation_id", "original_investigation_id"),
+        Index("ix_fta_recurrences_created_at", "created_at"),
+    )
+
+
+class FtaFindingHistory(Base):
+    __tablename__ = "fta_finding_history"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    finding_id: Mapped[int] = mapped_column(ForeignKey("fta_findings.id", ondelete="CASCADE"), nullable=False)
+    old_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    new_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, server_default=text("CURRENT_TIMESTAMP"), nullable=False)
+    __table_args__ = (Index("ix_fta_finding_history_finding", "finding_id"),)
