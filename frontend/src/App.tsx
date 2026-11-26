@@ -74,7 +74,7 @@ export default function App(){
   if(!getToken()) return <><GlobalErrorModal/><Login /></>
   if(!me) return <><GlobalErrorModal/><div className="loading-screen"><div><img className="brand-mark lg app-login-logo" src="/app-icon.svg" alt="Machine Shop Control"/>{authError
     ? <><p>Unable to load your workspace.</p><div className="error">{authError}</div><button onClick={()=>setRetryAuth(v=>v+1)}>Retry connection</button><button className="secondary" onClick={()=>{clearToken();location.reload()}}>Return to sign in</button></>
-     : <p>Loading your workspace…</p>}</div></div><GlobalErrorModal/></>
+     : <p>Loading your workspace…</p>}</div></div></>
   if(me.must_change_password) return <><GlobalErrorModal/><div className="login-page"><PasswordForm required/></div></>
   const page=(pageKey:string,element:React.ReactNode)=><PageGate me={me} pageKey={pageKey}>{element}</PageGate>
   return <><GlobalErrorModal/><Layout me={me}><Routes>
