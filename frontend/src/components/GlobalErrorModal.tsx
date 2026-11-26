@@ -39,13 +39,13 @@ export default function GlobalErrorModal() {
   }, [notice])
 
   useEffect(() => {
-    if (!error) return
+    if (!notice) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') close()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [error])
+  }, [notice])
 
   function close() {
     setNotice(null)
@@ -62,7 +62,7 @@ export default function GlobalErrorModal() {
     <section role="alertdialog" aria-modal="true" aria-labelledby="app-notice-title" aria-describedby="app-notice-message"
       style={{width:'min(520px,100%)',background:'var(--panel, #fff)',color:'var(--text, #172033)',border:'1px solid var(--border, #d7deea)',borderRadius:16,boxShadow:'0 24px 80px rgba(0,0,0,.28)',overflow:'hidden'}}>
       <div style={{display:'flex',alignItems:'center',gap:12,padding:'18px 20px',borderBottom:'1px solid var(--border, #d7deea)'}}>
-        <span aria-hidden="true" style={{width:38,height:38,borderRadius:12,display:'grid',placeItems:'center',background:isSuccess?'#dcfce7':'#fee2e2',color:isSuccess?'#15803d':'#b91c1c',fontSize:22,fontWeight:800}}{isSuccess?'✓':'!'}</span>
+        <span aria-hidden="true" style={{width:38,height:38,borderRadius:12,display:'grid',placeItems:'center',background:isSuccess?'#dcfce7':'#fee2e2',color:isSuccess?'#15803d':'#b91c1c',fontSize:22,fontWeight:800}}>{isSuccess?'✓':'!'}</span>
         <div style={{flex:1,minWidth:0}}>
           <h2 id="app-notice-title" style={{margin:0,fontSize:18}}>{isSuccess?'Operation completed':'Unable to complete request'}</h2>
           <span style={{fontSize:12,color:'var(--muted, #64748b)'}}>{statusLabel}</span>
