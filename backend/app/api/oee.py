@@ -20,7 +20,8 @@ from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
     MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap, Personnel,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
-    StandardCycleTime, User, GovernanceAudit ,
+    StandardCycleTime, User, GovernanceAudit, DailyRequirement,
+    MachineCapacitySetting, MachineMonthlyAllocation, WorkingCalendar,
 )
 from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate
 from ..services.oee import aggregate_oee_entries, calculate_oee
@@ -901,6 +902,185 @@ def recent_records(from_date: date, to_date: date, product_id: int, route_operat
     return {"from_date": from_date, "to_date": to_date, "shift": normalized_shift or "ALL",
             "machine_id": machine_id, "product_id": product_id, "route_operation_id": route_operation_id,
             "count": len(records), "records": records}
+@router.get("/reporting-compliance")
+def reporting_compliance(from_date: date, to_date: date, product_id: int | None = None,
+                         route_operation_id: int | None = None, machine_id: int | None = None,
+                         plant: str | None = None, db: Session = Depends(get_db),
+                         _: User = Depends(get_current_user)):
+    """Compare planned machine/product/operation/shift slots with submitted OEE entries.
+
+    Expected slots are derived only from positive daily production requirements,
+    the latest effective monthly machine allocation, effective machine mapping,
+    effective machine shift capacity and the plant working calendar.
+    """
+    if to_date < from_date:
+        raise HTTPException(422, "to_date must be on or after from_date")
+    if (to_date - from_date).days > 92:
+        raise HTTPException(422, "Reporting compliance period cannot exceed 93 days")
+
+    expected = []
+    configuration_issues = []
+    entries = db.scalars(select(MachineShiftProduction).where(
+        MachineShiftProduction.production_date >= from_date,
+        MachineShiftProduction.production_date <= to_date,
+    )).all()
+    entry_by_key = {
+        (x.production_date, x.shift.upper(), x.product_id, x.route_operation_id, x.machine_id): x
+        for x in entries
+    }
+
+    machines = {x.id: x for x in db.scalars(select(Machine).where(Machine.is_active.is_(True))).all()}
+    products = {x.id: x for x in db.scalars(select(Product)).all()}
+    calendar_rows = db.scalars(select(WorkingCalendar).where(
+        WorkingCalendar.work_date >= from_date, WorkingCalendar.work_date <= to_date
+    )).all()
+    calendar_by_key = {(x.work_date, x.plant): x for x in calendar_rows}
+
+    day = from_date
+    while day <= to_date:
+        month_start = day.replace(day=1)
+        month_allocations = db.scalars(select(MachineMonthlyAllocation).where(
+            MachineMonthlyAllocation.month == month_start,
+            MachineMonthlyAllocation.effective_from <= day,
+        )).all()
+
+        # Keep the latest effective allocation revision for each product,
+        # operation and machine as of the reporting date.
+        latest_allocations = {}
+        for allocation in month_allocations:
+            key = (allocation.product_id, allocation.route_operation_id, allocation.machine_id)
+            previous = latest_allocations.get(key)
+            if previous is None or (allocation.effective_from, allocation.revision_no, allocation.id) > (
+                previous.effective_from, previous.revision_no, previous.id
+            ):
+                latest_allocations[key] = allocation
+
+        requirements = db.scalars(select(DailyRequirement).where(
+            DailyRequirement.req_date == day
+        )).all()
+        planned_requirements = [
+            r for r in requirements
+            if float(r.revised_plan_qty if r.revised_plan_qty is not None else r.baseline_plan_qty or 0) > 0
+            and (product_id is None or r.product_id == product_id)
+            and (route_operation_id is None or r.route_operation_id in (None, route_operation_id))
+        ]
+
+        # Effective machine-to-operation mappings only; no implicit fallback.
+        mappings = db.scalars(select(OperationMachineMap).where(
+            OperationMachineMap.is_active.is_(True),
+            OperationMachineMap.effective_from <= day,
+            or_(OperationMachineMap.effective_to.is_(None), OperationMachineMap.effective_to >= day),
+        )).all()
+        mapped_pairs = {(m.route_operation_id, m.machine_id) for m in mappings}
+
+        capacity_rows = db.scalars(select(MachineCapacitySetting).where(
+            MachineCapacitySetting.effective_from <= day,
+            or_(MachineCapacitySetting.effective_to.is_(None), MachineCapacitySetting.effective_to >= day),
+        )).all()
+        capacity_by_machine = {}
+        for setting in capacity_rows:
+            previous = capacity_by_machine.get(setting.machine_id)
+            if previous is None or (setting.effective_from, setting.id) > (previous.effective_from, previous.id):
+                capacity_by_machine[setting.machine_id] = setting
+
+        day_expected = []
+        for requirement in planned_requirements:
+            req_qty = float(requirement.revised_plan_qty if requirement.revised_plan_qty is not None else requirement.baseline_plan_qty or 0)
+            candidates = [
+                allocation for allocation in latest_allocations.values()
+                if allocation.product_id == requirement.product_id
+                and (requirement.route_operation_id is None or allocation.route_operation_id == requirement.route_operation_id)
+                and float(allocation.allocated_qty or 0) > 0
+            ]
+            for allocation in candidates:
+                machine = machines.get(allocation.machine_id)
+                if not machine or (machine_id is not None and machine.id != machine_id):
+                    continue
+                if plant and (machine.plant or "") != plant:
+                    continue
+                if (allocation.route_operation_id, machine.id) not in mapped_pairs:
+                    configuration_issues.append({
+                        "date": day, "product_id": allocation.product_id,
+                        "route_operation_id": allocation.route_operation_id,
+                        "machine_id": machine.id, "machine": machine.code,
+                        "issue": "Missing effective machine-process mapping",
+                    })
+                    continue
+                plant_name = machine.plant or "Main Plant"
+                calendar = calendar_by_key.get((day, plant_name))
+                if calendar and not calendar.is_working_day:
+                    continue
+                capacity = capacity_by_machine.get(machine.id)
+                if not capacity or capacity.shifts_per_day <= 0:
+                    configuration_issues.append({
+                        "date": day, "product_id": allocation.product_id,
+                        "route_operation_id": allocation.route_operation_id,
+                        "machine_id": machine.id, "machine": machine.code,
+                        "issue": "Missing effective machine shift-capacity setting",
+                    })
+                    continue
+                shift_names = ["A", "B", "C"][:min(int(capacity.shifts_per_day), 3)]
+                for shift_name in shift_names:
+                    key = (day, shift_name, allocation.product_id, allocation.route_operation_id, machine.id)
+                    row = entry_by_key.get(key)
+                    item = {
+                        "date": day, "shift": shift_name,
+                        "product_id": allocation.product_id,
+                        "product": products[allocation.product_id].name if allocation.product_id in products else str(allocation.product_id),
+                        "route_operation_id": allocation.route_operation_id,
+                        "machine_id": machine.id, "machine": machine.code,
+                        "machine_name": machine.name, "plant": plant_name,
+                        "planned_qty": req_qty, "status": "PENDING",
+                        "entry_id": None, "operator_id": None, "issues": [],
+                    }
+                    if row:
+                        item["entry_id"] = row.id
+                        item["operator_id"] = row.operator_id
+                        issues = []
+                        if row.operator_id is None:
+                            issues.append("Operator not selected")
+                        if float(row.shift_duration_min or 0) <= 0:
+                            issues.append("Shift duration missing")
+                        if float(row.ideal_cycle_time_sec or 0) <= 0:
+                            issues.append("Ideal cycle time missing")
+                        counts = [float(row.total_count or 0), float(row.good_count or 0), float(row.reject_count or 0)]
+                        if any(value < 0 for value in counts):
+                            issues.append("Negative production quantity")
+                        if abs(counts[0] - counts[1] - counts[2]) > 0.001:
+                            issues.append("Total quantity is not equal to good plus rejection")
+                        item["issues"] = issues
+                        item["status"] = "INCOMPLETE" if issues else "UPDATED"
+                    day_expected.append(item)
+        expected.extend(day_expected)
+        day = date.fromordinal(day.toordinal() + 1)
+
+    counts = {
+        "expected": len(expected),
+        "updated": sum(1 for x in expected if x["status"] == "UPDATED"),
+        "pending": sum(1 for x in expected if x["status"] == "PENDING"),
+        "incomplete": sum(1 for x in expected if x["status"] == "INCOMPLETE"),
+    }
+    by_shift = []
+    for shift_name in ("A", "B", "C"):
+        rows = [x for x in expected if x["shift"] == shift_name]
+        if rows:
+            by_shift.append({
+                "shift": shift_name, "expected": len(rows),
+                "updated": sum(1 for x in rows if x["status"] == "UPDATED"),
+                "pending": sum(1 for x in rows if x["status"] == "PENDING"),
+                "incomplete": sum(1 for x in rows if x["status"] == "INCOMPLETE"),
+            })
+    counts["compliance_percent"] = round((counts["updated"] / counts["expected"]) * 100, 1) if counts["expected"] else 100.0
+    return {
+        "from_date": from_date, "to_date": to_date, "plant": plant,
+        **counts, "by_shift": by_shift,
+        "pending_entries": [x for x in expected if x["status"] == "PENDING"],
+        "incomplete_entries": [x for x in expected if x["status"] == "INCOMPLETE"],
+        "configuration_issues": configuration_issues,
+        "expected_entries": expected,
+    }
+
+
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
                        route_operation_id: int | None = None, product_id: str | None = None, plant: str | None = None,
