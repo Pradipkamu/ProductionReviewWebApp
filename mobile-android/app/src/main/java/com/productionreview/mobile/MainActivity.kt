@@ -398,6 +398,17 @@ internal object ApiClient {
         return request("/oee/management-summary?from_date=$fromDate&to_date=$toDate$filters", "GET", token=token)
     }
 
+    fun loadOeeReportingCompliance(
+        fromDate: String, toDate: String, token: String,
+        productId: Int? = null, routeOperationId: Int? = null
+    ): JSONObject {
+        val filters = buildString {
+            productId?.let { append("&product_id=$it") }
+            routeOperationId?.let { append("&route_operation_id=$it") }
+        }
+        return request("/oee/reporting-compliance?from_date=$fromDate&to_date=$toDate$filters", "GET", token=token)
+    }
+
     fun loadOeeLossCategories(token: String): List<Choice> {
         val rows = array("/masters/loss-categories", token)
         return (0 until rows.length()).map { i ->
@@ -739,6 +750,7 @@ class MainActivity : ComponentActivity() {
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
             var oeeReportTo by remember { mutableStateOf(LocalDate.now().toString()) }
             var oeeReportProduct by remember { mutableStateOf<Choice?>(null) }
+            var oeeReportingCompliance by remember { mutableStateOf<JSONObject?>(null) }
             var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -2321,7 +2333,7 @@ class MainActivity : ComponentActivity() {
                                     SectionLabel("REPORT PERIOD", "Default: first day of this month through today")
                                     OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
                                     OutlinedTextField(oeeReportTo,{oeeReportTo=it},label={Text("To date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
-                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters?.products.orEmpty(), oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null })
+                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters?.products.orEmpty(), oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null; oeeReportingCompliance = null })
                                     Text("Process: ${oeeOperation?.label ?: "All processes"}",color=Muted,fontSize=11.sp)
                                     Button(onClick={
                                         val auth=token
@@ -2330,11 +2342,65 @@ class MainActivity : ComponentActivity() {
                                             try {
                                                 require(LocalDate.parse(oeeReportTo)>=LocalDate.parse(oeeManagementFrom)) { "To date must be on or after From date." }
                                                 oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,oeeOperation?.id,null)}
+                                                oeeReportingCompliance=withContext(Dispatchers.IO){ApiClient.loadOeeReportingCompliance(oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,oeeOperation?.id)}
                                             } catch(e:Exception){oeeError=e.message ?: "Unable to load OEE report."}
                                             finally{oeeLoading=false}
                                         }
                                     },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading) "LOADING REPORT…" else "LOAD OEE REPORT") }
                                     oeeError?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                    oeeReportingCompliance?.let { compliance ->
+                                        SectionLabel("Reporting compliance", "Only planned machine / part / process / shift combinations are expected")
+                                        val expected = compliance.optInt("expected")
+                                        val updated = compliance.optInt("updated")
+                                        val pending = compliance.optInt("pending")
+                                        val incomplete = compliance.optInt("incomplete")
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Text("REPORTING COMPLIANCE  •  ${compliance.optDouble("compliance_percent").let { "%.1f".format(it) }}%",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=14.sp)
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    ComplianceMetric("Expected",expected.toString(),Navy,Modifier.weight(1f))
+                                                    ComplianceMetric("Updated",updated.toString(),Success,Modifier.weight(1f))
+                                                    ComplianceMetric("Pending",pending.toString(),Danger,Modifier.weight(1f))
+                                                    ComplianceMetric("Incomplete",incomplete.toString(),Warning,Modifier.weight(1f))
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Shift-wise status")
+                                        val shiftRows = compliance.optJSONArray("by_shift") ?: JSONArray()
+                                        for(i in 0 until shiftRows.length()) {
+                                            val row=shiftRows.getJSONObject(i)
+                                            Text("Shift ${row.optString("shift")}  •  Expected ${row.optInt("expected")}  •  Updated ${row.optInt("updated")}  •  Pending ${row.optInt("pending")}  •  Incomplete ${row.optInt("incomplete")}",color=Navy,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                        SectionLabel("Pending OEE entries")
+                                        val pendingRows = compliance.optJSONArray("pending_entries") ?: JSONArray()
+                                        if(pendingRows.length()==0) Text("No pending planned OEE entries.",color=Success,fontSize=12.sp)
+                                        for(i in 0 until minOf(pendingRows.length(),50)) {
+                                            val row=pendingRows.getJSONObject(i)
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                                    Text("${row.optString("machine")}  •  ${row.optString("machine_name")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                    Text("${row.optString("date")}  •  Shift ${row.optString("shift")}  •  ${row.optString("product")}",color=Muted,fontSize=11.sp)
+                                                    Text("Planned qty: ${row.optDouble("planned_qty").toInt()}",color=Muted,fontSize=11.sp)
+                                                    Text("PENDING",color=Danger,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Incomplete OEE entries")
+                                        val incompleteRows = compliance.optJSONArray("incomplete_entries") ?: JSONArray()
+                                        if(incompleteRows.length()==0) Text("No incomplete entries.",color=Success,fontSize=12.sp)
+                                        for(i in 0 until minOf(incompleteRows.length(),30)) {
+                                            val row=incompleteRows.getJSONObject(i)
+                                            Text("${row.optString("machine")} • ${row.optString("date")} • Shift ${row.optString("shift")} • ${row.optString("product")} — ${row.optJSONArray("issues")?.let { a -> (0 until a.length()).joinToString(", ") { a.optString(it) } }.orEmpty()}",color=Warning,fontSize=11.sp)
+                                        }
+                                        val configIssues=compliance.optJSONArray("configuration_issues") ?: JSONArray()
+                                        if(configIssues.length()>0) {
+                                            SectionLabel("Planning configuration issues")
+                                            for(i in 0 until minOf(configIssues.length(),20)) {
+                                                val row=configIssues.getJSONObject(i)
+                                                Text("${row.optString("date")} • ${row.optString("machine")} • ${row.optString("issue")}",color=Warning,fontSize=11.sp)
+                                            }
+                                        }
+                                    }
                                     oeeManagement?.let { report ->
                                         val overall=report.optJSONObject("overall")
                                         if(overall!=null) {
@@ -2747,6 +2813,14 @@ private fun RejectionQuantityTrend(
     }
 }
 
+
+@Composable
+private fun ComplianceMetric(label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
+    Column(modifier,verticalArrangement=Arrangement.spacedBy(2.dp)) {
+        Text(value,color=tint,fontSize=19.sp,fontWeight=FontWeight.ExtraBold)
+        Text(label,color=Muted,fontSize=9.sp,maxLines=1)
+    }
+}
 
 @Composable
 private fun ChoiceDropdown(
