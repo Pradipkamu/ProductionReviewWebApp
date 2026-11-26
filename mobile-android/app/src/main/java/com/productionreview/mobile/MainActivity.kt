@@ -34,6 +34,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.AssignmentLate
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.MoreHoriz
@@ -346,8 +348,10 @@ internal object ApiClient {
     fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
         request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
 
-    fun loadOeeRecentRecords(fromDate: String, toDate: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
-        request("/oee/recent-records?from_date=$fromDate&to_date=$toDate&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
+    fun loadOeeRecentRecords(fromDate: String, toDate: String, productId: Int, routeOperationId: Int, token: String, shift: String? = null): JSONObject {
+        val shiftFilter = shift?.takeIf { it in listOf("A", "B", "C") }?.let { "&shift=$it" }.orEmpty()
+        return request("/oee/recent-records?from_date=$fromDate&to_date=$toDate&product_id=$productId&route_operation_id=$routeOperationId$shiftFilter", "GET", token=token)
+    }
 
     fun saveOeeMachineEntry(payload: JSONObject, token: String): JSONObject =
         request("/oee/machine-entry", "POST", payload, token)
@@ -651,7 +655,15 @@ class MainActivity : ComponentActivity() {
             var remark by remember { mutableStateOf("") }
             var actionRequired by remember { mutableStateOf(false) }
             var resultMessage by remember { mutableStateOf<String?>(null) }
-            var homeTab by remember { mutableStateOf("ACTIONS") }
+            var homeTab by remember { mutableStateOf("HOME") }
+            var homeOeeShift by remember { mutableStateOf("A") }
+            var homeOeeProduct by remember { mutableStateOf<Choice?>(null) }
+            var homeOeeOperation by remember { mutableStateOf<RouteChoice?>(null) }
+            var homeOeeRoutes by remember { mutableStateOf<List<RouteChoice>>(emptyList()) }
+            var homeOeeRecords by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+            var homeOeeLoading by remember { mutableStateOf(false) }
+            var homeOeeError by remember { mutableStateOf<String?>(null) }
+            var showHomeOperationPicker by remember { mutableStateOf(false) }
             var chatConversations by remember { mutableStateOf(JSONArray()) }
             var chatMessages by remember { mutableStateOf(JSONArray()) }
             var chatEmployees by remember { mutableStateOf(JSONArray()) }
@@ -1214,7 +1226,7 @@ class MainActivity : ComponentActivity() {
                     busy=true
                     try {
                         val current=withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
-                        token=saved; account=current; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatShowNew=false; refreshMasters(saved); refreshPendingActions(saved); registerPushToken(saved)
+                        token=saved; account=current; homeTab="HOME"; selectedChatId=null; chatMessages=JSONArray(); chatShowNew=false; refreshMasters(saved); refreshPendingActions(saved); registerPushToken(saved)
                         message="Connected to Production Review."
                     } catch(_:Exception) {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
@@ -1308,20 +1320,44 @@ class MainActivity : ComponentActivity() {
             fun searchChatEmployees(auth: String) {
                 scope.launch {
                     try { chatEmployees = withContext(Dispatchers.IO) { ApiClient.loadChatEmployees(chatSearch, auth) } }
-                    catch (e: Exception) { if (!handleSessionExpired(e)) chatError = "Chat: ${e.message}" }
+                    catch (e: Exception) { if (!handleSessionExpired(e)) chatError = "Chat: " + (e.message ?: "Unable to search employees.") }
                 }
+            }
+            LaunchedEffect(homeOeeProduct?.id, token) {
+                val auth = token
+                val p = homeOeeProduct
+                homeOeeOperation = null
+                homeOeeRoutes = emptyList()
+                homeOeeRecords = emptyList()
+                homeOeeError = null
+                if (auth != null && p != null) {
+                    try { homeOeeRoutes = withContext(Dispatchers.IO) { ApiClient.loadRoutes(p.id, LocalDate.now().toString(), auth) } }
+                    catch (e: Exception) { homeOeeError = e.message ?: "Unable to load processes." }
+                }
+            }
+            LaunchedEffect(homeTab, token, homeOeeProduct?.id, homeOeeOperation?.id, homeOeeShift) {
+                val auth = token
+                val p = homeOeeProduct
+                val op = homeOeeOperation
+                if (homeTab == "HOME" && auth != null && p != null && op != null) {
+                    homeOeeLoading = true
+                    homeOeeError = null
+                    try {
+                        val end = LocalDate.now()
+                        val response = withContext(Dispatchers.IO) { ApiClient.loadOeeRecentRecords(end.minusDays(6).toString(), end.toString(), p.id, op.id, auth, homeOeeShift) }
+                        val rows = response.optJSONArray("records") ?: JSONArray()
+                        homeOeeRecords = (0 until rows.length()).map { rows.getJSONObject(it) }
+                    } catch (e: Exception) {
+                        homeOeeRecords = emptyList()
+                        homeOeeError = e.message ?: "Unable to load OEE records."
+                    } finally { homeOeeLoading = false }
+                } else { homeOeeRecords = emptyList(); homeOeeError = null }
             }
             val normalizedRole = account?.role?.uppercase().orEmpty()
             val isAdminOrManagement = normalizedRole in listOf("ADMIN", "MANAGEMENT")
             val isQualityRole = normalizedRole.contains("QUALITY") || normalizedRole.contains("QA")
             val isProductionRole = normalizedRole.contains("PRODUCTION") || normalizedRole.contains("PROD")
-            val bottomDestinations = buildList {
-                add("ACTIONS")
-                if (isQualityRole || isAdminOrManagement) add("REJECTION")
-                if (isProductionRole || isAdminOrManagement) add("OEE")
-                if (isQualityRole && isProductionRole) { /* both operational shortcuts are permitted */ }
-                add("MORE")
-            }.distinct().take(4)
+            val bottomDestinations = listOf("HOME", "CHAT", "ACTIONS", "MORE")
 
             MaterialTheme(
                 colorScheme = lightColorScheme(primary = Teal, onPrimary = Color.White, secondary = Navy, background = Canvas, surface = Color.White, error = Danger),
@@ -1358,6 +1394,7 @@ class MainActivity : ComponentActivity() {
                                     Text(account?.role.orEmpty(),color=Color(0xFFB9D5E5),fontSize=11.sp,maxLines=1)
                                 }
                                 Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                    NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Home",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HOME",icon={Icon(Icons.Filled.Home,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="HOME" }})
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
@@ -1381,28 +1418,109 @@ class MainActivity : ComponentActivity() {
                             if (account != null) IconButton(onClick={drawerScope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
                                 Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "HOME"->"Home"; "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
                         LaunchedEffect(homeTab, token, selectedChatId) {
                             val auth = token ?: return@LaunchedEffect
-                            if (homeTab == "CHAT") {
+                            if (homeTab == "CHAT" || homeTab == "HOME") {
                                 var firstLoad = true
-                                while (homeTab == "CHAT") {
-                                    val openConversationId = selectedChatId
-                                    if (openConversationId != null) {
-                                        // Loading messages records the read receipt, then refreshes
-                                        // summaries. Avoid racing an earlier conversation-list fetch.
-                                        refreshChatMessages(auth, openConversationId)
-                                    } else {
-                                        refreshChatConversations(auth, showLoading = firstLoad)
-                                    }
+                                while (homeTab == "CHAT" || homeTab == "HOME") {
+                                    if (homeTab == "CHAT" && selectedChatId != null) refreshChatMessages(auth, selectedChatId!!)
+                                    else refreshChatConversations(auth, showLoading = firstLoad)
                                     firstLoad = false
-                                    kotlinx.coroutines.delay(5000)
+                                    kotlinx.coroutines.delay(if (homeTab == "HOME") 15000 else 5000)
                                 }
                             }
                         }
-                        if (homeTab == "CHAT") {
+                        if (homeTab == "HOME") {
+                            val manager = account?.role?.uppercase() in listOf("ADMIN", "MANAGEMENT")
+                            val openActions = if (manager) pendingActionGroups.sumOf { it.openCount } else pendingActions.size
+                            val overdueActions = if (manager) pendingActionGroups.sumOf { it.overdueCount } else pendingActions.count { it.overdue }
+                            val unreadChats = (0 until chatConversations.length()).sumOf { chatConversations.optJSONObject(it)?.optInt("unread_count", 0) ?: 0 }
+                            val goodQty = homeOeeRecords.sumOf { it.optDouble("good_count", 0.0) }
+                            val rejectQty = homeOeeRecords.sumOf { it.optDouble("reject_count", 0.0) }
+                            Column(Modifier.fillMaxSize().background(Canvas).verticalScroll(rememberScrollState()).padding(horizontal=16.dp, vertical=14.dp), verticalArrangement=Arrangement.spacedBy(14.dp)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(3.dp)) {
+                                        Text("OPERATIONS OVERVIEW", color=Muted, fontSize=10.sp, fontWeight=FontWeight.Bold, letterSpacing=1.sp)
+                                        Text("Good " + LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd MMM")), color=Navy, fontSize=22.sp, fontWeight=FontWeight.ExtraBold)
+                                        Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(), color=Muted, fontSize=12.sp)
+                                    }
+                                    IconButton(onClick={homeTab="CHAT";selectedChatId=null}) { Icon(Icons.Filled.Email, contentDescription="Open chat", tint=Navy) }
+                                }
+                                Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(22.dp), colors=CardDefaults.cardColors(containerColor=Navy)) {
+                                    Column(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF173B5E),Color(0xFF087F8C)))).padding(18.dp), verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                                        Text("SHIFT PERFORMANCE", color=Color(0xFFBFE8E4), fontSize=10.sp, fontWeight=FontWeight.ExtraBold, letterSpacing=1.2.sp)
+                                        Text("Last 7 days", color=Color.White, fontSize=21.sp, fontWeight=FontWeight.Bold)
+                                        Text("Saved OEE entries • Shift " + homeOeeShift, color=Color(0xFFD9E8F0), fontSize=12.sp)
+                                        Row(horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+                                            listOf("A","B","C").forEach { sh -> FilterChip(selected=homeOeeShift==sh,onClick={homeOeeShift=sh},label={Text("Shift " + sh)},colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color.White,selectedLabelColor=Navy,labelColor=Color.White)) }
+                                        }
+                                    }
+                                }
+                                Card(Modifier.fillMaxWidth(), shape=RoundedCornerShape(20.dp), colors=CardDefaults.cardColors(containerColor=Color.White), border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                    Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                                        SectionLabel("OEE scope", "Select a part and process")
+                                        ChoiceDropdown("Part", masters?.products.orEmpty(), homeOeeProduct, { homeOeeProduct=it; homeOeeOperation=null })
+                                        OutlinedButton(onClick={showHomeOperationPicker=true},enabled=homeOeeRoutes.isNotEmpty(),modifier=Modifier.fillMaxWidth()) { Text(homeOeeOperation?.label ?: "Select process") }
+                                        if(showHomeOperationPicker) AlertDialog(onDismissRequest={showHomeOperationPicker=false},title={Text("Select process")},text={Column(Modifier.heightIn(max=320.dp).verticalScroll(rememberScrollState())) { homeOeeRoutes.forEach { route -> TextButton(onClick={homeOeeOperation=route;showHomeOperationPicker=false},modifier=Modifier.fillMaxWidth()) { Text(route.label,modifier=Modifier.fillMaxWidth()) } } }},confirmButton={TextButton(onClick={showHomeOperationPicker=false}){Text("CLOSE")}})
+                                    }
+                                }
+                                if(homeOeeProduct==null || homeOeeOperation==null) EmptyState("Select a part and process", "The dashboard will show real records for the selected shift over the last seven days.")
+                                else {
+                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                        MetricTile("OEE RECORDS",homeOeeRecords.size.toString(),Teal,Modifier.weight(1f))
+                                        MetricTile("GOOD QTY",goodQty.toLong().toString(),Success,Modifier.weight(1f))
+                                        MetricTile("REJECT QTY",rejectQty.toLong().toString(),Danger,Modifier.weight(1f))
+                                    }
+                                    when {
+                                        homeOeeLoading -> Text("Loading selected-shift OEE…",color=Muted,fontSize=12.sp)
+                                        homeOeeError!=null -> Text(homeOeeError!!,color=Danger,fontSize=12.sp)
+                                        homeOeeRecords.isEmpty() -> EmptyState("No OEE records for Shift " + homeOeeShift, "No saved entries found for this part and process in the last seven days.")
+                                        else -> homeOeeRecords.forEach { entry ->
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(13.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                                                        Text(entry.optString("machine").ifBlank{"Machine"},color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        StatusPill(String.format("%.1f%% OEE",entry.optDouble("oee_reported")*100),if(entry.optDouble("oee_reported")>=0.85)Success else Warning)
+                                                    }
+                                                    Text(entry.optString("production_date") + " • Shift " + entry.optString("shift"),color=Muted,fontSize=11.sp)
+                                                    Text("Good " + entry.optDouble("good_count").toLong() + " • Reject " + entry.optDouble("reject_count").toLong() + " • Total " + entry.optDouble("total_count").toLong(),color=Navy,fontSize=12.sp)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                    Card(Modifier.weight(1f).clickable { homeTab="ACTIONS";token?.let{refreshPendingActions(it)} },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                            Icon(Icons.Filled.Assignment,contentDescription=null,tint=Teal,modifier=Modifier.size(24.dp))
+                                            Text(openActions.toString(),color=Navy,fontSize=24.sp,fontWeight=FontWeight.ExtraBold)
+                                            Text("Open actions",color=Muted,fontSize=11.sp,fontWeight=FontWeight.SemiBold)
+                                            if(overdueActions>0) StatusPill(overdueActions.toString() + " OVERDUE",Danger)
+                                        }
+                                    }
+                                    Card(Modifier.weight(1f).clickable { homeTab="REJECTION" },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                        Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                                            Icon(Icons.Filled.AssignmentLate,contentDescription=null,tint=Warning,modifier=Modifier.size(24.dp))
+                                            Text("Quality",color=Navy,fontSize=18.sp,fontWeight=FontWeight.Bold)
+                                            Text("Rejection & FTA",color=Muted,fontSize=11.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                                Card(Modifier.fillMaxWidth().clickable { homeTab="CHAT";selectedChatId=null },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                    Row(Modifier.fillMaxWidth().padding(15.dp),verticalAlignment=Alignment.CenterVertically) {
+                                        Icon(Icons.Filled.Email,contentDescription=null,tint=Teal,modifier=Modifier.size(25.dp))
+                                        Column(Modifier.weight(1f).padding(start=12.dp),verticalArrangement=Arrangement.spacedBy(2.dp)) {
+                                            Text("Team chat",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                            Text(if(unreadChats>0) unreadChats.toString() + " unread message(s)" else "Open employee and group conversations",color=Muted,fontSize=11.sp)
+                                        }
+                                        Text("›",color=Muted,fontSize=24.sp)
+                                    }
+                                }
+                            }
+                        } else if (homeTab == "CHAT") {
                             Column(Modifier.fillMaxSize().background(Color(0xFFE8F0ED))) {
                                 if (selectedChatId == null) {
                                     Column(Modifier.fillMaxSize().padding(horizontal=12.dp, vertical=10.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -1686,7 +1804,7 @@ class MainActivity : ComponentActivity() {
                                                     val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
                                                     sessionExpiryHandling=false; chatError=null; chatConversations=JSONArray(); chatEmployees=JSONArray()
-                                                    token=result.first; account=result.second; password=""; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatDraft=""; chatShowNew=false; refreshPendingActions(result.first); registerPushToken(result.first)
+                                                    token=result.first; account=result.second; password=""; homeTab="HOME"; selectedChatId=null; chatMessages=JSONArray(); chatDraft=""; chatShowNew=false; refreshPendingActions(result.first); registerPushToken(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
                                                 } catch(e:Exception){
                                                     message=e.message?.takeIf { it.isNotBlank() } ?: "Unable to sign in. Check your connection and try again."
@@ -2759,10 +2877,10 @@ class MainActivity : ComponentActivity() {
                                     selected=selected,
                                     onClick={
                                         if(destination=="MORE") drawerScope.launch { drawerState.open() }
-                                        else { homeTab=destination; if(destination=="ACTIONS") { selectedOwner=null; token?.let{refreshPendingActions(it)} } }
+                                        else { homeTab=destination; if(destination=="CHAT") selectedChatId=null; if(destination=="ACTIONS") { selectedOwner=null; token?.let{refreshPendingActions(it)} } }
                                     },
-                                    icon={ when(destination) { "ACTIONS"->Icon(Icons.Filled.Assignment,contentDescription=null); "REJECTION"->Icon(Icons.Filled.AssignmentLate,contentDescription=null); "OEE"->Icon(Icons.Filled.Speed,contentDescription=null); else->Icon(Icons.Filled.MoreHoriz,contentDescription=null) } },
-                                    label={Text(when(destination) { "ACTIONS"->"Actions"; "REJECTION"->"Rejection"; "OEE"->"OEE"; else->"More" },maxLines=1)}
+                                    icon={ when(destination) { "HOME"->Icon(Icons.Filled.Home,contentDescription=null); "CHAT"->Icon(Icons.Filled.Email,contentDescription=null); "ACTIONS"->Icon(Icons.Filled.Assignment,contentDescription=null); else->Icon(Icons.Filled.MoreHoriz,contentDescription=null) } },
+                                    label={Text(when(destination) { "HOME"->"Home"; "CHAT"->"Chat"; "ACTIONS"->"Actions"; else->"More" },maxLines=1)}
                                 )
                             }
                         }
