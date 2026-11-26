@@ -223,6 +223,39 @@ const [manualOps,setManualOps]=useState<any[]>([]); const [manualSaving,setManua
   // Rejection quantity is independent of the PPM denominator. Keep this series
   // visible even when dispatch production is pending for some or all days.
   const dailyRejectionRows=trend.map((x:any)=>({...x,value:Number(x.reject_qty||0)}))
+  const dailyPhenomenonTrend=useMemo(()=>{
+    const buckets=new Map<string,Map<string,{key:string,name:string,qty:number}>>()
+    // Seed every selected day so dates with zero rejection remain visible.
+    for(const day of trend||[])buckets.set(String(day.date).slice(0,10),new Map())
+    for(const row of rows||[]){
+      const date=String(row.date||'').slice(0,10)
+      if(!date)continue
+      const phenomenonId=String(row.phenomenon_id??'')
+      const name=String(row.phenomenon||'Unclassified')
+      const key=phenomenonId||name
+      const day=buckets.get(date)||new Map<string,{key:string,name:string,qty:number}>()
+      const current=day.get(key)||{key,name,qty:0}
+      current.qty+=Math.max(0,Number(row.reject_qty||0))
+      day.set(key,current)
+      buckets.set(date,day)
+    }
+    const categoryTotals=new Map<string,number>()
+    for(const day of buckets.values())for(const [key,item] of day)categoryTotals.set(key,(categoryTotals.get(key)||0)+item.qty)
+    return [...buckets.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([date,day])=>{
+      const categories=[...day.values()].sort((a,b)=>b.qty-a.qty)
+      return {date,categories,total_qty:categories.reduce((sum,item)=>sum+item.qty,0)}
+    }).map(day=>({...day,categories:day.categories.sort((a,b)=>(categoryTotals.get(b.key)||0)-(categoryTotals.get(a.key)||0))}))
+  },[rows,trend])
+  const dailyPhenomena=useMemo(()=>{
+    const totals=new Map<string,{key:string,name:string,qty:number}>()
+    for(const day of dailyPhenomenonTrend)for(const item of day.categories){
+      const current=totals.get(item.key)||{key:item.key,name:item.name,qty:0}
+      current.qty+=item.qty
+      totals.set(item.key,current)
+    }
+    return [...totals.values()].sort((a,b)=>b.qty-a.qty)
+  },[dailyPhenomenonTrend])
+  const rejectionChartPalette=["#2563eb","#0d9488","#d97706","#7c3aed","#dc2626","#0891b2","#65a30d","#c026d3","#ea580c","#475569"]
   const rejectionActionsByDay=useMemo(()=>{
     const grouped=new Map<string,Map<number,any>>()
     for(const row of rows||[]){
@@ -283,7 +316,23 @@ const [manualOps,setManualOps]=useState<any[]>([]); const [manualSaving,setManua
 
     <section className="panel"><div className="panel-title"><h2>Monthly Rejection Qty Trend</h2><span>Daily net of approved salvage • historical reported totals</span></div><ValueTrendChart onSelect={drill} rows={monthlyTrend.map(x=>({...x,value:x.reject_qty||0}))} keyName="value" label="Reject Qty"/></section>
     <section className="panel ppm-trend-panel"><div className="panel-title"><h2>Monthly PPM Trend</h2><span>Daily net of approved salvage • historical reported totals</span></div><ValueTrendChart onSelect={drill} rows={monthlyPpmRows} keyName="value" label="PPM"/>{monthlyTrend.length>0&&<div className="table-wrap ppm-quantity-matrix" aria-label="Monthly rejection and dispatch quantities"><table><thead><tr><th>Quantity</th>{monthlyTrend.map((r:any)=><th key={String(r.month)}>{r.label||String(r.month).slice(0,7)}</th>)}</tr></thead><tbody><tr className="ppm-rejection-row"><th>Rejection Qty</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{num(r.reject_qty||0)}</td>)}</tr><tr><th>PPM Production</th>{monthlyTrend.map((r:any)=><td key={String(r.month)}>{Number(r.denominator_qty||0)>0?num(r.denominator_qty):Number(r.reject_qty||0)>0?'Pending':'0'}</td>)}</tr></tbody></table></div>}{monthlyPpmPending>0&&<p className="muted">{monthlyPpmPending} month{monthlyPpmPending===1?'':'s'} not plotted because the required PPM production denominator is still pending.</p>}<p className="muted">PPM denominator: Plant 2070 = Siddharth Machining + Silver Production; all other plants = Disp_Done.</p></section>
-    <section className="panel"><div className="panel-title"><h2>Daily Rejection Qty Trend</h2><span>Net rejection after approved salvage • independent of PPM production</span></div>{dailyRejectionRows.length>0?<ValueTrendChart onSelect={drill} rows={dailyRejectionRows} keyName="value" label="Reject Qty"/>:<p className="muted">No daily rejection data is available for the selected date range and filters.</p>}</section>
+    <section className="panel">
+      <div className="panel-title"><div><h2>Daily Rejection Qty Trend</h2><p>Net rejection after approved salvage, stacked by phenomenon • independent of PPM production</p></div></div>
+      {dailyPhenomenonTrend.length>0&&dailyPhenomenonTrend.some((day:any)=>day.total_qty>0)?<>
+        <div className="svg-scroll"><div style={{display:"flex",alignItems:"flex-end",gap:10,height:260,minWidth:dailyPhenomenonTrend.length*54,width:"max-content",padding:"18px 8px 4px",borderBottom:"1px solid var(--border, #d7deea)"}}>
+          {dailyPhenomenonTrend.map((day:any)=>{const max=Math.max(1,...dailyPhenomenonTrend.map((item:any)=>Number(item.total_qty||0)));return <div key={day.date} title={`${day.date}: ${num(day.total_qty)} rejected pcs`} style={{width:44,flex:"0 0 44px",height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:5}}>
+            <small style={{fontSize:10,fontWeight:700,color:"var(--text, #243852)",whiteSpace:"nowrap"}}>{day.total_qty>0?num(day.total_qty):""}</small>
+            <div style={{height:`${Math.max(0,Number(day.total_qty||0)/max*190)}px`,width:"76%",minHeight:day.total_qty>0?2:0,display:"flex",flexDirection:"column-reverse",justifyContent:"flex-start",borderRadius:"4px 4px 0 0",overflow:"hidden"}}>
+              {day.categories.map((part:any)=>{const index=dailyPhenomena.findIndex((item:any)=>item.key===part.key);const color=rejectionChartPalette[(index<0?0:index)%rejectionChartPalette.length];return <div key={part.key} title={`${part.name}: ${num(part.qty)} pcs`} style={{height:`${Number(part.qty||0)/Math.max(0.001,Number(day.total_qty||0))*100}%`,backgroundColor:color,minHeight:part.qty>0?2:0}}/>})}
+            </div>
+            <small style={{fontSize:10,whiteSpace:"nowrap",color:"var(--muted, #64748b)"}}>{new Date(`${day.date}T12:00:00`).toLocaleDateString("en-IN",{day:"2-digit",month:"short"})}</small>
+          </div>})}
+        </div></div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:"8px 16px",paddingTop:12}}>
+          {dailyPhenomena.map((item:any,i:number)=><span key={item.key} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:10,height:10,borderRadius:2,backgroundColor:rejectionChartPalette[i%rejectionChartPalette.length]}}/>{item.name}</span>)}
+        </div>
+      </>:<p className="muted">No daily rejection data is available for the selected date range and filters.</p>}
+    </section>
     <section className="panel">
       <div className="panel-title"><div><h2>Rejection &amp; FTA Actions Raised by Day</h2><p>Includes actions linked directly to rejection records and corrective / preventive actions linked through FTA investigations. Counts follow the selected Quality / Rejection filters.</p></div></div>
       <div className="daily-action-scroll">{rejectionActionDays.map((day:any)=>{const count=Number(day.action_count||0);const key=String(day.date).slice(0,10);return <button type="button" className={`daily-action-cell ${count>0?'has-actions':''}`} key={key} disabled={!count} onClick={()=>setSelectedActionDay(selectedActionDay===key?'':key)} title={`${day.label}: ${count} action${count===1?'':'s'} raised • Rejection: ${day.rejection_action_count} • FTA actions: ${day.fta_action_count-day.fta_recurrence_count} • FTA recurrences: ${day.fta_recurrence_count}`}><span>{day.label}</span><strong>{count}</strong><small>{count===1?'action':'actions'}</small></button>})}</div>
