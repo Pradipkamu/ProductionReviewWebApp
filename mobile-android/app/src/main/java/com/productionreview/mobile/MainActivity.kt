@@ -1382,23 +1382,23 @@ class MainActivity : ComponentActivity() {
                     drawerContent = {
                         ModalDrawerSheet(
                             modifier=Modifier.fillMaxHeight().fillMaxWidth(0.60f),
-                            drawerContainerColor=Color(0xFFF1F4F7),
+                            drawerContainerColor=Color.White,
                             drawerTonalElevation=4.dp
                         ) {
                             Column(Modifier.fillMaxSize()) {
                                 Column(
-                                    Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color(0xFF173B5E),Color(0xFF071D33)))).padding(horizontal=10.dp,vertical=18.dp),
+                                    Modifier.fillMaxWidth().background(Color.White).padding(horizontal=14.dp,vertical=18.dp),
                                     horizontalAlignment=Alignment.Start,
                                     verticalArrangement=Arrangement.spacedBy(5.dp)
                                 ) {
-                                    Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF0B6BA8)),contentAlignment=Alignment.Center) {
-                                        Icon(Icons.Filled.Settings,contentDescription="Machine shop",tint=Color.White,modifier=Modifier.size(30.dp))
+                                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(15.dp)).background(Color(0xFFE8F2F5)),contentAlignment=Alignment.Center) {
+                                        Icon(Icons.Filled.Settings,contentDescription="Machine shop",tint=Teal,modifier=Modifier.size(27.dp))
                                     }
-                                    Text("MACHINE SHOP",color=Color.White,fontSize=14.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=0.5.sp,maxLines=1)
-                                    Text("OPERATIONS",color=Color(0xFFFFA726),fontSize=12.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,maxLines=1)
-                                    Divider(color=Color(0xFFFFA726),thickness=2.dp,modifier=Modifier.width(62.dp).padding(top=3.dp))
-                                    Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(),color=Color.White,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
-                                    Text(account?.role.orEmpty(),color=Color(0xFFB9D5E5),fontSize=11.sp,maxLines=1)
+                                    Text("MACHINE SHOP",color=Navy,fontSize=14.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=0.5.sp,maxLines=1)
+                                    Text("OPERATIONS",color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,maxLines=1)
+                                    Divider(color=Border,thickness=1.dp,modifier=Modifier.fillMaxWidth().padding(top=5.dp))
+                                    Text(account?.fullName?.ifBlank { account?.username.orEmpty() }.orEmpty(),color=Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold,maxLines=2)
+                                    Text(account?.role.orEmpty(),color=Muted,fontSize=11.sp,maxLines=1)
                                 }
                                 Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Home",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HOME",icon={Icon(Icons.Filled.Home,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="HOME" }})
@@ -1409,7 +1409,7 @@ class MainActivity : ComponentActivity() {
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Chat",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="CHAT",icon={Text("✉",fontSize=19.sp,color=Teal)},onClick={drawerScope.launch { drawerState.close(); homeTab="CHAT"; token?.let{refreshChatConversations(it)}; chatSearch=""; chatEmployees=JSONArray() }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("History",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HISTORY",icon={Icon(Icons.Filled.History,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="HISTORY" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                 }
-                                Divider(color=Color(0xFFCBD5DF))
+                                Divider(color=Border)
                                 Column(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=6.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Account",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACCOUNT",icon={Icon(Icons.Filled.Person,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="ACCOUNT" }})
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth().heightIn(min=56.dp),label={Text("Logout",fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)},selected=false,icon={Icon(Icons.Filled.Logout,contentDescription=null,tint=Color(0xFFB3261E),modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); showLogoutConfirm=true }},colors=NavigationDrawerItemDefaults.colors(unselectedTextColor=Color(0xFFB3261E),unselectedIconColor=Color(0xFFB3261E)))
