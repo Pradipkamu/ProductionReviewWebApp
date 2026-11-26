@@ -1633,7 +1633,9 @@ def rejection_actions_by_day(from_date: date, to_date: date, plant: str | None =
     plants = [part.strip() for part in (plant or "").split(",") if part.strip()]
 
     query = """
-        SELECT DISTINCT a.id, a.action_no, a.problem_description, a.action_description,
+        SELECT DISTINCT a.id, a.action_no,
+               REGEXP_REPLACE(a.problem_description, '^FTA[[:space:]]+' || i.investigation_no || ':[[:space:]]*', '') AS problem_description,
+               a.action_description,
                a.status, a.due_at, a.action_type, a.owner_id, u.full_name AS owner_name,
                CASE WHEN a.status <> 'CLOSED' AND a.due_at IS NOT NULL AND a.due_at::date < CURRENT_DATE
                     THEN CURRENT_DATE - a.due_at::date ELSE 0 END AS overdue_days,
@@ -1675,7 +1677,54 @@ def rejection_actions_by_day(from_date: date, to_date: date, plant: str | None =
         query += " AND (i.owner_id=:user_id OR i.created_by_id=:user_id)"
         params["user_id"] = user.id
     query += " ORDER BY q.rejection_date, a.id"
-    return [dict(row) for row in db.execute(text(query), params).mappings().all()]
+    action_rows = [dict(row) for row in db.execute(text(query), params).mappings().all()]
+
+    # A recurrence is a separate quality event. Report it on the date the
+    # recurrence was linked (IST), not on the original rejection date.
+    recurrence_query = """
+        SELECT -r.id AS id, NULL::text AS action_no,
+               COALESCE(NULLIF(r.recurrence_reason, ''), NULLIF(i.summary, ''),
+                        'FTA recurrence linked') AS problem_description,
+               NULL::text AS action_description, r.classification AS status,
+               NULL::timestamp AS due_at, 'FTA_RECURRENCE'::text AS action_type,
+               i.owner_id, u.full_name AS owner_name, 0 AS overdue_days,
+               i.id AS investigation_id, i.investigation_no, i.operation_code,
+               q.id AS rejection_id,
+               (r.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date AS date,
+               q.shift, COALESCE(q.plant, p.plant) AS plant, q.product_id,
+               q.phenomenon_id, p.code AS part_code, p.name AS part_name,
+               ph.name AS phenomenon, COALESCE(i.machine_id, q.machine_id) AS machine_id,
+               m.name AS machine_name, r.id AS recurrence_id,
+               r.classification, 'FTA Recurrence'::text AS source_type,
+               ri.investigation_no AS related_investigation_no
+        FROM fta_recurrences r
+        JOIN fta_investigations i ON i.id=r.original_investigation_id
+        JOIN quality_rejection_daily q ON q.id=r.rejection_id
+        JOIN products p ON p.id=q.product_id
+        JOIN quality_rejection_phenomena ph ON ph.id=q.phenomenon_id
+        LEFT JOIN machines m ON m.id=COALESCE(i.machine_id, q.machine_id)
+        LEFT JOIN users u ON u.id=i.owner_id
+        LEFT JOIN fta_investigations ri ON ri.id=r.related_investigation_id
+        WHERE (r.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
+              BETWEEN :from_date AND :to_date
+    """
+    if plants:
+        recurrence_query += " AND COALESCE(q.plant, p.plant) = ANY(:plants)"
+    if product_ids:
+        recurrence_query += " AND q.product_id = ANY(:product_ids)"
+    if phenomenon_ids:
+        recurrence_query += " AND q.phenomenon_id = ANY(:phenomenon_ids)"
+    if operation_ids:
+        recurrence_query += " AND (q.detection_route_operation_id = ANY(:operation_ids) OR q.responsible_route_operation_id = ANY(:operation_ids))"
+    if machine_ids:
+        recurrence_query += " AND COALESCE(i.machine_id, q.machine_id) = ANY(:machine_ids)"
+    if shifts:
+        recurrence_query += " AND q.shift = ANY(:shifts)"
+    if _role_name(user) == "PRODUCTION":
+        recurrence_query += " AND (i.owner_id=:user_id OR i.created_by_id=:user_id)"
+    recurrence_query += " ORDER BY date, r.id"
+    recurrence_rows = [dict(row) for row in db.execute(text(recurrence_query), params).mappings().all()]
+    return action_rows + recurrence_rows
 
 
 @router.get("/dashboard")
