@@ -55,7 +55,15 @@ export async function api<T=any>(path: string, init: RequestInit = {}): Promise<
     throw error
   }
   if(res.ok && headers.has('X-Correction-ID') && !path.split('?')[0].includes('/preview'))sessionStorage.removeItem('correctionId')
-  return res.json()
+  const result = await res.json()
+  const method = (init.method || 'GET').toUpperCase()
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && !path.startsWith('/auth/')) {
+    const successMessage = method === 'DELETE' ? 'Record deleted successfully.'
+      : method === 'POST' ? 'Operation completed successfully.'
+      : 'Changes saved successfully.'
+    window.dispatchEvent(new CustomEvent('app:api-success', { detail: { message: successMessage, path, method } }))
+  }
+  return result
 }
 
 export async function login(username: string, password: string) {
@@ -93,7 +101,7 @@ export async function blobApi(path: string): Promise<Blob> {
   const headers = new Headers()
   const token = getToken()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const res = await fetch(`${API}${path}`, { headers })
+  const res = await requestWithErrorHandling(`${API}${path}`, { headers })
   if (res.status === 401) { clearToken(); location.reload() }
   if (!res.ok) { const body=await res.json().catch(()=>({})); const message=readableApiError(body?.detail??body); window.dispatchEvent(new CustomEvent('app:api-error',{detail:{message,status:res.status,path}})); throw new Error(message) }
   return res.blob()
