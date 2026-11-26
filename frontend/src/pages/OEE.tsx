@@ -88,7 +88,7 @@ export default function OEE(){
 
  useEffect(()=>{loadManagement();loadCompliance()},[fromDate,d,p,op,m,lossCategoryFilter])
 
- const dailyLossCategories=useMemo(()=>Array.from(new Set((mgmt?.daily_loss_trend||[]).flatMap((day:any)=>(day.categories||[]).map((x:any)=>x.category)))),[mgmt])
+ const dailyLossCategories=useMemo<string[]>(()=>{const categories:string[]=(mgmt?.daily_loss_trend||[]).flatMap((day:any)=>(day.categories||[]).map((x:any)=>String(x.category)));return Array.from(new Set<string>(categories))},[mgmt])
  const clientWarnings=useMemo(()=>{
   const rows:string[]=[];if(Number(entry.good_count)<0||Number(entry.reject_count)<0)rows.push('Production quantities cannot be negative.');return rows
  },[entry,sum])
