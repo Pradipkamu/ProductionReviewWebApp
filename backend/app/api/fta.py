@@ -797,8 +797,7 @@ def upgrade_investigation_template_version(
     old_snapshot = _json(current["template_snapshot_json"], {})
     new_snapshot = {
         **old_snapshot,
-        "template_id": target["id"],
-        "template_code": target["code"],
+        "template_id": target["id"],        "template_code": target["code"],
         "template_name": target["name"],
         "template_version": target["version"],
         "operation_code": target["operation_code"],
@@ -1597,8 +1596,7 @@ def close_investigation(investigation_id: int, payload: CloseRequest,
     now = datetime.utcnow()
     db.execute(text("""
         UPDATE fta_investigations SET status='CLOSED', closure_remarks=:remarks,
-          closed_by_id=:user_id, closed_at=:now, updated_at=:now WHERE id=:id
-    """), {"remarks": payload.remarks, "user_id": user.id, "now": now, "id": investigation_id})
+          closed_by_id=:user_id, closed_at=:now, updated_at=:now WHERE id=:id    """), {"remarks": payload.remarks, "user_id": user.id, "now": now, "id": investigation_id})
     db.execute(text("""
         INSERT INTO fta_status_history (investigation_id, old_status, new_status, remarks, changed_by_id)
         VALUES (:id, :old, 'CLOSED', :remarks, :user_id)
@@ -1746,7 +1744,7 @@ def recurrence_candidates(rejection_id: int, db: Session = Depends(get_db),
                p.code AS part_code, p.name AS part_name, ph.name AS phenomenon,
                COALESCE(i.machine_id, oq.machine_id) AS machine_id,
                om.name AS machine_name,
-               COALESCE((SELECT string_agg(DISTINCT a.status, ', ')
+               COALESCE((SELECT string_agg(DISTINCT a.status::text, ', ')
                          FROM fta_action_links al JOIN actions a ON a.id=al.action_id
                          WHERE al.investigation_id=i.id), 'NO LINKED ACTION') AS previous_action_status,
                (SELECT string_agg(DISTINCT f.verification_result, '; ')
@@ -1947,7 +1945,7 @@ def create_recurrence(investigation_id: int, payload: RecurrenceCreate,
     if already_recurrence:
         raise HTTPException(409, "This rejection is already linked to an FTA recurrence")
     previous = db.execute(text("""
-        SELECT string_agg(DISTINCT a.status, ', ') AS action_status
+        SELECT string_agg(DISTINCT a.status::text, ', ') AS action_status
         FROM fta_action_links l JOIN actions a ON a.id=l.action_id
         WHERE l.investigation_id=:id
     """), {"id": investigation_id}).mappings().one()
@@ -2190,7 +2188,7 @@ def defect_history(defect_code: str, rejection_id: int | None = None,
                     THEN true ELSE false END AS same_part,
                ph.name AS phenomenon_name, t.name AS template_name,
                COALESCE((
-                   SELECT string_agg(DISTINCT a.status, ', ')
+                   SELECT string_agg(DISTINCT a.status::text, ', ')
                    FROM fta_action_links al JOIN actions a ON a.id=al.action_id
                    WHERE al.investigation_id=i.id
                ), 'NO LINKED ACTION') AS linked_action_status,
