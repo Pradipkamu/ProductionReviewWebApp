@@ -904,7 +904,8 @@ def recent_records(from_date: date, to_date: date, product_id: int, route_operat
             "count": len(records), "records": records}
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
-                       route_operation_id: int | None = None, product_id: str | None = None, plant: str | None = None,
+                       route_operation_id: int | None = None, product_id: str | None = None,
+                       loss_category_id: int | None = None, plant: str | None = None,
                        product_group: str | None = None, customer_id: str | None = None,
                        target_oee: float = 0.85, recurring_event_threshold: int = 3,
                        db: Session = Depends(get_db), _: User = Depends(get_current_user)):
@@ -923,6 +924,8 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     if route_operation_id is not None:
         q = q.where(MachineShiftProduction.route_operation_id == route_operation_id)
         lq = lq.where(MachineLossEvent.route_operation_id == route_operation_id)
+    if loss_category_id is not None:
+        lq = lq.where(MachineLossEvent.loss_category_id == loss_category_id)
     plants = csv_strings(plant)
     product_ids = csv_ints(product_id)
     groups = csv_strings(product_group)
@@ -995,6 +998,21 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     ]
     shift_summary.sort(key=lambda x: x["shift"])
 
+    daily_loss = {}
+    for loss in losses:
+        category = categories.get(loss.loss_category_id)
+        category_name = category.name if category else f"Loss #{loss.loss_category_id}"
+        day_item = daily_loss.setdefault(loss.loss_date, {})
+        day_item[category_name] = day_item.get(category_name, 0.0) + float(loss.duration_min) / 60.0
+
+    daily_loss_trend = [
+        {"date": day.isoformat(), "categories": [
+            {"category": name, "hours": round(hours, 3)}
+            for name, hours in sorted(category_hours.items())
+        ], "total_hours": round(sum(category_hours.values()), 3)}
+        for day, category_hours in sorted(daily_loss.items())
+    ]
+
     pareto = {}
     for loss in losses:
         category = categories.get(loss.loss_category_id)
@@ -1013,6 +1031,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
             "below_target_machine_count": len(below_target), "recurring_loss_count": len(recurring_losses),
             "overall": overall, "trend": trend, "machines": machine_summary,
             "products": product_summary, "operators": operator_summary, "shifts": shift_summary,
+            "daily_loss_trend": daily_loss_trend,
             "loss_pareto": loss_pareto, "recurring_losses": recurring_losses}
 
 
