@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { dateIST } from '../time'
 import { api, downloadApi } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
-import { PercentTrendChart, RankedBars, ValueTrendChart } from '../components/Charts'
+import { PercentTrendChart, RankedBars } from '../components/Charts'
 import { Kpi, PageHeader, num, pct } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
@@ -56,7 +56,7 @@ export default function OEEReports(){
     const from=Date.parse(`${fromDate}T00:00:00Z`),to=Date.parse(`${toDate}T00:00:00Z`)
     return Number.isFinite(from)&&Number.isFinite(to)?Math.floor((to-from)/86400000)+1:0
   },[fromDate,toDate])
-  const showMonthlyLossTrend=selectedRangeDays>=55
+  const showMonthlyLossTrend=selectedRangeDays>31
   const dailyLossTrend=useMemo(()=>{
     const buckets=new Map<string,Map<string,number>>()
     for(const event of loss?.events||[]){
@@ -74,6 +74,26 @@ export default function OEEReports(){
     })
   },[loss])
   const dailyLossCategories=useMemo(()=>Array.from(new Set<string>(dailyLossTrend.flatMap(day=>day.categories.map((item:any)=>item.category)))),[dailyLossTrend])
+  const monthlyLossTrend=useMemo(()=>{
+    const buckets=new Map<string,Map<string,number>>()
+    for(const day of dailyLossTrend){
+      const month=String(day.date).slice(0,7)
+      const values=buckets.get(month)||new Map<string,number>()
+      for(const item of day.categories){
+        values.set(item.category,(values.get(item.category)||0)+Number(item.hours||0))
+      }
+      buckets.set(month,values)
+    }
+    return [...buckets.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([month,values])=>{
+      const categories=[...values.entries()].map(([category,hours])=>({category,hours}))
+      return {
+        month,
+        label:new Date(`${month}-01T12:00:00`).toLocaleDateString("en-IN",{month:"short",year:"numeric"}),
+        categories,
+        total_hours:categories.reduce((sum,item)=>sum+item.hours,0),
+      }
+    })
+  },[dailyLossTrend])
   const lossChartPalette=["#2563eb","#0d9488","#d97706","#7c3aed","#dc2626","#0891b2","#65a30d","#c026d3"]
 
   useEffect(()=>{
@@ -204,8 +224,11 @@ export default function OEEReports(){
       <div className="panel-title"><div><h2>Daily Machine Loss Hours</h2><p>Daily loss hours stacked by loss category, using the selected date range and report filters.</p></div></div>
       {dailyLossTrend.length>0?<><div className="svg-scroll"><div style={{display:"flex",alignItems:"flex-end",gap:10,height:250,minWidth:dailyLossTrend.length*54,width:"max-content",padding:"16px 8px 4px",borderBottom:"1px solid var(--border, #d7deea)"}}>{dailyLossTrend.map((day:any)=>{const max=Math.max(0.1,...dailyLossTrend.map((item:any)=>Number(item.total_hours||0)));return <div key={day.date} title={`${day.date}: ${num(day.total_hours)} h`} style={{width:44,flex:"0 0 44px",height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:5}}><div style={{height:`${Math.max(0,Number(day.total_hours||0)/max*185)}px`,width:"76%",display:"flex",flexDirection:"column-reverse",justifyContent:"flex-start",borderRadius:"4px 4px 0 0",overflow:"hidden"}}>{day.categories.map((part:any)=>{const color=lossChartPalette[dailyLossCategories.indexOf(part.category)%lossChartPalette.length]||lossChartPalette[0];return <div key={part.category} title={`${part.category}: ${num(part.hours)} h`} style={{height:`${Number(part.hours||0)/Math.max(0.001,Number(day.total_hours||0))*100}%`,backgroundColor:color,minHeight:part.hours>0?2:0}}/>})}</div><small style={{fontSize:10,whiteSpace:"nowrap",color:"var(--muted, #64748b)"}}>{new Date(`${day.date}T12:00:00`).toLocaleDateString("en-IN",{day:"2-digit",month:"short"})}</small></div>})}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"8px 16px",paddingTop:12}}>{dailyLossCategories.map((name:string,i:number)=><span key={name} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:10,height:10,borderRadius:2,backgroundColor:lossChartPalette[i%lossChartPalette.length]}}/>{name}</span>)}</div></>:<div className="empty">No loss events match the selected dates and filters.</div>}
     </section>
-    {!showMonthlyLossTrend&&<p className="muted">Select a date range of at least 55 days (about two months) to display the Monthly Loss Hours Trend.</p>}
-    {showMonthlyLossTrend&&<section className="panel report-panel"><div className="panel-title"><div><h2>Monthly Loss Hours Trend</h2><p>Monthly totals for the selected period of {selectedRangeDays} days.</p></div></div><ValueTrendChart rows={loss?.monthly||[]} keyName="hours" label="Loss hours" suffix=" h"/></section>}
+    {!showMonthlyLossTrend&&<p className="muted">Select a date range of more than one month to display the Monthly Loss Hours Trend.</p>}
+    {showMonthlyLossTrend&&<section className="panel report-panel">
+      <div className="panel-title"><div><h2>Monthly Loss Hours Trend</h2><p>Monthly loss hours stacked by the same loss categories as the daily chart. Each month includes only dates inside the selected range.</p></div></div>
+      {monthlyLossTrend.length>0?<><div className="svg-scroll"><div style={{display:"flex",alignItems:"flex-end",gap:14,height:250,minWidth:monthlyLossTrend.length*82,width:"max-content",padding:"16px 8px 4px",borderBottom:"1px solid var(--border, #d7deea)"}}>{monthlyLossTrend.map((month:any)=>{const max=Math.max(0.1,...monthlyLossTrend.map((item:any)=>Number(item.total_hours||0)));return <div key={month.month} title={`${month.label}: ${num(month.total_hours)} h`} style={{width:68,flex:"0 0 68px",height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:6}}><div style={{height:`${Math.max(0,Number(month.total_hours||0)/max*185)}px`,width:"72%",display:"flex",flexDirection:"column-reverse",justifyContent:"flex-start",borderRadius:"5px 5px 0 0",overflow:"hidden"}}>{month.categories.map((part:any)=>{const color=lossChartPalette[dailyLossCategories.indexOf(part.category)%lossChartPalette.length]||lossChartPalette[0];return <div key={part.category} title={`${part.category}: ${num(part.hours)} h`} style={{height:`${Number(part.hours||0)/Math.max(0.001,Number(month.total_hours||0))*100}%`,backgroundColor:color,minHeight:part.hours>0?2:0}}/>})}</div><small style={{fontSize:11,whiteSpace:"nowrap",color:"var(--muted, #64748b)"}}>{month.label}</small></div>})}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"8px 16px",paddingTop:12}}>{dailyLossCategories.map((name:string,i:number)=><span key={name} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:10,height:10,borderRadius:2,backgroundColor:lossChartPalette[i%lossChartPalette.length]}}/>{name}</span>)}</div></>:<div className="empty">No loss events match the selected dates and filters.</div>}
+    </section>}
     <section className="panel"><div className="panel-title"><div><h2>Machine Shift OEE Details</h2><p>Raw performance above 110% flags a cycle-time or quantity master check.</p></div></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Product / Operation</th><th>Operator</th><th>Run / Planned</th><th>Total / Good / Reject</th><th>A</th><th>P</th><th>Q</th><th>OEE</th></tr></thead><tbody>{filteredEntries.map((r:any)=><tr key={r.id}><td>{r.date}</td><td>{r.shift}</td><td><b>{r.machine}</b><br/><small>{r.machine_code||''}</small></td><td>{r.product}<br/><small>{r.operation}</small></td><td>{r.operator||'—'}</td><td>{Number(r.run_min||0)} / {Number(r.planned_min||0)} min</td><td>{Number(r.total_count||0)} / {Number(r.good_count||0)} / {Number(r.reject_count||0)}</td><td>{pct(r.availability)}</td><td className={r.performance_master_warning?'neg':''}>{pct(r.performance_raw)}</td><td>{pct(r.quality)}</td><td><b>{pct(r.oee)}</b></td></tr>)}{!filteredEntries.length&&<tr><td colSpan={11} className="muted">No OEE shift entries in this date range and filter scope.</td></tr>}</tbody></table></div></section>
     <section className="panel"><div className="panel-title"><div><h2>Machine Loss Details and Action Linkage</h2><p>Loss records are linked to their action plans where an action has been raised.</p></div><Link to="/actions">Open action register</Link></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Product / Operation</th><th>Loss</th><th>Component</th><th>Minutes</th><th>Remark</th><th>Action</th></tr></thead><tbody>{(loss?.events||[]).map((r:any)=><tr key={r.id}><td>{r.date}</td><td>{r.shift}</td><td><b>{r.machine}</b><br/><small>{r.machine_code||''}</small></td><td>{r.product||'—'}<br/><small>{r.operation||'—'}</small></td><td>{r.category}</td><td>{r.component}</td><td>{num(r.duration_min)}</td><td>{r.remark||'—'}</td><td>{r.action_no?<Link to="/actions">{r.action_no} · {r.action_status}</Link>:<span className="status watch">Action pending</span>}</td></tr>)}{!(loss?.events||[]).length&&<tr><td colSpan={9} className="muted">No loss events in this date range and filter scope.</td></tr>}</tbody></table></div></section>
   </>
