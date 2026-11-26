@@ -939,6 +939,9 @@ class MainActivity : ComponentActivity() {
                         oeeEntryId = null
                         oeeLoadingPreviousEntry = false
                         oeeCorrectionReason = ""
+                        oeeOperatorId = null
+                        oeeOperatorName = ""
+                        oeeOperatorError = null
                         oeeShiftMinutes = "440"
                         oeeBreakMinutes = "0"
                         oeeGoodCount = "0"
