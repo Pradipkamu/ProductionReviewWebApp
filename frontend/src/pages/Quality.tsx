@@ -222,7 +222,6 @@ const [manualOps,setManualOps]=useState<any[]>([]); const [manualSaving,setManua
   const monthlyPpmPending=monthlyTrend.filter((x:any)=>x.ppm==null&&Number(x.reject_qty||0)>0).length
   // Rejection quantity is independent of the PPM denominator. Keep this series
   // visible even when dispatch production is pending for some or all days.
-  const dailyRejectionRows=trend.map((x:any)=>({...x,value:Number(x.reject_qty||0)}))
   const dailyPhenomenonTrend=useMemo(()=>{
     const buckets=new Map<string,Map<string,{key:string,name:string,qty:number}>>()
     // Seed every selected day so dates with zero rejection remain visible.
