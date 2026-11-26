@@ -2411,7 +2411,7 @@ class MainActivity : ComponentActivity() {
                                                 // Populate the compliance state consumed by the section below.
                                                 oeeReportingCompliance=withContext(Dispatchers.IO){
                                                     ApiClient.loadOeeReportingCompliance(
-                                                        oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,null
+                                                        oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,oeeOperation?.id
                                                     )
                                                 }
                                             } catch(e:Exception){oeeError=e.message ?: "Unable to load OEE report and reporting compliance."}
