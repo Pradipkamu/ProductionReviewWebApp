@@ -161,6 +161,7 @@ export default function FTA({me}:{me:any}){
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
+  useEffect(()=>{if(!message)return;window.dispatchEvent(new CustomEvent('app:api-success',{detail:{message}}));setMessage('')},[message])
 
   const filteredTemplates=useMemo(()=>operationCode&&defectCode?templates.filter(t=>t.status==='PUBLISHED'&&t.operation_code===operationCode&&t.defect_code===defectCode):[],[templates,operationCode,defectCode])
   const selectedTemplate=filteredTemplates.find(t=>String(t.id)===selectedTemplateId)||filteredTemplates[0]
@@ -355,7 +356,7 @@ export default function FTA({me}:{me:any}){
     <PageHeader title="Fault Tree Analysis" subtitle="Machining defect investigation, verified root causes and corrective-action linkage."/>
     <nav className="fta-view-nav" aria-label="FTA workspace">{views.filter(v=>v.key!=='templates'||canManageTemplates).map(v=><a key={v.key} href={v.key==='dashboard'?'/fta':`/fta?view=${v.key}`} aria-current={view===v.key?'page':undefined} className={view===v.key?'active':''}>{v.label}</a>)}</nav>
 
-    {message&&<div className="success" role="status">{message}</div>}
+    
     {view==='dashboard'&&<>
     <div className="kpi-grid">
       <Kpi label="Total investigations" value={counts.total||0}/>
