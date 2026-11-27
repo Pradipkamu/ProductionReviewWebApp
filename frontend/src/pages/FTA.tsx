@@ -586,8 +586,8 @@ export default function FTA({me}:{me:any}){
           <p className="muted small">Select a cause node to record evidence and investigation status. Gate labels describe logical relationships; they do not prove causality.</p>
           <TreeNode node={tree} findings={detail.findings||[]} selected={selectedNode} onSelect={setSelectedNode}/>
         </div>
-        <div className="fta-finding-panel" id="fta-section-root-cause">
-          <h3>Investigation finding</h3>
+        <div className={`fta-finding-panel${currentFinding ? " fta-node-modal-open" : ""}`} id="fta-section-root-cause" role={currentFinding ? "dialog" : undefined} aria-modal={currentFinding ? "true" : undefined} aria-labelledby={currentFinding ? "fta-node-modal-title" : undefined}>
+          <div className="fta-node-modal-heading"><h3 id="fta-node-modal-title">Investigation finding</h3>{currentFinding&&<button type="button" className="secondary small" onClick={()=>setSelectedNode('')} aria-label="Close node details">Close</button>}</div>
           {currentFinding?<>
             <strong>{currentFinding.node_label}</strong>
             {currentNodeTemplate?.requirement?.trim()&&<div className="fta-template-requirement" style={{margin:'10px 0',padding:'10px 12px',borderLeft:'3px solid #2563eb',background:'var(--panel-soft, #f5f8fc)',borderRadius:6}}><b>Template requirement / specification</b><p style={{margin:'4px 0 0',whiteSpace:'pre-wrap'}}>{currentNodeTemplate.requirement}</p><small className="muted">Use this as the expected condition while checking the cause. You can adjust the expected value below for this investigation.</small></div>}
