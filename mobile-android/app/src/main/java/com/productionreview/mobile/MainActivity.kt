@@ -545,6 +545,37 @@ internal object ApiClient {
         return request("/fta/discovered-causes/$causeId/review", "POST", body, token)
     }
 
+    fun uploadFtaEvidence(context: android.content.Context, investigationId: Int, findingId: Int?, uri: Uri, caption: String, token: String): JSONObject {
+        val resolver=context.contentResolver
+        val name=resolver.query(uri,null,null,null,null)?.use { cursor ->
+            if(cursor.moveToFirst()) cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME).takeIf{it>=0}?.let{cursor.getString(it)} else null
+        } ?: "fta-evidence"
+        val file=File(context.cacheDir,"fta-evidence-${System.currentTimeMillis()}-${name.replace(Regex("[^A-Za-z0-9._-]"),"_")}")
+        resolver.openInputStream(uri)?.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+            ?: throw IllegalStateException("Unable to read selected evidence file")
+        val boundary="----ProductionFta${System.currentTimeMillis()}"
+        val connection=(URL("$API_BASE/fta/investigations/$investigationId/evidence").openConnection() as HttpURLConnection).apply {
+            requestMethod="POST";connectTimeout=15000;readTimeout=60000;doOutput=true;setChunkedStreamingMode(64*1024)
+            setRequestProperty("Accept","application/json");setRequestProperty("Authorization","Bearer $token")
+            setRequestProperty("Content-Type","multipart/form-data; boundary=$boundary")
+        }
+        try {
+            connection.outputStream.use { output ->
+                fun field(key:String,value:String){output.write("--$boundary\\r\\nContent-Disposition: form-data; name=\"$key\"\\r\\n\\r\\n$value\\r\\n".toByteArray(Charsets.UTF_8))}
+                output.write("--$boundary\\r\\nContent-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\\r\\nContent-Type: ${resolver.getType(uri)?: "application/octet-stream"}\\r\\n\\r\\n".toByteArray(Charsets.UTF_8))
+                file.inputStream().use{it.copyTo(output)};output.write("\\r\\n".toByteArray(Charsets.UTF_8))
+                if(findingId!=null) field("finding_id",findingId.toString())
+                if(caption.isNotBlank()) field("caption",caption)
+                output.write("--$boundary--\\r\\n".toByteArray(Charsets.UTF_8))
+            }
+            val code=connection.responseCode
+            val stream=if(code in 200..299) connection.inputStream else connection.errorStream
+            val body=stream?.bufferedReader()?.use{it.readText()}.orEmpty()
+            if(code !in 200..299){val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty();throw IllegalStateException(detail.ifBlank{"FTA evidence upload failed (HTTP $code)"})}
+            return JSONObject(body)
+        } finally {file.delete();connection.disconnect()}
+    }
+
     fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
         val uploadFile = PhotoCompressor.prepare(file)
         val boundary = "----ProductionMobile${System.currentTimeMillis()}"
@@ -684,6 +715,9 @@ class MainActivity : ComponentActivity() {
             var ftaBusy by remember { mutableStateOf(false) }
             var ftaError by remember { mutableStateOf<String?>(null) }
             var ftaRemarks by remember { mutableStateOf("") }
+            var ftaEvidenceFindingId by remember { mutableStateOf<Int?>(null) }
+            var ftaEvidenceCaption by remember { mutableStateOf("") }
+            var ftaEvidencePickerUri by remember { mutableStateOf<Uri?>(null) }
             var ftaActionDescription by remember { mutableStateOf("") }
             var ftaActionFindingId by remember { mutableStateOf<Int?>(null) }
             var ftaDiscoveredDescription by remember { mutableStateOf("") }
@@ -713,6 +747,7 @@ class MainActivity : ComponentActivity() {
             var chatAttachmentUri by remember { mutableStateOf<Uri?>(null) }
             val chatContext = LocalContext.current
             val chatAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> chatAttachmentUri = uri }
+            val ftaEvidencePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> ftaEvidencePickerUri = uri }
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission()
             ) { }
@@ -1894,7 +1929,25 @@ class MainActivity : ComponentActivity() {
                                                             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=rootCause,onCheckedChange={rootCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Root cause",fontSize=11.sp)}
                                                             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=occurrenceCause,onCheckedChange={occurrenceCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Occurrence cause",fontSize=11.sp)}
                                                             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=escapeCause,onCheckedChange={escapeCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Escape cause",fontSize=11.sp)}
-                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(enabled=ftaSavingNode!=finding.optString("node_id") && (findingStatus!="CONFIRMED" || verificationMethod.isNotBlank()),onClick={
+                                                            val findingEvidence=fta.optJSONArray("evidence")?:JSONArray()
+                                                            val evidenceForFinding=(0 until findingEvidence.length()).mapNotNull{findingEvidence.optJSONObject(it)}.filter{it.optInt("finding_id",-1)==finding.optInt("id")}
+                                                            Text("Evidence files: ${evidenceForFinding.size}",color=Muted,fontSize=10.sp)
+                                                            evidenceForFinding.forEach{ev->Text("• ${ev.optString("file_name")} ${ev.optString("caption")}",color=Muted,fontSize=10.sp)}
+                                                            if(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS"){
+                                                                OutlinedTextField(value=ftaEvidenceCaption,onValueChange={ftaEvidenceCaption=it},modifier=Modifier.fillMaxWidth(),label={Text("Evidence caption (optional)")},singleLine=true)
+                                                                OutlinedButton(onClick={ftaEvidenceFindingId=finding.optInt("id");ftaEvidencePicker.launch("*/*")},modifier=Modifier.fillMaxWidth()){Text("ATTACH EVIDENCE TO THIS FINDING")}
+                                                            }
+                                                            if(ftaEvidencePickerUri!=null && ftaEvidenceFindingId==finding.optInt("id")){
+                                                                Button(enabled=!ftaBusy,onClick={
+                                                                    val auth=token;val uri=ftaEvidencePickerUri
+                                                                    if(auth!=null&&uri!=null) scope.launch { ftaBusy=true;try {
+                                                                        withContext(Dispatchers.IO){ApiClient.uploadFtaEvidence(chatContext,fta.optInt("id"),finding.optInt("id"),uri,ftaEvidenceCaption,auth)}
+                                                                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                        ftaEvidencePickerUri=null;ftaEvidenceFindingId=null;ftaEvidenceCaption=""
+                                                                    }catch(e:Exception){ftaError=e.message?: "Evidence upload failed"}finally{ftaBusy=false} }
+                                                                },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("UPLOAD SELECTED EVIDENCE")}
+                                                            }
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(enabled=ftaSavingNode!=finding.optString("node_id") && (findingStatus!="CONFIRMED" || verificationMethod.isNotBlank()) && (findingStatus!="CONFIRMED" || evidenceForFinding.isNotEmpty()),onClick={
                                                                 val payload=JSONObject().put("investigation_status",findingStatus).put("observation",observation)
                                                                     .put("measured_value",measuredValue).put("expected_value",expectedValue)
                                                                     .put("verification_method",verificationMethod).put("verification_result",verificationResult)
