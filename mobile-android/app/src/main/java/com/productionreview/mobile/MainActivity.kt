@@ -723,9 +723,6 @@ class MainActivity : ComponentActivity() {
             var ftaDiscoveredDescription by remember { mutableStateOf("") }
             var ftaDiscoveredEvidence by remember { mutableStateOf("") }
             var ftaSavingNode by remember { mutableStateOf<String?>(null) }
-            var ftaSelectedNodeId by remember { mutableStateOf("") }
-            var ftaFindingDraft by remember { mutableStateOf(JSONObject()) }
-            var ftaDraftNodes by remember { mutableStateOf(JSONObject()) }
             var detection by remember { mutableStateOf<RouteChoice?>(null) }
             var responsible by remember { mutableStateOf<RouteChoice?>(null) }
             var machine by remember { mutableStateOf<Choice?>(null) }
@@ -876,49 +873,12 @@ class MainActivity : ComponentActivity() {
                     finally { ftaBusy = false }
                 }
             }
-            fun ftaDraftKey(id:Int)="fta_draft_${account?.username?.trim()?.lowercase().orEmpty()}_$id"
-            fun persistFtaDraft(id:Int,node:String,draft:JSONObject,selected:String=node){
-                val nodes=JSONObject(ftaDraftNodes.toString()).put(node,JSONObject(draft.toString()));ftaDraftNodes=nodes
-                val root=JSONObject().put("selected_node_id",selected).put("nodes",nodes)
-                chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE).edit().putString(ftaDraftKey(id),root.toString()).apply()
-            }
-            fun draftFromFinding(f:JSONObject):JSONObject{
-                val node=f.optString("node_id")
-                val d=JSONObject().put("investigation_status",f.optString("investigation_status","NOT_INVESTIGATED"))
-                    .put("observation",f.optString("observation").takeUnless{it=="null"}.orEmpty())
-                    .put("measured_value",f.optString("measured_value").takeUnless{it=="null"}.orEmpty())
-                    .put("expected_value",f.optString("expected_value").takeUnless{it=="null"}.orEmpty())
-                    .put("verification_method",f.optString("verification_method").takeUnless{it=="null"}.orEmpty())
-                    .put("verification_result",f.optString("verification_result").takeUnless{it=="null"}.orEmpty())
-                    .put("priority",f.optString("priority","MEDIUM")).put("is_root_cause",f.optBoolean("is_root_cause"))
-                    .put("is_occurrence_cause",f.optBoolean("is_occurrence_cause")).put("is_escape_cause",f.optBoolean("is_escape_cause"))
-                ftaDraftNodes.optJSONObject(node)?.let{saved->val it=saved.keys();while(it.hasNext()){val k=it.next();d.put(k,saved.opt(k))}}
-                return d
-            }
-            fun selectFtaNode(f:JSONObject){
-                val id=selectedFta?.optInt("id")?:return;val node=f.optString("node_id")
-                ftaSelectedNodeId=node;ftaFindingDraft=draftFromFinding(f)
-                val root=JSONObject().put("selected_node_id",node).put("nodes",ftaDraftNodes)
-                chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE).edit().putString(ftaDraftKey(id),root.toString()).apply()
-            }
-            fun updateFtaDraft(key:String,value:Any){
-                val fta=selectedFta?:return;val node=ftaSelectedNodeId;if(node.isBlank())return
-                val d=JSONObject(ftaFindingDraft.toString()).put(key,value);ftaFindingDraft=d;persistFtaDraft(fta.optInt("id"),node,d)
-            }
             fun openFta(id: Int, auth: String) {
                 scope.launch {
-                    ftaBusy=true;ftaError=null
-                    try{
-                        val loaded=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(id,auth)};selectedFta=loaded;ftaRemarks=""
-                        val prefs=chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE)
-                        val saved=runCatching{JSONObject(prefs.getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
-                        ftaDraftNodes=saved.optJSONObject("nodes")?:JSONObject()
-                        val fs=loaded.optJSONArray("findings")?:JSONArray()
-                        val wanted=saved.optString("selected_node_id")
-                        val node=(0 until fs.length()).mapNotNull{fs.optJSONObject(it)}.firstOrNull{it.optString("node_id")==wanted}
-                            ?: (0 until fs.length()).mapNotNull{fs.optJSONObject(it)}.firstOrNull()
-                        if(node!=null)selectFtaNode(node) else {ftaSelectedNodeId="";ftaFindingDraft=JSONObject()}
-                    }catch(e:Exception){ftaError=e.message?:"Unable to load FTA."}finally{ftaBusy=false}
+                    ftaBusy = true; ftaError = null
+                    try { selectedFta = withContext(Dispatchers.IO) { ApiClient.loadFtaInvestigation(id, auth) }; ftaRemarks = "" }
+                    catch (e: Exception) { ftaError = e.message ?: "Unable to load FTA." }
+                    finally { ftaBusy = false }
                 }
             }
             fun saveFtaObservation(finding: JSONObject, observation: String, auth: String) {
@@ -1917,97 +1877,92 @@ class MainActivity : ComponentActivity() {
                                     if(selectedFta==null) {
                                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(onClick={token?.let{refreshFta(it)}}){Text("REFRESH",color=Teal)}}
                                         if(ftaRows.length()==0 && !ftaBusy) EmptyState("No FTA investigations","No investigations are available for your account.")
-                                        Text("FTA investigation nodes",color=Navy,fontWeight=FontWeight.Bold,fontSize=14.sp)
-                                         Text("Select one node at a time. Edits are saved locally on this device; server investigation status changes only after a successful save.",color=Muted,fontSize=11.sp)
-                                         LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(7.dp)){
-                                             items((0 until findings.length()).toList()){i->
-                                                 val f=findings.optJSONObject(i)
-                                                 if(f!=null){
-                                                     val node=f.optString("node_id");val local=ftaDraftNodes.optJSONObject(node)
-                                                     Card(Modifier.fillMaxWidth().clickable{selectFtaNode(f)},shape=RoundedCornerShape(12.dp),
-                                                         colors=CardDefaults.cardColors(containerColor=if(node==ftaSelectedNodeId)Color(0xFFEAF4F7) else Color.White),
-                                                         border=androidx.compose.foundation.BorderStroke(1.dp,if(node==ftaSelectedNodeId)Teal else Border)){
-                                                         Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.CenterVertically){
-                                                             Column(Modifier.weight(1f)){Text(f.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
-                                                                 Text("${f.optString("node_type")} • ${f.optString("investigation_status").replace("_"," ")}",color=Muted,fontSize=10.sp)
-                                                                 if(local!=null)Text("Draft stored on device",color=Warning,fontSize=10.sp)}
-                                                             Text("OPEN  ›",color=Teal,fontWeight=FontWeight.Bold,fontSize=11.sp)
-                                                         }
-                                                     }
-                                                 }
-                                             }
-                                         }
-                                         val active=(0 until findings.length()).mapNotNull{findings.optJSONObject(it)}.firstOrNull{it.optString("node_id")==ftaSelectedNodeId}
-                                         if(active!=null){
-                                             val f=active;val node=f.optString("node_id");val d=ftaFindingDraft;val editable=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS"
-                                             val evs=fta.optJSONArray("evidence")?:JSONArray()
-                                             val evidence=(0 until evs.length()).mapNotNull{evs.optJSONObject(it)}.filter{it.optInt("finding_id",-1)==f.optInt("id")}
-                                             Dialog(onDismissRequest={}) {
-                                                 Card(Modifier.fillMaxWidth().fillMaxHeight(0.92f),shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
-                                                     Column(Modifier.fillMaxSize().padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                                                         Row(verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){
-                                                             Text("FTA NODE",color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
-                                                             Text(f.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=17.sp)}
-                                                             TextButton(onClick={ftaSelectedNodeId="";val root=JSONObject().put("selected_node_id","").put("nodes",ftaDraftNodes);chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE).edit().putString(ftaDraftKey(fta.optInt("id")),root.toString()).apply()}){Text("CLOSE")}}
-                                                         Text("${f.optString("node_type")} • Server status: ${f.optString("investigation_status").replace("_"," ")}",color=Muted,fontSize=11.sp)
-                                                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
-                                                             OutlinedTextField(d.optString("observation"),{updateFtaDraft("observation",it)},Modifier.fillMaxWidth(),enabled=editable,label={Text("Actual observation / Gemba findings (or N/A reason)")},minLines=2,maxLines=5)
-                                                             Text("Investigation status",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
-                                                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement=Arrangement.spacedBy(4.dp)){listOf("NOT_INVESTIGATED","UNDER_INVESTIGATION","SUSPECTED","CONFIRMED","RULED_OUT","NOT_APPLICABLE").forEach{v->FilterChip(selected=d.optString("investigation_status")==v,onClick={updateFtaDraft("investigation_status",v)},enabled=editable,label={Text(v.replace("_"," "),fontSize=9.sp)})}}
-                                                             Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){OutlinedTextField(d.optString("measured_value"),{updateFtaDraft("measured_value",it)},Modifier.weight(1f),enabled=editable,label={Text("Measured value")},singleLine=true);OutlinedTextField(d.optString("expected_value"),{updateFtaDraft("expected_value",it)},Modifier.weight(1f),enabled=editable,label={Text("Expected value")},singleLine=true)}
-                                                             OutlinedTextField(d.optString("verification_method"),{updateFtaDraft("verification_method",it)},Modifier.fillMaxWidth(),enabled=editable,label={Text("Verification method (required to confirm)")},minLines=2)
-                                                             OutlinedTextField(d.optString("verification_result"),{updateFtaDraft("verification_result",it)},Modifier.fillMaxWidth(),enabled=editable,label={Text("Verification result")},minLines=2)
-                                                             Text("Cause classification",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
-                                                             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.optBoolean("is_root_cause"),{updateFtaDraft("is_root_cause",it)},enabled=editable);Text("Root cause",fontSize=11.sp)}
-                                                             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.optBoolean("is_occurrence_cause"),{updateFtaDraft("is_occurrence_cause",it)},enabled=editable);Text("Occurrence cause",fontSize=11.sp)}
-                                                             Row(verticalAlignment=Alignment.CenterVertically){Checkbox(d.optBoolean("is_escape_cause"),{updateFtaDraft("is_escape_cause",it)},enabled=editable);Text("Escape cause",fontSize=11.sp)}
-                                                             Text("Evidence files: ${evidence.size}",color=Muted,fontSize=10.sp);evidence.forEach{Text("• ${it.optString("file_name")} ${it.optString("caption")}",color=Muted,fontSize=10.sp)}
-                                                             if(editable){OutlinedTextField(ftaEvidenceCaption,{ftaEvidenceCaption=it},Modifier.fillMaxWidth(),label={Text("Evidence caption (optional)")},singleLine=true)
-                                                                 OutlinedButton(onClick={ftaEvidenceFindingId=f.optInt("id");ftaEvidencePicker.launch("*/*")},Modifier.fillMaxWidth()){Text("ATTACH EVIDENCE TO THIS FINDING")}}
-                                                             if(ftaEvidencePickerUri!=null&&ftaEvidenceFindingId==f.optInt("id"))Button(enabled=!ftaBusy,onClick={val auth=token;val uri=ftaEvidencePickerUri;if(auth!=null&&uri!=null)scope.launch{ftaBusy=true;try{withContext(Dispatchers.IO){ApiClient.uploadFtaEvidence(chatContext,fta.optInt("id"),f.optInt("id"),uri,ftaEvidenceCaption,auth)};selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)};ftaEvidencePickerUri=null;ftaEvidenceFindingId=null;ftaEvidenceCaption=""}catch(e:Exception){ftaError=e.message?:"Evidence upload failed"}finally{ftaBusy=false}}}){Text("UPLOAD SELECTED EVIDENCE")}
-                                                         }
-                                                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp),verticalAlignment=Alignment.CenterVertically){
-                                                             val idx=(0 until findings.length()).firstOrNull{findings.optJSONObject(it)?.optString("node_id")==node}?:0
-                                                             TextButton(enabled=idx>0&&!ftaBusy,onClick={selectFtaNode(findings.getJSONObject(idx-1))}){Text("PREVIOUS")}
-                                                             Spacer(Modifier.weight(1f))
-                                                             Button(enabled=editable&&!ftaBusy,onClick={
-                                                                 val auth=token
-                                                                 if(auth!=null)scope.launch{
-                                                                     ftaSavingNode=node;ftaError=null
-                                                                     val payload=JSONObject().put("investigation_status",d.optString("investigation_status")).put("observation",d.optString("observation"))
-                                                                         .put("measured_value",d.optString("measured_value")).put("expected_value",d.optString("expected_value"))
-                                                                         .put("verification_method",d.optString("verification_method")).put("verification_result",d.optString("verification_result"))
-                                                                         .put("priority",d.optString("priority","MEDIUM")).put("is_root_cause",d.optBoolean("is_root_cause"))
-                                                                         .put("is_occurrence_cause",d.optBoolean("is_occurrence_cause")).put("is_escape_cause",d.optBoolean("is_escape_cause"))
-                                                                     try{val saved=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),node,payload,auth)}
-                                                                         selectedFta=saved;val canonical=(0 until (saved.optJSONArray("findings")?.length()?:0)).mapNotNull{saved.optJSONArray("findings")?.optJSONObject(it)}.firstOrNull{it.optString("node_id")==node}?.let{draftFromFinding(it)}?:JSONObject(d.toString())
-                                                                         ftaFindingDraft=canonical;persistFtaDraft(fta.optInt("id"),node,canonical,node);ftaError=null
-                                                                     }catch(e:Exception){ftaError=e.message?:"Unable to save finding"}finally{ftaSavingNode=null}
-                                                                 }
-                                                             },colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text(if(ftaSavingNode==node)"SAVING…" else "SAVE DRAFT")}
-                                                             Button(enabled=editable&&!ftaBusy,onClick={
-                                                                 val auth=token
-                                                                 if(auth!=null)scope.launch{
-                                                                     ftaSavingNode=node;ftaError=null
-                                                                     val payload=JSONObject().put("investigation_status",d.optString("investigation_status")).put("observation",d.optString("observation"))
-                                                                         .put("measured_value",d.optString("measured_value")).put("expected_value",d.optString("expected_value"))
-                                                                         .put("verification_method",d.optString("verification_method")).put("verification_result",d.optString("verification_result"))
-                                                                         .put("priority",d.optString("priority","MEDIUM")).put("is_root_cause",d.optBoolean("is_root_cause"))
-                                                                         .put("is_occurrence_cause",d.optBoolean("is_occurrence_cause")).put("is_escape_cause",d.optBoolean("is_escape_cause"))
-                                                                     try{val saved=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),node,payload,auth)};selectedFta=saved
-                                                                         val canonical=(0 until (saved.optJSONArray("findings")?.length()?:0)).mapNotNull{saved.optJSONArray("findings")?.optJSONObject(it)}.firstOrNull{it.optString("node_id")==node}?.let{draftFromFinding(it)}?:JSONObject(d.toString())
-                                                                         ftaFindingDraft=canonical;persistFtaDraft(fta.optInt("id"),node,canonical,node)
-                                                                         val next=idx+1;if(next<findings.length())selectFtaNode(findings.getJSONObject(next))else{ftaSelectedNodeId="";val root=JSONObject().put("selected_node_id","").put("nodes",ftaDraftNodes);chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE).edit().putString(ftaDraftKey(fta.optInt("id")),root.toString()).apply()}
-                                                                         ftaError=null
-                                                                     }catch(e:Exception){ftaError=e.message?:"Unable to save; remaining on this node"}finally{ftaSavingNode=null}
-                                                                 }
-                                                             },colors=ButtonDefaults.buttonColors(containerColor=Navy)){Text("NEXT NODE")}
-                                                         }
-                                                     }
-                                                 }
-                                             }
-                                         }
-item {
+                                        LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                            items((0 until ftaRows.length()).toList()){i->
+                                                val row=ftaRows.optJSONObject(i)
+                                                if(row!=null) Card(Modifier.fillMaxWidth().clickable{token?.let{openFta(row.optInt("id"),it)}},shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                                                        Text(row.optString("investigation_no")+" • "+row.optString("status").replace("_"," "),color=Navy,fontWeight=FontWeight.Bold)
+                                                        Text(row.optString("defect_name")+" • "+row.optString("part_code"),color=Muted,fontSize=12.sp)
+                                                        Text(row.optString("machine_name").ifBlank{"Machine not specified"}+" • "+row.optString("template_name"),color=Muted,fontSize=11.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        val fta=selectedFta!!; val ftaStatus=fta.optString("status"); val findings=fta.optJSONArray("findings")?:JSONArray()
+                                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selectedFta=null;token?.let{refreshFta(it)}}){Text("← ALL FTAs",color=Teal)};Spacer(Modifier.weight(1f));Text(ftaStatus.replace("_"," "),color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)}
+                                        Text(fta.optString("part_code")+" • "+fta.optString("defect_name"),color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                                        Text("Machine: "+fta.optString("machine_name").ifBlank{"Not specified"},color=Muted,fontSize=11.sp)
+                                        LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                            items((0 until findings.length()).toList()){i->
+                                                val finding=findings.optJSONObject(i)
+                                                if(finding!=null){
+                                                    var observation by remember(fta.optInt("id"),finding.optString("node_id"),finding.optString("observation")){mutableStateOf(finding.optString("observation").takeUnless{it=="null"}.orEmpty())}
+                                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                                                        Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                                                            Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                            Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
+                                                            var findingStatus by remember(fta.optInt("id"),finding.optString("node_id"),finding.optString("investigation_status")){mutableStateOf(finding.optString("investigation_status","NOT_INVESTIGATED"))}
+                                                            var measuredValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("measured_value").takeUnless{it=="null"}.orEmpty())}
+                                                            var expectedValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("expected_value").takeUnless{it=="null"}.orEmpty())}
+                                                            var verificationMethod by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("verification_method").takeUnless{it=="null"}.orEmpty())}
+                                                            var verificationResult by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("verification_result").takeUnless{it=="null"}.orEmpty())}
+                                                            var priority by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("priority","MEDIUM"))}
+                                                            var rootCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_root_cause"))}
+                                                            var occurrenceCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_occurrence_cause"))}
+                                                            var escapeCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_escape_cause"))}
+                                                            OutlinedTextField(value=observation,onValueChange={observation=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Actual observation / Gemba findings (or N/A reason)")},minLines=2,maxLines=5)
+                                                            Text("Investigation status",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+                                                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                                listOf("NOT_INVESTIGATED","UNDER_INVESTIGATION","SUSPECTED","CONFIRMED","RULED_OUT","NOT_APPLICABLE").forEach { value ->
+                                                                    FilterChip(selected=findingStatus==value,onClick={findingStatus=value},label={Text(value.replace("_"," "),fontSize=9.sp)},enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS")
+                                                                }
+                                                            }
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                                OutlinedTextField(value=measuredValue,onValueChange={measuredValue=it},modifier=Modifier.weight(1f),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Measured value")},singleLine=true)
+                                                                OutlinedTextField(value=expectedValue,onValueChange={expectedValue=it},modifier=Modifier.weight(1f),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Expected value")},singleLine=true)
+                                                            }
+                                                            OutlinedTextField(value=verificationMethod,onValueChange={verificationMethod=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Verification method (required to confirm)")},minLines=2)
+                                                            OutlinedTextField(value=verificationResult,onValueChange={verificationResult=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Verification result")},minLines=2)
+                                                            Text("Cause classification",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=rootCause,onCheckedChange={rootCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Root cause",fontSize=11.sp)}
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=occurrenceCause,onCheckedChange={occurrenceCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Occurrence cause",fontSize=11.sp)}
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=escapeCause,onCheckedChange={escapeCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Escape cause",fontSize=11.sp)}
+                                                            val findingEvidence=fta.optJSONArray("evidence")?:JSONArray()
+                                                            val evidenceForFinding=(0 until findingEvidence.length()).mapNotNull{findingEvidence.optJSONObject(it)}.filter{it.optInt("finding_id",-1)==finding.optInt("id")}
+                                                            Text("Evidence files: ${evidenceForFinding.size}",color=Muted,fontSize=10.sp)
+                                                            evidenceForFinding.forEach{ev->Text("• ${ev.optString("file_name")} ${ev.optString("caption")}",color=Muted,fontSize=10.sp)}
+                                                            if(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS"){
+                                                                OutlinedTextField(value=ftaEvidenceCaption,onValueChange={ftaEvidenceCaption=it},modifier=Modifier.fillMaxWidth(),label={Text("Evidence caption (optional)")},singleLine=true)
+                                                                OutlinedButton(onClick={ftaEvidenceFindingId=finding.optInt("id");ftaEvidencePicker.launch("*/*")},modifier=Modifier.fillMaxWidth()){Text("ATTACH EVIDENCE TO THIS FINDING")}
+                                                            }
+                                                            if(ftaEvidencePickerUri!=null && ftaEvidenceFindingId==finding.optInt("id")){
+                                                                Button(enabled=!ftaBusy,onClick={
+                                                                    val auth=token;val uri=ftaEvidencePickerUri
+                                                                    if(auth!=null&&uri!=null) scope.launch { ftaBusy=true;try {
+                                                                        withContext(Dispatchers.IO){ApiClient.uploadFtaEvidence(chatContext,fta.optInt("id"),finding.optInt("id"),uri,ftaEvidenceCaption,auth)}
+                                                                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                        ftaEvidencePickerUri=null;ftaEvidenceFindingId=null;ftaEvidenceCaption=""
+                                                                    }catch(e:Exception){ftaError=e.message?: "Evidence upload failed"}finally{ftaBusy=false} }
+                                                                },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("UPLOAD SELECTED EVIDENCE")}
+                                                            }
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(enabled=ftaSavingNode!=finding.optString("node_id") && (findingStatus!="CONFIRMED" || verificationMethod.isNotBlank()) && (findingStatus!="CONFIRMED" || evidenceForFinding.isNotEmpty()),onClick={
+                                                                val payload=JSONObject().put("investigation_status",findingStatus).put("observation",observation)
+                                                                    .put("measured_value",measuredValue).put("expected_value",expectedValue)
+                                                                    .put("verification_method",verificationMethod).put("verification_result",verificationResult)
+                                                                    .put("priority",priority).put("is_root_cause",rootCause)
+                                                                    .put("is_occurrence_cause",occurrenceCause).put("is_escape_cause",escapeCause)
+                                                                val auth=token
+                                                                if(auth!=null) scope.launch { ftaSavingNode=finding.optString("node_id");try {
+                                                                    selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),finding.optString("node_id"),payload,auth)}
+                                                                } catch(e:Exception){ftaError=e.message?: "Unable to save finding"} finally {ftaSavingNode=null} }
+                                                            }){Text(if(ftaSavingNode==finding.optString("node_id")) "SAVING…" else "SAVE FINDING",color=Teal)}}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            item {
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
                                                         var occurrenceSummary by remember(fta.optInt("id"),fta.optString("occurrence_cause_summary")){mutableStateOf(fta.optString("occurrence_cause_summary"))}
