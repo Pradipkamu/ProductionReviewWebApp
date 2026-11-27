@@ -516,6 +516,14 @@ internal object ApiClient {
         array("/quality/daily?from_date=$today&to_date=$today", token)
 
     fun loadFtaDashboard(token: String): JSONObject = request("/fta/dashboard", "GET", token=token)
+    fun loadFtaInvestigations(token: String): JSONArray = array("/fta/investigations", token)
+    fun loadFtaInvestigation(id: Int, token: String): JSONObject = request("/fta/investigations/$id", "GET", token=token)
+    fun saveFtaFinding(id: Int, nodeId: String, payload: JSONObject, token: String): JSONObject =
+        request("/fta/investigations/$id/findings/${java.net.URLEncoder.encode(nodeId, "UTF-8")}", "PUT", payload, token)
+    fun verifyFta(id: Int, remarks: String, token: String): JSONObject =
+        request("/fta/investigations/$id/verify", "POST", JSONObject().put("remarks", remarks), token)
+    fun closeFta(id: Int, remarks: String, token: String): JSONObject =
+        request("/fta/investigations/$id/close", "POST", JSONObject().put("remarks", remarks), token)
 
     fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
         val uploadFile = PhotoCompressor.prepare(file)
@@ -651,6 +659,12 @@ class MainActivity : ComponentActivity() {
             var openFtaCount by remember { mutableIntStateOf(0) }
             var rejectionKpiLoading by remember { mutableStateOf(false) }
             var rejectionKpiError by remember { mutableStateOf<String?>(null) }
+            var ftaRows by remember { mutableStateOf(JSONArray()) }
+            var selectedFta by remember { mutableStateOf<JSONObject?>(null) }
+            var ftaBusy by remember { mutableStateOf(false) }
+            var ftaError by remember { mutableStateOf<String?>(null) }
+            var ftaRemarks by remember { mutableStateOf("") }
+            var ftaSavingNode by remember { mutableStateOf<String?>(null) }
             var detection by remember { mutableStateOf<RouteChoice?>(null) }
             var responsible by remember { mutableStateOf<RouteChoice?>(null) }
             var machine by remember { mutableStateOf<Choice?>(null) }
@@ -792,6 +806,43 @@ class MainActivity : ComponentActivity() {
             val drawerState = rememberDrawerState(DrawerValue.Closed)
             var showLogoutConfirm by remember { mutableStateOf(false) }
 
+            fun refreshFta(auth: String) {
+                scope.launch {
+                    ftaBusy = true; ftaError = null
+                    try { ftaRows = withContext(Dispatchers.IO) { ApiClient.loadFtaInvestigations(auth) } }
+                    catch (e: Exception) { ftaError = e.message ?: "Unable to load FTA investigations." }
+                    finally { ftaBusy = false }
+                }
+            }
+            fun openFta(id: Int, auth: String) {
+                scope.launch {
+                    ftaBusy = true; ftaError = null
+                    try { selectedFta = withContext(Dispatchers.IO) { ApiClient.loadFtaInvestigation(id, auth) }; ftaRemarks = "" }
+                    catch (e: Exception) { ftaError = e.message ?: "Unable to load FTA." }
+                    finally { ftaBusy = false }
+                }
+            }
+            fun saveFtaObservation(finding: JSONObject, observation: String, auth: String) {
+                val fta = selectedFta ?: return
+                val node = finding.optString("node_id")
+                val payload = JSONObject()
+                    .put("investigation_status", finding.optString("investigation_status", "NOT_INVESTIGATED"))
+                    .put("observation", observation)
+                    .put("measured_value", finding.optString("measured_value").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("expected_value", finding.optString("expected_value").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("verification_method", finding.optString("verification_method").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("verification_result", finding.optString("verification_result").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("priority", finding.optString("priority", "MEDIUM"))
+                    .put("is_root_cause", finding.optBoolean("is_root_cause"))
+                    .put("is_occurrence_cause", finding.optBoolean("is_occurrence_cause"))
+                    .put("is_escape_cause", finding.optBoolean("is_escape_cause"))
+                scope.launch {
+                    ftaSavingNode = node; ftaError = null
+                    try { selectedFta = withContext(Dispatchers.IO) { ApiClient.saveFtaFinding(fta.optInt("id"), node, payload, auth) } }
+                    catch (e: Exception) { ftaError = e.message ?: "Unable to save actual observation." }
+                    finally { ftaSavingNode = null }
+                }
+            }
             fun refreshPendingActions(auth:String) {
                 scope.launch {
                     try {
@@ -1394,6 +1445,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isQualityRole || isAdminOrManagement || isProductionRole) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("FTA Closure",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="FTA",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="FTA"; selectedFta=null; token?.let{refreshFta(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE Reports",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE_REPORTS",icon={Icon(Icons.Filled.Assessment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE_REPORTS" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
@@ -1416,7 +1468,7 @@ class MainActivity : ComponentActivity() {
                             if (account != null) IconButton(onClick={drawerScope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
                                 Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "FTA"->"FTA Closure"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
                         LaunchedEffect(homeTab, token, selectedChatId) {
@@ -1759,7 +1811,64 @@ class MainActivity : ComponentActivity() {
                                         MetricTile("DUE TODAY", dueToday.toString(), Warning, Modifier.weight(1f))
                                     }
                                 }
-                                if(homeTab=="ACTIONS") {
+                                                                 if(homeTab=="FTA") {
+                                    ScreenTitle(if(selectedFta==null) "FTA investigations" else selectedFta?.optString("investigation_no").orEmpty(), "Gemba observations and closure workflow")
+                                    if(ftaBusy) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Teal)
+                                    ftaError?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                    if(selectedFta==null) {
+                                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(onClick={token?.let{refreshFta(it)}}){Text("REFRESH",color=Teal)}}
+                                        if(ftaRows.length()==0 && !ftaBusy) EmptyState("No FTA investigations","No investigations are available for your account.")
+                                        LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                            items((0 until ftaRows.length()).toList()){i->
+                                                val row=ftaRows.optJSONObject(i)
+                                                if(row!=null) Card(Modifier.fillMaxWidth().clickable{token?.let{openFta(row.optInt("id"),it)}},shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                                                        Text(row.optString("investigation_no")+" • "+row.optString("status").replace("_"," "),color=Navy,fontWeight=FontWeight.Bold)
+                                                        Text(row.optString("defect_name")+" • "+row.optString("part_code"),color=Muted,fontSize=12.sp)
+                                                        Text(row.optString("machine_name").ifBlank{"Machine not specified"}+" • "+row.optString("template_name"),color=Muted,fontSize=11.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        val fta=selectedFta!!; val ftaStatus=fta.optString("status"); val findings=fta.optJSONArray("findings")?:JSONArray()
+                                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selectedFta=null;token?.let{refreshFta(it)}}){Text("← ALL FTAs",color=Teal)};Spacer(Modifier.weight(1f));Text(ftaStatus.replace("_"," "),color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)}
+                                        Text(fta.optString("part_code")+" • "+fta.optString("defect_name"),color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                                        Text("Machine: "+fta.optString("machine_name").ifBlank{"Not specified"},color=Muted,fontSize=11.sp)
+                                        LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                            items((0 until findings.length()).toList()){i->
+                                                val finding=findings.optJSONObject(i)
+                                                if(finding!=null){
+                                                    var observation by remember(fta.optInt("id"),finding.optString("node_id"),finding.optString("observation")){mutableStateOf(finding.optString("observation").takeUnless{it=="null"}.orEmpty())}
+                                                    Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                                                        Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                                                            Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                            Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
+                                                            OutlinedTextField(value=observation,onValueChange={observation=it},modifier=Modifier.fillMaxWidth(),label={Text("Actual observation / Gemba findings")},minLines=2,maxLines=5)
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(enabled=ftaSavingNode!=finding.optString("node_id"),onClick={token?.let{saveFtaObservation(finding,observation,it)}}){Text(if(ftaSavingNode==finding.optString("node_id")) "SAVING…" else "SAVE OBSERVATION",color=Teal)}}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            item {
+                                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                                        Text("QUALITY VERIFICATION / CLOSURE",color=Navy,fontWeight=FontWeight.Bold)
+                                                        Text("Existing server checks validate root cause, verification method, evidence, linked actions and discovered causes.",color=Muted,fontSize=11.sp)
+                                                        OutlinedTextField(value=ftaRemarks,onValueChange={ftaRemarks=it},modifier=Modifier.fillMaxWidth(),label={Text(if(ftaStatus=="VERIFIED_PENDING_ACTIONS") "Closure remarks" else "Verification remarks")},minLines=2)
+                                                        if(ftaStatus=="IN_PROGRESS" && (isQualityRole || isAdminOrManagement)){
+                                                            Button(onClick={val auth=token;if(auth!=null)scope.launch{ftaBusy=true;try{withContext(Dispatchers.IO){ApiClient.verifyFta(fta.optInt("id"),ftaRemarks.trim(),auth)};selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)};ftaRemarks="";ftaError=null}catch(e:Exception){ftaError=e.message?: "Verification failed"}finally{ftaBusy=false}}},enabled=ftaRemarks.trim().length>=5&&!ftaBusy,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("SUBMIT FOR QUALITY VERIFICATION")}
+                                                        }
+                                                        if(ftaStatus=="VERIFIED_PENDING_ACTIONS" && (isQualityRole || isAdminOrManagement)){
+                                                            Button(onClick={val auth=token;if(auth!=null)scope.launch{ftaBusy=true;try{withContext(Dispatchers.IO){ApiClient.closeFta(fta.optInt("id"),ftaRemarks.trim(),auth)};selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)};ftaRemarks="";ftaError=null}catch(e:Exception){ftaError=e.message?: "FTA closure failed"}finally{ftaBusy=false}}},enabled=ftaRemarks.trim().length>=5&&!ftaBusy,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Navy)){Text("CLOSE FTA")}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                 } else if(homeTab=="ACTIONS") {
+
                                     if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
                                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                                             Text("Pending actions by user",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
