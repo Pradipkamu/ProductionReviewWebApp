@@ -140,20 +140,23 @@ export default function ProcessActuals(){
       </div>
     </section>
 
-    {selected&&<section className="panel">
-      <div className="panel-title"><div><h2>{selected.status==='MISSING'?'Enter':'Correct'} Process Actual</h2><p>{selected.product} • {selected.stage_name} • {actualDate}</p></div><button className="small secondary" onClick={()=>{setSelected(null);setHistory([])}}>Close</button></div>
-      <div className="form-row">
-        <label>Plan<input value={selected.plan_qty==null?'Missing':String(selected.plan_qty)} disabled/></label>
-        <label>Actual Qty<input type="number" min="0" step="1" value={actual} onChange={e=>setActual(e.target.value)}/></label>
-        <label>Reject Qty<input type="number" min="0" step="1" value={reject} onChange={e=>setReject(e.target.value)}/></label>
-        <label>Good Qty<input value={actual.trim()===''?'—':String(Math.max(0,Number(actual||0)-Number(reject||0)))} disabled/></label>
-      </div>
-      <label>Entry / correction reason<textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Why was the process actual missing or why is the old value being corrected?"/></label>
-      <div className="form-row"><button onClick={save} disabled={busy}>Save Process Actual</button>{selected.id&&<button className="secondary" onClick={()=>showHistory(selected)} disabled={busy}>Refresh History</button>}</div>
-
-      {history.length>0&&<div className="table-wrap"><table><thead><tr><th>Changed</th><th>By</th><th>Type</th><th>Actual Old → New</th><th>Reject Old → New</th><th>Good Old → New</th><th>Reason</th></tr></thead><tbody>
-        {history.map((h:any)=><tr key={h.id}><td>{formatIST(h.changed_at)}</td><td>{h.changed_by||'—'}</td><td>{h.change_type}</td><td>{h.old_actual_qty==null?'—':num(h.old_actual_qty)} → {num(h.new_actual_qty)}</td><td>{h.old_reject_qty==null?'—':num(h.old_reject_qty)} → {num(h.new_reject_qty)}</td><td>{h.old_good_qty==null?'—':num(h.old_good_qty)} → {num(h.new_good_qty)}</td><td>{h.reason}</td></tr>)}
-      </tbody></table></div>}
-    </section>}
+    {selected&&<div role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget){setSelected(null);setHistory([])}}}
+      style={{position:'fixed',inset:0,zIndex:2500,background:'rgba(15,23,42,.58)',display:'grid',placeItems:'center',padding:16}}>
+      <section role="dialog" aria-modal="true" aria-labelledby="process-actual-modal-title"
+        className="panel" style={{width:'min(900px,100%)',maxHeight:'90vh',overflowY:'auto',margin:0,boxShadow:'0 24px 80px rgba(0,0,0,.28)'}}>
+        <div className="panel-title"><div><h2 id="process-actual-modal-title">{selected.status==='MISSING'?'Enter':'Correct'} Process Actual</h2><p>{selected.product} • {selected.stage_name} • {actualDate}</p></div><button type="button" className="small secondary" onClick={()=>{setSelected(null);setHistory([])}}>Close</button></div>
+        <div className="form-row">
+          <label>Plan<input value={selected.plan_qty==null?'Missing':String(selected.plan_qty)} disabled/></label>
+          <label>Actual Qty<input type="number" min="0" step="1" value={actual} onChange={e=>setActual(e.target.value)}/></label>
+          <label>Reject Qty<input type="number" min="0" step="1" value={reject} onChange={e=>setReject(e.target.value)}/></label>
+          <label>Good Qty<input value={actual.trim()===''?'—':String(Math.max(0,Number(actual||0)-Number(reject||0)))} disabled/></label>
+        </div>
+        <label>Entry / correction reason<textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Why was the process actual missing or why is the old value being corrected?"/></label>
+        <div className="form-row"><button onClick={save} disabled={busy}>Save Process Actual</button>{selected.id&&<button className="secondary" onClick={()=>showHistory(selected)} disabled={busy}>Refresh History</button>}</div>
+        {history.length>0&&<div className="table-wrap"><table><thead><tr><th>Changed</th><th>By</th><th>Type</th><th>Actual Old → New</th><th>Reject Old → New</th><th>Good Old → New</th><th>Reason</th></tr></thead><tbody>
+          {history.map((h:any)=><tr key={h.id}><td>{formatIST(h.changed_at)}</td><td>{h.changed_by||'—'}</td><td>{h.change_type}</td><td>{h.old_actual_qty==null?'—':num(h.old_actual_qty)} → {num(h.new_actual_qty)}</td><td>{h.old_reject_qty==null?'—':num(h.old_reject_qty)} → {num(h.new_reject_qty)}</td><td>{h.old_good_qty==null?'—':num(h.old_good_qty)} → {num(h.new_good_qty)}</td><td>{h.reason}</td></tr>)}
+        </tbody></table></div>}
+      </section>
+    </div>}
   </>
 }

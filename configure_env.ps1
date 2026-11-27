@@ -60,12 +60,17 @@ if ($created) {
     if (!$adminPassword -or $adminPassword -eq 'ChangeMe123!' -or $adminPassword -match '(?i)change') {
         Set-EnvValue 'ADMIN_PASSWORD' ('Init-' + (New-RandomHex 12) + '!9aA')
     }
+
+    # MQTT bootstrap/control/data-plane secrets are generated only for a new .env.
+    Set-EnvValue 'MQTT_DYNSEC_PASSWORD' (New-RandomHex 48)
+    Set-EnvValue 'MQTT_CONTROL_PASSWORD' (New-RandomHex 48)
+    Set-EnvValue 'MQTT_BACKEND_PASSWORD' (New-RandomHex 48)
 }
 
 [IO.File]::WriteAllText($path, $text.TrimEnd() + "`n", (New-Object Text.UTF8Encoding($false)))
 Write-Host 'Environment initialized; existing non-placeholder settings preserved.'
 if ($created) {
-    Write-Host 'Fresh-install application/database credentials were generated in .env.'
+    Write-Host 'Fresh-install application/database/MQTT credentials were generated in .env.'
 } else {
     $dbUrl = Get-EnvValue 'DATABASE_URL'
     if ($dbUrl -match ':pms@db:5432/pms' -or $dbUrl -match 'CHANGE_THIS') {

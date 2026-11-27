@@ -13,6 +13,7 @@ PAGE_CATALOG = (
     {"key": "management_assistant", "label": "Management Assistant / Alerts", "path": "/management-assistant"},
     {"key": "insights", "label": "Exceptions / Data Quality", "path": "/insights"},
     {"key": "diagnostics", "label": "System Diagnostics", "path": "/diagnostics"},
+    {"key": "afms", "label": "AFMS – Machine & HMI", "path": "/afms"},
     {"key": "account", "label": "Security / Users", "path": "/account", "required": True},
     {"key": "governance", "label": "Month Close / Audit", "path": "/governance"},
     {"key": "daily_review", "label": "Daily Review", "path": "/"},
@@ -25,9 +26,11 @@ PAGE_CATALOG = (
     {"key": "process", "label": "Process Monitor", "path": "/process"},
     {"key": "process_actuals", "label": "Process Actuals / Edit", "path": "/process-actuals"},
     {"key": "quality", "label": "Quality / Rejection", "path": "/quality"},
+    {"key": "fta", "label": "Fault Tree Analysis", "path": "/fta"},
     {"key": "casting_quality", "label": "Casting Quality", "path": "/casting-quality"},
     {"key": "customer_quality", "label": "Customer Quality", "path": "/customer-quality"},
     {"key": "reports", "label": "Compliance Reports", "path": "/reports"},
+    {"key": "oee_reports", "label": "OEE Reports", "path": "/oee-reports"},
     {"key": "management_reports", "label": "Management Reports", "path": "/management-reports"},
     {"key": "actions", "label": "Actions", "path": "/actions"},
     {"key": "admin_action_review", "label": "User-wise Action Review", "path": "/admin-action-review"},
@@ -46,6 +49,7 @@ DEFAULT_ROLE_RESTRICTIONS = {
     "diagnostics": {UserRole.ADMIN, UserRole.MANAGEMENT},
     "governance": {UserRole.ADMIN, UserRole.MANAGEMENT},
     "import": {UserRole.ADMIN, UserRole.PLANNING, UserRole.QUALITY, UserRole.PRODUCTION},
+    "fta": {UserRole.MANAGEMENT, UserRole.QUALITY, UserRole.PRODUCTION},
 }
 
 

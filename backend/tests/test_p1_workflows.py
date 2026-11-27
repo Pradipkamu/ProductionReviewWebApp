@@ -86,8 +86,8 @@ def test_insights_reminders_and_drilldown():
     with SessionLocal() as db:
         p=Product(code='P1',name='Part 1');db.add(p);db.flush()
         db.add(DailyMIS(product_id=p.id,mis_date=date.today(),plan_qty=100,actual_qty=50))
-        a=Action(action_no='A1',reference_date=date.today(),problem_description='Repeated defect',action_description='Repair',due_at=datetime.now()-timedelta(days=15))
-        db.add(a);db.flush();db.add(ActionWhyWhy(action_id=a.id,effectiveness_check_date=date.today()-timedelta(days=2)));db.commit()
+        a=Action(action_no='A1',reference_date=date.today(),problem_description='Repeated defect',action_description='Repair',due_at=datetime.now()-timedelta(days=14))
+        db.add(a);db.flush();db.add(ActionWhyWhy(action_id=a.id,effectiveness_check_date=date.today()-timedelta(days=3)));db.commit()
     c=TestClient(app);h=headers(c);d=date.today().isoformat()
     assert c.get(f'/api/insights/data-quality?as_of={d}',headers=h).json()['counts']['route_missing']==1
     assert c.get(f'/api/insights/exceptions?as_of={d}',headers=h).json()['counts']['low_compliance']==1

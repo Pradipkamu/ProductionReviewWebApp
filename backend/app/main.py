@@ -11,7 +11,7 @@ from . import __version__
 from .db import Base, SessionLocal, engine
 from .migrate import upgrade_database
 from .seed import seed_defaults
-from .api import actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, quality_salvage, governance, insights, import_preview, flows, diagnostics, capacity, special_quality, personnel, chat
+from .api import calibration, actions, auth, dashboard, imports, masters, mis, oee, process, schedules, vendor, analytics, reviews, reports, quality, quality_salvage, governance, insights, import_preview, flows, diagnostics, capacity, special_quality, personnel, chat, afms, fta
 from .api.reviews import release_meeting_participants
 
 settings = get_settings()
@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):
     Path(settings.attachments_dir).mkdir(parents=True, exist_ok=True)
     with SessionLocal() as db:
         seed_defaults(db)
+    from .services.mqtt_data_plane import start_mqtt_data_plane, stop_mqtt_data_plane
+    start_mqtt_data_plane()
     import asyncio
     from .services.escalation import refresh_reminders
     async def remind():
@@ -72,6 +74,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        stop_mqtt_data_plane()
         task.cancel()
         meeting_task.cancel()
         from contextlib import suppress
@@ -118,8 +121,8 @@ async def security_headers(request: Request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
-for router in [auth.router, masters.router, personnel.router, imports.router, schedules.router, mis.router,
-               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, quality_salvage.router, special_quality.router, governance.router, insights.router, import_preview.router, flows.router, diagnostics.router, capacity.router, chat.router]:
+for router in [calibration.router, auth.router, masters.router, personnel.router, imports.router, schedules.router, mis.router,
+               process.router, actions.router, oee.router, dashboard.router, vendor.router, analytics.router, reviews.router, reports.router, quality.router, quality_salvage.router, special_quality.router, governance.router, insights.router, import_preview.router, flows.router, diagnostics.router, capacity.router, chat.router, afms.router, fta.router]:
     app.include_router(router, prefix="/api")
 
 

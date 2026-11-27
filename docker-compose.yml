@@ -23,6 +23,9 @@ services:
   backend:
     build: ./backend
     env_file: .env
+    # The server .env also contains broker bootstrap settings; never pass its admin secret to the app.
+    environment:
+      MQTT_DYNSEC_PASSWORD: ""
     volumes:
       - ./database/imports:/app/uploads
       - ./database/backups:/app/backups
@@ -41,3 +44,46 @@ services:
     ports:
       - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-5173}:80"
     restart: unless-stopped
+
+  mqtt-provision:
+    profiles: ["mqtt-setup"]
+    build: ./backend
+    environment:
+      MQTT_ENABLED: ${MQTT_ENABLED:-false}
+      MQTT_HOST: mqtt
+      MQTT_INTERNAL_PORT: 1883
+      MQTT_TIMEOUT_SECONDS: ${MQTT_TIMEOUT_SECONDS:-8}
+      MQTT_DYNSEC_PASSWORD: ${MQTT_DYNSEC_PASSWORD:?Set MQTT_DYNSEC_PASSWORD in .env}
+      MQTT_CONTROL_USERNAME: ${MQTT_CONTROL_USERNAME:-prw-afms-control}
+      MQTT_CONTROL_PASSWORD: ${MQTT_CONTROL_PASSWORD:?Set MQTT_CONTROL_PASSWORD in .env}
+      MQTT_BACKEND_USERNAME: ${MQTT_BACKEND_USERNAME:-prw-afms-backend}
+      MQTT_BACKEND_PASSWORD: ${MQTT_BACKEND_PASSWORD:?Set MQTT_BACKEND_PASSWORD in .env}
+    volumes:
+      - ./mqtt/provision_dynsec.py:/app/provision_dynsec.py:ro
+    entrypoint: ["python", "/app/provision_dynsec.py"]
+    depends_on:
+      mqtt:
+        condition: service_started
+    restart: "no"
+
+  mqtt:
+    profiles: ["mqtt"]
+    image: eclipse-mosquitto:2.1.2-alpine
+    container_name: productionreviewwebapp-mqtt
+    environment:
+      MOSQUITTO_DYNSEC_PASSWORD: ${MQTT_DYNSEC_PASSWORD:?Set a strong MQTT_DYNSEC_PASSWORD in .env before starting the broker}
+    volumes:
+      - ./mqtt/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mqtt/certs:/mosquitto/certs:ro
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+    ports:
+      # Only the TLS listener is published. Port 1883 remains Docker-network-only.
+      - "${MQTT_BIND:-0.0.0.0}:${MQTT_PORT:-8883}:8883"
+    expose:
+      - "1883"
+    restart: unless-stopped
+
+volumes:
+  mqtt_data:
+  mqtt_log:

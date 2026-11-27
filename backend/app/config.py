@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     backend_bind: str = "127.0.0.1"
     frontend_bind: str = "0.0.0.0"
     frontend_port: int = 5173
+    public_app_url: str = ""
     admin_username: str = "admin"
     admin_password: str = "ChangeMe123!"
     admin_full_name: str = "System Administrator"
@@ -33,6 +34,14 @@ class Settings(BaseSettings):
     attachment_allowed_extensions: str = ".pdf,.png,.jpg,.jpeg,.webp,.xlsx,.xlsm,.docx,.pptx,.txt,.csv"
     backup_max_age_hours: int = 48
     restore_verify_max_age_days: int = 30
+    mqtt_enabled: bool = False
+    mqtt_host: str = "mqtt"
+    mqtt_internal_port: int = 1883
+    mqtt_control_username: str = ""
+    mqtt_control_password: str = ""
+    mqtt_backend_username: str = ""
+    mqtt_backend_password: str = ""
+    mqtt_timeout_seconds: int = 8
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

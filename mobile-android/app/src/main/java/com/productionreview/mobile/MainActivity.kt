@@ -1,6 +1,9 @@
 package com.productionreview.mobile
 
 import android.os.Bundle
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.ComponentActivity
@@ -9,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
@@ -39,6 +43,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -67,7 +72,27 @@ import java.net.URL
 import java.io.IOException
 import java.time.LocalDate
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+
+private val ChatTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val ChatDisplayZone: ZoneId = ZoneId.of("Asia/Kolkata")
+
+/**
+ * API chat timestamps are stored as UTC-naive datetimes and serialized without
+ * an offset. Parse those as UTC, then display them in Indian Standard Time.
+ * Also accept explicit Z/offset timestamps for compatibility with future APIs.
+ */
+private fun formatChatTime(value: String?): String {
+    if (value.isNullOrBlank() || value == "null") return ""
+    val zoned = runCatching { Instant.parse(value).atZone(ChatDisplayZone) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(value).toInstant().atZone(ChatDisplayZone) }.getOrNull()
+        ?: runCatching { LocalDateTime.parse(value).toInstant(ZoneOffset.UTC).atZone(ChatDisplayZone) }.getOrNull()
+    return zoned?.format(ChatTimeFormatter).orEmpty()
+}
 
 private fun extractChatActionId(messageBody: String): Int? {
     // Accept both relative and absolute action links, even when action_id is
@@ -88,9 +113,9 @@ private val Success = Color(0xFF16836B)
 private val Warning = Color(0xFFE58A18)
 private val Danger = Color(0xFFB3261E)
 
-private data class Account(val username: String, val fullName: String, val role: String)
-private data class Choice(val id: Int, val label: String, val extra: String = "")
-private data class RouteChoice(val id: Int, val label: String)
+internal data class Account(val username: String, val fullName: String, val role: String)
+internal data class Choice(val id: Int, val label: String, val extra: String = "")
+internal data class RouteChoice(val id: Int, val label: String)
 private data class OeeLossDraft(
     val categoryId: Int? = null,
     val duration: String = "",
@@ -124,7 +149,9 @@ private fun resolvedOeeLossQuantity(
     return loss.qty.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
 }
 
-private object ApiClient {
+internal class ApiHttpException(val statusCode: Int, message: String) : IllegalStateException(message)
+
+internal object ApiClient {
     private fun describeApiError(body: String, code: Int): String {
         fun valueText(value: Any?): String = when (value) {
             is String -> value.trim()
@@ -171,7 +198,7 @@ private object ApiClient {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IllegalStateException(describeApiError(text, code))
+            if (code !in 200..299) throw ApiHttpException(code, describeApiError(text, code))
             return text
         } catch (e: SocketTimeoutException) {
             throw IllegalStateException("Connection timed out. Check your internet connection and try again.", e)
@@ -192,6 +219,13 @@ private object ApiClient {
         val response = request("/auth/login", "POST", JSONObject().put("username", username).put("password", password))
         val token = response.getString("access_token")
         return token to currentAccount(token)
+    }
+    fun registerDeviceToken(authToken: String, fcmToken: String) {
+        request("/chat/device-tokens", "POST",
+            JSONObject().put("token", fcmToken).put("platform", "ANDROID"), authToken)
+    }
+    fun deactivateDeviceToken(authToken: String, fcmToken: String) {
+        request("/chat/device-tokens", "DELETE", JSONObject().put("token", fcmToken), authToken)
     }
     fun logout(token: String) { request("/auth/logout", "POST", token=token) }
     fun currentAccount(token: String): Account {
@@ -220,7 +254,7 @@ private object ApiClient {
             if(code !in 200..299) {
                 val body=connection.errorStream?.bufferedReader()?.use{it.readText()}.orEmpty()
                 val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty()
-                throw IllegalStateException(detail.ifBlank{"Chat attachment download failed (HTTP $code)"})
+                throw ApiHttpException(code, detail.ifBlank{"Chat attachment download failed (HTTP $code)"})
             }
             val safeName=fileName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"),"_").ifBlank{"chat_file_$attachmentId"}
             val target=File(cacheDir,"chat_"+attachmentId+"_"+safeName)
@@ -251,7 +285,7 @@ private object ApiClient {
             }
             val code = connection.responseCode
             val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) throw IllegalStateException(describeApiError(body, code))
+            if (code !in 200..299) throw ApiHttpException(code, describeApiError(body, code))
             return JSONObject(body)
         } finally { connection.disconnect() }
     }
@@ -312,8 +346,8 @@ private object ApiClient {
     fun loadOeeSummary(machineId: Int, date: String, shift: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
         request("/oee/machine-summary?machine_id=$machineId&summary_date=$date&shift=$shift&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
 
-    fun loadOeeRecentRecords(fromDate: String, toDate: String, shift: String, machineId: Int, productId: Int, routeOperationId: Int, token: String): JSONObject =
-        request("/oee/recent-records?from_date=$fromDate&to_date=$toDate&shift=$shift&machine_id=$machineId&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
+    fun loadOeeRecentRecords(fromDate: String, toDate: String, productId: Int, routeOperationId: Int, token: String): JSONObject =
+        request("/oee/recent-records?from_date=$fromDate&to_date=$toDate&product_id=$productId&route_operation_id=$routeOperationId", "GET", token=token)
 
     fun saveOeeMachineEntry(payload: JSONObject, token: String): JSONObject =
         request("/oee/machine-entry", "POST", payload, token)
@@ -362,6 +396,17 @@ private object ApiClient {
             machineId?.let { append("&machine_id=$it") }
         }
         return request("/oee/management-summary?from_date=$fromDate&to_date=$toDate$filters", "GET", token=token)
+    }
+
+    fun loadOeeReportingCompliance(
+        fromDate: String, toDate: String, token: String,
+        productId: Int? = null, routeOperationId: Int? = null
+    ): JSONObject {
+        val filters = buildString {
+            productId?.let { append("&product_id=$it") }
+            routeOperationId?.let { append("&route_operation_id=$it") }
+        }
+        return request("/oee/reporting-compliance?from_date=$fromDate&to_date=$toDate$filters", "GET", token=token)
     }
 
     fun loadOeeLossCategories(token: String): List<Choice> {
@@ -467,6 +512,70 @@ private object ApiClient {
         }
     }
 
+    fun loadTodayRejectionRows(today: LocalDate, token: String): JSONArray =
+        array("/quality/daily?from_date=$today&to_date=$today", token)
+
+    fun loadFtaDashboard(token: String): JSONObject = request("/fta/dashboard", "GET", token=token)
+    fun loadFtaInvestigations(token: String): JSONArray = array("/fta/investigations", token)
+    fun loadFtaInvestigation(id: Int, token: String): JSONObject = request("/fta/investigations/$id", "GET", token=token)
+    fun saveFtaFinding(id: Int, nodeId: String, payload: JSONObject, token: String): JSONObject =
+        request("/fta/investigations/$id/findings/${java.net.URLEncoder.encode(nodeId, "UTF-8")}", "PUT", payload, token)
+    fun verifyFta(id: Int, remarks: String, token: String): JSONObject =
+        request("/fta/investigations/$id/verify", "POST", JSONObject().put("remarks", remarks), token)
+    fun closeFta(id: Int, remarks: String, token: String): JSONObject =
+        request("/fta/investigations/$id/close", "POST", JSONObject().put("remarks", remarks), token)
+    fun updateFta(id: Int, payload: JSONObject, token: String): JSONObject =
+        request("/fta/investigations/$id", "PATCH", payload, token)
+    fun createFtaAction(id: Int, description: String, findingId: Int?, token: String): JSONObject {
+        val body = JSONObject().put("action_description", description)
+        if (findingId != null) body.put("finding_id", findingId)
+        return request("/fta/investigations/$id/actions/create", "POST", body, token)
+    }
+    fun linkFtaAction(id: Int, actionId: Int, findingId: Int?, relationship: String, token: String): JSONObject {
+        val body = JSONObject().put("action_id", actionId).put("relationship_type", relationship)
+        if (findingId != null) body.put("finding_id", findingId)
+        return request("/fta/investigations/$id/actions", "POST", body, token)
+    }
+    fun reportFtaDiscoveredCause(actionId: Int, description: String, evidence: String, token: String): JSONObject =
+        request("/actions/$actionId/discovered-causes", "POST",
+            JSONObject().put("cause_description", description).put("evidence_reference", evidence), token)
+    fun reviewFtaDiscoveredCause(causeId: Int, status: String, remarks: String, method: String, token: String): JSONObject {
+        val body = JSONObject().put("status", status).put("review_remarks", remarks)
+        if (method.isNotBlank()) body.put("verification_method", method)
+        return request("/fta/discovered-causes/$causeId/review", "POST", body, token)
+    }
+
+    fun uploadFtaEvidence(context: android.content.Context, investigationId: Int, findingId: Int?, uri: Uri, caption: String, token: String): JSONObject {
+        val resolver=context.contentResolver
+        val name=resolver.query(uri,null,null,null,null)?.use { cursor ->
+            if(cursor.moveToFirst()) cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME).takeIf{it>=0}?.let{cursor.getString(it)} else null
+        } ?: "fta-evidence"
+        val file=File(context.cacheDir,"fta-evidence-${System.currentTimeMillis()}-${name.replace(Regex("[^A-Za-z0-9._-]"),"_")}")
+        resolver.openInputStream(uri)?.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+            ?: throw IllegalStateException("Unable to read selected evidence file")
+        val boundary="----ProductionFta${System.currentTimeMillis()}"
+        val connection=(URL("$API_BASE/fta/investigations/$investigationId/evidence").openConnection() as HttpURLConnection).apply {
+            requestMethod="POST";connectTimeout=15000;readTimeout=60000;doOutput=true;setChunkedStreamingMode(64*1024)
+            setRequestProperty("Accept","application/json");setRequestProperty("Authorization","Bearer $token")
+            setRequestProperty("Content-Type","multipart/form-data; boundary=$boundary")
+        }
+        try {
+            connection.outputStream.use { output ->
+                fun field(key:String,value:String){output.write("--$boundary\\r\\nContent-Disposition: form-data; name=\"$key\"\\r\\n\\r\\n$value\\r\\n".toByteArray(Charsets.UTF_8))}
+                output.write("--$boundary\\r\\nContent-Disposition: form-data; name=\"file\"; filename=\"${file.name}\"\\r\\nContent-Type: ${resolver.getType(uri)?: "application/octet-stream"}\\r\\n\\r\\n".toByteArray(Charsets.UTF_8))
+                file.inputStream().use{it.copyTo(output)};output.write("\\r\\n".toByteArray(Charsets.UTF_8))
+                if(findingId!=null) field("finding_id",findingId.toString())
+                if(caption.isNotBlank()) field("caption",caption)
+                output.write("--$boundary--\\r\\n".toByteArray(Charsets.UTF_8))
+            }
+            val code=connection.responseCode
+            val stream=if(code in 200..299) connection.inputStream else connection.errorStream
+            val body=stream?.bufferedReader()?.use{it.readText()}.orEmpty()
+            if(code !in 200..299){val detail=runCatching{JSONObject(body).optString("detail")}.getOrNull().orEmpty();throw IllegalStateException(detail.ifBlank{"FTA evidence upload failed (HTTP $code)"})}
+            return JSONObject(body)
+        } finally {file.delete();connection.disconnect()}
+    }
+
     fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
         val uploadFile = PhotoCompressor.prepare(file)
         val boundary = "----ProductionMobile${System.currentTimeMillis()}"
@@ -520,10 +629,10 @@ private fun userFriendlyOeeError(error: Exception, fallback: String): String {
     }
 }
 
-private data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
-private data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
-private data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
-private data class RejectionTrendPoint(val date: LocalDate, val quantity: Float)
+internal data class ActionItem(val id:Int,val number:String,val description:String,val type:String,val status:String,val priority:String,val due:String,val overdue:Boolean,val whyWhy:Boolean,val completion:Int)
+internal data class ActionOwnerGroup(val userId:Int?,val name:String,val role:String,val openCount:Int,val overdueCount:Int,val dueTodayCount:Int,val actions:List<ActionItem>)
+internal data class Masters(val products: List<Choice>, val machines: List<Choice>, val phenomena: List<Choice>)
+internal data class RejectionTrendPoint(val date: LocalDate, val quantity: Float)
 
 @Composable
 private fun ScreenTitle(title: String, subtitle: String? = null) {
@@ -568,10 +677,19 @@ private fun StatusPill(label: String, color: Color) {
     }
 }
 class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalMaterial3Api::class)
+    private val notificationConversationId = mutableStateOf<Int?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        notificationConversationId.value = intent.getIntExtra("conversation_id", -1).takeIf { it > 0 }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sessionStore = SessionStore(this)
+        notificationConversationId.value = intent.getIntExtra("conversation_id", -1).takeIf { it > 0 }
         setContent {
             var username by remember { mutableStateOf("") }
             var password by remember { mutableStateOf("") }
@@ -587,6 +705,25 @@ class MainActivity : ComponentActivity() {
             var rejectionTrend by remember { mutableStateOf<List<RejectionTrendPoint>>(emptyList()) }
             var rejectionTrendLoading by remember { mutableStateOf(false) }
             var rejectionTrendError by remember { mutableStateOf<String?>(null) }
+            var todayRejectionCount by remember { mutableIntStateOf(0) }
+            var todayRejectedQuantity by remember { mutableDoubleStateOf(0.0) }
+            var openFtaCount by remember { mutableIntStateOf(0) }
+            var rejectionKpiLoading by remember { mutableStateOf(false) }
+            var rejectionKpiError by remember { mutableStateOf<String?>(null) }
+            var ftaRows by remember { mutableStateOf(JSONArray()) }
+            var selectedFta by remember { mutableStateOf<JSONObject?>(null) }
+            var ftaBusy by remember { mutableStateOf(false) }
+            var ftaError by remember { mutableStateOf<String?>(null) }
+            var ftaRemarks by remember { mutableStateOf("") }
+            var ftaEvidenceFindingId by remember { mutableStateOf<Int?>(null) }
+            var ftaEvidenceCaption by remember { mutableStateOf("") }
+            var ftaEvidencePickerUri by remember { mutableStateOf<Uri?>(null) }
+            var ftaActionDescription by remember { mutableStateOf("") }
+            var ftaActionFindingId by remember { mutableStateOf<Int?>(null) }
+            var ftaDiscoveredDescription by remember { mutableStateOf("") }
+            var ftaDiscoveredEvidence by remember { mutableStateOf("") }
+            var ftaSavingNode by remember { mutableStateOf<String?>(null) }
+            var ftaSelectedNodeId by remember { mutableStateOf("") }
             var detection by remember { mutableStateOf<RouteChoice?>(null) }
             var responsible by remember { mutableStateOf<RouteChoice?>(null) }
             var machine by remember { mutableStateOf<Choice?>(null) }
@@ -611,6 +748,17 @@ class MainActivity : ComponentActivity() {
             var chatAttachmentUri by remember { mutableStateOf<Uri?>(null) }
             val chatContext = LocalContext.current
             val chatAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> chatAttachmentUri = uri }
+            val ftaEvidencePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> ftaEvidencePickerUri = uri }
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { }
+            LaunchedEffect(account) {
+                if (account != null && Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(chatContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
             var pendingActions by remember { mutableStateOf<List<ActionItem>>(emptyList()) }
             var pendingActionGroups by remember { mutableStateOf<List<ActionOwnerGroup>>(emptyList()) }
             var selectedOwner by remember { mutableStateOf<ActionOwnerGroup?>(null) }
@@ -684,6 +832,9 @@ class MainActivity : ComponentActivity() {
             var oeeCorrectionReason by remember { mutableStateOf("") }
             var oeeManagement by remember { mutableStateOf<JSONObject?>(null) }
             var oeeManagementFrom by remember { mutableStateOf(LocalDate.now().withDayOfMonth(1).toString()) }
+            var oeeReportTo by remember { mutableStateOf(LocalDate.now().toString()) }
+            var oeeReportProduct by remember { mutableStateOf<Choice?>(null) }
+            var oeeReportingCompliance by remember { mutableStateOf<JSONObject?>(null) }
             var oeeSavedSummary by remember { mutableStateOf<String?>(null) }
 
             val evidencePicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -715,6 +866,70 @@ class MainActivity : ComponentActivity() {
             val drawerState = rememberDrawerState(DrawerValue.Closed)
             var showLogoutConfirm by remember { mutableStateOf(false) }
 
+            fun refreshFta(auth: String) {
+                scope.launch {
+                    ftaBusy = true; ftaError = null
+                    try { ftaRows = withContext(Dispatchers.IO) { ApiClient.loadFtaInvestigations(auth) } }
+                    catch (e: Exception) { ftaError = e.message ?: "Unable to load FTA investigations." }
+                    finally { ftaBusy = false }
+                }
+            }
+            fun ftaDraftKey(id:Int)="fta_draft_${account?.username?.trim()?.lowercase().orEmpty()}_$id"
+            fun ftaLocalDraft(id:Int,node:String):JSONObject{
+                val root=runCatching{JSONObject(chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE).getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
+                return root.optJSONObject("nodes")?.optJSONObject(node)?:JSONObject()
+            }
+            fun saveFtaLocalField(id:Int,node:String,key:String,value:Any){
+                val prefs=chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE)
+                val root=runCatching{JSONObject(prefs.getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
+                val nodes=root.optJSONObject("nodes")?:JSONObject()
+                nodes.put(node,JSONObject(nodes.optJSONObject(node)?.toString()?:"{}").put(key,value))
+                root.put("nodes",nodes).put("selected_node_id",node);prefs.edit().putString(ftaDraftKey(id),root.toString()).apply()
+            }
+            fun rememberFtaNode(id:Int,node:String){
+                val prefs=chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE)
+                val root=runCatching{JSONObject(prefs.getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
+                root.put("selected_node_id",node);prefs.edit().putString(ftaDraftKey(id),root.toString()).apply()
+            }
+            fun clearFtaLocalDraft(id:Int,node:String){
+                val prefs=chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE)
+                val root=runCatching{JSONObject(prefs.getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
+                root.optJSONObject("nodes")?.remove(node);prefs.edit().putString(ftaDraftKey(id),root.toString()).apply()
+            }
+            fun openFta(id: Int, auth: String) {
+                scope.launch {
+                    ftaBusy=true;ftaError=null
+                    try {
+                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(id,auth)};ftaRemarks=""
+                        val root=runCatching{JSONObject(chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE).getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
+                        val fs=selectedFta?.optJSONArray("findings")?:JSONArray();val wanted=root.optString("selected_node_id")
+                        ftaSelectedNodeId=(0 until fs.length()).mapNotNull{fs.optJSONObject(it)}.firstOrNull{it.optString("node_id")==wanted}?.optString("node_id")
+                            ?: if(fs.length()>0) fs.optJSONObject(0)?.optString("node_id").orEmpty() else ""
+                        if(ftaSelectedNodeId.isNotBlank())rememberFtaNode(id,ftaSelectedNodeId)
+                    }catch(e:Exception){ftaError=e.message?:"Unable to load FTA."}finally{ftaBusy=false}
+                }
+            }
+            fun saveFtaObservation(finding: JSONObject, observation: String, auth: String) {
+                val fta = selectedFta ?: return
+                val node = finding.optString("node_id")
+                val payload = JSONObject()
+                    .put("investigation_status", finding.optString("investigation_status", "NOT_INVESTIGATED"))
+                    .put("observation", observation)
+                    .put("measured_value", finding.optString("measured_value").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("expected_value", finding.optString("expected_value").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("verification_method", finding.optString("verification_method").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("verification_result", finding.optString("verification_result").takeUnless { it == "null" } ?: JSONObject.NULL)
+                    .put("priority", finding.optString("priority", "MEDIUM"))
+                    .put("is_root_cause", finding.optBoolean("is_root_cause"))
+                    .put("is_occurrence_cause", finding.optBoolean("is_occurrence_cause"))
+                    .put("is_escape_cause", finding.optBoolean("is_escape_cause"))
+                scope.launch {
+                    ftaSavingNode = node; ftaError = null
+                    try { selectedFta = withContext(Dispatchers.IO) { ApiClient.saveFtaFinding(fta.optInt("id"), node, payload, auth) } }
+                    catch (e: Exception) { ftaError = e.message ?: "Unable to save actual observation." }
+                    finally { ftaSavingNode = null }
+                }
+            }
             fun refreshPendingActions(auth:String) {
                 scope.launch {
                     try {
@@ -826,6 +1041,72 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun openPendingOeeEntry(row: JSONObject) {
+                val auth = token
+                if (auth.isNullOrBlank()) {
+                    oeeError = "Your session has expired. Please sign in again."
+                    return
+                }
+                val productId = row.optInt("product_id")
+                val operationId = row.optInt("route_operation_id")
+                val machineId = row.optInt("machine_id")
+                val entryDate = row.optString("date")
+                val shiftName = row.optString("shift")
+                if (productId <= 0 || operationId <= 0 || machineId <= 0 ||
+                    entryDate.isBlank() || shiftName !in listOf("A", "B", "C")) {
+                    oeeError = "The pending plan is missing its part, process, machine, date or shift. Check planning configuration."
+                    return
+                }
+                scope.launch {
+                    oeeLoading = true
+                    oeeError = null
+                    try {
+                        val product = masters?.products?.firstOrNull { it.id == productId }
+                            ?: Choice(productId, row.optString("product").ifBlank { "Part #$productId" })
+                        val routes = withContext(Dispatchers.IO) {
+                            ApiClient.loadRoutes(productId, entryDate, auth)
+                        }
+                        val operation = routes.firstOrNull { it.id == operationId }
+                            ?: throw IllegalStateException("The planned process is no longer available for this part and date.")
+                        val machines = withContext(Dispatchers.IO) {
+                            ApiClient.loadOeeMachines(operationId, entryDate, auth)
+                        }
+                        val machine = machines.firstOrNull { it.id == machineId }
+                            ?: throw IllegalStateException("The planned machine is not available for this process on the selected date. Check machine mapping.")
+                        
+                        // Load the exact planned scope before opening the form. Do not
+                        // silently substitute the first operation or first machine.
+                        oeeProduct = product
+                        oeeDate = entryDate
+                        oeeShift = shiftName
+                        oeeRoutes = routes
+                        oeeOperation = operation
+                        oeeMachines = machines
+                        oeeMachine = machine
+                        oeeSummary = null
+                        oeeEntryId = null
+                        oeeLoadingPreviousEntry = false
+                        oeeCorrectionReason = ""
+                        oeeOperatorId = null
+                        oeeOperatorName = ""
+                        oeeOperatorError = null
+                        oeeShiftMinutes = "440"
+                        oeeBreakMinutes = "0"
+                        oeeGoodCount = "0"
+                        oeeRejectCount = "0"
+                        oeeEntryRemarks = ""
+                        oeeEntryLosses = listOf(OeeLossDraft())
+                        oeeSuccess = null
+                        homeTab = "OEE"
+                        oeeMode = "ENTRY"
+                    } catch (e: Exception) {
+                        oeeError = e.message ?: "Unable to open the planned OEE entry."
+                    } finally {
+                        oeeLoading = false
+                    }
+                }
+            }
+
             fun editOeeEntry(entryDate: String, entryShift: String, expectedEntryId: Int) {
                 val auth = token
                 val product = oeeProduct
@@ -891,19 +1172,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeMachine?.id, oeeDate, oeeShift) {
+            LaunchedEffect(homeTab, token, oeeProduct?.id, oeeOperation?.id, oeeDate) {
                 val auth = token
                 val productId = oeeProduct?.id
                 val operationId = oeeOperation?.id
-                val machineId = oeeMachine?.id
-                if (homeTab == "OEE" && auth != null && productId != null && operationId != null && machineId != null) {
+                if (homeTab == "OEE" && auth != null && productId != null && operationId != null) {
                     oeeRecentLoading = true
                     oeeRecentError = null
                     try {
                         val endDate = LocalDate.parse(oeeDate)
                         val startDate = endDate.minusDays(6)
                         val response = withContext(Dispatchers.IO) {
-                            ApiClient.loadOeeRecentRecords(startDate.toString(), endDate.toString(), oeeShift, machineId, productId, operationId, auth)
+                            ApiClient.loadOeeRecentRecords(startDate.toString(), endDate.toString(), productId, operationId, auth)
                         }
                         val rows = response.optJSONArray("records") ?: JSONArray()
                         oeeRecentRecords = (0 until rows.length()).map { rows.getJSONObject(it) }
@@ -1032,6 +1312,31 @@ class MainActivity : ComponentActivity() {
                     finally { busy=false }
                 }
             }
+            fun refreshRejectionKpis(auth: String) {
+                scope.launch {
+                    rejectionKpiLoading = true
+                    rejectionKpiError = null
+                    try {
+                        val today = LocalDate.now()
+                        val result = withContext(Dispatchers.IO) {
+                            val rows = ApiClient.loadTodayRejectionRows(today, auth)
+                            val fta = ApiClient.loadFtaDashboard(auth)
+                            val qty = (0 until rows.length()).sumOf { i ->
+                                rows.optJSONObject(i)?.optDouble("reject_qty", 0.0) ?: 0.0
+                            }
+                            Triple(rows.length(), qty, fta.optJSONObject("counts")?.optInt("open", 0) ?: 0)
+                        }
+                        todayRejectionCount = result.first
+                        todayRejectedQuantity = result.second
+                        openFtaCount = result.third
+                    } catch (e: Exception) {
+                        rejectionKpiError = e.message ?: "Unable to load rejection summary."
+                    } finally {
+                        rejectionKpiLoading = false
+                    }
+                }
+            }
+
             fun refreshRejectionTrend(productId: Int, auth: String) {
                 val today = LocalDate.now()
                 val fromDate = today.withDayOfMonth(1)
@@ -1063,13 +1368,26 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            fun registerPushToken(auth: String) {
+                runCatching {
+                    com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                        .addOnSuccessListener { fcmToken ->
+                            if (fcmToken.isNotBlank()) scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    runCatching { ApiClient.registerDeviceToken(auth, fcmToken) }
+                                }
+                            }
+                        }
+                }
+            }
+
             LaunchedEffect(Unit) {
                 val saved=withContext(Dispatchers.IO) { sessionStore.read() }
                 if (!saved.isNullOrBlank()) {
                     busy=true
                     try {
                         val current=withContext(Dispatchers.IO) { ApiClient.currentAccount(saved) }
-                        token=saved; account=current; refreshMasters(saved); refreshPendingActions(saved)
+                        token=saved; account=current; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatShowNew=false; refreshMasters(saved); refreshPendingActions(saved); registerPushToken(saved)
                         message="Connected to Production Review."
                     } catch(_:Exception) {
                         withContext(Dispatchers.IO) { sessionStore.clear() }
@@ -1078,24 +1396,92 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            fun refreshChatConversations(auth: String) {
-                chatLoading = true
+            var sessionExpiryHandling by remember { mutableStateOf(false) }
+
+            fun handleSessionExpired(error: Throwable): Boolean {
+                val unauthorized = generateSequence(error) { it.cause }
+                    .filterIsInstance<ApiHttpException>()
+                    .any { it.statusCode == 401 }
+                if (!unauthorized || token.isNullOrBlank() || sessionExpiryHandling) return false
+
+                // Persist the sign-out before exposing the login screen so a rapid
+                // re-login cannot have its newly saved token cleared by this request.
+                sessionExpiryHandling = true
+                chatError = "Your session has expired. Returning to sign-in…"
+                scope.launch {
+                    withContext(Dispatchers.IO) { sessionStore.clear() }
+                    token = null
+                    account = null
+                    homeTab = "ACTIONS"
+                    selectedChatId = null
+                    chatConversations = JSONArray()
+                    chatMessages = JSONArray()
+                    chatEmployees = JSONArray()
+                    chatDraft = ""
+                    chatSearch = ""
+                    chatError = null
+                    chatAttachmentUri = null
+                    chatShowNew = false
+                    chatLoading = false
+                    message = "Your session has expired. Please sign in again."
+                    sessionExpiryHandling = false
+                }
+                return true
+            }
+
+            fun refreshChatConversations(auth: String, showLoading: Boolean = true) {
+                if (showLoading) chatLoading = true
                 scope.launch {
                     try { chatConversations = withContext(Dispatchers.IO) { ApiClient.loadChatConversations(auth) } }
-                    catch (e: Exception) { message = "Chat: ${e.message}" }
-                    finally { chatLoading = false }
+                    catch (e: Exception) { if (!handleSessionExpired(e)) chatError = "Chat: ${e.message}" }
+                    finally { if (showLoading) chatLoading = false }
                 }
             }
             fun refreshChatMessages(auth: String, conversationId: Int) {
                 scope.launch {
-                    try { chatMessages = withContext(Dispatchers.IO) { ApiClient.loadChatMessages(conversationId, auth) } }
-                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                    try {
+                        // The messages endpoint records this user's read timestamp.
+                        // Fetch the conversation summaries only after that succeeds so
+                        // unread_count reflects the updated read receipt.
+                        val loadedMessages = withContext(Dispatchers.IO) {
+                            ApiClient.loadChatMessages(conversationId, auth)
+                        }
+                        chatMessages = loadedMessages
+                        // The messages request above commits the server-side read receipt.
+                        // Clear this conversation's badge immediately so the list cannot
+                        // keep showing an old unread count while the summary reloads.
+                        val locallyRead = JSONArray()
+                        for (index in 0 until chatConversations.length()) {
+                            val item = chatConversations.optJSONObject(index) ?: continue
+                            val copy = JSONObject(item.toString())
+                            if (copy.optInt("id") == conversationId) copy.put("unread_count", 0)
+                            locallyRead.put(copy)
+                        }
+                        chatConversations = locallyRead
+                        chatConversations = withContext(Dispatchers.IO) {
+                            ApiClient.loadChatConversations(auth)
+                        }
+                    } catch (e: Exception) {
+                        if (!handleSessionExpired(e)) chatError = "Chat: ${e.message}"
+                    }
                 }
             }
+            LaunchedEffect(notificationConversationId.value, account) {
+                val conversationId = notificationConversationId.value
+                val auth = token
+                if (conversationId != null && account != null && !auth.isNullOrBlank()) {
+                    homeTab = "CHAT"
+                    selectedChatId = conversationId
+                    refreshChatConversations(auth, showLoading = false)
+                    refreshChatMessages(auth, conversationId)
+                    notificationConversationId.value = null
+                }
+            }
+
             fun searchChatEmployees(auth: String) {
                 scope.launch {
                     try { chatEmployees = withContext(Dispatchers.IO) { ApiClient.loadChatEmployees(chatSearch, auth) } }
-                    catch (e: Exception) { message = "Chat: ${e.message}" }
+                    catch (e: Exception) { if (!handleSessionExpired(e)) chatError = "Chat: ${e.message}" }
                 }
             }
             val normalizedRole = account?.role?.uppercase().orEmpty()
@@ -1146,8 +1532,10 @@ class MainActivity : ComponentActivity() {
                                 }
                                 Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal=5.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(3.dp)) {
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Actions",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="ACTIONS" || homeTab=="USER_ACTIONS" || homeTab=="DETAIL",icon={Icon(Icons.Filled.Assignment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="ACTIONS"; selectedOwner=null; token?.let{refreshPendingActions(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isQualityRole || isAdminOrManagement || isProductionRole) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("FTA Closure",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="FTA",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="FTA"; selectedFta=null; token?.let{refreshFta(it)} }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isQualityRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Rejection",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="REJECTION",icon={Icon(Icons.Filled.AssignmentLate,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="REJECTION" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE",icon={Icon(Icons.Filled.Speed,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
+                                    if (isProductionRole || isAdminOrManagement) NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("OEE Reports",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="OEE_REPORTS",icon={Icon(Icons.Filled.Assessment,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="OEE_REPORTS" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("Chat",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="CHAT",icon={Text("✉",fontSize=19.sp,color=Teal)},onClick={drawerScope.launch { drawerState.close(); homeTab="CHAT"; token?.let{refreshChatConversations(it)}; chatSearch=""; chatEmployees=JSONArray() }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                     NavigationDrawerItem(modifier=Modifier.fillMaxWidth(),label={Text("History",fontSize=14.sp,fontWeight=FontWeight.SemiBold,maxLines=1)},selected=homeTab=="HISTORY",icon={Icon(Icons.Filled.History,contentDescription=null,modifier=Modifier.size(22.dp))},onClick={drawerScope.launch { drawerState.close(); homeTab="HISTORY" }},colors=NavigationDrawerItemDefaults.colors(selectedContainerColor=Color(0xFFD7E9FA),selectedIconColor=Navy,selectedTextColor=Navy))
                                 }
@@ -1167,15 +1555,23 @@ class MainActivity : ComponentActivity() {
                             if (account != null) IconButton(onClick={drawerScope.launch { drawerState.open() }}) { Icon(Icons.Filled.Menu, contentDescription="Open navigation", tint=Color.White) }
                             Column(Modifier.weight(1f)) {
                                 Text("PRODUCTION REVIEW",color=Color(0xFFB9D5E5),fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.2.sp)
-                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
+                                Text(if (account == null) "Mobile Operations" else when(homeTab) { "ACTIONS"->"Pending Actions"; "USER_ACTIONS"->"User Actions"; "DETAIL"->"Action Details"; "FTA"->"FTA Closure"; "REJECTION"->"Rejection Entry"; "OEE"->"OEE"; "OEE_REPORTS"->"OEE Reports"; "HISTORY"->"Action History"; "CHAT"->"Chat"; "ACCOUNT"->"Account"; else->"Mobile Operations" },color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold)
                             }
                         }
                         LaunchedEffect(homeTab, token, selectedChatId) {
                             val auth = token ?: return@LaunchedEffect
                             if (homeTab == "CHAT") {
+                                var firstLoad = true
                                 while (homeTab == "CHAT") {
-                                    refreshChatConversations(auth)
-                                    selectedChatId?.let { refreshChatMessages(auth, it) }
+                                    val openConversationId = selectedChatId
+                                    if (openConversationId != null) {
+                                        // Loading messages records the read receipt, then refreshes
+                                        // summaries. Avoid racing an earlier conversation-list fetch.
+                                        refreshChatMessages(auth, openConversationId)
+                                    } else {
+                                        refreshChatConversations(auth, showLoading = firstLoad)
+                                    }
+                                    firstLoad = false
                                     kotlinx.coroutines.delay(5000)
                                 }
                             }
@@ -1262,8 +1658,8 @@ class MainActivity : ComponentActivity() {
                                                                         Text(preview,color=Muted,fontSize=11.sp,maxLines=1)
                                                                     }
                                                                     Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                                                                        Text(last?.optString("created_at")?.take(16)?.takeLast(5).orEmpty(),color=Muted,fontSize=9.sp)
-                                                                        if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Teal)
+                                                                        Text(formatChatTime(last?.optString("created_at")),color=Muted,fontSize=9.sp)
+                                                                        if(conversation.optInt("unread_count")>0) StatusPill("${conversation.optInt("unread_count")} NEW",Danger)
                                                                     }
                                                                 }
                                                             }
@@ -1279,7 +1675,11 @@ class MainActivity : ComponentActivity() {
                                     val chatTitle=activeConversation?.optString("title")?.takeIf{it.isNotBlank()&&it!="null"} ?: (0 until participants.length()).mapNotNull{participants.optJSONObject(it)}.filter{it.optString("username")!=account?.username}.joinToString(", "){it.optString("full_name")}.ifBlank{"Conversation"}
                                     Column(Modifier.fillMaxSize()) {
                                         Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal=8.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically) {
-                                            TextButton(onClick={selectedChatId=null;chatMessages=JSONArray();chatAttachmentUri=null}) { Text("‹",fontSize=28.sp,color=Teal) }
+                                            TextButton(onClick={
+                                                val auth=token
+                                                selectedChatId=null;chatMessages=JSONArray();chatAttachmentUri=null
+                                                auth?.let { refreshChatConversations(it) }
+                                            }) { Text("‹",fontSize=28.sp,color=Teal) }
                                             Box(Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFDCEEE8)),contentAlignment=Alignment.Center) { Text(chatTitle.trim().take(1).uppercase(),color=Teal,fontWeight=FontWeight.Bold) }
                                             Column(Modifier.weight(1f).padding(start=10.dp)) {
                                                 Text(chatTitle,color=Navy,fontSize=14.sp,fontWeight=FontWeight.Bold,maxLines=1)
@@ -1333,7 +1733,7 @@ class MainActivity : ComponentActivity() {
                                                                         }
                                                                     }) { Text("📎 "+fileItem.optString("file_name"),color=Teal,fontSize=11.sp) }
                                                                 }
-                                                                Text(msg.optString("created_at").take(16).takeLast(5),Modifier.align(Alignment.End),color=Muted,fontSize=9.sp)
+                                                                Text(formatChatTime(msg.optString("created_at")),Modifier.align(Alignment.End),color=Muted,fontSize=9.sp)
                                                             }
                                                         }
                                                     }
@@ -1353,7 +1753,7 @@ class MainActivity : ComponentActivity() {
                                                         val sent=withContext(Dispatchers.IO){ApiClient.sendChatMessage(id,body.ifBlank{" "},auth)}
                                                         if(picked!=null)withContext(Dispatchers.IO){ApiClient.uploadChatAttachment(chatContext,id,sent.optInt("id"),picked,auth)}
                                                         chatDraft="";chatAttachmentUri=null;chatError=null;refreshChatMessages(auth,id);refreshChatConversations(auth)
-                                                    }catch(e:Exception){chatError="Message not sent: ${e.message ?: "Please try again."}";message=chatError ?: "Message not sent."}
+                                                    }catch(e:Exception){if(!handleSessionExpired(e)){chatError="Message not sent: ${e.message ?: "Please try again."}";message=chatError ?: "Message not sent."}}
                                                     finally{chatLoading=false}
                                                 }
                                             },enabled=!chatLoading&&(chatDraft.isNotBlank()||chatAttachmentUri!=null),modifier=Modifier.size(44.dp).clip(CircleShape).background(Teal)) { Text(if(chatLoading)"…" else "➤",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold) }
@@ -1459,7 +1859,8 @@ class MainActivity : ComponentActivity() {
                                                 try {
                                                     val result=withContext(Dispatchers.IO){ApiClient.login(username.trim(),password)}
                                                     withContext(Dispatchers.IO){sessionStore.save(result.first)}
-                                                    token=result.first; account=result.second; password=""; refreshPendingActions(result.first)
+                                                    sessionExpiryHandling=false; chatError=null; chatConversations=JSONArray(); chatEmployees=JSONArray()
+                                                    token=result.first; account=result.second; password=""; homeTab="CHAT"; selectedChatId=null; chatMessages=JSONArray(); chatDraft=""; chatShowNew=false; refreshPendingActions(result.first); registerPushToken(result.first)
                                                     refreshMasters(result.first); message="Signed in. Loading masters…"
                                                 } catch(e:Exception){
                                                     message=e.message?.takeIf { it.isNotBlank() } ?: "Unable to sign in. Check your connection and try again."
@@ -1483,14 +1884,219 @@ class MainActivity : ComponentActivity() {
                                 val totalOpen = if (isManager) pendingActionGroups.sumOf { it.openCount } else pendingActions.size
                                 val totalOverdue = if (isManager) pendingActionGroups.sumOf { it.overdueCount } else pendingActions.count { it.overdue }
                                 val dueToday = if (isManager) pendingActionGroups.sumOf { it.dueTodayCount } else pendingActions.count { it.due.substringBefore("T") == LocalDate.now().toString() }
-                                if (homeTab != "OEE") {
+                                if (homeTab == "REJECTION") {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        MetricTile("TODAY'S REJECTIONS", if (rejectionKpiLoading) "…" else todayRejectionCount.toString(), Teal, Modifier.weight(1f))
+                                        MetricTile("REJECTED QTY", if (rejectionKpiLoading) "…" else String.format("%.0f", todayRejectedQuantity), Danger, Modifier.weight(1f))
+                                        MetricTile("OPEN FTAs", if (rejectionKpiLoading) "…" else openFtaCount.toString(), Warning, Modifier.weight(1f))
+                                    }
+                                    rejectionKpiError?.let { Text(it, color=Danger, fontSize=11.sp) }
+                                } else if (homeTab != "OEE") {
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         MetricTile("OPEN ACTIONS", totalOpen.toString(), Teal, Modifier.weight(1f))
                                         MetricTile("OVERDUE", totalOverdue.toString(), Danger, Modifier.weight(1f))
                                         MetricTile("DUE TODAY", dueToday.toString(), Warning, Modifier.weight(1f))
                                     }
                                 }
-                                if(homeTab=="ACTIONS") {
+                                                                 if(homeTab=="FTA") {
+                                    ScreenTitle(if(selectedFta==null) "FTA investigations" else selectedFta?.optString("investigation_no").orEmpty(), "Gemba observations and closure workflow")
+                                    if(ftaBusy) LinearProgressIndicator(Modifier.fillMaxWidth(),color=Teal)
+                                    ftaError?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                    if(selectedFta==null) {
+                                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(onClick={token?.let{refreshFta(it)}}){Text("REFRESH",color=Teal)}}
+                                        if(ftaRows.length()==0 && !ftaBusy) EmptyState("No FTA investigations","No investigations are available for your account.")
+                                        LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                            items((0 until ftaRows.length()).toList()){i->
+                                                val row=ftaRows.optJSONObject(i)
+                                                if(row!=null) Card(Modifier.fillMaxWidth().clickable{token?.let{openFta(row.optInt("id"),it)}},shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(4.dp)){
+                                                        Text(row.optString("investigation_no")+" • "+row.optString("status").replace("_"," "),color=Navy,fontWeight=FontWeight.Bold)
+                                                        Text(row.optString("defect_name")+" • "+row.optString("part_code"),color=Muted,fontSize=12.sp)
+                                                        Text(row.optString("machine_name").ifBlank{"Machine not specified"}+" • "+row.optString("template_name"),color=Muted,fontSize=11.sp)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        val fta=selectedFta!!; val ftaStatus=fta.optString("status"); val findings=fta.optJSONArray("findings")?:JSONArray()
+                                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){TextButton(onClick={selectedFta=null;token?.let{refreshFta(it)}}){Text("← ALL FTAs",color=Teal)};Spacer(Modifier.weight(1f));Text(ftaStatus.replace("_"," "),color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)}
+                                        Text(fta.optString("part_code")+" • "+fta.optString("defect_name"),color=Navy,fontWeight=FontWeight.SemiBold,fontSize=13.sp)
+                                        Text("Machine: "+fta.optString("machine_name").ifBlank{"Not specified"},color=Muted,fontSize=11.sp)
+                                        LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                            items((0 until findings.length()).toList()){i->
+                                                val finding=findings.optJSONObject(i)
+                                                if(finding!=null){
+                                                    var observation by remember(fta.optInt("id"),finding.optString("node_id"),finding.optString("observation")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("observation",finding.optString("observation").takeUnless{it=="null"}.orEmpty()))}
+                                                    if(ftaSelectedNodeId==finding.optString("node_id")) {
+                                                     Dialog(onDismissRequest={}) {
+                                                         Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                                                        Column(Modifier.padding(11.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                                                            Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                            Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
+                                                             if(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).length()>0)Text("UNSAVED DEVICE DRAFT",color=Warning,fontSize=10.sp,fontWeight=FontWeight.SemiBold)
+                                                            TextButton(onClick={ftaSelectedNodeId=""}){Text("CLOSE NODE",color=Teal)}
+                                                            var findingStatus by remember(fta.optInt("id"),finding.optString("node_id"),finding.optString("investigation_status")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("investigation_status",finding.optString("investigation_status","NOT_INVESTIGATED")))}
+                                                            var measuredValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("measured_value",finding.optString("measured_value").takeUnless{it=="null"}.orEmpty()))}
+                                                            var expectedValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("expected_value",finding.optString("expected_value").takeUnless{it=="null"}.orEmpty()))}
+                                                            var verificationMethod by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("verification_method",finding.optString("verification_method").takeUnless{it=="null"}.orEmpty()))}
+                                                            var verificationResult by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("verification_result",finding.optString("verification_result").takeUnless{it=="null"}.orEmpty()))}
+                                                            var priority by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("priority",finding.optString("priority","MEDIUM")))}
+                                                            var rootCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optBoolean("is_root_cause",finding.optBoolean("is_root_cause")))}
+                                                            var occurrenceCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optBoolean("is_occurrence_cause",finding.optBoolean("is_occurrence_cause")))}
+                                                            var escapeCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optBoolean("is_escape_cause",finding.optBoolean("is_escape_cause")))}
+                                                            OutlinedTextField(value=observation,onValueChange={observation=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"observation",it)},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Actual observation / Gemba findings (or N/A reason)")},minLines=2,maxLines=5)
+                                                            Text("Investigation status",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+                                                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                                listOf("NOT_INVESTIGATED","UNDER_INVESTIGATION","SUSPECTED","CONFIRMED","RULED_OUT","NOT_APPLICABLE").forEach { value ->
+                                                                    FilterChip(selected=findingStatus==value,onClick={findingStatus=value;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"investigation_status",value)},label={Text(value.replace("_"," "),fontSize=9.sp)},enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS")
+                                                                }
+                                                            }
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                                OutlinedTextField(value=measuredValue,onValueChange={measuredValue=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"measured_value",it)},modifier=Modifier.weight(1f),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Measured value")},singleLine=true)
+                                                                OutlinedTextField(value=expectedValue,onValueChange={expectedValue=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"expected_value",it)},modifier=Modifier.weight(1f),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Expected value")},singleLine=true)
+                                                            }
+                                                            OutlinedTextField(value=verificationMethod,onValueChange={verificationMethod=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"verification_method",it)},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Verification method (required to confirm)")},minLines=2)
+                                                            OutlinedTextField(value=verificationResult,onValueChange={verificationResult=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"verification_result",it)},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Verification result")},minLines=2)
+                                                            Text("Cause classification",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=rootCause,onCheckedChange={rootCause=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"is_root_cause",it)},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Root cause",fontSize=11.sp)}
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=occurrenceCause,onCheckedChange={occurrenceCause=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"is_occurrence_cause",it)},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Occurrence cause",fontSize=11.sp)}
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=escapeCause,onCheckedChange={escapeCause=it;saveFtaLocalField(fta.optInt("id"),finding.optString("node_id"),"is_escape_cause",it)},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Escape cause",fontSize=11.sp)}
+                                                            val findingEvidence=fta.optJSONArray("evidence")?:JSONArray()
+                                                            val evidenceForFinding=(0 until findingEvidence.length()).mapNotNull{findingEvidence.optJSONObject(it)}.filter{it.optInt("finding_id",-1)==finding.optInt("id")}
+                                                            Text("Evidence files: ${evidenceForFinding.size}",color=Muted,fontSize=10.sp)
+                                                            evidenceForFinding.forEach{ev->Text("• ${ev.optString("file_name")} ${ev.optString("caption")}",color=Muted,fontSize=10.sp)}
+                                                            if(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS"){
+                                                                OutlinedTextField(value=ftaEvidenceCaption,onValueChange={ftaEvidenceCaption=it},modifier=Modifier.fillMaxWidth(),label={Text("Evidence caption (optional)")},singleLine=true)
+                                                                OutlinedButton(onClick={ftaEvidenceFindingId=finding.optInt("id");ftaEvidencePicker.launch("*/*")},modifier=Modifier.fillMaxWidth()){Text("ATTACH EVIDENCE TO THIS FINDING")}
+                                                            }
+                                                            if(ftaEvidencePickerUri!=null && ftaEvidenceFindingId==finding.optInt("id")){
+                                                                Button(enabled=!ftaBusy,onClick={
+                                                                    val auth=token;val uri=ftaEvidencePickerUri
+                                                                    if(auth!=null&&uri!=null) scope.launch { ftaBusy=true;try {
+                                                                        withContext(Dispatchers.IO){ApiClient.uploadFtaEvidence(chatContext,fta.optInt("id"),finding.optInt("id"),uri,ftaEvidenceCaption,auth)}
+                                                                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                        ftaEvidencePickerUri=null;ftaEvidenceFindingId=null;ftaEvidenceCaption=""
+                                                                    }catch(e:Exception){ftaError=e.message?: "Evidence upload failed"}finally{ftaBusy=false} }
+                                                                },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("UPLOAD SELECTED EVIDENCE")}
+                                                            }
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(5.dp),verticalAlignment=Alignment.CenterVertically){
+                                                                 val nodeId=finding.optString("node_id")
+                                                                 val nodeIndex=(0 until findings.length()).firstOrNull{findings.optJSONObject(it)?.optString("node_id")==nodeId}?:0
+                                                                 TextButton(enabled=nodeIndex>0&&!ftaBusy,onClick={ftaSelectedNodeId=findings.optJSONObject(nodeIndex-1)?.optString("node_id").orEmpty();rememberFtaNode(fta.optInt("id"),ftaSelectedNodeId)}){Text("PREVIOUS")}
+                                                                 Spacer(Modifier.weight(1f))
+                                                                 val canSave=ftaSavingNode!=nodeId&&(findingStatus!="CONFIRMED"||verificationMethod.isNotBlank())&&(findingStatus!="CONFIRMED"||evidenceForFinding.isNotEmpty())
+                                                                 val payload=JSONObject().put("investigation_status",findingStatus).put("observation",observation).put("measured_value",measuredValue).put("expected_value",expectedValue).put("verification_method",verificationMethod).put("verification_result",verificationResult).put("priority",priority).put("is_root_cause",rootCause).put("is_occurrence_cause",occurrenceCause).put("is_escape_cause",escapeCause)
+                                                                 TextButton(enabled=canSave&&!ftaBusy,onClick={val auth=token;if(auth!=null)scope.launch{ftaSavingNode=nodeId;try{selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),nodeId,payload,auth)};clearFtaLocalDraft(fta.optInt("id"),nodeId);ftaError=null}catch(e:Exception){ftaError=e.message?:"Unable to save finding"}finally{ftaSavingNode=null}}}){Text("SAVE DRAFT",color=Teal)}
+                                                                 Button(enabled=canSave&&!ftaBusy,onClick={val auth=token;if(auth!=null)scope.launch{ftaSavingNode=nodeId;try{selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),nodeId,payload,auth)};clearFtaLocalDraft(fta.optInt("id"),nodeId);ftaError=null
+                                                                     if(nodeIndex+1<findings.length()){ftaSelectedNodeId=findings.optJSONObject(nodeIndex+1)?.optString("node_id").orEmpty();rememberFtaNode(fta.optInt("id"),ftaSelectedNodeId)}else{ftaSelectedNodeId="";rememberFtaNode(fta.optInt("id"),"")}
+                                                                 }catch(e:Exception){ftaError=e.message?:"Unable to save finding; remaining on this node"}finally{ftaSavingNode=null}}},colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("NEXT NODE")}
+                                                             }
+                                                        }
+                                                    }
+                                                     }
+                                                 } else {
+                                                     Card(Modifier.fillMaxWidth().clickable{ftaSelectedNodeId=finding.optString("node_id");rememberFtaNode(fta.optInt("id"),ftaSelectedNodeId)},shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                                                         Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(3.dp)){
+                                                             Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                             Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
+                                                             Text("TAP TO INVESTIGATE",color=Teal,fontSize=10.sp,fontWeight=FontWeight.Bold)
+                                                         }
+                                                     }
+                                                 }
+                                             }
+                                             }
+                                             item {
+                                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                                        var occurrenceSummary by remember(fta.optInt("id"),fta.optString("occurrence_cause_summary")){mutableStateOf(fta.optString("occurrence_cause_summary"))}
+                                                        var escapeSummary by remember(fta.optInt("id"),fta.optString("escape_cause_summary")){mutableStateOf(fta.optString("escape_cause_summary"))}
+                                                        OutlinedTextField(value=occurrenceSummary,onValueChange={occurrenceSummary=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS",label={Text("Occurrence cause analysis")},minLines=2)
+                                                        OutlinedTextField(value=escapeSummary,onValueChange={escapeSummary=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS",label={Text("Escape / detection analysis")},minLines=2)
+                                                        TextButton(enabled=(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS")&&!ftaBusy,onClick={
+                                                            val auth=token
+                                                            if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                withContext(Dispatchers.IO){ApiClient.updateFta(fta.optInt("id"),JSONObject().put("occurrence_cause_summary",occurrenceSummary).put("escape_cause_summary",escapeSummary),auth)}
+                                                                selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                            }catch(e:Exception){ftaError=e.message?: "Unable to save cause analysis"}finally{ftaBusy=false} }
+                                                        }){Text("SAVE CAUSE ANALYSIS",color=Teal)}
+                                                        Text("CORRECTIVE / PREVENTIVE ACTIONS",color=Navy,fontWeight=FontWeight.Bold)
+                                                        val linkedActions=fta.optJSONArray("actions")?:JSONArray()
+                                                        if(linkedActions.length()==0) Text("No actions linked yet. Verification requires at least one corrective or preventive action.",color=Muted,fontSize=11.sp)
+                                                        for(ai in 0 until linkedActions.length()){
+                                                            val action=linkedActions.optJSONObject(ai)?:continue
+                                                            Text("${action.optString("action_no")} • ${action.optString("relationship_type")} • ${action.optString("status")}",color=Navy,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                            Text(action.optString("action_description"),color=Muted,fontSize=11.sp)
+                                                            var newCause by remember(action.optInt("id")){mutableStateOf("")}
+                                                            var newCauseEvidence by remember(action.optInt("id")){mutableStateOf("")}
+                                                            if(ftaStatus!="CLOSED" && action.optString("status")!="CLOSED"){
+                                                                OutlinedTextField(value=newCause,onValueChange={newCause=it},modifier=Modifier.fillMaxWidth(),label={Text("New cause found during action implementation")},minLines=2)
+                                                                OutlinedTextField(value=newCauseEvidence,onValueChange={newCauseEvidence=it},modifier=Modifier.fillMaxWidth(),label={Text("Evidence reference (min 3)")})
+                                                                TextButton(enabled=newCause.trim().length>=5&&newCauseEvidence.trim().length>=3&&!ftaBusy,onClick={
+                                                                    val auth=token
+                                                                    if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                        withContext(Dispatchers.IO){ApiClient.reportFtaDiscoveredCause(action.optInt("id"),newCause.trim(),newCauseEvidence.trim(),auth)}
+                                                                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                    }catch(e:Exception){ftaError=e.message?: "Unable to report discovered cause"}finally{ftaBusy=false} }
+                                                                }){Text("REPORT DISCOVERED CAUSE",color=Teal)}
+                                                            }
+                                                        }
+                                                        OutlinedTextField(value=ftaActionDescription,onValueChange={ftaActionDescription=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS",label={Text("New corrective action description")},minLines=2)
+                                                        Button(enabled=ftaActionDescription.trim().length>=3&&!ftaBusy&&(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS"),onClick={
+                                                            val auth=token
+                                                            if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                withContext(Dispatchers.IO){ApiClient.createFtaAction(fta.optInt("id"),ftaActionDescription.trim(),ftaActionFindingId,auth)}
+                                                                selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                ftaActionDescription="";ftaActionFindingId=null;ftaError=null
+                                                            }catch(e:Exception){ftaError=e.message?: "Unable to create action"}finally{ftaBusy=false} }
+                                                        },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("CREATE & LINK CORRECTIVE ACTION")}
+                                                        Text("Discovered causes reported during action implementation",color=Navy,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                                        val discovered=fta.optJSONArray("discovered_causes")?:JSONArray()
+                                                        if(discovered.length()==0) Text("No additional causes reported.",color=Muted,fontSize=11.sp)
+                                                        for(ci in 0 until discovered.length()){
+                                                            val cause=discovered.optJSONObject(ci)?:continue
+                                                            Text("${cause.optString("status")} • ${cause.optString("action_no")}",color=Navy,fontWeight=FontWeight.SemiBold,fontSize=11.sp)
+                                                            Text(cause.optString("cause_description"),color=Muted,fontSize=11.sp)
+                                                            Text("Evidence: "+cause.optString("evidence_reference"),color=Muted,fontSize=10.sp)
+                                                            if((isQualityRole||isAdminOrManagement) && cause.optString("status") in listOf("PROPOSED","ACCEPTED")){
+                                                                var reviewStatus by remember(cause.optInt("id"),cause.optString("status")){mutableStateOf("CONFIRMED")}
+                                                                var reviewRemarks by remember(cause.optInt("id")){mutableStateOf("")}
+                                                                var reviewMethod by remember(cause.optInt("id")){mutableStateOf(cause.optString("verification_method"))}
+                                                                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)){
+                                                                    listOf("CONFIRMED","RULED_OUT","ACCEPTED").forEach{v->FilterChip(selected=reviewStatus==v,onClick={reviewStatus=v},label={Text(v.replace("_"," "),fontSize=9.sp)})}
+                                                                }
+                                                                OutlinedTextField(value=reviewRemarks,onValueChange={reviewRemarks=it},modifier=Modifier.fillMaxWidth(),label={Text("Quality review remarks (min 5)")})
+                                                                if(reviewStatus=="CONFIRMED") OutlinedTextField(value=reviewMethod,onValueChange={reviewMethod=it},modifier=Modifier.fillMaxWidth(),label={Text("Verification method")})
+                                                                TextButton(enabled=reviewRemarks.trim().length>=5&&(reviewStatus!="CONFIRMED"||reviewMethod.isNotBlank()),onClick={
+                                                                    val auth=token
+                                                                    if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                        withContext(Dispatchers.IO){ApiClient.reviewFtaDiscoveredCause(cause.optInt("id"),reviewStatus,reviewRemarks.trim(),reviewMethod.trim(),auth)}
+                                                                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                    }catch(e:Exception){ftaError=e.message?: "Cause review failed"}finally{ftaBusy=false} }
+                                                                }){Text("SAVE CAUSE REVIEW",color=Teal)}
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            item {
+                                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                                        Text("QUALITY VERIFICATION / CLOSURE",color=Navy,fontWeight=FontWeight.Bold)
+                                                        Text("Existing server checks validate root cause, verification method, evidence, linked actions and discovered causes.",color=Muted,fontSize=11.sp)
+                                                        OutlinedTextField(value=ftaRemarks,onValueChange={ftaRemarks=it},modifier=Modifier.fillMaxWidth(),label={Text(if(ftaStatus=="VERIFIED_PENDING_ACTIONS") "Closure remarks" else "Verification remarks")},minLines=2)
+                                                        if(ftaStatus=="IN_PROGRESS" && (isQualityRole || account?.role?.uppercase()=="ADMIN")){
+                                                            Button(onClick={val auth=token;if(auth!=null)scope.launch{ftaBusy=true;try{withContext(Dispatchers.IO){ApiClient.verifyFta(fta.optInt("id"),ftaRemarks.trim(),auth)};selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)};ftaRemarks="";ftaError=null}catch(e:Exception){ftaError=e.message?: "Verification failed"}finally{ftaBusy=false}}},enabled=ftaRemarks.trim().length>=5&&!ftaBusy,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("SUBMIT FOR QUALITY VERIFICATION")}
+                                                        }
+                                                        if(ftaStatus=="VERIFIED_PENDING_ACTIONS" && (isQualityRole || account?.role?.uppercase()=="ADMIN")){
+                                                            Button(onClick={val auth=token;if(auth!=null)scope.launch{ftaBusy=true;try{withContext(Dispatchers.IO){ApiClient.closeFta(fta.optInt("id"),ftaRemarks.trim(),auth)};selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)};ftaRemarks="";ftaError=null}catch(e:Exception){ftaError=e.message?: "FTA closure failed"}finally{ftaBusy=false}}},enabled=ftaRemarks.trim().length>=5&&!ftaBusy,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Navy)){Text("CLOSE FTA")}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                 } else if(homeTab=="ACTIONS") {
+
                                     if (account!!.role.uppercase() in listOf("ADMIN", "MANAGEMENT")) {
                                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                                             Text("Pending actions by user",color=Navy,fontSize=19.sp,fontWeight=FontWeight.Bold)
@@ -1702,13 +2308,33 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                             if(oeeRoutes.isNotEmpty()) ChoiceDropdown("Operation",oeeRoutes.map{Choice(it.id,it.label)},oeeOperation?.let{Choice(it.id,it.label)},{selected->
-                                                oeeOperation=oeeRoutes.firstOrNull{it.id==selected.id};oeeMachine=null;oeeMachines=emptyList();oeeSummary=null
-                                                val auth=token
-                                                if(auth!=null) scope.launch {
-                                                    oeeLoading=true
-                                                    try { val loaded=withContext(Dispatchers.IO){ApiClient.loadOeeMachines(selected.id,oeeDate,auth)};oeeMachines=loaded;oeeMachine=loaded.firstOrNull() }
-                                                    catch(e:Exception){oeeError=userFriendlyOeeError(e,"Could not load machines for this operation. Check your connection and try again.")}
-                                                    finally{oeeLoading=false}
+                                                // Operation changes are handled by the Activity lifecycle scope, not a
+                                                // composition-bound scope. Closing the dropdown/recomposing the OEE
+                                                // screen must not cancel this machine-mapping request.
+                                                val auth = token
+                                                oeeOperation = oeeRoutes.firstOrNull { it.id == selected.id }
+                                                oeeMachine = null
+                                                oeeMachines = emptyList()
+                                                oeeSummary = null
+                                                oeeError = null
+                                                if (auth != null) this@MainActivity.lifecycleScope.launch(Dispatchers.Main.immediate) {
+                                                    oeeLoading = true
+                                                    try {
+                                                        val loaded = withContext(Dispatchers.IO) {
+                                                            ApiClient.loadOeeMachines(selected.id, oeeDate, auth)
+                                                        }
+                                                        oeeMachines = loaded
+                                                        oeeMachine = loaded.firstOrNull()
+                                                        if (loaded.isEmpty()) {
+                                                            oeeError = "No active machines are mapped to this operation for the selected date."
+                                                        }
+                                                    } catch (e: kotlinx.coroutines.CancellationException) {
+                                                        throw e
+                                                    } catch (e: Exception) {
+                                                        oeeError = userFriendlyOeeError(e, "Could not load machines for this operation. Check your connection and try again.")
+                                                    } finally {
+                                                        oeeLoading = false
+                                                    }
                                                 }
                                             })
                                             if(oeeMachines.isNotEmpty()) ChoiceDropdown("Machine",oeeMachines,oeeMachine,{oeeMachine=it;oeeSummary=null})
@@ -1820,7 +2446,7 @@ class MainActivity : ComponentActivity() {
                                         }
 
                                         Spacer(Modifier.height(8.dp))
-                                        SectionLabel("Last 7 days • Shift $oeeShift", "${oeeRecentRecords.size} record(s) from ${runCatching { LocalDate.parse(oeeDate).minusDays(6) }.getOrNull() ?: oeeDate} to $oeeDate")
+                                        SectionLabel("Last 7 days • All shifts", "${oeeRecentRecords.size} record(s) from ${runCatching { LocalDate.parse(oeeDate).minusDays(6) }.getOrNull() ?: oeeDate} to $oeeDate")
                                         when {
                                             oeeRecentLoading -> Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
                                                 CircularProgressIndicator(modifier=Modifier.size(18.dp),strokeWidth=2.dp)
@@ -1828,11 +2454,11 @@ class MainActivity : ComponentActivity() {
                                                 Text("Loading last 7 days…",color=Muted,fontSize=12.sp)
                                             }
                                             oeeRecentError != null -> Text(oeeRecentError!!,color=Danger,fontSize=12.sp)
-                                            oeeRecentRecords.isEmpty() -> EmptyState("No OEE records in the last 7 days", "No saved entries were found for Shift $oeeShift in the selected part, operation and machine.")
+                                            oeeRecentRecords.isEmpty() -> EmptyState("No OEE records in the last 7 days", "No saved entries were found across shifts for the selected part and operation.")
                                             else -> oeeRecentRecords.forEach { entry ->
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                                                        Text("${entry.optString("production_date")} • Shift ${entry.optString("shift")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                        Text("${entry.optString("production_date")} • Shift ${entry.optString("shift")} • ${entry.optString("machine").takeIf { it.isNotBlank() && it != "null" } ?: "Machine"}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                         Text("Total ${entry.optDouble("total_count").toLong()} • Good ${entry.optDouble("good_count").toLong()} • Reject ${entry.optDouble("reject_count").toLong()}",color=Muted,fontSize=12.sp)
                                                         Text("OEE ${"%.1f".format(entry.optDouble("oee_reported")*100)}%  |  A ${"%.1f".format(entry.optDouble("availability")*100)}%  P ${"%.1f".format(entry.optDouble("performance_capped")*100)}%  Q ${"%.1f".format(entry.optDouble("quality")*100)}%",color=Teal,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                                                         OutlinedButton(onClick={editOeeEntry(entry.optString("production_date"), entry.optString("shift"), entry.optInt("id"))}, modifier=Modifier.fillMaxWidth(), enabled=!oeeLoading) { Text("EDIT THIS RECORD") }
@@ -2151,7 +2777,7 @@ class MainActivity : ComponentActivity() {
                                             val machineRows=mgmt.optJSONArray("machines") ?: JSONArray()
                                             for(i in 0 until minOf(machineRows.length(),8)){
                                                 val row=machineRows.getJSONObject(i)
-                                                Text("${row.optString("machine")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                                Text("${row.optString("machine_name").ifBlank { row.optString("machine") }}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
                                             }
                                             SectionLabel("Top loss categories")
                                             val pareto=mgmt.optJSONArray("loss_pareto") ?: JSONArray()
@@ -2165,6 +2791,135 @@ class MainActivity : ComponentActivity() {
                                                 val row=trend.getJSONObject(i)
                                                 Text("${row.optString("date")}  •  OEE ${"%.1f".format(row.optDouble("oee_reported")*100)}%  (A ${"%.1f".format(row.optDouble("availability")*100)} / P ${"%.1f".format(row.optDouble("performance_raw")*100)} / Q ${"%.1f".format(row.optDouble("quality")*100)})",color=Muted,fontSize=11.sp)
                                             }
+                                        }
+                                    }
+                                } else if(homeTab=="OEE_REPORTS") {
+                                    ScreenTitle("OEE Reports", "Current-month performance and loss analysis")
+                                    SectionLabel("REPORT PERIOD", "Default: first day of this month through today")
+                                    OutlinedTextField(oeeManagementFrom,{oeeManagementFrom=it},label={Text("From date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+                                    OutlinedTextField(oeeReportTo,{oeeReportTo=it},label={Text("To date (YYYY-MM-DD)")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+                                    ChoiceDropdown("Part filter", listOf(Choice(-1, "All parts")) + masters?.products.orEmpty(), oeeReportProduct ?: Choice(-1, "All parts"), { selected -> oeeReportProduct = selected.takeIf { it.id > 0 }; oeeManagement = null; oeeReportingCompliance = null })
+                                    Text("Process: ${oeeOperation?.label ?: "All processes"}",color=Muted,fontSize=11.sp)
+                                    Button(onClick={
+                                        val auth=token
+                                        if(auth!=null) scope.launch {
+                                            oeeLoading=true;oeeError=null
+                                            try {
+                                                require(LocalDate.parse(oeeReportTo)>=LocalDate.parse(oeeManagementFrom)) { "To date must be on or after From date." }
+                                                oeeManagement=withContext(Dispatchers.IO){ApiClient.loadOeeManagement(oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,oeeOperation?.id,null)}
+                                                // Populate the compliance state consumed by the section below.
+                                                oeeReportingCompliance=withContext(Dispatchers.IO){
+                                                    ApiClient.loadOeeReportingCompliance(
+                                                        oeeManagementFrom,oeeReportTo,auth,oeeReportProduct?.id,oeeOperation?.id
+                                                    )
+                                                }
+                                            } catch(e:Exception){oeeError=e.message ?: "Unable to load OEE report and reporting compliance."}
+                                            finally{oeeLoading=false}
+                                        }
+                                    },enabled=!oeeLoading,modifier=Modifier.fillMaxWidth()) { Text(if(oeeLoading) "LOADING REPORT…" else "LOAD OEE REPORT") }
+                                    oeeError?.let { Text(it,color=Danger,fontSize=12.sp) }
+                                    oeeReportingCompliance?.let { compliance ->
+                                        SectionLabel("Reporting compliance", "Only planned machine / part / process / shift combinations are expected")
+                                        val expected = compliance.optInt("expected")
+                                        val updated = compliance.optInt("updated")
+                                        val pending = compliance.optInt("pending")
+                                        val incomplete = compliance.optInt("incomplete")
+                                        Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                                                Text("REPORTING COMPLIANCE  •  ${compliance.optDouble("compliance_percent").let { "%.1f".format(it) }}%",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=14.sp)
+                                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    ComplianceMetric("Expected",expected.toString(),Navy,Modifier.weight(1f))
+                                                    ComplianceMetric("Updated",updated.toString(),Success,Modifier.weight(1f))
+                                                    ComplianceMetric("Pending",pending.toString(),Danger,Modifier.weight(1f))
+                                                    ComplianceMetric("Incomplete",incomplete.toString(),Warning,Modifier.weight(1f))
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Shift-wise status")
+                                        val shiftRows = compliance.optJSONArray("by_shift") ?: JSONArray()
+                                        for(i in 0 until shiftRows.length()) {
+                                            val row=shiftRows.getJSONObject(i)
+                                            Text("Shift ${row.optString("shift")}  •  Expected ${row.optInt("expected")}  •  Updated ${row.optInt("updated")}  •  Pending ${row.optInt("pending")}  •  Incomplete ${row.optInt("incomplete")}",color=Navy,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                        SectionLabel("Pending OEE entries")
+                                        val pendingRows = compliance.optJSONArray("pending_entries") ?: JSONArray()
+                                        if(pendingRows.length()==0) Text("No pending planned OEE entries.",color=Success,fontSize=12.sp)
+                                        for(i in 0 until minOf(pendingRows.length(),50)) {
+                                            val row=pendingRows.getJSONObject(i)
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(10.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                                                    Text("${row.optString("machine")}  •  ${row.optString("machine_name")}",color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
+                                                    Text("${row.optString("date")}  •  Shift ${row.optString("shift")}  •  ${row.optString("product")}",color=Muted,fontSize=11.sp)
+                                                    Text("Planned qty: ${row.optDouble("planned_qty").toInt()}",color=Muted,fontSize=11.sp)
+                                                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
+                                                        Text("PENDING",color=Danger,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                                        Button(onClick={openPendingOeeEntry(row)},enabled=!oeeLoading,contentPadding=PaddingValues(horizontal=14.dp,vertical=6.dp)) {
+                                                            Text("START ENTRY",fontSize=11.sp)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Incomplete OEE entries")
+                                        val incompleteRows = compliance.optJSONArray("incomplete_entries") ?: JSONArray()
+                                        if(incompleteRows.length()==0) Text("No incomplete entries.",color=Success,fontSize=12.sp)
+                                        for(i in 0 until minOf(incompleteRows.length(),30)) {
+                                            val row=incompleteRows.getJSONObject(i)
+                                            Text("${row.optString("machine")} • ${row.optString("date")} • Shift ${row.optString("shift")} • ${row.optString("product")} — ${row.optJSONArray("issues")?.let { a -> (0 until a.length()).joinToString(", ") { a.optString(it) } }.orEmpty()}",color=Warning,fontSize=11.sp)
+                                        }
+                                        val configIssues=compliance.optJSONArray("configuration_issues") ?: JSONArray()
+                                        if(configIssues.length()>0) {
+                                            SectionLabel("Planning configuration issues")
+                                            for(i in 0 until minOf(configIssues.length(),20)) {
+                                                val row=configIssues.getJSONObject(i)
+                                                Text("${row.optString("date")} • ${row.optString("machine")} • ${row.optString("issue")}",color=Warning,fontSize=11.sp)
+                                            }
+                                        }
+                                    }
+                                    oeeManagement?.let { report ->
+                                        val overall=report.optJSONObject("overall")
+                                        if(overall!=null) {
+                                            Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)) {
+                                                Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                                    Text("OVERALL PERFORMANCE",color=Navy,fontWeight=FontWeight.ExtraBold,fontSize=12.sp)
+                                                    Text("OEE ${"%.1f".format(overall.optDouble("oee_reported")*100)}%  •  Availability ${"%.1f".format(overall.optDouble("availability")*100)}%  •  Performance ${"%.1f".format(overall.optDouble("performance_raw")*100)}%  •  Quality ${"%.1f".format(overall.optDouble("quality")*100)}%",color=Teal,fontWeight=FontWeight.Bold,fontSize=14.sp)
+                                                    Text("Shift records: ${report.optInt("entry_count")}  •  Loss events: ${report.optInt("loss_event_count")}  •  Machines below target: ${report.optInt("below_target_machine_count")}",color=Muted,fontSize=11.sp)
+                                                }
+                                            }
+                                        }
+                                        SectionLabel("Machine ranking")
+                                        val machineRows=report.optJSONArray("machines") ?: JSONArray()
+                                        if(machineRows.length()==0) Text("No machine records for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until minOf(machineRows.length(),20)) {
+                                            val row=machineRows.getJSONObject(i)
+                                            Text("${row.optString("machine_name").ifBlank { row.optString("machine") }}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}%  •  ${row.optString("status")}",color=if(row.optString("status")=="BELOW TARGET")Danger else Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                        SectionLabel("Shift comparison")
+                                        val shiftRows=report.optJSONArray("shifts") ?: JSONArray()
+                                        if(shiftRows.length()==0) Text("No shift records for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until shiftRows.length()) {
+                                            val row=shiftRows.getJSONObject(i)
+                                            Text("Shift ${row.optString("shift")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}% OEE  •  ${row.optInt("entry_count")} entries",color=Navy,fontSize=13.sp,fontWeight=FontWeight.SemiBold)
+                                        }
+                                        SectionLabel("Part-wise performance")
+                                        val productRows=report.optJSONArray("products") ?: JSONArray()
+                                        for(i in 0 until minOf(productRows.length(),20)) {
+                                            val row=productRows.getJSONObject(i)
+                                            Text("${row.optString("product")}  •  ${"%.1f".format(row.optDouble("oee_reported")*100)}% OEE  •  ${row.optInt("entry_count")} entries",color=Navy,fontSize=13.sp)
+                                        }
+                                        SectionLabel("Loss category Pareto")
+                                        val pareto=report.optJSONArray("loss_pareto") ?: JSONArray()
+                                        if(pareto.length()==0) Text("No classified loss events for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until minOf(pareto.length(),20)) {
+                                            val row=pareto.getJSONObject(i)
+                                            Text("${row.optString("category")}  •  ${"%.1f".format(row.optDouble("minutes"))} min  •  ${row.optInt("events")} events",color=Navy,fontSize=13.sp)
+                                        }
+                                        SectionLabel("Daily OEE trend")
+                                        val trend=report.optJSONArray("trend") ?: JSONArray()
+                                        if(trend.length()==0) Text("No daily trend data for this period.",color=Muted,fontSize=12.sp)
+                                        for(i in 0 until trend.length()) {
+                                            val row=trend.getJSONObject(i)
+                                            Text("${row.optString("date")}  •  OEE ${"%.1f".format(row.optDouble("oee_reported")*100)}%  (A ${"%.1f".format(row.optDouble("availability")*100)} / P ${"%.1f".format(row.optDouble("performance_raw")*100)} / Q ${"%.1f".format(row.optDouble("quality")*100)})",color=Muted,fontSize=11.sp)
                                         }
                                     }
                                 } else if(homeTab=="HISTORY") {
@@ -2235,6 +2990,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                                 if(homeTab=="REJECTION") {
+                                LaunchedEffect(token, homeTab) { token?.let { refreshRejectionKpis(it) } }
                                 ScreenTitle("New rejection", "Capture a defect with process and quantity details")
                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(16.dp),colors=CardDefaults.cardColors(containerColor=Color.White),elevation=CardDefaults.cardElevation(2.dp)) {
                                     Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
@@ -2443,9 +3199,17 @@ class MainActivity : ComponentActivity() {
                             val old=token
                             scope.launch {
                                 busy=true
-                                try{if(old!=null)withContext(Dispatchers.IO){ApiClient.logout(old)}}catch(_:Exception){}
+                                try {
+                                    if (old != null) withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            val fcmToken = com.google.android.gms.tasks.Tasks.await(com.google.firebase.messaging.FirebaseMessaging.getInstance().token)
+                                            ApiClient.deactivateDeviceToken(old, fcmToken)
+                                        }
+                                        ApiClient.logout(old)
+                                    }
+                                } catch(_:Exception){}
                                 withContext(Dispatchers.IO){sessionStore.clear()}
-                                token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;homeTab="ACTIONS";message="Signed out.";busy=false
+                                token=null;account=null;masters=null;pendingActions=emptyList();pendingActionGroups=emptyList();selectedOwner=null;selectedAction=null;selectedChatId=null;chatConversations=JSONArray();chatMessages=JSONArray();chatDraft="";chatShowNew=false;homeTab="ACTIONS";message="Signed out.";busy=false
                             }
                         }){Text("LOG OUT",color=Color(0xFFB3261E))}},
                         dismissButton={TextButton(onClick={showLogoutConfirm=false}){Text("CANCEL")}}
@@ -2525,6 +3289,14 @@ private fun RejectionQuantityTrend(
     }
 }
 
+
+@Composable
+private fun ComplianceMetric(label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
+    Column(modifier,verticalArrangement=Arrangement.spacedBy(2.dp)) {
+        Text(value,color=tint,fontSize=19.sp,fontWeight=FontWeight.ExtraBold)
+        Text(label,color=Muted,fontSize=9.sp,maxLines=1)
+    }
+}
 
 @Composable
 private fun ChoiceDropdown(

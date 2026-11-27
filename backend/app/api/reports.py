@@ -23,6 +23,7 @@ from ..models import (
     Product, ProductValueAdditionHistory, ProcessFlowStage, ProcessFlowVersion,
     ReviewActionLink, ReviewPoint, ReviewSession, RouteOperation, RouteVersion,
     SalesPriceHistory, ScheduleRevision, User, Vendor, VendorMovement,
+    FtaActionLink, FtaInvestigation,
 )
 from ..enums import ActionStatus
 from ..services.oee import calculate_oee
@@ -1246,6 +1247,51 @@ def action_performance_report(
         category = a.problem_category or "Unclassified"
         cb = category_b[category]; cb["count"] += 1; cb["open"] += int(not is_closed); cb["closed"] += int(is_closed); cb["gap"] += abs(_value(a.gap_when_raised))
 
+    # FTA-linked actions are a subset of the overall Action Taken Summary.
+    # Resolve them through the explicit link table so legacy/standalone actions
+    # are not classified as FTA merely because of a text category.
+    fta_rows = []
+    if actions:
+        fta_rows = db.execute(
+            select(FtaActionLink, FtaInvestigation)
+            .join(FtaInvestigation, FtaInvestigation.id == FtaActionLink.investigation_id)
+            .where(FtaActionLink.action_id.in_([a.id for a in actions]))
+            .order_by(FtaInvestigation.investigation_no, FtaActionLink.id)
+        ).all()
+
+    fta_action_ids: set[int] = set()
+    fta_details_by_action: dict[int, dict] = {}
+    for link, investigation in fta_rows:
+        action = next((a for a in actions if a.id == link.action_id), None)
+        if action is None:
+            continue
+        fta_action_ids.add(action.id)
+        owner_user = users.get(action.owner_id)
+        fta_details_by_action.setdefault(action.id, {
+            "action_id": action.id,
+            "action_no": action.action_no,
+            "action_description": action.action_description,
+            "status": action.status.value if hasattr(action.status, "value") else str(action.status),
+            "owner": owner_user.full_name if owner_user and owner_user.full_name else (owner_user.username if owner_user else "Unassigned"),
+            "due_date": ist_date(action.due_at).isoformat() if action.due_at else None,
+            "investigation_no": investigation.investigation_no,
+            "investigation_id": investigation.id,
+            "investigation_status": investigation.status,
+            "relationship_type": link.relationship_type,
+        })
+
+    fta_actions = [a for a in actions if a.id in fta_action_ids]
+    fta_closed = sum(1 for a in fta_actions if a.status == ActionStatus.CLOSED)
+    fta_open = len(fta_actions) - fta_closed
+    fta_overdue = sum(
+        1 for a in fta_actions
+        if a.status != ActionStatus.CLOSED and a.due_at and ist_date(a.due_at) < as_of
+    )
+    fta_details = sorted(
+        fta_details_by_action.values(),
+        key=lambda x: (x["due_date"] or "9999-12-31", x["action_no"]),
+    )
+
     monthly = []
     for m in sorted(monthly_b):
         b = monthly_b[m]
@@ -1259,8 +1305,14 @@ def action_performance_report(
     categories.sort(key=lambda x: (-x["count"], x["name"]))
     return {
         "as_of": as_of.isoformat(),
-        "summary": {"raised": len(actions), "closed": closed, "open": open_count, "overdue": overdue, "on_time_closed": on_time, "closure_compliance": closed / len(actions) if actions else None},
+        "summary": {
+            "raised": len(actions), "closed": closed, "open": open_count, "overdue": overdue,
+            "on_time_closed": on_time, "closure_compliance": closed / len(actions) if actions else None,
+            "fta_raised": len(fta_actions), "fta_closed": fta_closed,
+            "fta_open": fta_open, "fta_overdue": fta_overdue,
+        },
         "monthly": monthly, "owners": owners, "categories": categories,
+        "fta_actions": fta_details,
     }
 
 
@@ -1582,14 +1634,34 @@ def export_dispatch_schedule_actual(
     ws = wb.active
     ws.title = "Dispatch vs Actual"
     ws.sheet_view.showGridLines = False
-    ws.freeze_panes = "B2"
+    ws.freeze_panes = "B5"
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    ws.print_title_rows = "1:1"
+    ws.print_title_rows = "1:4"
     wb.properties.title = "Dispatch Schedule vs Actual"
     wb.properties.subject = f"All parts from {from_date.isoformat()} to {to_date.isoformat()}"
+
+    last_column = len(dates) + 1
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_column)
+    title_cell = ws.cell(row=1, column=1, value="DISPATCH SCHEDULE VS ACTUAL")
+    title_cell.font = Font(bold=True, size=14, color="FFFFFF")
+    title_cell.fill = PatternFill(fill_type="solid", fgColor="17365D")
+    title_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 30
+
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_column)
+    control_cell = ws.cell(
+        row=2,
+        column=1,
+        value="Format No.: MF/PPC/06    |    Issue Rev No.: -01    |    Issue Date: 01-07-2026",
+    )
+    control_cell.font = Font(bold=True, size=10, color="1F1F1F")
+    control_cell.fill = PatternFill(fill_type="solid", fgColor="D9EAF7")
+    control_cell.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[2].height = 23
+    ws.row_dimensions[3].height = 8
 
     ws.append(["Part / Metric", *dates])
     header_fill = PatternFill(fill_type="solid", fgColor="1F4E78")
@@ -1646,6 +1718,13 @@ def export_dispatch_schedule_actual(
         actual_row = ws.max_row
         ws.append(["Gap (Actual - Plan)", *gaps])
         gap_row = ws.max_row
+        cumulative_gap = []
+        running_gap = 0.0
+        for daily_gap in gaps:
+            running_gap += daily_gap
+            cumulative_gap.append(running_gap)
+        ws.append(["Cumulative Gap", *cumulative_gap])
+        cumulative_gap_row = ws.max_row
         ws.append([
             "MOM Action / Discussion",
             *[
@@ -1655,7 +1734,7 @@ def export_dispatch_schedule_actual(
         ])
         action_row = ws.max_row
 
-        for row_number in (plan_row, actual_row, gap_row, action_row):
+        for row_number in (plan_row, actual_row, gap_row, cumulative_gap_row, action_row):
             label_cell = ws.cell(row=row_number, column=1)
             label_cell.font = Font(bold=True, color="1F1F1F")
             label_cell.fill = metric_fill
@@ -1672,6 +1751,7 @@ def export_dispatch_schedule_actual(
         ws.row_dimensions[plan_row].height = 20
         ws.row_dimensions[actual_row].height = 20
         ws.row_dimensions[gap_row].height = 20
+        ws.row_dimensions[cumulative_gap_row].height = 20
         max_action_lines = max(
             (str(ws.cell(row=action_row, column=column).value or "").count("\n") + 1
              for column in range(2, len(dates) + 2)),

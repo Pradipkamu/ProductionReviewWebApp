@@ -52,6 +52,12 @@ if created:
     if not admin_password or admin_password == "ChangeMe123!" or "CHANGE" in admin_password.upper():
         set_value("ADMIN_PASSWORD", "Init-" + secrets.token_urlsafe(18) + "!9aA")
 
+    # MQTT credentials are generated only when creating a brand-new .env.
+    # Existing broker credentials are never silently replaced.
+    set_value("MQTT_DYNSEC_PASSWORD", secrets.token_urlsafe(48))
+    set_value("MQTT_CONTROL_PASSWORD", secrets.token_urlsafe(48))
+    set_value("MQTT_BACKEND_PASSWORD", secrets.token_urlsafe(48))
+
 path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 try:
     path.chmod(0o600)
@@ -63,7 +69,7 @@ legacy_db = "@db:5432/pms" in db_url and (":pms@" in db_url or "CHANGE_THIS" in 
 legacy_admin = (get_value("ADMIN_PASSWORD") or "") == "ChangeMe123!"
 print("Environment initialized; existing non-placeholder settings preserved.")
 if created:
-    print("Fresh-install application/database credentials were generated in .env.")
+    print("Fresh-install application/database/MQTT credentials were generated in .env.")
 else:
     if legacy_db:
         print("SECURITY WARNING: legacy/default database password detected; run the database password rotation script.")

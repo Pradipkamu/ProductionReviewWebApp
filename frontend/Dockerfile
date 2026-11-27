@@ -2,6 +2,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json vite.config.ts index.html ./
 COPY src ./src
+COPY public ./public
 # Pinning electron-to-chromium through package.json overrides avoids transient
 # npm registry resolutions to an unavailable/yanked tarball.
 RUN npm config set registry https://registry.npmjs.org/ \

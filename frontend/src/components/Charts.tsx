@@ -3,6 +3,20 @@ import { money, num, pct } from './UI'
 type Point = { label:string, plan:number, actual:number, compliance:number|null, gap:number, start?:string, end?:string, id?:number }
 
 type Metric='qty'|'sales'|'tonnage'
+
+function formatDateRange(start?:string,end?:string):string{
+  if(!start)return ''
+  const from=new Date(`${start}T12:00:00`)
+  const to=new Date(`${end||start}T12:00:00`)
+  if(Number.isNaN(from.getTime())||Number.isNaN(to.getTime()))return ''
+  const day=(d:Date)=>String(d.getDate()).padStart(2,'0')
+  const month=(d:Date)=>d.toLocaleDateString('en-IN',{month:'short'})
+  if(from.getFullYear()===to.getFullYear()&&from.getMonth()===to.getMonth()){
+    return from.getDate()===to.getDate()? `${day(from)} ${month(from)}` : `${day(from)}–${day(to)} ${month(to)}`
+  }
+  if(from.getFullYear()===to.getFullYear())return `${day(from)} ${month(from)}–${day(to)} ${month(to)}`
+  return `${day(from)} ${month(from)} ${from.getFullYear()}–${day(to)} ${month(to)} ${to.getFullYear()}`
+}
 function formatValue(v:number, metric:Metric){ return metric==='sales' ? money(v) : metric==='tonnage' ? `${num(v)} MT` : num(v) }
 
 export function PlanActualChart({rows, metric, height=260,onSelect,verticalLabels=false}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void,verticalLabels?:boolean}){
@@ -26,9 +40,9 @@ export function PlanActualChart({rows, metric, height=260,onSelect,verticalLabel
   </svg></div>
 }
 
-export function PlanActualComplianceChart({rows,metric,height=280,onSelect,verticalLabels=false,percentLabel='Compliance %',targetPercent=100}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void,verticalLabels?:boolean,percentLabel?:string,targetPercent?:number}){
+export function PlanActualComplianceChart({rows,metric,height=280,onSelect,verticalLabels=false,percentLabel='Compliance %',targetPercent=100,showDateRange=false}:{rows:Point[],metric:Metric,height?:number,onSelect?:(row:Point)=>void,verticalLabels?:boolean,percentLabel?:string,targetPercent?:number,showDateRange?:boolean}){
   if(!rows.length) return <div className="empty">No data for this period.</div>
-  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):58
+  const labelDepth=verticalLabels?Math.max(90,Math.ceil(Math.max(...rows.map(r=>r.label.length))*7)+24):showDateRange?76:58
   const W=Math.max(820,rows.length*(verticalLabels?96:72)),H=height+labelDepth-58,pad={l:58,r:72,t:24,b:labelDepth}
   const innerW=W-pad.l-pad.r,innerH=H-pad.t-pad.b
   const qtyMax=Math.max(1,...rows.flatMap(r=>[Number(r.plan||0),Number(r.actual||0)]))
@@ -57,7 +71,7 @@ export function PlanActualComplianceChart({rows,metric,height=280,onSelect,verti
       <rect x={x+2} y={yQty(r.actual)} width={bw} height={Math.max(0,ah)} rx="3" className="chart-actual"><title>{`${r.label} Actual: ${formatValue(r.actual,metric)}${r.compliance==null?'':` • ${percentLabel}: ${(Number(r.compliance)*100).toFixed(1)}%`}`}</title></rect>
       <text x={x-bw/2-2} y={Math.max(11,yQty(r.plan)-5)} textAnchor="middle" className="data-label">{metric==='sales'?new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(r.plan):num(r.plan)}</text>
       <text x={x+bw/2+2} y={Math.max(11,yQty(r.actual)-5)} textAnchor="middle" className="data-label">{metric==='sales'?new Intl.NumberFormat('en-IN',{notation:'compact',maximumFractionDigits:1}).format(r.actual):num(r.actual)}</text>
-      {verticalLabels?<text x={x} y={pad.t+innerH+14} transform={`rotate(-90 ${x} ${pad.t+innerH+14})`} textAnchor="end" className="axis-text"><title>{r.label}</title>{r.label}</text>:<text x={x} y={H-34} textAnchor="middle" className="axis-text x-label">{r.label}</text>}
+      {verticalLabels?<text x={x} y={pad.t+innerH+14} transform={`rotate(-90 ${x} ${pad.t+innerH+14})`} textAnchor="end" className="axis-text"><title>{r.label}</title>{r.label}</text>:<g><text x={x} y={showDateRange?H-43:H-34} textAnchor="middle" className="axis-text x-label">{r.label}</text>{showDateRange&&<text x={x} y={H-22} textAnchor="middle" className="axis-text" style={{fontSize:"10px",opacity:.85}}>{formatDateRange(r.start,r.end)}</text>}</g>}
     </g>})}
     {segments.map((s,si)=><polyline key={`line-${si}`} points={s.map(({r,i})=>`${cx(i)},${yPct(Number(r.compliance)*100)}`).join(' ')} fill="none" className="compliance-line"/>)}
     {valid.map(({r,i})=>{const v=Number(r.compliance)*100;return <g key={`comp-${r.label}-${i}`} role={onSelect?"button":undefined} tabIndex={onSelect?0:undefined} onClick={()=>onSelect?.(r)} onKeyDown={e=>{if(e.key==="Enter")onSelect?.(r)}} style={{cursor:onSelect?"pointer":undefined}}>

@@ -25,16 +25,22 @@ import AdvancedReports from './pages/AdvancedReports'
 import Masters from './pages/Masters'
 import ImportExcel from './pages/ImportExcel'
 import Quality from './pages/Quality'
+import FTA from './pages/FTA'
+import FTAReport from './pages/FTAReport'
 import RejectionSalvage from './pages/RejectionSalvage'
 import Security, { PasswordForm } from './pages/Security'
 import Governance from './pages/Governance'
 import Insights from './pages/Insights'
 import Diagnostics from './pages/Diagnostics'
+import AFMS from './pages/AFMS'
 import CapacityPlanning from './pages/CapacityPlanning'
 import MachineMaster from './pages/MachineMaster'
+import Calibration from './pages/Calibration'
+import InspectionMeasurements from './pages/InspectionMeasurements'
 import ProductMaster from './pages/ProductMaster'
 import { CastingQuality, CustomerQuality } from './pages/SpecialQuality'
 import { canViewPage, firstVisiblePath } from './pageAccess'
+import GlobalErrorModal from './components/GlobalErrorModal'
 
 function PageGate({me,pageKey,children}:{me:any,pageKey:string,children:React.ReactNode}){
   return canViewPage(me,pageKey)?children:<Navigate to={firstVisiblePath(me)} replace/>
@@ -45,7 +51,7 @@ function Login() {
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false)
   async function submit(e: React.FormEvent) { e.preventDefault(); setBusy(true); setError(''); try { const r:any = await login(username,password); setToken(r.access_token); location.reload() } catch(e:any){setError(e.message)} finally {setBusy(false)} }
   return <div className="login-page"><form className="login-card" onSubmit={submit}>
-    <div className="brand-mark lg">PR</div><h1>Production Review Manager</h1><p>Daily sales, process, WIP, actions and OEE in one system.</p>
+    <img className="brand-mark lg app-login-logo" src="/app-icon.svg" alt="Machine Shop Control"/><h1>Production Review Manager</h1><p>Daily sales, process, WIP, actions and OEE in one system.</p>
     <label>User name<input value={username} onChange={e=>setUsername(e.target.value)} /></label>
     <label>Password<input type="password" value={password} onChange={e=>setPassword(e.target.value)} /></label>
     {error && <div className="error">{error}</div>}<button disabled={busy}>{busy?'Signing in…':'Sign in'}</button>
@@ -65,15 +71,15 @@ export default function App(){
       .catch((error:any)=>{if(active)setAuthError(error?.message||'Unable to connect to the server.')})
     return ()=>{active=false}
   },[retryAuth])
-  if(!getToken()) return <Login />
-  if(!me) return <div className="loading-screen"><div><div className="brand-mark lg">PR</div>{authError
+  if(!getToken()) return <><GlobalErrorModal/><Login /></>
+  if(!me) return <><GlobalErrorModal/><div className="loading-screen"><div><img className="brand-mark lg app-login-logo" src="/app-icon.svg" alt="Machine Shop Control"/>{authError
     ? <><p>Unable to load your workspace.</p><div className="error">{authError}</div><button onClick={()=>setRetryAuth(v=>v+1)}>Retry connection</button><button className="secondary" onClick={()=>{clearToken();location.reload()}}>Return to sign in</button></>
-    : <p>Loading your workspace…</p>}</div></div>
-  if(me.must_change_password) return <div className="login-page"><PasswordForm required/></div>
+     : <p>Loading your workspace…</p>}</div></div></>
+  if(me.must_change_password) return <><GlobalErrorModal/><div className="login-page"><PasswordForm required/></div></>
   const page=(pageKey:string,element:React.ReactNode)=><PageGate me={me} pageKey={pageKey}>{element}</PageGate>
-  return <Layout me={me}><Routes>
+  return <><GlobalErrorModal/><Layout me={me}><Routes>
     <Route path="/" element={page('daily_review',<Dashboard/>)}/><Route path="/control-tower" element={page('control_tower',<ControlTower/>)}/><Route path="/dispatch-intelligence" element={page('dispatch_intelligence',<DispatchIntelligence/>)}/><Route path="/capacity-intelligence" element={page('capacity_intelligence',<CapacityIntelligence/>)}/><Route path="/operations-intelligence" element={page('operations_intelligence',<OperationsIntelligence/>)}/><Route path="/management-assistant" element={page('management_assistant',<ManagementAssistant/>)}/><Route path="/daily-meeting" element={page('daily_meeting',<DailyMeeting/>)}/><Route path="/mis" element={page('mis',<MIS/>)}/><Route path="/schedule" element={page('schedule',<Schedule/>)}/>
-    <Route path="/process" element={page('process',<Process/>)}/><Route path="/process-actuals" element={page('process_actuals',<ProcessActuals/>)}/><Route path="/capacity" element={page('capacity',<CapacityPlanning/>)}/><Route path="/machine-master" element={page('machine_master',<MachineMaster/>)}/><Route path="/product-master" element={page('product_master',<ProductMaster/>)}/><Route path="/quality" element={page('quality',<Quality/>)}/><Route path="/quality-salvage" element={page('quality',<RejectionSalvage me={me}/>)}/><Route path="/casting-quality" element={page('casting_quality',<CastingQuality/>)}/><Route path="/customer-quality" element={page('customer_quality',<CustomerQuality/>)}/><Route path="/reports" element={page('reports',<Reports/>)}/><Route path="/oee-reports" element={page('oee_reports',<OEEReports/>)}/><Route path="/management-reports" element={page('management_reports',<AdvancedReports/>)}/><Route path="/actions" element={page('actions',<Actions/>)}/><Route path="/admin-action-review" element={me.role==='ADMIN'?<AdminActionReview/>:<Navigate to={firstVisiblePath(me)} replace/>}/><Route path="/vendor" element={page('vendor',<Vendor/>)}/><Route path="/oee" element={page('oee',<OEE/>)}/><Route path="/analytics" element={page('analytics',<Analytics/>)}/>
-    <Route path="/chat" element={<Chat me={me}/>}/><Route path="/insights" element={page('insights',<Insights/>)}/><Route path="/diagnostics" element={page('diagnostics',<Diagnostics/>)}/><Route path="/account" element={page('account',<Security/>)}/><Route path="/governance" element={page('governance',<Governance/>)}/><Route path="/masters" element={page('masters',<Masters/>)}/><Route path="/import" element={page('import',<ImportExcel/>)}/><Route path="*" element={<Navigate to={firstVisiblePath(me)} replace/>}/>
-  </Routes></Layout>
+    <Route path="/process" element={page('process',<Process/>)}/><Route path="/process-actuals" element={page('process_actuals',<ProcessActuals/>)}/><Route path="/capacity" element={page('capacity',<CapacityPlanning/>)}/><Route path="/machine-master" element={page('machine_master',<MachineMaster/>)}/><Route path="/calibration" element={page('quality',<Calibration/>)}/><Route path="/inspection-measurements" element={page('quality',<InspectionMeasurements/>)}/><Route path="/product-master" element={page('product_master',<ProductMaster/>)}/><Route path="/quality" element={page('quality',<Quality/>)}/><Route path="/fta" element={page('fta',<FTA me={me}/>)}/><Route path="/fta/report/:id" element={page('fta',<FTAReport/>)}/><Route path="/quality-salvage" element={page('quality',<RejectionSalvage me={me}/>)}/><Route path="/casting-quality" element={page('casting_quality',<CastingQuality/>)}/><Route path="/customer-quality" element={page('customer_quality',<CustomerQuality/>)}/><Route path="/reports" element={page('reports',<Reports/>)}/><Route path="/oee-reports" element={page('oee_reports',<OEEReports/>)}/><Route path="/management-reports" element={page('management_reports',<AdvancedReports/>)}/><Route path="/actions" element={page('actions',<Actions/>)}/><Route path="/admin-action-review" element={me.role==='ADMIN'?<AdminActionReview/>:<Navigate to={firstVisiblePath(me)} replace/>}/><Route path="/vendor" element={page('vendor',<Vendor/>)}/><Route path="/oee" element={page('oee',<OEE/>)}/><Route path="/analytics" element={page('analytics',<Analytics/>)}/>
+    <Route path="/chat" element={<Chat me={me}/>}/><Route path="/insights" element={page('insights',<Insights/>)}/><Route path="/diagnostics" element={page('diagnostics',<Diagnostics/>)}/><Route path="/afms" element={page('afms',<AFMS me={me}/>)}/><Route path="/account" element={page('account',<Security/>)}/><Route path="/governance" element={page('governance',<Governance/>)}/><Route path="/masters" element={page('masters',<Masters/>)}/><Route path="/import" element={page('import',<ImportExcel/>)}/><Route path="*" element={<Navigate to={firstVisiblePath(me)} replace/>}/>
+  </Routes></Layout></>
 }

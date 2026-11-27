@@ -8,6 +8,7 @@ export const navItems:NavItem[] = [
   {key:'management_assistant',to:'/management-assistant',label:'Management Assistant / Alerts'},
   {key:'insights',to:'/insights',label:'Exceptions / Data Quality'},
   {key:'diagnostics',to:'/diagnostics',label:'System Diagnostics'},
+  {key:'afms',to:'/afms',label:'AFMS – Machine & HMI'},
   {key:'account',to:'/account',label:'Security / Users',required:true},
   {key:'governance',to:'/governance',label:'Month Close / Audit'},
   {key:'daily_review',to:'/',label:'Daily Review'},
@@ -20,6 +21,9 @@ export const navItems:NavItem[] = [
   {key:'process',to:'/process',label:'Process Monitor'},
   {key:'process_actuals',to:'/process-actuals',label:'Process Actuals / Edit'},
   {key:'quality',to:'/quality',label:'Quality / Rejection'},
+  {key:'quality',to:'/calibration',label:'Calibration Management'},
+  {key:'quality',to:'/inspection-measurements',label:'Inspection Measurements'},
+  {key:'fta',to:'/fta',label:'Fault Tree Analysis'},
   {key:'casting_quality',to:'/casting-quality',label:'Casting Quality'},
   {key:'customer_quality',to:'/customer-quality',label:'Customer Quality'},
   {key:'reports',to:'/reports',label:'Compliance Reports'},
@@ -41,8 +45,10 @@ const legacyRestrictions:Record<string,string[]> = {
   import:['ADMIN','PLANNING','QUALITY','PRODUCTION'],
 }
 
-export function canViewPage(me:any,pageKey:string){
-  if(me?.role==='ADMIN'||pageKey==='account')return true
+export function canViewPage(me:any,pageKey:string): boolean {
+  if(me?.role==='ADMIN')return true
+  if(pageKey==='fta')return ['MANAGEMENT','QUALITY','PRODUCTION'].includes(me?.role)&&canViewPage(me,'quality')&&(!Array.isArray(me?.page_access)||me.page_access.includes('fta'))
+  if(pageKey==='account')return true
   if(Array.isArray(me?.page_access))return me.page_access.includes(pageKey)||(pageKey==='oee_reports'&&(me.page_access.includes('reports')||me.page_access.includes('management_reports')))
   return !legacyRestrictions[pageKey]||legacyRestrictions[pageKey].includes(me?.role)
 }

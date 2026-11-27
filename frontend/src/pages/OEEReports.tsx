@@ -3,14 +3,13 @@ import { Link } from 'react-router-dom'
 import { dateIST } from '../time'
 import { api, downloadApi } from '../api'
 import { ScopeFilters, ScopeValues, appendScope } from '../components/ScopeFilters'
-import { PercentTrendChart, RankedBars, ValueTrendChart } from '../components/Charts'
+import { PercentTrendChart, RankedBars } from '../components/Charts'
 import { Kpi, PageHeader, num, pct } from '../components/UI'
 import { MultiSelect } from '../components/MultiSelect'
 
-function firstDaySixMonthsAgo(){
-  const d=new Date(dateIST()+'T00:00:00')
-  d.setMonth(d.getMonth()-5,1)
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`
+function firstDayOfCurrentMonth(){
+  const today=dateIST()
+  return `${today.slice(0,7)}-01`
 }
 function csvCell(v:any){const s=String(v??'');return `"${s.replaceAll('"','""')}"`}
 function downloadCsv(name:string,rows:any[]){
@@ -22,7 +21,7 @@ function downloadCsv(name:string,rows:any[]){
 }
 
 export default function OEEReports(){
-  const [fromDate,setFromDate]=useState(firstDaySixMonthsAgo)
+  const [fromDate,setFromDate]=useState(firstDayOfCurrentMonth)
   const [toDate,setToDate]=useState(dateIST())
   const [scope,setScope]=useState<ScopeValues>({plant:[],productGroup:[],customerId:[],productId:[]})
   const [options,setOptions]=useState<any>({plants:[],product_groups:[],customers:[]})
@@ -52,6 +51,50 @@ export default function OEEReports(){
   },[])
 
   const selectedMachineNames=useMemo(()=>machines.filter(m=>machineId.includes(String(m.id))).map(m=>m.name),[machines,machineId])
+  const selectedRangeDays=useMemo(()=>{
+    if(!fromDate||!toDate||fromDate>toDate)return 0
+    const from=Date.parse(`${fromDate}T00:00:00Z`),to=Date.parse(`${toDate}T00:00:00Z`)
+    return Number.isFinite(from)&&Number.isFinite(to)?Math.floor((to-from)/86400000)+1:0
+  },[fromDate,toDate])
+  const showMonthlyLossTrend=selectedRangeDays>31
+  const dailyLossTrend=useMemo(()=>{
+    const buckets=new Map<string,Map<string,number>>()
+    for(const event of loss?.events||[]){
+      const date=String(event.date||'')
+      if(!date)continue
+      const category=String(event.category||'Unclassified')
+      const hours=Math.max(0,Number(event.duration_min||0))/60
+      const day=buckets.get(date)||new Map<string,number>()
+      day.set(category,(day.get(category)||0)+hours)
+      buckets.set(date,day)
+    }
+    return [...buckets.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([date,values])=>{
+      const categories=[...values.entries()].map(([category,hours])=>({category,hours}))
+      return {date,categories,total_hours:categories.reduce((sum,item)=>sum+item.hours,0)}
+    })
+  },[loss])
+  const dailyLossCategories=useMemo(()=>Array.from(new Set<string>(dailyLossTrend.flatMap(day=>day.categories.map((item:any)=>item.category)))),[dailyLossTrend])
+  const monthlyLossTrend=useMemo(()=>{
+    const buckets=new Map<string,Map<string,number>>()
+    for(const day of dailyLossTrend){
+      const month=String(day.date).slice(0,7)
+      const values=buckets.get(month)||new Map<string,number>()
+      for(const item of day.categories){
+        values.set(item.category,(values.get(item.category)||0)+Number(item.hours||0))
+      }
+      buckets.set(month,values)
+    }
+    return [...buckets.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([month,values])=>{
+      const categories=[...values.entries()].map(([category,hours])=>({category,hours}))
+      return {
+        month,
+        label:new Date(`${month}-01T12:00:00`).toLocaleDateString("en-IN",{month:"short",year:"numeric"}),
+        categories,
+        total_hours:categories.reduce((sum,item)=>sum+item.hours,0),
+      }
+    })
+  },[dailyLossTrend])
+  const lossChartPalette=["#2563eb","#0d9488","#d97706","#7c3aed","#dc2626","#0891b2","#65a30d","#c026d3"]
 
   useEffect(()=>{
     if(!fromDate||!toDate||fromDate>toDate){setError('From date must be on or before To date.');setData(null);setLoss(null);return}
@@ -106,7 +149,7 @@ export default function OEEReports(){
   },[filteredEntries,operators])
   const selectedMachineLabel=selectedMachineNames.join(', ')
   const machineOptions=machines.map(m=>({value:String(m.id),label:`${m.name} — ${m.code}`}))
-  const pageActions=<div className="export-row"><label>From <input aria-label="From date" type="date" value={fromDate} max={toDate} onChange={e=>setFromDate(e.target.value)}/></label><label>To <input aria-label="To date" type="date" value={toDate} min={fromDate} onChange={e=>setToDate(e.target.value)}/></label><button className="primary" disabled={exporting||busy} onClick={exportOeeExcel}>{exporting?'Preparing Excel…':'Download OEE Excel'}</button><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button></div>
+  const pageActions=<div className="export-row"><label>From <input aria-label="OEE report from date" type="date" value={fromDate} max={toDate||dateIST()} onChange={e=>setFromDate(e.target.value)}/></label><label>To <input aria-label="OEE report to date" type="date" value={toDate} min={fromDate} max={dateIST()} onChange={e=>setToDate(e.target.value)}/></label><button className="primary" disabled={exporting||busy} onClick={exportOeeExcel}>{exporting?'Preparing Excel…':'Download OEE Excel'}</button><button className="secondary" onClick={()=>window.print()}>Print / Save PDF</button></div>
 
   async function exportOeeExcel(){
     const q=new URLSearchParams({from_date:fromDate,as_of:toDate})
@@ -132,16 +175,26 @@ export default function OEEReports(){
 
   return <>
     <PageHeader title="OEE Reports" subtitle="Machine, product, shift and operator performance with availability, performance, quality and loss analysis." actions={pageActions}/>
-    <ScopeFilters value={scope} onChange={setScope} options={options} products={products}/>
-    <div className="filters">
-      <MultiSelect value={machineId} onChange={setMachineId} placeholder="All Machines" options={machineOptions}/>
-      <label className="inline-filter">Shift <select value={shift} onChange={e=>setShift(e.target.value)}><option value="">All Shifts</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></label>
-      <label className="inline-filter">Operator <select value={operatorId} onChange={e=>setOperatorId(e.target.value)}><option value="">All Operators</option>{operators.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
-      <MultiSelect value={lossCategoryIds} onChange={setLossCategoryIds} placeholder="All Loss Categories" options={lossCategories.map((x:any)=>({value:String(x.id),label:x.name}))}/>
-      <label className="inline-filter">Loss Component <select value={lossComponent} onChange={e=>setLossComponent(e.target.value)}><option value="">All Components</option><option value="AVAILABILITY">Availability</option><option value="PERFORMANCE">Performance</option><option value="QUALITY">Quality</option></select></label>
-      <button className="secondary" onClick={()=>downloadCsv('oee_shift_details.csv',filteredEntries)}>Export OEE CSV</button>
-      <button className="secondary" onClick={()=>downloadCsv('oee_loss_details.csv',loss?.events||[])}>Export Loss CSV</button>
-    </div>
+    <section className="panel oee-report-filter-panel">
+      <div className="oee-report-filter-heading">
+        <div><h2>Report Filters</h2><p>Choose the production scope and operational filters. Reports refresh automatically.</p></div>
+        <span>FILTERS</span>
+      </div>
+      <div className="oee-filter-group-title">Production scope</div>
+      <ScopeFilters value={scope} onChange={setScope} options={options} products={products} showLabels/>
+      <div className="oee-filter-group-title oee-filter-group-spaced">Operational filters</div>
+      <div className="oee-detail-filter-grid">
+        <div className="oee-report-filter-control"><span>Machine</span><MultiSelect value={machineId} onChange={setMachineId} placeholder="All Machines" options={machineOptions}/></div>
+        <div className="oee-report-filter-control"><span>Shift</span><select value={shift} onChange={e=>setShift(e.target.value)}><option value="">All Shifts</option><option value="A">A</option><option value="B">B</option><option value="C">C</option></select></div>
+        <div className="oee-report-filter-control"><span>Operator</span><select value={operatorId} onChange={e=>setOperatorId(e.target.value)}><option value="">All Operators</option>{operators.map(p=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></div>
+        <div className="oee-report-filter-control"><span>Loss category</span><MultiSelect value={lossCategoryIds} onChange={setLossCategoryIds} placeholder="All Loss Categories" options={lossCategories.map((x:any)=>({value:String(x.id),label:x.name}))}/></div>
+        <div className="oee-report-filter-control"><span>Loss component</span><select value={lossComponent} onChange={e=>setLossComponent(e.target.value)}><option value="">All Components</option><option value="AVAILABILITY">Availability</option><option value="PERFORMANCE">Performance</option><option value="QUALITY">Quality</option></select></div>
+      </div>
+      <div className="oee-filter-export-row">
+        <div><b>Export filtered data</b><span>Download the current selection for further review.</span></div>
+        <div className="oee-filter-export-actions"><button type="button" className="secondary" onClick={()=>downloadCsv('oee_shift_details.csv',filteredEntries)}>Export OEE CSV</button><button type="button" className="secondary" onClick={()=>downloadCsv('oee_loss_details.csv',loss?.events||[])}>Export Loss CSV</button></div>
+      </div>
+    </section>
     {selectedMachineLabel&&<div className="filter-summary"><button className="filter-chip removable" onClick={()=>setMachineId([])}>Machine: {selectedMachineLabel} ×</button></div>}
     {error&&<div className="error" role="alert">{error}</div>}
     {busy&&<div className="notice">Refreshing OEE report…</div>}
@@ -167,7 +220,15 @@ export default function OEEReports(){
         </>}
     </section>
     <div className="advanced-grid"><section className="panel"><div className="panel-title"><h2>Loss Pareto</h2><span>Click a loss to see its machine-wise impact; click again to clear</span></div><RankedBars rows={loss?.pareto||[]} valueKey="minutes" suffix=" min" onSelect={(r:any)=>setSelectedLossCategoryId(old=>old===String(r.loss_category_id)?'':String(r.loss_category_id))} selectedName={loss?.pareto?.find((r:any)=>String(r.loss_category_id)===selectedLossCategoryId)?.name}/></section><section className="panel"><div className="panel-title"><div><h2>{selectedLossCategoryId?'Machine Loss Hours — '+(loss?.pareto?.find((r:any)=>String(r.loss_category_id)===selectedLossCategoryId)?.name||'Selected Loss'):'Machine Loss Hours'}</h2><span>{selectedLossCategoryId?'Hours by machine for the selected loss category':'Click a machine to filter'}</span></div>{selectedLossCategoryId&&<button className="secondary" onClick={()=>setSelectedLossCategoryId('')}>Clear loss selection</button>}</div><RankedBars rows={(loss?.machines||[]).map((r:any)=>({...r,sub:r.machine_code||''}))} valueKey="hours" suffix=" h" onSelect={pickMachine} selectedName={selectedMachineNames.length===1?selectedMachineNames[0]:undefined}/></section></div>
-    <section className="panel report-panel"><h2>Monthly Loss Hours Trend</h2><ValueTrendChart rows={loss?.monthly||[]} keyName="hours" label="Loss hours" suffix=" h"/></section>
+    <section className="panel report-panel">
+      <div className="panel-title"><div><h2>Daily Machine Loss Hours</h2><p>Daily loss hours stacked by loss category, using the selected date range and report filters.</p></div></div>
+      {dailyLossTrend.length>0?<><div className="svg-scroll"><div style={{display:"flex",alignItems:"flex-end",gap:10,height:250,minWidth:dailyLossTrend.length*54,width:"max-content",padding:"16px 8px 4px",borderBottom:"1px solid var(--border, #d7deea)"}}>{dailyLossTrend.map((day:any)=>{const max=Math.max(0.1,...dailyLossTrend.map((item:any)=>Number(item.total_hours||0)));return <div key={day.date} title={`${day.date}: ${num(day.total_hours)} h`} style={{width:44,flex:"0 0 44px",height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:5}}><div style={{height:`${Math.max(0,Number(day.total_hours||0)/max*185)}px`,width:"76%",display:"flex",flexDirection:"column-reverse",justifyContent:"flex-start",borderRadius:"4px 4px 0 0",overflow:"hidden"}}>{day.categories.map((part:any)=>{const color=lossChartPalette[dailyLossCategories.indexOf(part.category)%lossChartPalette.length]||lossChartPalette[0];return <div key={part.category} title={`${part.category}: ${num(part.hours)} h`} style={{height:`${Number(part.hours||0)/Math.max(0.001,Number(day.total_hours||0))*100}%`,backgroundColor:color,minHeight:part.hours>0?2:0}}/>})}</div><small style={{fontSize:10,whiteSpace:"nowrap",color:"var(--muted, #64748b)"}}>{new Date(`${day.date}T12:00:00`).toLocaleDateString("en-IN",{day:"2-digit",month:"short"})}</small></div>})}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"8px 16px",paddingTop:12}}>{dailyLossCategories.map((name:string,i:number)=><span key={name} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:10,height:10,borderRadius:2,backgroundColor:lossChartPalette[i%lossChartPalette.length]}}/>{name}</span>)}</div></>:<div className="empty">No loss events match the selected dates and filters.</div>}
+    </section>
+    {!showMonthlyLossTrend&&<p className="muted">Select a date range of more than one month to display the Monthly Loss Hours Trend.</p>}
+    {showMonthlyLossTrend&&<section className="panel report-panel">
+      <div className="panel-title"><div><h2>Monthly Loss Hours Trend</h2><p>Monthly loss hours stacked by the same loss categories as the daily chart. Each month includes only dates inside the selected range.</p></div></div>
+      {monthlyLossTrend.length>0?<><div className="svg-scroll"><div style={{display:"flex",alignItems:"flex-end",gap:14,height:250,minWidth:monthlyLossTrend.length*82,width:"max-content",padding:"16px 8px 4px",borderBottom:"1px solid var(--border, #d7deea)"}}>{monthlyLossTrend.map((month:any)=>{const max=Math.max(0.1,...monthlyLossTrend.map((item:any)=>Number(item.total_hours||0)));return <div key={month.month} title={`${month.label}: ${num(month.total_hours)} h`} style={{width:68,flex:"0 0 68px",height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:6}}><div style={{height:`${Math.max(0,Number(month.total_hours||0)/max*185)}px`,width:"72%",display:"flex",flexDirection:"column-reverse",justifyContent:"flex-start",borderRadius:"5px 5px 0 0",overflow:"hidden"}}>{month.categories.map((part:any)=>{const color=lossChartPalette[dailyLossCategories.indexOf(part.category)%lossChartPalette.length]||lossChartPalette[0];return <div key={part.category} title={`${part.category}: ${num(part.hours)} h`} style={{height:`${Number(part.hours||0)/Math.max(0.001,Number(month.total_hours||0))*100}%`,backgroundColor:color,minHeight:part.hours>0?2:0}}/>})}</div><small style={{fontSize:11,whiteSpace:"nowrap",color:"var(--muted, #64748b)"}}>{month.label}</small></div>})}</div></div><div style={{display:"flex",flexWrap:"wrap",gap:"8px 16px",paddingTop:12}}>{dailyLossCategories.map((name:string,i:number)=><span key={name} style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12}}><span style={{width:10,height:10,borderRadius:2,backgroundColor:lossChartPalette[i%lossChartPalette.length]}}/>{name}</span>)}</div></>:<div className="empty">No loss events match the selected dates and filters.</div>}
+    </section>}
     <section className="panel"><div className="panel-title"><div><h2>Machine Shift OEE Details</h2><p>Raw performance above 110% flags a cycle-time or quantity master check.</p></div></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Product / Operation</th><th>Operator</th><th>Run / Planned</th><th>Total / Good / Reject</th><th>A</th><th>P</th><th>Q</th><th>OEE</th></tr></thead><tbody>{filteredEntries.map((r:any)=><tr key={r.id}><td>{r.date}</td><td>{r.shift}</td><td><b>{r.machine}</b><br/><small>{r.machine_code||''}</small></td><td>{r.product}<br/><small>{r.operation}</small></td><td>{r.operator||'—'}</td><td>{Number(r.run_min||0)} / {Number(r.planned_min||0)} min</td><td>{Number(r.total_count||0)} / {Number(r.good_count||0)} / {Number(r.reject_count||0)}</td><td>{pct(r.availability)}</td><td className={r.performance_master_warning?'neg':''}>{pct(r.performance_raw)}</td><td>{pct(r.quality)}</td><td><b>{pct(r.oee)}</b></td></tr>)}{!filteredEntries.length&&<tr><td colSpan={11} className="muted">No OEE shift entries in this date range and filter scope.</td></tr>}</tbody></table></div></section>
     <section className="panel"><div className="panel-title"><div><h2>Machine Loss Details and Action Linkage</h2><p>Loss records are linked to their action plans where an action has been raised.</p></div><Link to="/actions">Open action register</Link></div><div className="table-wrap"><table><thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th>Product / Operation</th><th>Loss</th><th>Component</th><th>Minutes</th><th>Remark</th><th>Action</th></tr></thead><tbody>{(loss?.events||[]).map((r:any)=><tr key={r.id}><td>{r.date}</td><td>{r.shift}</td><td><b>{r.machine}</b><br/><small>{r.machine_code||''}</small></td><td>{r.product||'—'}<br/><small>{r.operation||'—'}</small></td><td>{r.category}</td><td>{r.component}</td><td>{num(r.duration_min)}</td><td>{r.remark||'—'}</td><td>{r.action_no?<Link to="/actions">{r.action_no} · {r.action_status}</Link>:<span className="status watch">Action pending</span>}</td></tr>)}{!(loss?.events||[]).length&&<tr><td colSpan={9} className="muted">No loss events in this date range and filter scope.</td></tr>}</tbody></table></div></section>
   </>

@@ -20,13 +20,40 @@ from ..models import (
     Action, ActionContext, ActionHistory, ActionWhyWhy, LossCategory, Machine,
     MachineLossEvent, MachineShiftProduction, Operation, OperationMachineMap, Personnel,
     Product, ReviewActionLink, ReviewSession, RouteOperation, RouteVersion,
-    StandardCycleTime, User, GovernanceAudit ,
+    StandardCycleTime, User, GovernanceAudit, DailyRequirement,
+    MachineCapacitySetting, MachineMonthlyAllocation, WorkingCalendar,
 )
 from ..schemas import LossEventCreate, MachineEntryCreate, OEEEntryWithLossesCreate
 from ..services.oee import aggregate_oee_entries, calculate_oee
 from ..services.filtering import csv_ints, csv_strings
 
 router = APIRouter(prefix="/oee", tags=["oee"])
+
+
+MAX_OEE_BULK_ENTRIES = 1000
+MAX_OEE_BULK_LOSSES_PER_ENTRY = 30
+MAX_OEE_BULK_LOSS_ROWS = MAX_OEE_BULK_ENTRIES * MAX_OEE_BULK_LOSSES_PER_ENTRY
+
+
+def _oee_bulk_entry_count_error(entry_count: int) -> str | None:
+    if entry_count > MAX_OEE_BULK_ENTRIES:
+        return (f"Workbook contains {entry_count} validated entries; the maximum is "
+                f"{MAX_OEE_BULK_ENTRIES}. Split the workbook into smaller batches.")
+    return None
+
+
+def _validate_oee_bulk_commit_entries(items) -> None:
+    if not isinstance(items, list) or not items:
+        raise HTTPException(422, f"Import must contain between 1 and {MAX_OEE_BULK_ENTRIES} validated entries")
+    limit_error = _oee_bulk_entry_count_error(len(items))
+    if limit_error:
+        raise HTTPException(422, limit_error)
+
+
+def _validate_oee_bulk_loss_events(losses) -> None:
+    if len(losses or []) > MAX_OEE_BULK_LOSSES_PER_ENTRY:
+        raise HTTPException(422,
+            f"Each OEE entry may contain no more than {MAX_OEE_BULK_LOSSES_PER_ENTRY} loss events")
 
 
 class OEEActionCreate(BaseModel):
@@ -168,19 +195,19 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
                "Shift", "Operator Name", "Shift Duration Min", "Planned Break Min",
                "Good Qty", "Reject Qty", "Remarks"]
     ws.append(headers)
-    for row in range(2, 202):
+    for row in range(2, MAX_OEE_BULK_ENTRIES + 2):
         ws.append([row - 1, None, None, None, None, None, 440, 0, None, None, None])
     ws.protection.sheet = True
     ws.protection.selectLockedCells = False
     ws.protection.selectUnlockedCells = True
     # Entry references and standard defaults are locked; input cells are editable.
     from openpyxl.styles import Protection
-    for row in range(2, 202):
+    for row in range(2, MAX_OEE_BULK_ENTRIES + 2):
         for col in range(2, 12):
             ws.cell(row, col).protection = Protection(locked=False)
     loss_ws = wb.create_sheet("Loss Details")
     loss_ws.append(["Entry Ref", "Loss Type", "Loss Minutes", "Remarks"])
-    for _ in range(400):
+    for _ in range(MAX_OEE_BULK_LOSS_ROWS):
         loss_ws.append([None, None, None, None])
     master = wb.create_sheet("Master Data")
     master.sheet_state = "hidden"
@@ -225,18 +252,18 @@ def download_oee_bulk_template(db: Session = Depends(get_db), _: User = Depends(
         wb.defined_names.add(DefinedName("LossTypes", attr_text=f"'Master Data'!$D$2:$D${len(masters['losses'])+1}"))
     wb.defined_names.add(DefinedName("Shifts", attr_text="'Master Data'!$E$2:$E$4"))
     dv_products = DataValidation(type="list", formula1="=ProductNames", allow_blank=True)
-    ws.add_data_validation(dv_products); dv_products.add("C2:C201")
+    ws.add_data_validation(dv_products); dv_products.add(f"C2:C{MAX_OEE_BULK_ENTRIES + 1}")
     dv_machines = DataValidation(type="list",
         formula1='=INDIRECT("ProductMachines_"&INDEX(\'Master Data\'!$F$2:$F$2000,MATCH(C2,\'Master Data\'!$A$2:$A$2000,0)))', allow_blank=True)
-    ws.add_data_validation(dv_machines); dv_machines.add("D2:D201")
-    for formula, target in [("=Shifts", "E2:E201"), ("=Operators", "F2:F201")]:
+    ws.add_data_validation(dv_machines); dv_machines.add(f"D2:D{MAX_OEE_BULK_ENTRIES + 1}")
+    for formula, target in [("=Shifts", f"E2:E{MAX_OEE_BULK_ENTRIES + 1}"), ("=Operators", f"F2:F{MAX_OEE_BULK_ENTRIES + 1}")]:
         dv = DataValidation(type="list", formula1=formula, allow_blank=True)
         ws.add_data_validation(dv); dv.add(target)
     dv_loss = DataValidation(type="list", formula1="=LossTypes", allow_blank=True)
-    loss_ws.add_data_validation(dv_loss); dv_loss.add("B2:B401")
-    wb.defined_names.add(DefinedName("EntryRefs", attr_text="'OEE Entries'!$A$2:$A$201"))
+    loss_ws.add_data_validation(dv_loss); dv_loss.add(f"B2:B{MAX_OEE_BULK_LOSS_ROWS + 1}")
+    wb.defined_names.add(DefinedName("EntryRefs", attr_text=f"'OEE Entries'!$A$2:$A${MAX_OEE_BULK_ENTRIES + 1}"))
     dv_refs = DataValidation(type="list", formula1="=EntryRefs", allow_blank=True)
-    loss_ws.add_data_validation(dv_refs); dv_refs.add("A2:A401")
+    loss_ws.add_data_validation(dv_refs); dv_refs.add(f"A2:A{MAX_OEE_BULK_LOSS_ROWS + 1}")
     for sheet in (ws, loss_ws):
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
@@ -341,11 +368,16 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
             duration = Decimal(str(minutes))
             if duration <= 0: raise ValueError("Loss Minutes must be greater than zero")
             qty = (duration * Decimal("60") / entries[key]["cycle"]).quantize(Decimal("1"), rounding=ROUND_HALF_UP) if category.oee_component == OEEComponent.AVAILABILITY else Decimal("0")
+            if len(entries[key]["losses"]) >= MAX_OEE_BULK_LOSSES_PER_ENTRY:
+                raise ValueError(f"Each OEE entry may contain no more than {MAX_OEE_BULK_LOSSES_PER_ENTRY} loss events")
             entries[key]["losses"].append({"loss_category_id":category.id,"duration_min":duration,
                                            "qty_loss":qty,"remark":str(remark or ""),
                                            "component":category.oee_component.value})
         except Exception as exc:
             errors.append({"sheet":"Loss Details","row":row_no,"entry_ref":key,"error":str(exc)})
+    entry_limit_error = _oee_bulk_entry_count_error(len(entries))
+    if entry_limit_error:
+        errors.append({"sheet":"OEE Entries","row":None,"entry_ref":None,"error":entry_limit_error})
     preview = []
     seen_scopes = set()
     for item in entries.values():
@@ -389,14 +421,14 @@ async def preview_oee_bulk_import(file: UploadFile = File(...), db: Session = De
 def commit_oee_bulk_import(payload: dict = Body(...), db: Session = Depends(get_db),
                            user: User = Depends(get_current_user)):
     items = payload.get("entries") if isinstance(payload, dict) else None
-    if not isinstance(items, list) or not items or len(items) > 200:
-        raise HTTPException(422, "Import must contain between 1 and 200 validated entries")
+    _validate_oee_bulk_commit_entries(items)
     prepared = []
     seen = set()
     try:
         for item in items:
-            if not isinstance(item, dict) or len(item.get("losses") or []) > 30:
-                raise HTTPException(422, "Each OEE entry may contain no more than 30 loss events")
+            if not isinstance(item, dict):
+                raise HTTPException(422, "Each OEE entry must be an object")
+            _validate_oee_bulk_loss_events(item.get("losses"))
             entry_payload = MachineEntryCreate.model_validate(item.get("entry") or {})
             scope = (entry_payload.production_date, entry_payload.shift, entry_payload.product_id,
                      entry_payload.route_operation_id, entry_payload.machine_id)
@@ -835,24 +867,30 @@ def _summary(db: Session, machine_id: int, summary_date: date, shift: str | None
 
 
 @router.get("/recent-records")
-def recent_records(from_date: date, to_date: date, shift: str, machine_id: int,
-                  product_id: int, route_operation_id: int,
-                  db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    """Return daily OEE entries for one selected machine/part/operation/shift scope."""
-    normalized_shift = shift.strip().upper()
-    if normalized_shift not in {"A", "B", "C"}:
-        raise HTTPException(422, "shift must be A, B or C")
+def recent_records(from_date: date, to_date: date, product_id: int, route_operation_id: int,
+                   shift: str | None = None, machine_id: int | None = None,
+                   db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Return recent OEE entries for a part/operation, optionally narrowed to one shift and machine."""
+    normalized_shift = shift.strip().upper() if shift and shift.strip() else None
+    if normalized_shift == "ALL":
+        normalized_shift = None
+    if normalized_shift is not None and normalized_shift not in {"A", "B", "C"}:
+        raise HTTPException(422, "shift must be A, B, C or ALL")
     if to_date < from_date:
         raise HTTPException(422, "to_date must be on or after from_date")
+    query = select(MachineShiftProduction).where(
+        MachineShiftProduction.production_date >= from_date,
+        MachineShiftProduction.production_date <= to_date,
+        MachineShiftProduction.product_id == product_id,
+        MachineShiftProduction.route_operation_id == route_operation_id,
+    )
+    if normalized_shift is not None:
+        query = query.where(MachineShiftProduction.shift == normalized_shift)
+    if machine_id is not None:
+        query = query.where(MachineShiftProduction.machine_id == machine_id)
     rows = db.scalars(
-        select(MachineShiftProduction).where(
-            MachineShiftProduction.production_date >= from_date,
-            MachineShiftProduction.production_date <= to_date,
-            MachineShiftProduction.shift == normalized_shift,
-            MachineShiftProduction.machine_id == machine_id,
-            MachineShiftProduction.product_id == product_id,
-            MachineShiftProduction.route_operation_id == route_operation_id,
-        ).order_by(MachineShiftProduction.production_date.desc(), MachineShiftProduction.id.desc())
+        query.order_by(MachineShiftProduction.production_date.desc(),
+                       MachineShiftProduction.shift.asc(), MachineShiftProduction.id.desc())
     ).all()
     records = []
     for row in rows:
@@ -861,13 +899,13 @@ def recent_records(from_date: date, to_date: date, shift: str, machine_id: int,
         except HTTPException:
             context = None
         records.append(_entry_json(row, context))
-    return {"from_date": from_date, "to_date": to_date, "shift": normalized_shift,
+    return {"from_date": from_date, "to_date": to_date, "shift": normalized_shift or "ALL",
+            "machine_id": machine_id, "product_id": product_id, "route_operation_id": route_operation_id,
             "count": len(records), "records": records}
-
-
 @router.get("/management-summary")
 def management_summary(from_date: date, to_date: date, machine_id: int | None = None,
-                       route_operation_id: int | None = None, product_id: str | None = None, plant: str | None = None,
+                       route_operation_id: int | None = None, product_id: str | None = None,
+                       loss_category_id: int | None = None, plant: str | None = None,
                        product_group: str | None = None, customer_id: str | None = None,
                        target_oee: float = 0.85, recurring_event_threshold: int = 3,
                        db: Session = Depends(get_db), _: User = Depends(get_current_user)):
@@ -886,6 +924,8 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     if route_operation_id is not None:
         q = q.where(MachineShiftProduction.route_operation_id == route_operation_id)
         lq = lq.where(MachineLossEvent.route_operation_id == route_operation_id)
+    if loss_category_id is not None:
+        lq = lq.where(MachineLossEvent.loss_category_id == loss_category_id)
     plants = csv_strings(plant)
     product_ids = csv_ints(product_id)
     groups = csv_strings(product_group)
@@ -924,6 +964,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
         metric = aggregate(items)
         status = "ON TARGET" if metric["oee_reported"] >= target_oee else "BELOW TARGET"
         machine_summary.append({"machine_id": mid, "machine": machines[mid].code if mid in machines else str(mid),
+                                "machine_name": machines[mid].name if mid in machines else str(mid),
                                 "entry_count": len(items), "status": status,
                                 "gap_to_target": max(0.0, target_oee - metric["oee_reported"]), **metric})
     machine_summary.sort(key=lambda x: x["oee_reported"])
@@ -957,6 +998,21 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
     ]
     shift_summary.sort(key=lambda x: x["shift"])
 
+    daily_loss = {}
+    for loss in losses:
+        category = categories.get(loss.loss_category_id)
+        category_name = category.name if category else f"Loss #{loss.loss_category_id}"
+        day_item = daily_loss.setdefault(loss.loss_date, {})
+        day_item[category_name] = day_item.get(category_name, 0.0) + float(loss.duration_min) / 60.0
+
+    daily_loss_trend = [
+        {"date": day.isoformat(), "categories": [
+            {"category": name, "hours": round(hours, 3)}
+            for name, hours in sorted(category_hours.items())
+        ], "total_hours": round(sum(category_hours.values()), 3)}
+        for day, category_hours in sorted(daily_loss.items())
+    ]
+
     pareto = {}
     for loss in losses:
         category = categories.get(loss.loss_category_id)
@@ -975,6 +1031,7 @@ def management_summary(from_date: date, to_date: date, machine_id: int | None = 
             "below_target_machine_count": len(below_target), "recurring_loss_count": len(recurring_losses),
             "overall": overall, "trend": trend, "machines": machine_summary,
             "products": product_summary, "operators": operator_summary, "shifts": shift_summary,
+            "daily_loss_trend": daily_loss_trend,
             "loss_pareto": loss_pareto, "recurring_losses": recurring_losses}
 
 
@@ -1076,3 +1133,194 @@ def raise_oee_action(payload: OEESummaryActionCreate, db: Session = Depends(get_
         problem_description=description, kpi_type="OEE", kpi_value=oee_value, gap=gap,
     )
     return {"status": "created", "action_id": action.id, "action_no": action.action_no}
+
+
+@router.get("/reporting-compliance")
+def reporting_compliance(from_date: date, to_date: date, product_id: int | None = None,
+                         route_operation_id: int | None = None, machine_id: int | None = None,
+                         plant: str | None = None, db: Session = Depends(get_db),
+                         _: User = Depends(get_current_user)):
+    """Compare planned machine/product/operation/shift slots with submitted OEE entries.
+
+    Expected slots are derived only from positive daily production requirements,
+    the latest effective monthly machine allocation, effective machine mapping,
+    effective machine shift capacity and the plant working calendar.
+    """
+    if to_date < from_date:
+        raise HTTPException(422, "to_date must be on or after from_date")
+    if (to_date - from_date).days > 92:
+        raise HTTPException(422, "Reporting compliance period cannot exceed 93 days")
+
+    expected = []
+    configuration_issues = []
+    entries = db.scalars(select(MachineShiftProduction).where(
+        MachineShiftProduction.production_date >= from_date,
+        MachineShiftProduction.production_date <= to_date,
+    )).all()
+    entry_by_key = {
+        (x.production_date, x.shift.upper(), x.product_id, x.route_operation_id, x.machine_id): x
+        for x in entries
+    }
+
+    machines = {x.id: x for x in db.scalars(select(Machine).where(Machine.is_active.is_(True))).all()}
+    products = {x.id: x for x in db.scalars(select(Product)).all()}
+    calendar_rows = db.scalars(select(WorkingCalendar).where(
+        WorkingCalendar.work_date >= from_date, WorkingCalendar.work_date <= to_date
+    )).all()
+    calendar_by_key = {(x.work_date, x.plant): x for x in calendar_rows}
+
+    day = from_date
+    while day <= to_date:
+        month_start = day.replace(day=1)
+        month_allocations = db.scalars(select(MachineMonthlyAllocation).where(
+            MachineMonthlyAllocation.month == month_start,
+            MachineMonthlyAllocation.effective_from <= day,
+        )).all()
+
+        # A schedule revision is a complete allocation snapshot for a
+        # product/operation. Select the latest revision first, then take every
+        # machine row belonging to that revision; otherwise a removed machine
+        # from an older revision could incorrectly remain expected.
+        latest_revision = {}
+        for allocation in month_allocations:
+            key = (allocation.product_id, allocation.route_operation_id)
+            revision_key = (allocation.effective_from, allocation.revision_no)
+            if key not in latest_revision or revision_key > latest_revision[key]:
+                latest_revision[key] = revision_key
+        latest_allocations = [
+            allocation for allocation in month_allocations
+            if latest_revision.get((allocation.product_id, allocation.route_operation_id))
+            == (allocation.effective_from, allocation.revision_no)
+        ]
+
+        requirements = db.scalars(select(DailyRequirement).where(
+            DailyRequirement.req_date == day
+        )).all()
+        specific_requirement_products = {
+            r.product_id for r in requirements
+            if r.route_operation_id is not None
+            and float(r.revised_plan_qty if r.revised_plan_qty is not None else r.baseline_plan_qty or 0) > 0
+        }
+        planned_requirements = [
+            r for r in requirements
+            if float(r.revised_plan_qty if r.revised_plan_qty is not None else r.baseline_plan_qty or 0) > 0
+            and (product_id is None or r.product_id == product_id)
+            and (route_operation_id is None or r.route_operation_id in (None, route_operation_id))
+            and not (r.route_operation_id is None and r.product_id in specific_requirement_products)
+        ]
+
+        # Effective machine-to-operation mappings only; no implicit fallback.
+        mappings = db.scalars(select(OperationMachineMap).where(
+            OperationMachineMap.is_active.is_(True),
+            OperationMachineMap.effective_from <= day,
+            or_(OperationMachineMap.effective_to.is_(None), OperationMachineMap.effective_to >= day),
+        )).all()
+        mapped_pairs = {(m.route_operation_id, m.machine_id) for m in mappings}
+
+        capacity_rows = db.scalars(select(MachineCapacitySetting).where(
+            MachineCapacitySetting.effective_from <= day,
+            or_(MachineCapacitySetting.effective_to.is_(None), MachineCapacitySetting.effective_to >= day),
+        )).all()
+        capacity_by_machine = {}
+        for setting in capacity_rows:
+            previous = capacity_by_machine.get(setting.machine_id)
+            if previous is None or (setting.effective_from, setting.id) > (previous.effective_from, previous.id):
+                capacity_by_machine[setting.machine_id] = setting
+
+        day_expected = []
+        for requirement in planned_requirements:
+            req_qty = float(requirement.revised_plan_qty if requirement.revised_plan_qty is not None else requirement.baseline_plan_qty or 0)
+            candidates = [
+                allocation for allocation in latest_allocations
+                if allocation.product_id == requirement.product_id
+                and (requirement.route_operation_id is None or allocation.route_operation_id == requirement.route_operation_id)
+                and (route_operation_id is None or allocation.route_operation_id == route_operation_id)
+                and float(allocation.allocated_qty or 0) > 0
+            ]
+            for allocation in candidates:
+                machine = machines.get(allocation.machine_id)
+                if not machine or (machine_id is not None and machine.id != machine_id):
+                    continue
+                if plant and (machine.plant or "") != plant:
+                    continue
+                if (allocation.route_operation_id, machine.id) not in mapped_pairs:
+                    configuration_issues.append({
+                        "date": day, "product_id": allocation.product_id,
+                        "route_operation_id": allocation.route_operation_id,
+                        "machine_id": machine.id, "machine": machine.code,
+                        "issue": "Missing effective machine-process mapping",
+                    })
+                    continue
+                plant_name = machine.plant or "Main Plant"
+                calendar = calendar_by_key.get((day, plant_name))
+                if calendar and not calendar.is_working_day:
+                    continue
+                capacity = capacity_by_machine.get(machine.id)
+                if not capacity or capacity.shifts_per_day <= 0:
+                    configuration_issues.append({
+                        "date": day, "product_id": allocation.product_id,
+                        "route_operation_id": allocation.route_operation_id,
+                        "machine_id": machine.id, "machine": machine.code,
+                        "issue": "Missing effective machine shift-capacity setting",
+                    })
+                    continue
+                shift_names = ["A", "B", "C"][:min(int(capacity.shifts_per_day), 3)]
+                for shift_name in shift_names:
+                    key = (day, shift_name, allocation.product_id, allocation.route_operation_id, machine.id)
+                    row = entry_by_key.get(key)
+                    item = {
+                        "date": day, "shift": shift_name,
+                        "product_id": allocation.product_id,
+                        "product": products[allocation.product_id].name if allocation.product_id in products else str(allocation.product_id),
+                        "route_operation_id": allocation.route_operation_id,
+                        "machine_id": machine.id, "machine": machine.code,
+                        "machine_name": machine.name, "plant": plant_name,
+                        "planned_qty": req_qty, "status": "PENDING",
+                        "entry_id": None, "operator_id": None, "issues": [],
+                    }
+                    if row:
+                        item["entry_id"] = row.id
+                        item["operator_id"] = row.operator_id
+                        issues = []
+                        if row.operator_id is None:
+                            issues.append("Operator not selected")
+                        if float(row.shift_duration_min or 0) <= 0:
+                            issues.append("Shift duration missing")
+                        if float(row.ideal_cycle_time_sec or 0) <= 0:
+                            issues.append("Ideal cycle time missing")
+                        counts = [float(row.total_count or 0), float(row.good_count or 0), float(row.reject_count or 0)]
+                        if any(value < 0 for value in counts):
+                            issues.append("Negative production quantity")
+                        if abs(counts[0] - counts[1] - counts[2]) > 0.001:
+                            issues.append("Total quantity is not equal to good plus rejection")
+                        item["issues"] = issues
+                        item["status"] = "INCOMPLETE" if issues else "UPDATED"
+                    day_expected.append(item)
+        expected.extend(day_expected)
+        day = date.fromordinal(day.toordinal() + 1)
+
+    counts = {
+        "expected": len(expected),
+        "updated": sum(1 for x in expected if x["status"] == "UPDATED"),
+        "pending": sum(1 for x in expected if x["status"] == "PENDING"),
+        "incomplete": sum(1 for x in expected if x["status"] == "INCOMPLETE"),
+    }
+    by_shift = []
+    for shift_name in ("A", "B", "C"):
+        rows = [x for x in expected if x["shift"] == shift_name]
+        if rows:
+            by_shift.append({
+                "shift": shift_name, "expected": len(rows),
+                "updated": sum(1 for x in rows if x["status"] == "UPDATED"),
+                "pending": sum(1 for x in rows if x["status"] == "PENDING"),
+                "incomplete": sum(1 for x in rows if x["status"] == "INCOMPLETE"),
+            })
+    counts["compliance_percent"] = round((counts["updated"] / counts["expected"]) * 100, 1) if counts["expected"] else 100.0
+    return {
+        "from_date": from_date, "to_date": to_date, "plant": plant,
+        **counts, "by_shift": by_shift,
+        "pending_entries": [x for x in expected if x["status"] == "PENDING"],
+        "incomplete_entries": [x for x in expected if x["status"] == "INCOMPLETE"],
+        "configuration_issues": configuration_issues,
+        "expected_entries": expected,
+    }

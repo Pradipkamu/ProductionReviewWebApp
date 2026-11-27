@@ -69,7 +69,7 @@ def test_machine_entry_derives_total_count_from_good_and_reject():
 
     entry = MachineEntryCreate(
         production_date=date(2026, 11, 7), shift="A", product_id=1,
-        route_operation_id=1, machine_id=1, good_count=970, reject_count=30,
+        route_operation_id=1, machine_id=1, operator_id=1, good_count=970, reject_count=30,
     )
     assert entry.total_count == 1000
 
@@ -80,7 +80,7 @@ def test_machine_entry_keeps_legacy_unclassified_total_count():
 
     entry = MachineEntryCreate(
         production_date=date(2026, 11, 7), shift="A", product_id=1,
-        route_operation_id=1, machine_id=1, total_count=1005,
+        route_operation_id=1, machine_id=1, operator_id=1, total_count=1005,
         good_count=970, reject_count=30,
     )
     assert entry.total_count == 1005
