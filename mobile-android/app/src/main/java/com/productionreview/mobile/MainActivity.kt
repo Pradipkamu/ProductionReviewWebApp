@@ -685,7 +685,7 @@ class MainActivity : ComponentActivity() {
         notificationConversationId.value = intent.getIntExtra("conversation_id", -1).takeIf { it > 0 }
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sessionStore = SessionStore(this)
