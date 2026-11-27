@@ -1877,7 +1877,6 @@ class MainActivity : ComponentActivity() {
                                                             var rootCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_root_cause"))}
                                                             var occurrenceCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_occurrence_cause"))}
                                                             var escapeCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_escape_cause"))}
-                                                            androidx.compose.material3.ExposedDropdownMenuBox(expanded=false,onExpandedChange={}) { }
                                                             OutlinedTextField(value=observation,onValueChange={observation=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Actual observation / Gemba findings (or N/A reason)")},minLines=2,maxLines=5)
                                                             Text("Investigation status",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
                                                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
@@ -1906,6 +1905,55 @@ class MainActivity : ComponentActivity() {
                                                                     selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),finding.optString("node_id"),payload,auth)}
                                                                 } catch(e:Exception){ftaError=e.message?: "Unable to save finding"} finally {ftaSavingNode=null} }
                                                             }){Text(if(ftaSavingNode==finding.optString("node_id")) "SAVING…" else "SAVE FINDING",color=Teal)}}
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            item {
+                                                Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                                                    Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                                        Text("CORRECTIVE / PREVENTIVE ACTIONS",color=Navy,fontWeight=FontWeight.Bold)
+                                                        val linkedActions=fta.optJSONArray("actions")?:JSONArray()
+                                                        if(linkedActions.length()==0) Text("No actions linked yet. Verification requires at least one corrective or preventive action.",color=Muted,fontSize=11.sp)
+                                                        for(ai in 0 until linkedActions.length()){
+                                                            val action=linkedActions.optJSONObject(ai)?:continue
+                                                            Text("${action.optString("action_no")} • ${action.optString("relationship_type")} • ${action.optString("status")}",color=Navy,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                                                            Text(action.optString("action_description"),color=Muted,fontSize=11.sp)
+                                                        }
+                                                        OutlinedTextField(value=ftaActionDescription,onValueChange={ftaActionDescription=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS",label={Text("New corrective action description")},minLines=2)
+                                                        Button(enabled=ftaActionDescription.trim().length>=3&&!ftaBusy&&(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS"),onClick={
+                                                            val auth=token
+                                                            if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                withContext(Dispatchers.IO){ApiClient.createFtaAction(fta.optInt("id"),ftaActionDescription.trim(),ftaActionFindingId,auth)}
+                                                                selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                ftaActionDescription="";ftaActionFindingId=null;ftaError=null
+                                                            }catch(e:Exception){ftaError=e.message?: "Unable to create action"}finally{ftaBusy=false} }
+                                                        },modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("CREATE & LINK CORRECTIVE ACTION")}
+                                                        Text("Discovered causes reported during action implementation",color=Navy,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                                                        val discovered=fta.optJSONArray("discovered_causes")?:JSONArray()
+                                                        if(discovered.length()==0) Text("No additional causes reported.",color=Muted,fontSize=11.sp)
+                                                        for(ci in 0 until discovered.length()){
+                                                            val cause=discovered.optJSONObject(ci)?:continue
+                                                            Text("${cause.optString("status")} • ${cause.optString("action_no")}",color=Navy,fontWeight=FontWeight.SemiBold,fontSize=11.sp)
+                                                            Text(cause.optString("cause_description"),color=Muted,fontSize=11.sp)
+                                                            Text("Evidence: "+cause.optString("evidence_reference"),color=Muted,fontSize=10.sp)
+                                                            if((isQualityRole||isAdminOrManagement) && cause.optString("status") in listOf("PROPOSED","ACCEPTED")){
+                                                                var reviewStatus by remember(cause.optInt("id"),cause.optString("status")){mutableStateOf("CONFIRMED")}
+                                                                var reviewRemarks by remember(cause.optInt("id")){mutableStateOf("")}
+                                                                var reviewMethod by remember(cause.optInt("id")){mutableStateOf(cause.optString("verification_method"))}
+                                                                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(5.dp)){
+                                                                    listOf("CONFIRMED","RULED_OUT","ACCEPTED").forEach{v->FilterChip(selected=reviewStatus==v,onClick={reviewStatus=v},label={Text(v.replace("_"," "),fontSize=9.sp)})}
+                                                                }
+                                                                OutlinedTextField(value=reviewRemarks,onValueChange={reviewRemarks=it},modifier=Modifier.fillMaxWidth(),label={Text("Quality review remarks (min 5)")})
+                                                                if(reviewStatus=="CONFIRMED") OutlinedTextField(value=reviewMethod,onValueChange={reviewMethod=it},modifier=Modifier.fillMaxWidth(),label={Text("Verification method")})
+                                                                TextButton(enabled=reviewRemarks.trim().length>=5&&(reviewStatus!="CONFIRMED"||reviewMethod.isNotBlank()),onClick={
+                                                                    val auth=token
+                                                                    if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                        withContext(Dispatchers.IO){ApiClient.reviewFtaDiscoveredCause(cause.optInt("id"),reviewStatus,reviewRemarks.trim(),reviewMethod.trim(),auth)}
+                                                                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                    }catch(e:Exception){ftaError=e.message?: "Cause review failed"}finally{ftaBusy=false} }
+                                                                }){Text("SAVE CAUSE REVIEW",color=Teal)}
+                                                            }
                                                         }
                                                     }
                                                 }
