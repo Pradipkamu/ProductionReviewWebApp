@@ -524,6 +524,26 @@ internal object ApiClient {
         request("/fta/investigations/$id/verify", "POST", JSONObject().put("remarks", remarks), token)
     fun closeFta(id: Int, remarks: String, token: String): JSONObject =
         request("/fta/investigations/$id/close", "POST", JSONObject().put("remarks", remarks), token)
+    fun updateFta(id: Int, payload: JSONObject, token: String): JSONObject =
+        request("/fta/investigations/$id", "PATCH", payload, token)
+    fun createFtaAction(id: Int, description: String, findingId: Int?, token: String): JSONObject {
+        val body = JSONObject().put("action_description", description)
+        if (findingId != null) body.put("finding_id", findingId)
+        return request("/fta/investigations/$id/actions/create", "POST", body, token)
+    }
+    fun linkFtaAction(id: Int, actionId: Int, findingId: Int?, relationship: String, token: String): JSONObject {
+        val body = JSONObject().put("action_id", actionId).put("relationship_type", relationship)
+        if (findingId != null) body.put("finding_id", findingId)
+        return request("/fta/investigations/$id/actions", "POST", body, token)
+    }
+    fun reportFtaDiscoveredCause(actionId: Int, description: String, evidence: String, token: String): JSONObject =
+        request("/actions/$actionId/discovered-causes", "POST",
+            JSONObject().put("cause_description", description).put("evidence_reference", evidence), token)
+    fun reviewFtaDiscoveredCause(causeId: Int, status: String, remarks: String, method: String, token: String): JSONObject {
+        val body = JSONObject().put("status", status).put("review_remarks", remarks)
+        if (method.isNotBlank()) body.put("verification_method", method)
+        return request("/fta/discovered-causes/$causeId/review", "POST", body, token)
+    }
 
     fun uploadRejectionPhoto(rejectionId: Int, file: File, token: String): JSONObject {
         val uploadFile = PhotoCompressor.prepare(file)
@@ -664,6 +684,10 @@ class MainActivity : ComponentActivity() {
             var ftaBusy by remember { mutableStateOf(false) }
             var ftaError by remember { mutableStateOf<String?>(null) }
             var ftaRemarks by remember { mutableStateOf("") }
+            var ftaActionDescription by remember { mutableStateOf("") }
+            var ftaActionFindingId by remember { mutableStateOf<Int?>(null) }
+            var ftaDiscoveredDescription by remember { mutableStateOf("") }
+            var ftaDiscoveredEvidence by remember { mutableStateOf("") }
             var ftaSavingNode by remember { mutableStateOf<String?>(null) }
             var detection by remember { mutableStateOf<RouteChoice?>(null) }
             var responsible by remember { mutableStateOf<RouteChoice?>(null) }
@@ -1844,8 +1868,44 @@ class MainActivity : ComponentActivity() {
                                                         Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
                                                             Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                             Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
-                                                            OutlinedTextField(value=observation,onValueChange={observation=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Actual observation / Gemba findings")},minLines=2,maxLines=5)
-                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(enabled=ftaSavingNode!=finding.optString("node_id"),onClick={token?.let{saveFtaObservation(finding,observation,it)}}){Text(if(ftaSavingNode==finding.optString("node_id")) "SAVING…" else "SAVE OBSERVATION",color=Teal)}}
+                                                            var findingStatus by remember(fta.optInt("id"),finding.optString("node_id"),finding.optString("investigation_status")){mutableStateOf(finding.optString("investigation_status","NOT_INVESTIGATED"))}
+                                                            var measuredValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("measured_value").takeUnless{it=="null"}.orEmpty())}
+                                                            var expectedValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("expected_value").takeUnless{it=="null"}.orEmpty())}
+                                                            var verificationMethod by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("verification_method").takeUnless{it=="null"}.orEmpty())}
+                                                            var verificationResult by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("verification_result").takeUnless{it=="null"}.orEmpty())}
+                                                            var priority by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optString("priority","MEDIUM"))}
+                                                            var rootCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_root_cause"))}
+                                                            var occurrenceCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_occurrence_cause"))}
+                                                            var escapeCause by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(finding.optBoolean("is_escape_cause"))}
+                                                            androidx.compose.material3.ExposedDropdownMenuBox(expanded=false,onExpandedChange={}) { }
+                                                            OutlinedTextField(value=observation,onValueChange={observation=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Actual observation / Gemba findings (or N/A reason)")},minLines=2,maxLines=5)
+                                                            Text("Investigation status",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+                                                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
+                                                                listOf("NOT_INVESTIGATED","UNDER_INVESTIGATION","SUSPECTED","CONFIRMED","RULED_OUT","NOT_APPLICABLE").forEach { value ->
+                                                                    FilterChip(selected=findingStatus==value,onClick={findingStatus=value},label={Text(value.replace("_"," "),fontSize=9.sp)},enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS")
+                                                                }
+                                                            }
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                                                                OutlinedTextField(value=measuredValue,onValueChange={measuredValue=it},modifier=Modifier.weight(1f),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Measured value")},singleLine=true)
+                                                                OutlinedTextField(value=expectedValue,onValueChange={expectedValue=it},modifier=Modifier.weight(1f),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Expected value")},singleLine=true)
+                                                            }
+                                                            OutlinedTextField(value=verificationMethod,onValueChange={verificationMethod=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Verification method (required to confirm)")},minLines=2)
+                                                            OutlinedTextField(value=verificationResult,onValueChange={verificationResult=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Verification result")},minLines=2)
+                                                            Text("Cause classification",fontSize=11.sp,color=Muted,fontWeight=FontWeight.SemiBold)
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=rootCause,onCheckedChange={rootCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Root cause",fontSize=11.sp)}
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=occurrenceCause,onCheckedChange={occurrenceCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Occurrence cause",fontSize=11.sp)}
+                                                            Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=escapeCause,onCheckedChange={escapeCause=it},enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS");Text("Escape cause",fontSize=11.sp)}
+                                                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(enabled=ftaSavingNode!=finding.optString("node_id") && (findingStatus!="CONFIRMED" || verificationMethod.isNotBlank()),onClick={
+                                                                val payload=JSONObject().put("investigation_status",findingStatus).put("observation",observation)
+                                                                    .put("measured_value",measuredValue).put("expected_value",expectedValue)
+                                                                    .put("verification_method",verificationMethod).put("verification_result",verificationResult)
+                                                                    .put("priority",priority).put("is_root_cause",rootCause)
+                                                                    .put("is_occurrence_cause",occurrenceCause).put("is_escape_cause",escapeCause)
+                                                                val auth=token
+                                                                if(auth!=null) scope.launch { ftaSavingNode=finding.optString("node_id");try {
+                                                                    selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),finding.optString("node_id"),payload,auth)}
+                                                                } catch(e:Exception){ftaError=e.message?: "Unable to save finding"} finally {ftaSavingNode=null} }
+                                                            }){Text(if(ftaSavingNode==finding.optString("node_id")) "SAVING…" else "SAVE FINDING",color=Teal)}}
                                                         }
                                                     }
                                                 }
