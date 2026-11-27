@@ -1928,6 +1928,7 @@ class MainActivity : ComponentActivity() {
                                                         Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
                                                             Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                             Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
+                                                            TextButton(onClick={ftaSelectedNodeId="";rememberFtaNode(fta.optInt("id"),"")}){Text("CLOSE NODE",color=Teal)}
                                                             var findingStatus by remember(fta.optInt("id"),finding.optString("node_id"),finding.optString("investigation_status")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("investigation_status",finding.optString("investigation_status","NOT_INVESTIGATED")))}
                                                             var measuredValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("measured_value",finding.optString("measured_value").takeUnless{it=="null"}.orEmpty()))}
                                                             var expectedValue by remember(fta.optInt("id"),finding.optString("node_id")){mutableStateOf(ftaLocalDraft(fta.optInt("id"),finding.optString("node_id")).optString("expected_value",finding.optString("expected_value").takeUnless{it=="null"}.orEmpty()))}
@@ -1986,6 +1987,7 @@ class MainActivity : ComponentActivity() {
                                                              }
                                                         }
                                                     }
+                                                     }
                                                  } else {
                                                      Card(Modifier.fillMaxWidth().clickable{ftaSelectedNodeId=finding.optString("node_id");rememberFtaNode(fta.optInt("id"),ftaSelectedNodeId)},shape=RoundedCornerShape(12.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
                                                          Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(3.dp)){
