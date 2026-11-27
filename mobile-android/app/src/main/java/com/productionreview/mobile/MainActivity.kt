@@ -904,7 +904,7 @@ class MainActivity : ComponentActivity() {
                         val root=runCatching{JSONObject(chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE).getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
                         val fs=selectedFta?.optJSONArray("findings")?:JSONArray();val wanted=root.optString("selected_node_id")
                         ftaSelectedNodeId=(0 until fs.length()).mapNotNull{fs.optJSONObject(it)}.firstOrNull{it.optString("node_id")==wanted}?.optString("node_id")
-                            ?: (0 until fs.length()).takeIf{it.isNotEmpty()}?.let{fs.optJSONObject(it.first())?.optString("node_id")}.orEmpty()
+                            ?: if(fs.length()>0) fs.optJSONObject(0)?.optString("node_id").orEmpty() else ""
                         if(ftaSelectedNodeId.isNotBlank())rememberFtaNode(id,ftaSelectedNodeId)
                     }catch(e:Exception){ftaError=e.message?:"Unable to load FTA."}finally{ftaBusy=false}
                 }
