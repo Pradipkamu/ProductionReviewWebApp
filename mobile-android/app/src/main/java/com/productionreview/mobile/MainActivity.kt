@@ -891,6 +891,11 @@ class MainActivity : ComponentActivity() {
                 val root=runCatching{JSONObject(prefs.getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
                 root.put("selected_node_id",node);prefs.edit().putString(ftaDraftKey(id),root.toString()).apply()
             }
+            fun clearFtaLocalDraft(id:Int,node:String){
+                val prefs=chatContext.getSharedPreferences("fta_investigation_drafts",android.content.Context.MODE_PRIVATE)
+                val root=runCatching{JSONObject(prefs.getString(ftaDraftKey(id),"{}").orEmpty())}.getOrDefault(JSONObject())
+                root.optJSONObject("nodes")?.remove(node);prefs.edit().putString(ftaDraftKey(id),root.toString()).apply()
+            }
             fun openFta(id: Int, auth: String) {
                 scope.launch {
                     ftaBusy=true;ftaError=null
@@ -1925,7 +1930,7 @@ class MainActivity : ComponentActivity() {
                                                     if(ftaSelectedNodeId==finding.optString("node_id")) {
                                                      Dialog(onDismissRequest={}) {
                                                          Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
-                                                        Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                                                        Column(Modifier.padding(11.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(6.dp)){
                                                             Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                             Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
                                                             TextButton(onClick={ftaSelectedNodeId="";rememberFtaNode(fta.optInt("id"),"")}){Text("CLOSE NODE",color=Teal)}
@@ -1980,7 +1985,7 @@ class MainActivity : ComponentActivity() {
                                                                  Spacer(Modifier.weight(1f))
                                                                  val canSave=ftaSavingNode!=nodeId&&(findingStatus!="CONFIRMED"||verificationMethod.isNotBlank())&&(findingStatus!="CONFIRMED"||evidenceForFinding.isNotEmpty())
                                                                  val payload=JSONObject().put("investigation_status",findingStatus).put("observation",observation).put("measured_value",measuredValue).put("expected_value",expectedValue).put("verification_method",verificationMethod).put("verification_result",verificationResult).put("priority",priority).put("is_root_cause",rootCause).put("is_occurrence_cause",occurrenceCause).put("is_escape_cause",escapeCause)
-                                                                 TextButton(enabled=canSave&&!ftaBusy,onClick={val auth=token;if(auth!=null)scope.launch{ftaSavingNode=nodeId;try{selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),nodeId,payload,auth)};ftaError=null}catch(e:Exception){ftaError=e.message?:"Unable to save finding"}finally{ftaSavingNode=null}}}){Text("SAVE DRAFT",color=Teal)}
+                                                                 TextButton(enabled=canSave&&!ftaBusy,onClick={val auth=token;if(auth!=null)scope.launch{ftaSavingNode=nodeId;try{selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),nodeId,payload,auth)};clearFtaLocalDraft(fta.optInt("id"),nodeId);ftaError=null}catch(e:Exception){ftaError=e.message?:"Unable to save finding"}finally{ftaSavingNode=null}}}){Text("SAVE DRAFT",color=Teal)}
                                                                  Button(enabled=canSave&&!ftaBusy,onClick={val auth=token;if(auth!=null)scope.launch{ftaSavingNode=nodeId;try{selectedFta=withContext(Dispatchers.IO){ApiClient.saveFtaFinding(fta.optInt("id"),nodeId,payload,auth)};ftaError=null
                                                                      if(nodeIndex+1<findings.length()){ftaSelectedNodeId=findings.optJSONObject(nodeIndex+1)?.optString("node_id").orEmpty();rememberFtaNode(fta.optInt("id"),ftaSelectedNodeId)}else{ftaSelectedNodeId="";rememberFtaNode(fta.optInt("id"),"")}
                                                                  }catch(e:Exception){ftaError=e.message?:"Unable to save finding; remaining on this node"}finally{ftaSavingNode=null}}},colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("NEXT NODE")}
