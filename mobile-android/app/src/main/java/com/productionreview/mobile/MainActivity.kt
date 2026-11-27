@@ -2004,6 +2004,7 @@ class MainActivity : ComponentActivity() {
                                                      }
                                                  }
                                              }
+                                             }
                                              item {
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
