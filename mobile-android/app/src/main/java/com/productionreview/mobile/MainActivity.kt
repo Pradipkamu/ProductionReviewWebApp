@@ -1844,7 +1844,7 @@ class MainActivity : ComponentActivity() {
                                                         Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
                                                             Text(finding.optString("node_label"),color=Navy,fontWeight=FontWeight.Bold,fontSize=13.sp)
                                                             Text(finding.optString("node_type")+" • "+finding.optString("investigation_status").replace("_"," ")+" • "+finding.optString("priority"),color=Muted,fontSize=10.sp)
-                                                            OutlinedTextField(value=observation,onValueChange={observation=it},modifier=Modifier.fillMaxWidth(),label={Text("Actual observation / Gemba findings")},minLines=2,maxLines=5)
+                                                            OutlinedTextField(value=observation,onValueChange={observation=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN" || ftaStatus=="IN_PROGRESS",label={Text("Actual observation / Gemba findings")},minLines=2,maxLines=5)
                                                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End){TextButton(enabled=ftaSavingNode!=finding.optString("node_id"),onClick={token?.let{saveFtaObservation(finding,observation,it)}}){Text(if(ftaSavingNode==finding.optString("node_id")) "SAVING…" else "SAVE OBSERVATION",color=Teal)}}
                                                         }
                                                     }
@@ -1856,10 +1856,10 @@ class MainActivity : ComponentActivity() {
                                                         Text("QUALITY VERIFICATION / CLOSURE",color=Navy,fontWeight=FontWeight.Bold)
                                                         Text("Existing server checks validate root cause, verification method, evidence, linked actions and discovered causes.",color=Muted,fontSize=11.sp)
                                                         OutlinedTextField(value=ftaRemarks,onValueChange={ftaRemarks=it},modifier=Modifier.fillMaxWidth(),label={Text(if(ftaStatus=="VERIFIED_PENDING_ACTIONS") "Closure remarks" else "Verification remarks")},minLines=2)
-                                                        if(ftaStatus=="IN_PROGRESS" && (isQualityRole || isAdminOrManagement)){
+                                                        if(ftaStatus=="IN_PROGRESS" && (isQualityRole || account?.role?.uppercase()=="ADMIN")){
                                                             Button(onClick={val auth=token;if(auth!=null)scope.launch{ftaBusy=true;try{withContext(Dispatchers.IO){ApiClient.verifyFta(fta.optInt("id"),ftaRemarks.trim(),auth)};selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)};ftaRemarks="";ftaError=null}catch(e:Exception){ftaError=e.message?: "Verification failed"}finally{ftaBusy=false}}},enabled=ftaRemarks.trim().length>=5&&!ftaBusy,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Teal)){Text("SUBMIT FOR QUALITY VERIFICATION")}
                                                         }
-                                                        if(ftaStatus=="VERIFIED_PENDING_ACTIONS" && (isQualityRole || isAdminOrManagement)){
+                                                        if(ftaStatus=="VERIFIED_PENDING_ACTIONS" && (isQualityRole || account?.role?.uppercase()=="ADMIN")){
                                                             Button(onClick={val auth=token;if(auth!=null)scope.launch{ftaBusy=true;try{withContext(Dispatchers.IO){ApiClient.closeFta(fta.optInt("id"),ftaRemarks.trim(),auth)};selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)};ftaRemarks="";ftaError=null}catch(e:Exception){ftaError=e.message?: "FTA closure failed"}finally{ftaBusy=false}}},enabled=ftaRemarks.trim().length>=5&&!ftaBusy,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Navy)){Text("CLOSE FTA")}
                                                         }
                                                     }
