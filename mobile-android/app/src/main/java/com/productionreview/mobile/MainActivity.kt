@@ -1965,6 +1965,17 @@ class MainActivity : ComponentActivity() {
                                             item {
                                                 Card(Modifier.fillMaxWidth(),shape=RoundedCornerShape(14.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
                                                     Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+                                                        var occurrenceSummary by remember(fta.optInt("id"),fta.optString("occurrence_cause_summary")){mutableStateOf(fta.optString("occurrence_cause_summary"))}
+                                                        var escapeSummary by remember(fta.optInt("id"),fta.optString("escape_cause_summary")){mutableStateOf(fta.optString("escape_cause_summary"))}
+                                                        OutlinedTextField(value=occurrenceSummary,onValueChange={occurrenceSummary=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS",label={Text("Occurrence cause analysis")},minLines=2)
+                                                        OutlinedTextField(value=escapeSummary,onValueChange={escapeSummary=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS",label={Text("Escape / detection analysis")},minLines=2)
+                                                        TextButton(enabled=(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS")&&!ftaBusy,onClick={
+                                                            val auth=token
+                                                            if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                withContext(Dispatchers.IO){ApiClient.updateFta(fta.optInt("id"),JSONObject().put("occurrence_cause_summary",occurrenceSummary).put("escape_cause_summary",escapeSummary),auth)}
+                                                                selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                            }catch(e:Exception){ftaError=e.message?: "Unable to save cause analysis"}finally{ftaBusy=false} }
+                                                        }){Text("SAVE CAUSE ANALYSIS",color=Teal)}
                                                         Text("CORRECTIVE / PREVENTIVE ACTIONS",color=Navy,fontWeight=FontWeight.Bold)
                                                         val linkedActions=fta.optJSONArray("actions")?:JSONArray()
                                                         if(linkedActions.length()==0) Text("No actions linked yet. Verification requires at least one corrective or preventive action.",color=Muted,fontSize=11.sp)
@@ -1972,6 +1983,19 @@ class MainActivity : ComponentActivity() {
                                                             val action=linkedActions.optJSONObject(ai)?:continue
                                                             Text("${action.optString("action_no")} • ${action.optString("relationship_type")} • ${action.optString("status")}",color=Navy,fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                                                             Text(action.optString("action_description"),color=Muted,fontSize=11.sp)
+                                                            var newCause by remember(action.optInt("id")){mutableStateOf("")}
+                                                            var newCauseEvidence by remember(action.optInt("id")){mutableStateOf("")}
+                                                            if(ftaStatus!="CLOSED" && action.optString("status")!="CLOSED"){
+                                                                OutlinedTextField(value=newCause,onValueChange={newCause=it},modifier=Modifier.fillMaxWidth(),label={Text("New cause found during action implementation")},minLines=2)
+                                                                OutlinedTextField(value=newCauseEvidence,onValueChange={newCauseEvidence=it},modifier=Modifier.fillMaxWidth(),label={Text("Evidence reference (min 3)")})
+                                                                TextButton(enabled=newCause.trim().length>=5&&newCauseEvidence.trim().length>=3&&!ftaBusy,onClick={
+                                                                    val auth=token
+                                                                    if(auth!=null) scope.launch { ftaBusy=true;try {
+                                                                        withContext(Dispatchers.IO){ApiClient.reportFtaDiscoveredCause(action.optInt("id"),newCause.trim(),newCauseEvidence.trim(),auth)}
+                                                                        selectedFta=withContext(Dispatchers.IO){ApiClient.loadFtaInvestigation(fta.optInt("id"),auth)}
+                                                                    }catch(e:Exception){ftaError=e.message?: "Unable to report discovered cause"}finally{ftaBusy=false} }
+                                                                }){Text("REPORT DISCOVERED CAUSE",color=Teal)}
+                                                            }
                                                         }
                                                         OutlinedTextField(value=ftaActionDescription,onValueChange={ftaActionDescription=it},modifier=Modifier.fillMaxWidth(),enabled=ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS",label={Text("New corrective action description")},minLines=2)
                                                         Button(enabled=ftaActionDescription.trim().length>=3&&!ftaBusy&&(ftaStatus=="OPEN"||ftaStatus=="IN_PROGRESS"),onClick={
